@@ -14,7 +14,6 @@ import net.minecraft.world.item.ItemStack;
 import com.example.examplemod.glint.CustomGlintData;
 import com.example.examplemod.glint.CustomGlintNbt;
 import com.example.examplemod.glint.CustomGlintRenderTypes;
-import com.example.examplemod.glint.GlintTextureCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -171,14 +170,12 @@ public class ItemRendererMixin {
      * <p>When a custom glint IS present:
      * <ol>
      *   <li>Computes the current animated color from the glint's color array + game time.</li>
-     *   <li>Writes texture and color into {@link CustomGlintRenderTypes}'s ThreadLocals so the
-     *       render type's {@code setupRenderState()} can read them at flush time.</li>
-     *   <li>Acquires the pre-allocated glint {@link com.mojang.blaze3d.vertex.BufferBuilder} via
-     *       {@code buffer.getBuffer(FIXED)} — this returns the fixed buffer registered by
-     *       {@code RenderBuffersMixin}, not a new builder.</li>
-     *   <li>Returns {@link VertexMultiConsumer#create(VertexConsumer...)} combining the glint buffer
-     *       and the item's base buffer — so when vanilla writes item geometry vertices, they land in
-     *       both consumers simultaneously (base layer + glint layer).</li>
+     *   <li>Calls {@link CustomGlintRenderTypes#forGlint} which returns a {@link RenderType} specific
+     *       to this glint config, updating its closed-over color holder with the current frame color.
+     *       The RenderType is created on first use and registered into {@code fixedBuffers} so it has
+     *       its own dedicated {@link com.mojang.blaze3d.vertex.BufferBuilder}.</li>
+     *   <li>Returns {@link VertexMultiConsumer#create(VertexConsumer...)} combining the per-config
+     *       glint buffer and the item's base buffer — so geometry lands in both simultaneously.</li>
      * </ol>
      *
      * @param isDirect {@code true} when called from the {@code getFoilBufferDirect} path (GUI rendering);
@@ -200,12 +197,7 @@ public class ItemRendererMixin {
                 buf[2] = (color & 0xFF) / 255.0f;          // B
                 buf[3] = 1.0f;                              // A — always opaque
 
-                // Set ThreadLocals BEFORE getBuffer(FIXED) so they are correct when
-                // setupRenderState() fires (at buffer flush time, potentially later in the frame).
-                CustomGlintRenderTypes.CURRENT_TEXTURE.set(GlintTextureCache.get(glint.design()));
-                CustomGlintRenderTypes.CURRENT_COLOR.set(buf);
-
-                VertexConsumer glintConsumer = buffer.getBuffer(CustomGlintRenderTypes.FIXED);
+                VertexConsumer glintConsumer = buffer.getBuffer(CustomGlintRenderTypes.forGlint(glint, buf));
                 VertexConsumer itemConsumer = buffer.getBuffer(renderType);
 
                 // Write item geometry to both buffers at once: base layer + glint overlay.
