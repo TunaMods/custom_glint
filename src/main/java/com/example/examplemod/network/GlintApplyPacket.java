@@ -1,0 +1,78 @@
+package com.example.examplemod.network;
+
+import com.example.examplemod.glint.CustomGlintNbt;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.network.NetworkEvent;
+
+import java.util.function.Supplier;
+
+public class GlintApplyPacket {
+
+    public final InteractionHand wandHand;
+    public final boolean remove;
+    public final String design;
+    public final int[] colors;
+    public final float speed;
+    public final boolean interpolate;
+
+    public GlintApplyPacket(InteractionHand wandHand, boolean remove,
+                             String design, int[] colors, float speed, boolean interpolate) {
+        this.wandHand = wandHand;
+        this.remove = remove;
+        this.design = design;
+        this.colors = colors;
+        this.speed = speed;
+        this.interpolate = interpolate;
+    }
+
+    public static void encode(GlintApplyPacket pkt, FriendlyByteBuf buf) {
+        buf.writeEnum(pkt.wandHand);
+        buf.writeBoolean(pkt.remove);
+        if (!pkt.remove) {
+            buf.writeUtf(pkt.design);
+            buf.writeVarInt(pkt.colors.length);
+            for (int c : pkt.colors) buf.writeInt(c);
+            buf.writeFloat(pkt.speed);
+            buf.writeBoolean(pkt.interpolate);
+        }
+    }
+
+    public static GlintApplyPacket decode(FriendlyByteBuf buf) {
+        InteractionHand hand = buf.readEnum(InteractionHand.class);
+        boolean remove = buf.readBoolean();
+        if (remove) return new GlintApplyPacket(hand, true, "", new int[0], 1.0f, true);
+        String design = buf.readUtf();
+        int len = buf.readVarInt();
+        int[] colors = new int[len];
+        for (int i = 0; i < len; i++) colors[i] = buf.readInt();
+        float speed = buf.readFloat();
+        boolean interp = buf.readBoolean();
+        return new GlintApplyPacket(hand, false, design, colors, speed, interp);
+    }
+
+    public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
+        ctx.get().enqueueWork(() -> {
+            ServerPlayer player = ctx.get().getSender();
+            if (player == null) return;
+            InteractionHand targetHand = pkt.wandHand == InteractionHand.MAIN_HAND
+                    ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
+            ItemStack target = player.getItemInHand(targetHand);
+            if (target.isEmpty()) return;
+            if (pkt.remove) {
+                CustomGlintNbt.remove(target);
+            } else {
+                ResourceLocation designRL = new ResourceLocation(pkt.design);
+                CustomGlintNbt.write(target, designRL, pkt.colors, pkt.speed, pkt.interpolate);
+                ItemStack wand = player.getItemInHand(pkt.wandHand);
+                if (!wand.isEmpty()) {
+                    CustomGlintNbt.write(wand, designRL, pkt.colors, pkt.speed, pkt.interpolate);
+                }
+            }
+        });
+        ctx.get().setPacketHandled(true);
+    }
+}
