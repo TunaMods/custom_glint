@@ -1,46 +1,48 @@
+custom_glint — Animated Item Glint Mod
+Minecraft 1.20.1 / Forge 47.x
+======================================
 
-Source installation information for modders
--------------------------------------------
-This code follows the Minecraft Forge installation methodology. It will apply
-some small patches to the vanilla MCP source code, giving you and it access 
-to some of the data and functions you need to build a successful mod.
+Replaces the vanilla enchantment glint on any item with a custom animated glow.
+Pick a pattern, pick your colors, done. Everything lives in NBT so it works on
+any item without touching registries or loot tables.
 
-Note also that the patches are built against "un-renamed" MCP source code (aka
-SRG Names) - this means that you will not be able to read them directly against
-normal code.
+QUICK START
+-----------
+Apply a glint by giving an item with the custom_glint NBT tag:
 
-Setup Process:
-==============================
+  /give @p minecraft:diamond_sword{custom_glint:{design:"examplemod:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b}} 1
 
-Step 1: Open your command-line and browse to the folder where you extracted the zip file.
+See glint_commands.txt for 60+ ready-to-use commands.
 
-Step 2: You're left with a choice.
-If you prefer to use Eclipse:
-1. Run the following command: `./gradlew genEclipseRuns`
-2. Open Eclipse, Import > Existing Gradle Project > Select Folder 
-   or run `gradlew eclipse` to generate the project.
+TAG FIELDS
+----------
+  design      — which pattern to use (see DESIGNS below)
+  colors      — one or more ARGB color ints (see COLORS below)
+  speed       — 0.5 = slow, 1.0 = normal, 2.0 = fast  (default: 1.0)
+  interpolate — 1b = smooth lerp between colors, 0b = hard switch  (default: 1b)
 
-If you prefer to use IntelliJ:
-1. Open IDEA, and import project.
-2. Select your build.gradle file and have it import.
-3. Run the following command: `./gradlew genIntellijRuns`
-4. Refresh the Gradle Project in IDEA if required.
+DESIGNS
+-------
+  examplemod:textures/glint/wave.png
+  examplemod:textures/glint/sparkle.png
+  examplemod:textures/glint/fire.png
+  examplemod:textures/glint/pulse.png
+  examplemod:textures/glint/stripes.png
+  examplemod:textures/glint/grid.png
+  examplemod:textures/glint/scales.png
+  examplemod:textures/glint/diamonds.png
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can 
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-(this does not affect your code) and then start the process again.
+  To add a new design, drop a .png into:
+    src/main/resources/assets/examplemod/textures/glint/
 
-Mapping Names:
-=============================
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license, if you do not agree with it you can change your mapping names to other crowdsourced names in your 
-build.gradle. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/MinecraftForge/MCPConfig/blob/master/Mojang.md
+COLORS
+------
+Colors are signed 32-bit ints. Formula: 0xRRGGBB - 0x1000000
 
-Additional Resources: 
-=========================
-Community Documentation: https://docs.minecraftforge.net/en/1.20.1/gettingstarted/
-LexManos' Install Video: https://youtu.be/8VEdtQLuLO0
-Forge Forums: https://forums.minecraftforge.net/
-Forge Discord: https://discord.minecraftforge.net/
+  Red     -65536      Green   -16711936    Blue    -16776961
+  Yellow  -256        Cyan    -16711681    Magenta -65281
+  White   -1          Gold    -10496       Orange  -32768
+  Purple  -8388353    Pink    -38476       Black   -16777216
+
+Multiple colors = animated cycle. Single color = static.
+
