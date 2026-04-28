@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.RenderType;
 
-import com.example.examplemod.glint.CustomGlintRenderTypes;
+import com.example.examplemod.glint.CustomGlint;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -45,6 +45,6 @@ public class RenderBuffersMixin {
      */
     @Inject(method = "<init>", at = @At("RETURN"))
     private void cg_registerGlintBuffer(CallbackInfo ci) {
-        CustomGlintRenderTypes.fixedBufferRegistry = this.fixedBuffers;
+        CustomGlint.fixedBufferRegistry = this.fixedBuffers;
     }
 }
