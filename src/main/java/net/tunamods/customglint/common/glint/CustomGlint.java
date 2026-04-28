@@ -77,7 +77,7 @@ public final class CustomGlint extends RenderStateShard {
 
     // ── NBT ──────────────────────────────────────────────────────────────────
 
-    private static final String TAG             = "custom_glint";
+    private static final String TAG             = MOD_ID;
     private static final String DESIGN_KEY      = "design";
     private static final String COLORS_KEY      = "colors";
     private static final String SPEED_KEY       = "speed";
