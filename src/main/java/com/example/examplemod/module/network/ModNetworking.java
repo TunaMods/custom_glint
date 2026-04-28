@@ -1,4 +1,4 @@
-package com.example.examplemod.network;
+package com.example.examplemod.module.network;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkDirection;
@@ -20,8 +20,6 @@ public class ModNetworking {
 
     public static void register() {
         // 0 — GlintApplyPacket  C→S  player applied or removed a custom glint from the glint wand editor
-        CHANNEL.registerMessage(0, GlintApplyPacket.class,
-                GlintApplyPacket::encode, GlintApplyPacket::decode, GlintApplyPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(0, GlintApplyPacket.class, GlintApplyPacket::encode, GlintApplyPacket::decode, GlintApplyPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 }

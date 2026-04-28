@@ -1,9 +1,8 @@
-package com.example.examplemod.client;
+package com.example.examplemod.module.gui;
 
-import com.example.examplemod.glint.CustomGlintData;
-import com.example.examplemod.glint.CustomGlintNbt;
-import com.example.examplemod.network.GlintApplyPacket;
-import com.example.examplemod.network.ModNetworking;
+import com.example.examplemod.glint.CustomGlint;
+import com.example.examplemod.module.network.GlintApplyPacket;
+import com.example.examplemod.module.network.ModNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -28,12 +27,14 @@ public class GlintEditorScreen extends Screen {
 
     // ── Layout constants ────────────────────────────────────────────────────
     private static final int PANEL_W    = 300;
-    private static final int PANEL_H    = 212;
+    private static final int PANEL_H    = 244;
     private static final int PREVIEW_SZ = 80;
 
     private static final String[] DESIGNS = {
-        "diamonds", "fire", "grid", "pulse",
-        "scales",   "sparkle", "stripes", "wave"
+        "checker", "crosshatch", "diamonds", "dots",
+        "fire",    "grid",       "hexagon",  "pulse",
+        "ripple",  "scales",     "sparkle",  "stars",
+        "stripes", "swirl",      "wave",     "zigzag"
     };
 
     private static ResourceLocation designRL(String name) {
@@ -65,13 +66,13 @@ public class GlintEditorScreen extends Screen {
     private boolean    showPicker    = false;
     private List<Item> allItems      = null;
     private List<Item> filteredItems = new ArrayList<>();
-    private int        pickerPage    = 0;
-    private static final int PCOLS = 9, PROWS = 4, PER_PAGE = PCOLS * PROWS;
+    private int        pickerScroll  = 0;
+    private static final int VISIBLE_ROWS = 8, ROW_H = 18;
 
     // ── Widget refs ─────────────────────────────────────────────────────────
     private EditBox        hexBox, rBox, gBox, bBox;
     private EditBox        searchBox;
-    private final Button[] designBtns = new Button[8];
+    private final Button[] designBtns = new Button[DESIGNS.length];
 
     private int px, py;
 
@@ -83,7 +84,7 @@ public class GlintEditorScreen extends Screen {
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
-            CustomGlintData d = CustomGlintNbt.read(mc.player.getItemInHand(hand));
+            CustomGlint.Data d = CustomGlint.read(mc.player.getItemInHand(hand));
             if (d != null) {
                 selectedDesign = designShortName(d.design());
                 for (int c : d.colors()) colors.add(c);
@@ -138,18 +139,30 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void onRChanged(String s) {
-        try { int v = Integer.parseInt(s); if (v >= 0 && v <= 255) { editR = v; saveEditRGB(); syncHexFromRGB(); refreshPreview(); } }
-        catch (NumberFormatException ignored) {}
+        try {
+            int v = Integer.parseInt(s);
+            int c = Math.max(0, Math.min(255, v));
+            editR = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
+            if (c != v) syncChannelBoxes();
+        } catch (NumberFormatException ignored) {}
     }
 
     private void onGChanged(String s) {
-        try { int v = Integer.parseInt(s); if (v >= 0 && v <= 255) { editG = v; saveEditRGB(); syncHexFromRGB(); refreshPreview(); } }
-        catch (NumberFormatException ignored) {}
+        try {
+            int v = Integer.parseInt(s);
+            int c = Math.max(0, Math.min(255, v));
+            editG = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
+            if (c != v) syncChannelBoxes();
+        } catch (NumberFormatException ignored) {}
     }
 
     private void onBChanged(String s) {
-        try { int v = Integer.parseInt(s); if (v >= 0 && v <= 255) { editB = v; saveEditRGB(); syncHexFromRGB(); refreshPreview(); } }
-        catch (NumberFormatException ignored) {}
+        try {
+            int v = Integer.parseInt(s);
+            int c = Math.max(0, Math.min(255, v));
+            editB = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
+            if (c != v) syncChannelBoxes();
+        } catch (NumberFormatException ignored) {}
     }
 
     // ── Preview ──────────────────────────────────────────────────────────────
@@ -158,7 +171,7 @@ public class GlintEditorScreen extends Screen {
         previewStack = new ItemStack(previewItem);
         if (!colors.isEmpty()) {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
-            CustomGlintNbt.write(previewStack, designRL(selectedDesign), arr, speed, interpolate);
+            CustomGlint.write(previewStack, designRL(selectedDesign), arr, speed, interpolate);
         }
     }
 
@@ -169,7 +182,7 @@ public class GlintEditorScreen extends Screen {
         px = (width  - PANEL_W) / 2;
         py = (height - PANEL_H) / 2;
 
-        // Design buttons — 2 rows of 4
+        // Design buttons — 4 rows of 4
         for (int i = 0; i < DESIGNS.length; i++) {
             final String d = DESIGNS[i];
             int col = i % 4, row = i / 4;
@@ -189,7 +202,7 @@ public class GlintEditorScreen extends Screen {
                 loadEditRGB();
                 rebuildWidgets();
             }
-        }).bounds(px + 100 + colors.size() * 18, py + 62, 14, 14).build());
+        }).bounds(px + 100 + colors.size() * 18, py + 94, 14, 14).build());
 
         // Add color [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
@@ -199,28 +212,28 @@ public class GlintEditorScreen extends Screen {
                 loadEditRGB();
                 rebuildWidgets();
             }
-        }).bounds(px + 100 + colors.size() * 18 + 16, py + 62, 14, 14).build());
+        }).bounds(px + 100 + colors.size() * 18 + 16, py + 94, 14, 14).build());
 
         // Hex EditBox
-        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 80, 58, 12, Component.literal("Hex")));
+        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 112, 58, 12, Component.literal("Hex")));
         hexBox.setMaxLength(6);
         hexBox.setValue(String.format("%06X", (editR << 16) | (editG << 8) | editB));
         hexBox.setResponder(this::onHexChanged);
 
         // R EditBox
-        rBox = addRenderableWidget(new EditBox(font, px + 116, py + 96, 36, 12, Component.literal("R")));
+        rBox = addRenderableWidget(new EditBox(font, px + 116, py + 128, 36, 12, Component.literal("R")));
         rBox.setMaxLength(3);
         rBox.setValue(String.valueOf(editR));
         rBox.setResponder(this::onRChanged);
 
         // G EditBox
-        gBox = addRenderableWidget(new EditBox(font, px + 116, py + 112, 36, 12, Component.literal("G")));
+        gBox = addRenderableWidget(new EditBox(font, px + 116, py + 144, 36, 12, Component.literal("G")));
         gBox.setMaxLength(3);
         gBox.setValue(String.valueOf(editG));
         gBox.setResponder(this::onGChanged);
 
         // B EditBox
-        bBox = addRenderableWidget(new EditBox(font, px + 116, py + 128, 36, 12, Component.literal("B")));
+        bBox = addRenderableWidget(new EditBox(font, px + 116, py + 160, 36, 12, Component.literal("B")));
         bBox.setMaxLength(3);
         bBox.setValue(String.valueOf(editB));
         bBox.setResponder(this::onBChanged);
@@ -228,44 +241,50 @@ public class GlintEditorScreen extends Screen {
         // Speed [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
             speed = Math.max(0.25f, Math.round((speed - 0.25f) * 4) / 4.0f);
-        }).bounds(px + 148, py + 148, 14, 14).build());
+            refreshPreview();
+        }).bounds(px + 148, py + 180, 14, 14).build());
 
         // Speed [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             speed = Math.min(8.0f, Math.round((speed + 0.25f) * 4) / 4.0f);
-        }).bounds(px + 196, py + 148, 14, 14).build());
+            refreshPreview();
+        }).bounds(px + 196, py + 180, 14, 14).build());
 
         // Smooth toggle
         addRenderableWidget(Button.builder(
                 Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")), b -> {
             interpolate = !interpolate;
             b.setMessage(Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")));
-        }).bounds(px + 100, py + 166, 100, 14).build());
+            refreshPreview();
+        }).bounds(px + 100, py + 198, 100, 14).build());
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
             if (allItems == null) allItems = new ArrayList<>(ForgeRegistries.ITEMS.getValues());
             filterItems(searchBox != null ? searchBox.getValue() : "");
+            pickerScroll = 0;
             showPicker = true;
+            searchBox.setFocused(true);
         }).bounds(px + 8, py + 112, 80, 14).build());
 
-        // Apply to offhand
-        addRenderableWidget(Button.builder(Component.literal("Apply to Offhand"), b -> {
+        // Give item with glint
+        addRenderableWidget(Button.builder(Component.literal("Get Item"), b -> {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
+            String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate));
-        }).bounds(px + 8, py + 192, 140, 14).build());
+                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, itemId));
+        }).bounds(px + 8, py + 224, 140, 14).build());
 
         // Remove glint from offhand
         addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, true, "", new int[0], 1.0f, true));
-        }).bounds(px + 152, py + 192, 140, 14).build());
+                    wandHand, true, "", new int[0], 1.0f, true, ""));
+        }).bounds(px + 152, py + 224, 140, 14).build());
 
         // Item picker search box — managed manually
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.literal("Search items..."));
         searchBox.setMaxLength(40);
-        searchBox.setResponder(s -> { pickerPage = 0; filterItems(s); });
+        searchBox.setResponder(s -> { pickerScroll = 0; filterItems(s); });
 
         refreshPreview();
     }
@@ -280,6 +299,7 @@ public class GlintEditorScreen extends Screen {
             return (rl != null && rl.toString().contains(lq))
                     || item.getDescription().getString().toLowerCase().contains(lq);
         }).collect(Collectors.toList());
+        pickerScroll = Math.max(0, Math.min(pickerScroll, Math.max(0, filteredItems.size() - VISIBLE_ROWS)));
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -307,12 +327,12 @@ public class GlintEditorScreen extends Screen {
 
         // Right labels
         g.drawString(font, "Design:", px + 100, py + 8, 0xFFFFAA);
-        g.drawString(font, "Colors:", px + 100, py + 52, 0xFFFFAA);
-        g.drawString(font, "Hex:", px + 100, py + 82, 0xAAAAAA);
-        g.drawString(font, "R:", px + 100, py + 98, 0xFF6666);
-        g.drawString(font, "G:", px + 100, py + 114, 0x66FF66);
-        g.drawString(font, "B:", px + 100, py + 130, 0x6666FF);
-        g.drawString(font, "Speed:", px + 100, py + 150, 0xAAAAAA);
+        g.drawString(font, "Colors:", px + 100, py + 84, 0xFFFFAA);
+        g.drawString(font, "Hex:", px + 100, py + 114, 0xAAAAAA);
+        g.drawString(font, "R:", px + 100, py + 130, 0xFF6666);
+        g.drawString(font, "G:", px + 100, py + 146, 0x66FF66);
+        g.drawString(font, "B:", px + 100, py + 162, 0x6666FF);
+        g.drawString(font, "Speed:", px + 100, py + 182, 0xAAAAAA);
 
         // Design selection highlight (behind buttons)
         for (int i = 0; i < DESIGNS.length; i++) {
@@ -338,32 +358,34 @@ public class GlintEditorScreen extends Screen {
         // Color swatches (after super, on top of widget chrome)
         for (int i = 0; i < colors.size(); i++) {
             int sx = px + 100 + i * 18;
-            int sy = py + 62;
+            int sy = py + 94;
             g.fill(sx - 1, sy - 1, sx + 17, sy + 17,
                    i == editingColorIdx ? 0xFFFFFFFF : 0xFF555555);
             g.fill(sx, sy, sx + 16, sy + 16, 0xFF000000 | (colors.get(i) & 0xFFFFFF));
         }
 
         // Current-color swatch beside "Hex:" label
-        g.fill(px + 120, py + 80, px + 132, py + 92,
+        g.fill(px + 120, py + 112, px + 132, py + 124,
                0xFF000000 | (colors.get(editingColorIdx) & 0xFFFFFF));
 
         // Speed value between the two speed buttons
-        g.drawCenteredString(font, String.format("%.2f×", speed), px + 175, py + 150, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", speed), px + 175, py + 182, 0xFFFFFF);
 
-        // Item picker overlay
-        if (showPicker) renderPicker(g, mx, my);
+        // Item picker overlay — translated forward so it clips above the item preview (Z=200) and widgets
+        if (showPicker) {
+            g.pose().pushPose();
+            g.pose().translate(0, 0, 400);
+            renderPicker(g, mx, my);
+            g.pose().popPose();
+        }
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────
 
-    private static final int OW = 220, OH = 134;
+    private static final int OW = 200, OH = VISIBLE_ROWS * ROW_H + 20;
 
-    private int pickerOX() { return (width - OW) / 2; }
-    private int pickerOY() {
-        int above = py - OH - 4;
-        return above >= 2 ? above : py + PANEL_H + 4;
-    }
+    private int pickerOX() { return Math.max(2, Math.min(width - OW - 2, px + 8)); }
+    private int pickerOY() { return Math.max(2, Math.min(height - OH - 2, py + 159)); }
 
     private void renderPicker(GuiGraphics g, int mx, int my) {
         int ox = pickerOX(), oy = pickerOY();
@@ -371,31 +393,33 @@ public class GlintEditorScreen extends Screen {
         g.fill(ox - 1, oy - 1, ox + OW + 1, oy + OH + 1, 0xFF666666);
         g.fill(ox, oy, ox + OW, oy + OH, 0xEE111111);
 
-        searchBox.setX(ox + 4);
-        searchBox.setY(oy + 4);
-        searchBox.setWidth(OW - 8);
+        searchBox.setX(ox + 2);
+        searchBox.setY(oy + 3);
+        searchBox.setWidth(OW - 4);
         searchBox.render(g, mx, my, 0);
 
-        int gridX = ox + (OW - PCOLS * 18) / 2;
-        int gridY = oy + 22;
-        int start = pickerPage * PER_PAGE;
-        for (int i = 0; i < PER_PAGE && start + i < filteredItems.size(); i++) {
-            int col = i % PCOLS, row = i / PCOLS;
-            int ix = gridX + col * 18, iy = gridY + row * 18;
-            g.renderItem(new ItemStack(filteredItems.get(start + i)), ix, iy);
-            if (mx >= ix && mx < ix + 16 && my >= iy && my < iy + 16) {
-                g.fill(ix, iy, ix + 16, iy + 16, 0x60FFFFFF);
-                g.renderTooltip(font, Component.literal(
-                        filteredItems.get(start + i).getDescription().getString()), mx, my);
-            }
+        int listY = oy + 20;
+        int sbX   = ox + OW - 6;
+
+        for (int i = 0; i < VISIBLE_ROWS && pickerScroll + i < filteredItems.size(); i++) {
+            Item item = filteredItems.get(pickerScroll + i);
+            int ry = listY + i * ROW_H;
+            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + ROW_H;
+            if (hovered) g.fill(ox, ry, sbX, ry + ROW_H, 0x40FFFFFF);
+            g.renderItem(new ItemStack(item), ox + 2, ry + 1);
+            g.drawString(font, font.plainSubstrByWidth(item.getDescription().getString(), OW - 30),
+                    ox + 20, ry + 5, 0xDDDDDD);
+            if (hovered) g.renderTooltip(font, item.getDescription(), mx, my);
         }
 
-        int total = Math.max(1, (filteredItems.size() + PER_PAGE - 1) / PER_PAGE);
-        int navY = oy + OH - 16;
-        g.drawString(font, "◄", ox + 4, navY, pickerPage > 0 ? 0xFFFFFF : 0x444444);
-        g.drawCenteredString(font, (pickerPage + 1) + " / " + total, ox + OW / 2, navY, 0xAAAAAA);
-        g.drawString(font, "►", ox + OW - 12, navY, pickerPage < total - 1 ? 0xFFFFFF : 0x444444);
-        g.drawString(font, "✕ Close", ox + OW - 50, navY, 0xFF6666);
+        if (filteredItems.size() > VISIBLE_ROWS) {
+            int trackH = VISIBLE_ROWS * ROW_H;
+            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+            int thumbH = Math.max(10, trackH * VISIBLE_ROWS / filteredItems.size());
+            int thumbY = listY + (int)((trackH - thumbH) * (float) pickerScroll
+                    / (filteredItems.size() - VISIBLE_ROWS));
+            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+        }
     }
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -405,36 +429,32 @@ public class GlintEditorScreen extends Screen {
         if (showPicker) {
             int ox = pickerOX(), oy = pickerOY();
 
-            searchBox.mouseClicked(mx, my, btn);
+            // Only forward to the search box when the click is inside it; forwarding unconditionally
+            // calls setFocused(false) for any click outside its bounds, silently breaking keyboard input.
+            if (mx >= ox + 2 && mx < ox + OW - 2 && my >= oy + 3 && my < oy + 17) {
+                searchBox.mouseClicked(mx, my, btn);
+            }
 
-            if (mx >= ox + OW - 50 && mx <= ox + OW && my >= oy + OH - 16 && my <= oy + OH) {
-                showPicker = false; return true;
+            if (mx < ox || mx >= ox + OW || my < oy || my >= oy + OH) {
+                showPicker = false;
+                return true;
             }
-            int navY = oy + OH - 16;
-            if (mx >= ox + 4 && mx <= ox + 18 && my >= navY && my <= oy + OH) {
-                if (pickerPage > 0) pickerPage--; return true;
-            }
-            int total = Math.max(1, (filteredItems.size() + PER_PAGE - 1) / PER_PAGE);
-            if (mx >= ox + OW - 12 && mx <= ox + OW && my >= navY && my <= oy + OH) {
-                if (pickerPage < total - 1) pickerPage++; return true;
-            }
-            int gridX = ox + (OW - PCOLS * 18) / 2, gridY = oy + 22;
-            int start = pickerPage * PER_PAGE;
-            for (int i = 0; i < PER_PAGE && start + i < filteredItems.size(); i++) {
-                int col = i % PCOLS, row = i / PCOLS;
-                int ix = gridX + col * 18, iy = gridY + row * 18;
-                if (mx >= ix && mx < ix + 16 && my >= iy && my < iy + 16) {
-                    previewItem = filteredItems.get(start + i);
+
+            int listY = oy + 20;
+            if (my >= listY && mx < ox + OW - 6) {
+                int row = (int)(my - listY) / ROW_H;
+                int idx = pickerScroll + row;
+                if (row < VISIBLE_ROWS && idx < filteredItems.size()) {
+                    previewItem = filteredItems.get(idx);
                     showPicker = false;
                     refreshPreview();
-                    return true;
                 }
             }
             return true;
         }
 
         // Swatch clicks
-        if (my >= py + 62 && my < py + 78) {
+        if (my >= py + 94 && my < py + 110) {
             for (int i = 0; i < colors.size(); i++) {
                 int sx = px + 100 + i * 18;
                 if (mx >= sx && mx < sx + 16) {
@@ -464,6 +484,19 @@ public class GlintEditorScreen extends Screen {
     public boolean charTyped(char c, int mods) {
         if (showPicker) return searchBox.charTyped(c, mods);
         return super.charTyped(c, mods);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mx, double my, double delta) {
+        if (showPicker) {
+            int ox = pickerOX(), oy = pickerOY();
+            if (mx >= ox && mx < ox + OW && my >= oy && my < oy + OH) {
+                int maxScroll = Math.max(0, filteredItems.size() - VISIBLE_ROWS);
+                pickerScroll = Math.max(0, Math.min(maxScroll, pickerScroll - (int) Math.signum(delta)));
+                return true;
+            }
+        }
+        return super.mouseScrolled(mx, my, delta);
     }
 
     @Override
