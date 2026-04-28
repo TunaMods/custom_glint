@@ -1,4 +1,4 @@
-package com.example.examplemod.module.item;
+package net.tunamods.customglint.module.item;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.InteractionHand;
@@ -8,7 +8,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
-import com.example.examplemod.module.gui.GlintEditorScreen;
+import net.tunamods.customglint.module.gui.GlintEditorScreen;
 import net.minecraftforge.fml.DistExecutor;
 
 public class GlintWandItem extends Item {

@@ -1,4 +1,4 @@
-package com.example.examplemod.mixin;
+package net.tunamods.customglint.common.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -8,15 +8,14 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
-import com.example.examplemod.glint.CustomGlint;
+import net.tunamods.customglint.common.glint.CustomGlint;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Core mixin — intercepts {@link ItemRenderer#render} to inject custom per-item glint rendering.
@@ -107,56 +106,53 @@ public class ItemRendererMixin {
         CURRENT_STACK.remove();
     }
 
-    // ── getFoilBuffer redirects ───────────────────────────────────────────────
+    // ── getFoilBuffer intercepts ─────────────────────────────────────────────
     // getFoilBuffer is called for batched (indirect) rendering — items in world, item frames, etc.
+    // @Inject stacks across mods; isCancelled() check yields to any mod that already handled this item.
 
-    /** SRG target: redirects getFoilBuffer in obfuscated environments. */
-    @Redirect(
-        method = "m_115143_", require = 0,
-        at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;m_115211_(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;")
-    )
-    private VertexConsumer cg_redirectFoilBuffer_srg(MultiBufferSource buffer, RenderType renderType,
-            boolean isItem, boolean hasFoil) {
-        return applyGlint(buffer, renderType, isItem, hasFoil, false);
+    /** SRG target: intercepts getFoilBuffer in obfuscated environments. */
+    @Inject(method = "m_115211_", at = @At("HEAD"), cancellable = true, require = 0)
+    private static void cg_onFoilBuffer_srg(MultiBufferSource buffer, RenderType renderType,
+            boolean isItem, boolean hasFoil, CallbackInfoReturnable<VertexConsumer> cir) {
+        if (cir.isCancelled()) return;
+        VertexConsumer consumer = applyGlint(buffer, renderType);
+        if (consumer != null) cir.setReturnValue(consumer);
     }
 
-    /** Named target: redirects getFoilBuffer in dev/deobf environments. */
-    @Redirect(
-        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
-        require = 0, remap = false,
-        at = @At(value = "INVOKE", remap = false,
-            target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;getFoilBuffer(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;")
+    /** Named target: intercepts getFoilBuffer in dev/deobf environments. */
+    @Inject(
+        method = "getFoilBuffer(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
+        at = @At("HEAD"), cancellable = true, require = 0, remap = false
     )
-    private VertexConsumer cg_redirectFoilBuffer_named(MultiBufferSource buffer, RenderType renderType,
-            boolean isItem, boolean hasFoil) {
-        return applyGlint(buffer, renderType, isItem, hasFoil, false);
+    private static void cg_onFoilBuffer_named(MultiBufferSource buffer, RenderType renderType,
+            boolean isItem, boolean hasFoil, CallbackInfoReturnable<VertexConsumer> cir) {
+        if (cir.isCancelled()) return;
+        VertexConsumer consumer = applyGlint(buffer, renderType);
+        if (consumer != null) cir.setReturnValue(consumer);
     }
 
-    // ── getFoilBufferDirect redirects ─────────────────────────────────────────
+    // ── getFoilBufferDirect intercepts ───────────────────────────────────────
     // getFoilBufferDirect is called for direct (GUI / immediate-mode) rendering.
 
-    /** SRG target: redirects getFoilBufferDirect in obfuscated environments. */
-    @Redirect(
-        method = "m_115143_", require = 0,
-        at = @At(value = "INVOKE",
-            target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;m_115222_(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;")
-    )
-    private VertexConsumer cg_redirectFoilBufferDirect_srg(MultiBufferSource buffer, RenderType renderType,
-            boolean noEntity, boolean withGlint) {
-        return applyGlint(buffer, renderType, noEntity, withGlint, true);
+    /** SRG target: intercepts getFoilBufferDirect in obfuscated environments. */
+    @Inject(method = "m_115222_", at = @At("HEAD"), cancellable = true, require = 0)
+    private static void cg_onFoilBufferDirect_srg(MultiBufferSource buffer, RenderType renderType,
+            boolean noEntity, boolean withGlint, CallbackInfoReturnable<VertexConsumer> cir) {
+        if (cir.isCancelled()) return;
+        VertexConsumer consumer = applyGlint(buffer, renderType);
+        if (consumer != null) cir.setReturnValue(consumer);
     }
 
-    /** Named target: redirects getFoilBufferDirect in dev/deobf environments. */
-    @Redirect(
-        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
-        require = 0, remap = false,
-        at = @At(value = "INVOKE", remap = false,
-            target = "Lnet/minecraft/client/renderer/entity/ItemRenderer;getFoilBufferDirect(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;")
+    /** Named target: intercepts getFoilBufferDirect in dev/deobf environments. */
+    @Inject(
+        method = "getFoilBufferDirect(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
+        at = @At("HEAD"), cancellable = true, require = 0, remap = false
     )
-    private VertexConsumer cg_redirectFoilBufferDirect_named(MultiBufferSource buffer, RenderType renderType,
-            boolean noEntity, boolean withGlint) {
-        return applyGlint(buffer, renderType, noEntity, withGlint, true);
+    private static void cg_onFoilBufferDirect_named(MultiBufferSource buffer, RenderType renderType,
+            boolean noEntity, boolean withGlint, CallbackInfoReturnable<VertexConsumer> cir) {
+        if (cir.isCancelled()) return;
+        VertexConsumer consumer = applyGlint(buffer, renderType);
+        if (consumer != null) cir.setReturnValue(consumer);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -179,34 +175,23 @@ public class ItemRendererMixin {
      * @param isDirect {@code true} when called from the {@code getFoilBufferDirect} path (GUI rendering);
      *                 {@code false} for the batched {@code getFoilBuffer} path.
      */
-    private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType,
-            boolean firstBool, boolean secondBool, boolean isDirect) {
+    private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType) {
         ItemStack stack = CURRENT_STACK.get();
-        if (stack != null) {
-            CustomGlint.Data glint = CustomGlint.read(stack);
-            if (glint != null) {
-                int color = computeAnimatedColor(glint);
+        if (stack == null) return null;
+        CustomGlint.Data glint = CustomGlint.read(stack);
+        if (glint == null) return null;
 
-                // Decompose packed ARGB into normalized floats. Alpha is ignored per the glint contract
-                // (alpha channel of color ints is unused; the shader renders at full opacity).
-                float[] buf = COLOR_BUF.get();
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f; // R
-                buf[1] = ((color >> 8) & 0xFF) / 255.0f;  // G
-                buf[2] = (color & 0xFF) / 255.0f;          // B
-                buf[3] = 1.0f;                              // A — always opaque
+        int color = computeAnimatedColor(glint);
 
-                VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forGlint(glint, buf));
-                VertexConsumer itemConsumer = buffer.getBuffer(renderType);
+        float[] buf = COLOR_BUF.get();
+        buf[0] = ((color >> 16) & 0xFF) / 255.0f;
+        buf[1] = ((color >>  8) & 0xFF) / 255.0f;
+        buf[2] = ( color        & 0xFF) / 255.0f;
+        buf[3] = 1.0f;
 
-                // Write item geometry to both buffers at once: base layer + glint overlay.
-                return VertexMultiConsumer.create(glintConsumer, itemConsumer);
-            }
-        }
-
-        // No custom glint — delegate to vanilla foil behavior unchanged.
-        return isDirect
-            ? ItemRenderer.getFoilBufferDirect(buffer, renderType, firstBool, secondBool)
-            : ItemRenderer.getFoilBuffer(buffer, renderType, firstBool, secondBool);
+        VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forGlint(glint, buf));
+        VertexConsumer itemConsumer  = buffer.getBuffer(renderType);
+        return VertexMultiConsumer.create(glintConsumer, itemConsumer);
     }
 
     /**

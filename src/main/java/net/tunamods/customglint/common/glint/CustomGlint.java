@@ -1,4 +1,4 @@
-package com.example.examplemod.glint;
+package net.tunamods.customglint.common.glint;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -25,11 +25,55 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.SortedMap;
 
+import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
+
 public final class CustomGlint extends RenderStateShard {
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
     public record Data(ResourceLocation design, int[] colors, float speed, boolean interpolate) {}
+
+    // ── Colors ────────────────────────────────────────────────────────────────
+
+    public static int color(String hex) {
+        return Integer.parseUnsignedInt(hex.startsWith("#") ? hex.substring(1) : hex, 16) | 0xFF000000;
+    }
+
+    public static final int RED        = color("FF0000");
+    public static final int ORANGE     = color("FF6600");
+    public static final int YELLOW     = color("FFFF00");
+    public static final int LIME       = color("00FF00");
+    public static final int GREEN      = color("008000");
+    public static final int CYAN       = color("00FFFF");
+    public static final int LIGHT_BLUE = color("00BFFF");
+    public static final int BLUE       = color("0000FF");
+    public static final int PURPLE     = color("8800FF");
+    public static final int MAGENTA    = color("FF00FF");
+    public static final int PINK       = color("FF69B4");
+    public static final int BROWN      = color("8B4513");
+    public static final int WHITE      = color("FFFFFF");
+    public static final int LIGHT_GRAY = color("C0C0C0");
+    public static final int GRAY       = color("808080");
+    public static final int BLACK      = color("000000");
+
+    // ── Designs ───────────────────────────────────────────────────────────────
+
+    public static final ResourceLocation CHECKER    = new ResourceLocation(MOD_ID, "textures/glint/checker.png");
+    public static final ResourceLocation CROSSHATCH = new ResourceLocation(MOD_ID, "textures/glint/crosshatch.png");
+    public static final ResourceLocation DIAMONDS   = new ResourceLocation(MOD_ID, "textures/glint/diamonds.png");
+    public static final ResourceLocation DOTS       = new ResourceLocation(MOD_ID, "textures/glint/dots.png");
+    public static final ResourceLocation FIRE       = new ResourceLocation(MOD_ID, "textures/glint/fire.png");
+    public static final ResourceLocation GRID       = new ResourceLocation(MOD_ID, "textures/glint/grid.png");
+    public static final ResourceLocation HEXAGON    = new ResourceLocation(MOD_ID, "textures/glint/hexagon.png");
+    public static final ResourceLocation PULSE      = new ResourceLocation(MOD_ID, "textures/glint/pulse.png");
+    public static final ResourceLocation RIPPLE     = new ResourceLocation(MOD_ID, "textures/glint/ripple.png");
+    public static final ResourceLocation SCALES     = new ResourceLocation(MOD_ID, "textures/glint/scales.png");
+    public static final ResourceLocation SPARKLE    = new ResourceLocation(MOD_ID, "textures/glint/sparkle.png");
+    public static final ResourceLocation STARS      = new ResourceLocation(MOD_ID, "textures/glint/stars.png");
+    public static final ResourceLocation STRIPES    = new ResourceLocation(MOD_ID, "textures/glint/stripes.png");
+    public static final ResourceLocation SWIRL      = new ResourceLocation(MOD_ID, "textures/glint/swirl.png");
+    public static final ResourceLocation WAVE       = new ResourceLocation(MOD_ID, "textures/glint/wave.png");
+    public static final ResourceLocation ZIGZAG     = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
 
     // ── NBT ──────────────────────────────────────────────────────────────────
 
@@ -130,7 +174,7 @@ public final class CustomGlint extends RenderStateShard {
         }
 
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
-        ResourceLocation loc = new ResourceLocation("examplemod", "glint/" + safePath);
+        ResourceLocation loc = new ResourceLocation(MOD_ID, "glint/" + safePath);
         mc.getTextureManager().register(loc, new DynamicTexture(gray));
         return loc;
     }
@@ -139,8 +183,60 @@ public final class CustomGlint extends RenderStateShard {
 
     public static SortedMap<RenderType, BufferBuilder> fixedBufferRegistry;
 
-    private static final Map<String, float[]>    GLINT_COLORS = new HashMap<>();
-    private static final Map<String, RenderType> BY_GLINT     = new HashMap<>();
+    private static final Map<String, float[]>    GLINT_COLORS     = new HashMap<>();
+    private static final Map<String, RenderType> BY_GLINT         = new HashMap<>();
+    private static final Map<String, RenderType> BY_ARMOR_GLINT   = new HashMap<>();
+
+    public static RenderType forArmorGlint(Data glint, float[] frameColor) {
+        String key = "armor|" + glint.design() + "|" + glint.speed();
+        float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
+        System.arraycopy(frameColor, 0, holder, 0, 4);
+        return BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
+            ResourceLocation tex = glint.design();
+            RenderType rt = RenderType.create(
+                MOD_ID + ":custom_armor_glint",
+                DefaultVertexFormat.POSITION_TEX,
+                VertexFormat.Mode.QUADS,
+                256,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                    .setShaderState(RENDERTYPE_GLINT_SHADER)
+                    .setTextureState(new TextureStateShard(tex, false, false) {
+                        @Override public void setupRenderState() {
+                            RenderSystem.setShaderTexture(0, getTexture(tex));
+                            RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                        }
+                        @Override public void clearRenderState() {
+                            super.clearRenderState();
+                            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                        }
+                    })
+                    .setWriteMaskState(COLOR_WRITE)
+                    .setCullState(NO_CULL)
+                    .setDepthTestState(LEQUAL_DEPTH_TEST)
+                    .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                    .setTransparencyState(GLINT_TRANSPARENCY)
+                    .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_armor_glint_texturing", () -> {
+                            long t = (long)(Util.getMillis() * 8.0 * glint.speed());
+                            float f  = (float)(t % 110000L) / 110000.0F;
+                            float f1 = (float)(t % 30000L)  /  30000.0F;
+                            Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
+                            m.rotateZ((float)(Math.PI / 3.0));
+                            m.translate(f, -f1, 0.0F);
+                            m.rotateZ((float)(Math.PI / 3.0));
+                            m.translate(-f, f1, 0.0F);
+                            m.rotateZ((float)(Math.PI / 3.0));
+                            m.translate(f, f1, 0.0F);
+                            m.scale(0.16f);
+                            RenderSystem.setTextureMatrix(m);
+                        }, RenderSystem::resetTextureMatrix))
+                    .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+            return rt;
+        });
+    }
 
     public static RenderType forGlint(Data glint, float[] frameColor) {
         String key = glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.interpolate();
@@ -149,7 +245,7 @@ public final class CustomGlint extends RenderStateShard {
         return BY_GLINT.computeIfAbsent(key, k -> {
             ResourceLocation tex = glint.design();
             RenderType rt = RenderType.create(
-                "examplemod:custom_glint",
+                MOD_ID + ":custom_glint",
                 DefaultVertexFormat.POSITION_TEX,
                 VertexFormat.Mode.QUADS,
                 256,
@@ -171,7 +267,7 @@ public final class CustomGlint extends RenderStateShard {
                     .setCullState(NO_CULL)
                     .setDepthTestState(EQUAL_DEPTH_TEST)
                     .setTransparencyState(GLINT_TRANSPARENCY)
-                    .setTexturingState(new TexturingStateShard("examplemod:custom_glint_texturing", () -> {
+                    .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_texturing", () -> {
                             long t = (long)(Util.getMillis() * 8.0 * glint.speed());
                             float f  = (float)(t % 110000L) / 110000.0F;
                             float f1 = (float)(t % 30000L)  /  30000.0F;

@@ -1,4 +1,4 @@
-package com.example.examplemod.module.network;
+package net.tunamods.customglint.module.network;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkDirection;
@@ -7,12 +7,14 @@ import net.minecraftforge.network.simple.SimpleChannel;
 
 import java.util.Optional;
 
+import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
+
 public class ModNetworking {
 
     private static final String PROTOCOL = "1";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-            new ResourceLocation("examplemod", "main"),
+            new ResourceLocation(MOD_ID, "main"),
             () -> PROTOCOL,
             PROTOCOL::equals,
             PROTOCOL::equals
