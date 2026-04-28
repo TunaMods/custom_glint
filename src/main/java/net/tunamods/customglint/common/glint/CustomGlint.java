@@ -31,7 +31,7 @@ public final class CustomGlint extends RenderStateShard {
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
-    public record Data(ResourceLocation design, int[] colors, float speed, boolean interpolate) {}
+    public record Data(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale) {}
 
     // ── Colors ────────────────────────────────────────────────────────────────
 
@@ -77,11 +77,12 @@ public final class CustomGlint extends RenderStateShard {
 
     // ── NBT ──────────────────────────────────────────────────────────────────
 
-    private static final String TAG           = "custom_glint";
-    private static final String DESIGN_KEY    = "design";
-    private static final String COLORS_KEY    = "colors";
-    private static final String SPEED_KEY     = "speed";
+    private static final String TAG             = "custom_glint";
+    private static final String DESIGN_KEY      = "design";
+    private static final String COLORS_KEY      = "colors";
+    private static final String SPEED_KEY       = "speed";
     private static final String INTERPOLATE_KEY = "interpolate";
+    private static final String SCALE_KEY       = "scale";
 
     @Nullable
     public static Data read(ItemStack stack) {
@@ -102,19 +103,23 @@ public final class CustomGlint extends RenderStateShard {
 
         boolean interpolate = !tag.contains(INTERPOLATE_KEY) || tag.getBoolean(INTERPOLATE_KEY);
 
-        return new Data(new ResourceLocation(design), colors, speed, interpolate);
+        float patternScale = tag.contains(SCALE_KEY) ? tag.getFloat(SCALE_KEY) : 1.0f;
+        if (patternScale <= 0) patternScale = 1.0f;
+
+        return new Data(new ResourceLocation(design), colors, speed, interpolate, patternScale);
     }
 
     public static boolean has(ItemStack stack) {
         return stack.hasTag() && stack.getTag().contains(TAG);
     }
 
-    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate) {
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale) {
         CompoundTag tag = new CompoundTag();
         tag.putString(DESIGN_KEY, design.toString());
         tag.putIntArray(COLORS_KEY, colors);
         tag.putFloat(SPEED_KEY, speed);
         tag.putBoolean(INTERPOLATE_KEY, interpolate);
+        tag.putFloat(SCALE_KEY, patternScale);
         stack.getOrCreateTag().put(TAG, tag);
     }
 
@@ -188,7 +193,7 @@ public final class CustomGlint extends RenderStateShard {
     private static final Map<String, RenderType> BY_ARMOR_GLINT   = new HashMap<>();
 
     public static RenderType forArmorGlint(Data glint, float[] frameColor) {
-        String key = "armor|" + glint.design() + "|" + glint.speed();
+        String key = "armor|" + glint.design() + "|" + glint.speed() + "|" + glint.patternScale();
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
@@ -214,7 +219,18 @@ public final class CustomGlint extends RenderStateShard {
                     })
                     .setWriteMaskState(COLOR_WRITE)
                     .setCullState(NO_CULL)
-                    .setDepthTestState(LEQUAL_DEPTH_TEST)
+                    // TRIED: EQUAL_DEPTH_TEST (attempt 1: shared buffer only, no fixedBufferRegistry;
+                    // attempt 2: immediate BufferBuilder + bs.endBatch() pre-flush before glint render;
+                    // attempt 3: rename type to "~customglint:..." so it sorts after
+                    //   "minecraft:armor_cutout_no_cull" in fixedBuffers flush order, theory being
+                    //   armor depth wasn't written yet — all three → glint completely invisible)
+                    // LEQUAL required for visibility but bleeds through transparent cutout holes.
+                    // Root cause of attempt 1-3 failure: armorCutoutNoCull itself uses
+                    // VIEW_OFFSET_Z_LAYERING (polygonOffset -1,-10), writing depth as D-ε. All prior
+                    // EQUAL attempts also removed VIEW_OFFSET_Z_LAYERING, so the glint tested at raw
+                    // D while the buffer held D-ε — they never matched. Fix: EQUAL + keep
+                    // VIEW_OFFSET_Z_LAYERING so the glint also tests at D-ε, matching exactly.
+                    .setDepthTestState(EQUAL_DEPTH_TEST)
                     .setLayeringState(VIEW_OFFSET_Z_LAYERING)
                     .setTransparencyState(GLINT_TRANSPARENCY)
                     .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_armor_glint_texturing", () -> {
@@ -228,7 +244,7 @@ public final class CustomGlint extends RenderStateShard {
                             m.translate(-f, f1, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
                             m.translate(f, f1, 0.0F);
-                            m.scale(0.16f);
+                            m.scale(0.16f * glint.patternScale());
                             RenderSystem.setTextureMatrix(m);
                         }, RenderSystem::resetTextureMatrix))
                     .createCompositeState(false));
@@ -238,8 +254,12 @@ public final class CustomGlint extends RenderStateShard {
         });
     }
 
-    public static RenderType forGlint(Data glint, float[] frameColor) {
-        String key = glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.interpolate();
+    public static RenderType forGlint(Data glint, float[] frameColor, boolean isItem) {
+        // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
+        // isItem=false → 3D entity model (trident, etc.) → scale 0.16 matches vanilla entityGlint().
+        // Trident issue: always using 8.0 caused tiny tiling on 3D model faces.
+        float scale = isItem ? 8.0f : 0.16f;
+        String key = glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.interpolate() + "|" + isItem + "|" + glint.patternScale();
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_GLINT.computeIfAbsent(key, k -> {
@@ -278,7 +298,7 @@ public final class CustomGlint extends RenderStateShard {
                             m.translate(-f, 0.0F, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
                             m.translate(f + f1, 0.0F, 0.0F);
-                            m.scale(8.0f);
+                            m.scale(scale * glint.patternScale());
                             RenderSystem.setTextureMatrix(m);
                         }, RenderSystem::resetTextureMatrix))
                     .createCompositeState(false));
