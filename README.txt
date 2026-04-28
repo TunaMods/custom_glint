@@ -18,7 +18,7 @@ OWN MOD" below.
 
 FORMAT
 ------
-  /give @p <item>{custom_glint:{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>}} 1
+  /give @p <item>{customglint:{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>}} 1
 
   scale and simultaneous are optional; defaults shown below.
 
@@ -35,11 +35,11 @@ FORMAT
 
 EXAMPLE
 -------
-  /give @p minecraft:diamond_sword{custom_glint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b}} 1
+  /give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b}} 1
 
 REMOVE GLINT
 ------------
-  /item replace entity @s weapon.mainhand nbt remove custom_glint
+  /item replace entity @s weapon.mainhand nbt remove customglint
 
 NOTES
 -----
@@ -115,11 +115,9 @@ Multiple mods can embed this code simultaneously without conflicting:
     Every inject checks isCancelled() first and yields if another mod already
     handled the item, so mods compose cleanly.
 
-  - The one manual step: change the TAG constant in CustomGlint.java from
-    "custom_glint" to something unique to your mod (e.g. "mymod_glint").
-    If two mods share the same TAG they will read and overwrite each other's
-    NBT data. MOD_ID alone does not protect this — TAG must be changed
-    separately.
+  - NBT key collisions are avoided automatically. TAG is derived from MOD_ID,
+    so changing MOD_ID (which you must do anyway) also changes the NBT key.
+    No separate manual step required.
 
 STEP 1 — Copy source files
 
@@ -137,12 +135,8 @@ STEP 2 — Wire MOD_ID
     import static <package>.YourMod.MOD_ID;
 
   Change that import to point to your own main mod class. The field must be
-  named MOD_ID. That one field drives all ResourceLocation namespaces and
-  render type names — nothing else needs changing.
-
-  Optional: change the TAG constant in CustomGlint.java from "custom_glint"
-  to something unique to your mod to avoid NBT key collisions if multiple
-  mods embed this code.
+  named MOD_ID. That one field drives all ResourceLocation namespaces,
+  render type names, and the NBT key — nothing else needs changing.
 
 STEP 3 — Copy textures
 
@@ -188,7 +182,7 @@ STEP 4 — Mixin config
 ================================================================================
 
 ItemRendererMixin intercepts getFoilBuffer / getFoilBufferDirect every render
-frame. If the item has a custom_glint NBT tag, it reads the Data record and
+frame. If the item has a customglint NBT tag, it reads the Data record and
 returns a VertexMultiConsumer that writes geometry to the custom glint layer(s)
 and the item's base layer simultaneously. In simultaneous mode one consumer is
 created per color slot; in cycle mode a single animated color is computed for
