@@ -27,7 +27,7 @@ public class GlintEditorScreen extends Screen {
 
     // ── Layout constants ────────────────────────────────────────────────────
     private static final int PANEL_W    = 300;
-    private static final int PANEL_H    = 244;
+    private static final int PANEL_H    = 260;
     private static final int PREVIEW_SZ = 80;
 
     private static final String[] DESIGNS = {
@@ -55,6 +55,7 @@ public class GlintEditorScreen extends Screen {
     private final List<Integer> colors      = new ArrayList<>();
     private float           speed           = 1.0f;
     private boolean         interpolate     = true;
+    private float           patternScale    = 1.0f;
     private int             editingColorIdx = 0;
 
     private int editR = 0x88, editG = 0x44, editB = 0xEE;
@@ -88,8 +89,9 @@ public class GlintEditorScreen extends Screen {
             if (d != null) {
                 selectedDesign = designShortName(d.design());
                 for (int c : d.colors()) colors.add(c);
-                speed       = d.speed();
-                interpolate = d.interpolate();
+                speed        = d.speed();
+                interpolate  = d.interpolate();
+                patternScale = d.patternScale();
             }
         }
         if (colors.isEmpty()) colors.add(0xFF8844EE);
@@ -171,7 +173,7 @@ public class GlintEditorScreen extends Screen {
         previewStack = new ItemStack(previewItem);
         if (!colors.isEmpty()) {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
-            CustomGlint.write(previewStack, designRL(selectedDesign), arr, speed, interpolate);
+            CustomGlint.write(previewStack, designRL(selectedDesign), arr, speed, interpolate, patternScale);
         }
     }
 
@@ -250,13 +252,25 @@ public class GlintEditorScreen extends Screen {
             refreshPreview();
         }).bounds(px + 196, py + 180, 14, 14).build());
 
+        // Pattern Scale [−]
+        addRenderableWidget(Button.builder(Component.literal("−"), b -> {
+            patternScale = Math.max(0.25f, Math.round((patternScale - 0.25f) * 4) / 4.0f);
+            refreshPreview();
+        }).bounds(px + 148, py + 196, 14, 14).build());
+
+        // Pattern Scale [+]
+        addRenderableWidget(Button.builder(Component.literal("+"), b -> {
+            patternScale = Math.min(4.0f, Math.round((patternScale + 0.25f) * 4) / 4.0f);
+            refreshPreview();
+        }).bounds(px + 196, py + 196, 14, 14).build());
+
         // Smooth toggle
         addRenderableWidget(Button.builder(
                 Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")), b -> {
             interpolate = !interpolate;
             b.setMessage(Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")));
             refreshPreview();
-        }).bounds(px + 100, py + 198, 100, 14).build());
+        }).bounds(px + 100, py + 214, 100, 14).build());
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
@@ -272,21 +286,21 @@ public class GlintEditorScreen extends Screen {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
             String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, itemId));
-        }).bounds(px + 8, py + 224, 90, 14).build());
+                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, itemId));
+        }).bounds(px + 8, py + 240, 90, 14).build());
 
         // Apply glint to item already in the other hand
         addRenderableWidget(Button.builder(Component.literal("Apply to Hand"), b -> {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, ""));
-        }).bounds(px + 105, py + 224, 90, 14).build());
+                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, ""));
+        }).bounds(px + 105, py + 240, 90, 14).build());
 
         // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, true, "", new int[0], 1.0f, true, ""));
-        }).bounds(px + 202, py + 224, 90, 14).build());
+                    wandHand, true, "", new int[0], 1.0f, true, 1.0f, ""));
+        }).bounds(px + 202, py + 240, 90, 14).build());
 
         // Item picker search box — managed manually
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.literal("Search items..."));
@@ -339,7 +353,8 @@ public class GlintEditorScreen extends Screen {
         g.drawString(font, "R:", px + 100, py + 130, 0xFF6666);
         g.drawString(font, "G:", px + 100, py + 146, 0x66FF66);
         g.drawString(font, "B:", px + 100, py + 162, 0x6666FF);
-        g.drawString(font, "Speed:", px + 100, py + 182, 0xAAAAAA);
+        g.drawString(font, "Speed:",  px + 100, py + 182, 0xAAAAAA);
+        g.drawString(font, "Scale:",  px + 100, py + 198, 0xAAAAAA);
 
         // Design selection highlight (behind buttons)
         for (int i = 0; i < DESIGNS.length; i++) {
@@ -375,8 +390,8 @@ public class GlintEditorScreen extends Screen {
         g.fill(px + 120, py + 112, px + 132, py + 124,
                0xFF000000 | (colors.get(editingColorIdx) & 0xFFFFFF));
 
-        // Speed value between the two speed buttons
-        g.drawCenteredString(font, String.format("%.2f×", speed), px + 175, py + 182, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", speed),        px + 175, py + 182, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", patternScale), px + 175, py + 198, 0xFFFFFF);
 
         // Item picker overlay — translated forward so it clips above the item preview (Z=200) and widgets
         if (showPicker) {

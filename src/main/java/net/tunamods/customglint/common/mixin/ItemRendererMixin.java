@@ -115,7 +115,7 @@ public class ItemRendererMixin {
     private static void cg_onFoilBuffer_srg(MultiBufferSource buffer, RenderType renderType,
             boolean isItem, boolean hasFoil, CallbackInfoReturnable<VertexConsumer> cir) {
         if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType);
+        VertexConsumer consumer = applyGlint(buffer, renderType, isItem);
         if (consumer != null) cir.setReturnValue(consumer);
     }
 
@@ -127,7 +127,7 @@ public class ItemRendererMixin {
     private static void cg_onFoilBuffer_named(MultiBufferSource buffer, RenderType renderType,
             boolean isItem, boolean hasFoil, CallbackInfoReturnable<VertexConsumer> cir) {
         if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType);
+        VertexConsumer consumer = applyGlint(buffer, renderType, isItem);
         if (consumer != null) cir.setReturnValue(consumer);
     }
 
@@ -139,7 +139,7 @@ public class ItemRendererMixin {
     private static void cg_onFoilBufferDirect_srg(MultiBufferSource buffer, RenderType renderType,
             boolean noEntity, boolean withGlint, CallbackInfoReturnable<VertexConsumer> cir) {
         if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType);
+        VertexConsumer consumer = applyGlint(buffer, renderType, noEntity);
         if (consumer != null) cir.setReturnValue(consumer);
     }
 
@@ -151,7 +151,7 @@ public class ItemRendererMixin {
     private static void cg_onFoilBufferDirect_named(MultiBufferSource buffer, RenderType renderType,
             boolean noEntity, boolean withGlint, CallbackInfoReturnable<VertexConsumer> cir) {
         if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType);
+        VertexConsumer consumer = applyGlint(buffer, renderType, noEntity);
         if (consumer != null) cir.setReturnValue(consumer);
     }
 
@@ -175,7 +175,7 @@ public class ItemRendererMixin {
      * @param isDirect {@code true} when called from the {@code getFoilBufferDirect} path (GUI rendering);
      *                 {@code false} for the batched {@code getFoilBuffer} path.
      */
-    private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType) {
+    private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
         ItemStack stack = CURRENT_STACK.get();
         if (stack == null) return null;
         CustomGlint.Data glint = CustomGlint.read(stack);
@@ -189,7 +189,7 @@ public class ItemRendererMixin {
         buf[2] = ( color        & 0xFF) / 255.0f;
         buf[3] = 1.0f;
 
-        VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forGlint(glint, buf));
+        VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forGlint(glint, buf, isItem));
         VertexConsumer itemConsumer  = buffer.getBuffer(renderType);
         return VertexMultiConsumer.create(glintConsumer, itemConsumer);
     }
