@@ -56,6 +56,7 @@ public class GlintEditorScreen extends Screen {
     private float           speed           = 1.0f;
     private boolean         interpolate     = true;
     private float           patternScale    = 1.0f;
+    private boolean         simultaneous    = true;
     private int             editingColorIdx = 0;
 
     private int editR = 0x88, editG = 0x44, editB = 0xEE;
@@ -91,7 +92,8 @@ public class GlintEditorScreen extends Screen {
                 for (int c : d.colors()) colors.add(c);
                 speed        = d.speed();
                 interpolate  = d.interpolate();
-                patternScale = d.patternScale();
+                patternScale  = d.patternScale();
+                simultaneous  = d.simultaneous();
             }
         }
         if (colors.isEmpty()) colors.add(0xFF8844EE);
@@ -173,7 +175,7 @@ public class GlintEditorScreen extends Screen {
         previewStack = new ItemStack(previewItem);
         if (!colors.isEmpty()) {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
-            CustomGlint.write(previewStack, designRL(selectedDesign), arr, speed, interpolate, patternScale);
+            CustomGlint.write(previewStack, designRL(selectedDesign), arr, speed, interpolate, patternScale, simultaneous);
         }
     }
 
@@ -270,7 +272,15 @@ public class GlintEditorScreen extends Screen {
             interpolate = !interpolate;
             b.setMessage(Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")));
             refreshPreview();
-        }).bounds(px + 100, py + 214, 100, 14).build());
+        }).bounds(px + 100, py + 214, 90, 14).build());
+
+        // Simultaneous toggle
+        addRenderableWidget(Button.builder(
+                Component.literal(simultaneous ? "Mode: All" : "Mode: Cycle"), b -> {
+            simultaneous = !simultaneous;
+            b.setMessage(Component.literal(simultaneous ? "Mode: All" : "Mode: Cycle"));
+            refreshPreview();
+        }).bounds(px + 196, py + 214, 96, 14).build());
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
@@ -286,20 +296,20 @@ public class GlintEditorScreen extends Screen {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
             String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, itemId));
+                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, simultaneous, itemId));
         }).bounds(px + 8, py + 240, 90, 14).build());
 
         // Apply glint to item already in the other hand
         addRenderableWidget(Button.builder(Component.literal("Apply to Hand"), b -> {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, ""));
+                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, simultaneous, ""));
         }).bounds(px + 105, py + 240, 90, 14).build());
 
         // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, true, "", new int[0], 1.0f, true, 1.0f, ""));
+                    wandHand, true, "", new int[0], 1.0f, true, 1.0f, true, ""));
         }).bounds(px + 202, py + 240, 90, 14).build());
 
         // Item picker search box — managed manually

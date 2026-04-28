@@ -31,7 +31,7 @@ public final class CustomGlint extends RenderStateShard {
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
-    public record Data(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale) {}
+    public record Data(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {}
 
     // ── Colors ────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,8 @@ public final class CustomGlint extends RenderStateShard {
     private static final String COLORS_KEY      = "colors";
     private static final String SPEED_KEY       = "speed";
     private static final String INTERPOLATE_KEY = "interpolate";
-    private static final String SCALE_KEY       = "scale";
+    private static final String SCALE_KEY         = "scale";
+    private static final String SIMULTANEOUS_KEY  = "simultaneous";
 
     @Nullable
     public static Data read(ItemStack stack) {
@@ -106,20 +107,23 @@ public final class CustomGlint extends RenderStateShard {
         float patternScale = tag.contains(SCALE_KEY) ? tag.getFloat(SCALE_KEY) : 1.0f;
         if (patternScale <= 0) patternScale = 1.0f;
 
-        return new Data(new ResourceLocation(design), colors, speed, interpolate, patternScale);
+        boolean simultaneous = !tag.contains(SIMULTANEOUS_KEY) || tag.getBoolean(SIMULTANEOUS_KEY);
+
+        return new Data(new ResourceLocation(design), colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static boolean has(ItemStack stack) {
         return stack.hasTag() && stack.getTag().contains(TAG);
     }
 
-    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale) {
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
         CompoundTag tag = new CompoundTag();
         tag.putString(DESIGN_KEY, design.toString());
         tag.putIntArray(COLORS_KEY, colors);
         tag.putFloat(SPEED_KEY, speed);
         tag.putBoolean(INTERPOLATE_KEY, interpolate);
         tag.putFloat(SCALE_KEY, patternScale);
+        tag.putBoolean(SIMULTANEOUS_KEY, simultaneous);
         stack.getOrCreateTag().put(TAG, tag);
     }
 
@@ -192,8 +196,8 @@ public final class CustomGlint extends RenderStateShard {
     private static final Map<String, RenderType> BY_GLINT         = new HashMap<>();
     private static final Map<String, RenderType> BY_ARMOR_GLINT   = new HashMap<>();
 
-    public static RenderType forArmorGlint(Data glint, float[] frameColor) {
-        String key = "armor|" + glint.design() + "|" + glint.speed() + "|" + glint.patternScale();
+    public static RenderType forArmorGlint(Data glint, float[] frameColor, int colorIdx) {
+        String key = "armor|" + glint.design() + "|" + glint.speed() + "|" + glint.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
@@ -234,8 +238,9 @@ public final class CustomGlint extends RenderStateShard {
                     .setLayeringState(VIEW_OFFSET_Z_LAYERING)
                     .setTransparencyState(GLINT_TRANSPARENCY)
                     .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_armor_glint_texturing", () -> {
+                            float phase = (float)colorIdx / Math.max(1, glint.colors().length);
                             long t = (long)(Util.getMillis() * 8.0 * glint.speed());
-                            float f  = (float)(t % 110000L) / 110000.0F;
+                            float f  = (float)(t % 110000L) / 110000.0F + phase;
                             float f1 = (float)(t % 30000L)  /  30000.0F;
                             Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
@@ -254,12 +259,12 @@ public final class CustomGlint extends RenderStateShard {
         });
     }
 
-    public static RenderType forGlint(Data glint, float[] frameColor, boolean isItem) {
+    public static RenderType forGlint(Data glint, float[] frameColor, boolean isItem, int colorIdx) {
         // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
         // isItem=false → 3D entity model (trident, etc.) → scale 0.16 matches vanilla entityGlint().
         // Trident issue: always using 8.0 caused tiny tiling on 3D model faces.
         float scale = isItem ? 8.0f : 0.16f;
-        String key = glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.interpolate() + "|" + isItem + "|" + glint.patternScale();
+        String key = glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.interpolate() + "|" + isItem + "|" + glint.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_GLINT.computeIfAbsent(key, k -> {
@@ -288,8 +293,9 @@ public final class CustomGlint extends RenderStateShard {
                     .setDepthTestState(EQUAL_DEPTH_TEST)
                     .setTransparencyState(GLINT_TRANSPARENCY)
                     .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_texturing", () -> {
+                            float phase = (float)colorIdx / Math.max(1, glint.colors().length);
                             long t = (long)(Util.getMillis() * 8.0 * glint.speed());
-                            float f  = (float)(t % 110000L) / 110000.0F;
+                            float f  = (float)(t % 110000L) / 110000.0F + phase;
                             float f1 = (float)(t % 30000L)  /  30000.0F;
                             Matrix4f m = new Matrix4f().translation(-f, 0.0F, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
