@@ -11,9 +11,7 @@ import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
-import com.example.examplemod.glint.CustomGlintData;
-import com.example.examplemod.glint.CustomGlintNbt;
-import com.example.examplemod.glint.CustomGlintRenderTypes;
+import com.example.examplemod.glint.CustomGlint;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -32,7 +30,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *       composite {@link VertexConsumer} for the item geometry.</li>
  *   <li>{@code @Redirect} on those calls routes them to {@link #applyGlint}, which:
  *     <ul>
- *       <li>Reads {@link CustomGlintData} from the captured stack's NBT.</li>
+ *       <li>Reads {@link CustomGlint.Data} from the captured stack's NBT.</li>
  *       <li>If a custom glint is present: computes the current animated color, writes the texture
  *           and color into {@link CustomGlintRenderTypes}'s ThreadLocals, acquires the pre-allocated
  *           glint {@link com.mojang.blaze3d.vertex.BufferBuilder} via {@code buffer.getBuffer(FIXED)},
@@ -185,7 +183,7 @@ public class ItemRendererMixin {
             boolean firstBool, boolean secondBool, boolean isDirect) {
         ItemStack stack = CURRENT_STACK.get();
         if (stack != null) {
-            CustomGlintData glint = CustomGlintNbt.read(stack);
+            CustomGlint.Data glint = CustomGlint.read(stack);
             if (glint != null) {
                 int color = computeAnimatedColor(glint);
 
@@ -197,7 +195,7 @@ public class ItemRendererMixin {
                 buf[2] = (color & 0xFF) / 255.0f;          // B
                 buf[3] = 1.0f;                              // A — always opaque
 
-                VertexConsumer glintConsumer = buffer.getBuffer(CustomGlintRenderTypes.forGlint(glint, buf));
+                VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forGlint(glint, buf));
                 VertexConsumer itemConsumer = buffer.getBuffer(renderType);
 
                 // Write item geometry to both buffers at once: base layer + glint overlay.
@@ -224,7 +222,7 @@ public class ItemRendererMixin {
      * <p>Full cycle length = {@code (20 * colors.length) / speed} ticks.
      * At {@code speed=1.0}: 20 ticks per color. {@code speed=2.0}: 10 ticks/color. {@code speed=0.5}: 40 ticks/color.
      */
-    private static int computeAnimatedColor(CustomGlintData glint) {
+    private static int computeAnimatedColor(CustomGlint.Data glint) {
         int[] colors = glint.colors();
         if (colors.length == 1) return colors[0];
 
