@@ -4,11 +4,14 @@
 
 HOW TO READ THESE
 -----------------
-  design      → which pattern PNG is used (see "DESIGNS" section below)
-  colors      → array of signed 32-bit ARGB ints (alpha byte is ignored at render)
-                single entry = static color, multiple = animated cycle
-  speed       → animation rate: 1.0 = 20 ticks/color, 2.0 = faster, 0.5 = slower
-  interpolate → 1b = lerp between colors, 0b = hard switch
+  design       → which pattern PNG is used (see "DESIGNS" section below)
+  colors       → array of signed 32-bit ARGB ints (alpha byte is ignored at render)
+                 simultaneous:1b (default): all colors rendered at once as overlapping layers
+                 simultaneous:0b: colors cycle one at a time
+  speed        → animation rate: 1.0 = 20 ticks/color, 2.0 = faster, 0.5 = slower
+  interpolate  → 1b = lerp between colors, 0b = hard switch (cycle mode only)
+  scale        → texture tiling multiplier; 1.0 = default pattern size (optional, default 1.0)
+  simultaneous → 1b = all colors at once (default), 0b = cycle one at a time (optional)
 
 COLOR REFERENCE (hex → signed int)
 ------------------------------------
@@ -37,16 +40,24 @@ COLOR REFERENCE (hex → signed int)
   White        0xFFFFFF  →        -1
   Black        0x000000  → -16777216
 
-DESIGNS
---------
-  customglint:textures/glint/wave.png
-  customglint:textures/glint/sparkle.png
-  customglint:textures/glint/fire.png
-  customglint:textures/glint/pulse.png
-  customglint:textures/glint/stripes.png
-  customglint:textures/glint/grid.png
-  customglint:textures/glint/scales.png
+DESIGNS (16 built-in)
+----------------------
+  customglint:textures/glint/checker.png
+  customglint:textures/glint/crosshatch.png
   customglint:textures/glint/diamonds.png
+  customglint:textures/glint/dots.png
+  customglint:textures/glint/fire.png
+  customglint:textures/glint/grid.png
+  customglint:textures/glint/hexagon.png
+  customglint:textures/glint/pulse.png
+  customglint:textures/glint/ripple.png
+  customglint:textures/glint/scales.png
+  customglint:textures/glint/sparkle.png
+  customglint:textures/glint/stars.png
+  customglint:textures/glint/stripes.png
+  customglint:textures/glint/swirl.png
+  customglint:textures/glint/wave.png
+  customglint:textures/glint/zigzag.png
 
 ================================================================================
   SINGLE-COLOR STATIC GLINTS (one color per design)
