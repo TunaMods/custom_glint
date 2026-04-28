@@ -20,12 +20,18 @@ FORMAT
 ------
   /give @p <item>{custom_glint:{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>}} 1
 
-  design      — pattern ResourceLocation: customglint:textures/glint/<name>.png
-  colors      — one or more signed 32-bit ARGB ints (alpha ignored)
-                single entry = static color, multiple entries = animated cycle
-  speed       — animation rate multiplier: 1.0 = 20 ticks/color
-                0.25 = slow, 8.0 = fast; values outside this range work via command
-  interpolate — 1b = smooth lerp between colors, 0b = hard cut
+  scale and simultaneous are optional; defaults shown below.
+
+  design       — pattern ResourceLocation: customglint:textures/glint/<name>.png
+  colors       — one or more signed 32-bit ARGB ints (alpha ignored)
+                 simultaneous:1b (default): all colors rendered at once as overlapping layers
+                 simultaneous:0b: colors cycle one at a time
+  speed        — animation rate multiplier: 1.0 = 20 ticks/color
+                 0.25 = slow, 8.0 = fast; values outside this range work via command
+  interpolate  — 1b = smooth lerp between colors, 0b = hard cut (cycle mode only)
+  scale        — texture tiling multiplier; 1.0 = default pattern size (default: 1.0)
+  simultaneous — 1b = render all colors as separate layers at once (default)
+                 0b = cycle through colors one at a time
 
 EXAMPLE
 -------
@@ -39,7 +45,9 @@ NOTES
 -----
   - The alpha byte of each color is always ignored. Full opacity only.
   - Speed <= 0 is clamped to 1.0 at read time.
+  - scale <= 0 is clamped to 1.0 at read time.
   - interpolate:0b with only 1 color is identical to interpolate:1b.
+  - simultaneous:1b with only 1 color is identical to simultaneous:0b.
 
 
 ================================================================================
@@ -177,10 +185,15 @@ STEP 4 — Mixin config
 ================================================================================
 
 ItemRendererMixin intercepts getFoilBuffer / getFoilBufferDirect every render
-frame. If the item has a custom_glint NBT tag, it reads the Data record,
-computes the animated color for the current tick, and returns a
-VertexMultiConsumer that draws the custom glint layer on top of the vanilla
-glint.
+frame. If the item has a custom_glint NBT tag, it reads the Data record and
+returns a VertexMultiConsumer that writes geometry to the custom glint layer(s)
+and the item's base layer simultaneously. In simultaneous mode one consumer is
+created per color slot; in cycle mode a single animated color is computed for
+the current tick.
+
+HumanoidArmorLayerMixin applies the same logic to worn armor, using a separate
+render type path (EQUAL depth test + VIEW_OFFSET_Z_LAYERING) so the glint
+aligns with the armor surface depth rather than clipping through it.
 
 RenderBuffersMixin captures the fixedBuffers map from RenderBuffers at
 construction time. Each distinct glint config gets its own RenderType and
@@ -189,11 +202,13 @@ silently dropped when switching render types mid-batch.
 
 CustomGlint.getTexture() converts the source PNG to grayscale on first use
 and registers it as a DynamicTexture. The shader then tints it using
-setShaderColor(), which is how per-frame color animation works.
+setShaderColor(), which is how color animation works.
 
-The RenderType cache is keyed by design + full color array + speed + interpolate.
-The current frame color is never part of the key — it flows into the RenderType
-through a closed-over float[4] holder that is updated on every call.
+The RenderType cache key includes design, full color array, speed, interpolate,
+isItem, scale, and color index. Color index lets simultaneous mode create one
+RenderType per color slot. The current frame color is never part of the key —
+it flows into the RenderType through a closed-over float[4] holder updated on
+every call.
 
 
 ================================================================================
