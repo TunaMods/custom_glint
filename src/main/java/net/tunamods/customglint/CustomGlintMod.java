@@ -1,8 +1,8 @@
-package com.example.examplemod;
+package net.tunamods.customglint;
 
-import com.example.examplemod.glint.CustomGlint;
-import com.example.examplemod.module.item.GlintWandItem;
-import com.example.examplemod.module.network.ModNetworking;
+import net.tunamods.customglint.common.glint.CustomGlint;
+import net.tunamods.customglint.module.item.GlintWandItem;
+import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.CreativeModeTab;
@@ -19,22 +19,22 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 
-@Mod(ExampleMod.MODID)
-public class ExampleMod {
-    public static final String MODID = "examplemod";
+@Mod(CustomGlintMod.MOD_ID)
+public class CustomGlintMod {
+    public static final String MOD_ID = "customglint";
 
-    public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MODID);
-    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
+    public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
 
     public static final RegistryObject<GlintWandItem> GLINT_WAND = ITEMS.register("glint_wand",
             () -> new GlintWandItem(new Item.Properties().stacksTo(1)));
 
-    public static final RegistryObject<CreativeModeTab> EXAMPLE_TAB = CREATIVE_MODE_TABS.register("example_tab", () -> CreativeModeTab.builder()
+    public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .withTabsBefore(CreativeModeTabs.COMBAT)
             .icon(() -> {
                 ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
                 CustomGlint.write(icon,
-                        new ResourceLocation("examplemod", "textures/glint/wave.png"),
+                        new ResourceLocation("customglint", "textures/glint/wave.png"),
                         new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
                         0.5f, true);
                 return icon;
@@ -42,8 +42,8 @@ public class ExampleMod {
             .displayItems((parameters, output) -> output.accept(GLINT_WAND.get()))
             .build());
 
-    public ExampleMod(FMLJavaModLoadingContext context) {
-        IEventBus modEventBus = context.getModEventBus();
+    public CustomGlintMod() {
+        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         modEventBus.addListener(this::commonSetup);
 

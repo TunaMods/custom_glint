@@ -1,6 +1,6 @@
-package com.example.examplemod.module.network;
+package net.tunamods.customglint.module.network;
 
-import com.example.examplemod.glint.CustomGlint;
+import net.tunamods.customglint.common.glint.CustomGlint;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -64,11 +64,16 @@ public class GlintApplyPacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
+            InteractionHand otherHand = pkt.wandHand == InteractionHand.MAIN_HAND
+                    ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
             if (pkt.remove) {
-                InteractionHand targetHand = pkt.wandHand == InteractionHand.MAIN_HAND
-                        ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
-                ItemStack target = player.getItemInHand(targetHand);
+                ItemStack target = player.getItemInHand(otherHand);
                 if (!target.isEmpty()) CustomGlint.remove(target);
+            } else if (pkt.itemId.isEmpty()) {
+                ItemStack target = player.getItemInHand(otherHand);
+                if (!target.isEmpty()) {
+                    CustomGlint.write(target, new ResourceLocation(pkt.design), pkt.colors, pkt.speed, pkt.interpolate);
+                }
             } else {
                 Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(pkt.itemId));
                 if (item == null) return;
@@ -76,10 +81,6 @@ public class GlintApplyPacket {
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, designRL, pkt.colors, pkt.speed, pkt.interpolate);
                 player.addItem(given);
-                ItemStack wand = player.getItemInHand(pkt.wandHand);
-                if (!wand.isEmpty()) {
-                    CustomGlint.write(wand, designRL, pkt.colors, pkt.speed, pkt.interpolate);
-                }
             }
         });
         ctx.get().setPacketHandled(true);

@@ -1,8 +1,8 @@
-package com.example.examplemod.module.gui;
+package net.tunamods.customglint.module.gui;
 
-import com.example.examplemod.glint.CustomGlint;
-import com.example.examplemod.module.network.GlintApplyPacket;
-import com.example.examplemod.module.network.ModNetworking;
+import net.tunamods.customglint.common.glint.CustomGlint;
+import net.tunamods.customglint.module.network.GlintApplyPacket;
+import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -38,7 +38,7 @@ public class GlintEditorScreen extends Screen {
     };
 
     private static ResourceLocation designRL(String name) {
-        return new ResourceLocation("examplemod", "textures/glint/" + name + ".png");
+        return new ResourceLocation("customglint", "textures/glint/" + name + ".png");
     }
 
     private static String designShortName(ResourceLocation rl) {
@@ -267,19 +267,26 @@ public class GlintEditorScreen extends Screen {
             searchBox.setFocused(true);
         }).bounds(px + 8, py + 112, 80, 14).build());
 
-        // Give item with glint
+        // Give new item with glint
         addRenderableWidget(Button.builder(Component.literal("Get Item"), b -> {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
             String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
                     wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, itemId));
-        }).bounds(px + 8, py + 224, 140, 14).build());
+        }).bounds(px + 8, py + 224, 90, 14).build());
 
-        // Remove glint from offhand
+        // Apply glint to item already in the other hand
+        addRenderableWidget(Button.builder(Component.literal("Apply to Hand"), b -> {
+            int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
+                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, ""));
+        }).bounds(px + 105, py + 224, 90, 14).build());
+
+        // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
                     wandHand, true, "", new int[0], 1.0f, true, ""));
-        }).bounds(px + 152, py + 224, 140, 14).build());
+        }).bounds(px + 202, py + 224, 90, 14).build());
 
         // Item picker search box — managed manually
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.literal("Search items..."));
@@ -409,7 +416,6 @@ public class GlintEditorScreen extends Screen {
             g.renderItem(new ItemStack(item), ox + 2, ry + 1);
             g.drawString(font, font.plainSubstrByWidth(item.getDescription().getString(), OW - 30),
                     ox + 20, ry + 5, 0xDDDDDD);
-            if (hovered) g.renderTooltip(font, item.getDescription(), mx, my);
         }
 
         if (filteredItems.size() > VISIBLE_ROWS) {
