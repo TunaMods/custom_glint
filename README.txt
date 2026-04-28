@@ -125,6 +125,7 @@ STEP 1 — Copy source files
 
     src/.../glint/CustomGlint.java
     src/.../mixin/ItemRendererMixin.java
+    src/.../mixin/HumanoidArmorLayerMixin.java
     src/.../mixin/RenderBuffersMixin.java
 
   Update the package declaration at the top of each file to match your
@@ -159,6 +160,7 @@ STEP 4 — Mixin config
 
   If you already have a mixins JSON, add to its "client" array:
     "ItemRendererMixin",
+    "HumanoidArmorLayerMixin",
     "RenderBuffersMixin"
 
   If you need a new file, create src/main/resources/<yourmodid>.mixins.json:
@@ -170,6 +172,7 @@ STEP 4 — Mixin config
       "refmap": "<yourmodid>.mixins.refmap.json",
       "client": [
         "ItemRendererMixin",
+        "HumanoidArmorLayerMixin",
         "RenderBuffersMixin"
       ],
       "injectors": { "defaultRequire": 1 }
