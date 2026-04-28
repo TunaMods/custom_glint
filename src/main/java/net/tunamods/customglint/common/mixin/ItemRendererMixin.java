@@ -3,11 +3,11 @@ package net.tunamods.customglint.common.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.glint.CustomGlint;
@@ -181,55 +181,44 @@ public class ItemRendererMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return null;
 
-        int color = computeAnimatedColor(glint);
-
+        int[] colors = glint.colors();
         float[] buf = COLOR_BUF.get();
-        buf[0] = ((color >> 16) & 0xFF) / 255.0f;
-        buf[1] = ((color >>  8) & 0xFF) / 255.0f;
-        buf[2] = ( color        & 0xFF) / 255.0f;
-        buf[3] = 1.0f;
 
-        VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forGlint(glint, buf, isItem));
-        VertexConsumer itemConsumer  = buffer.getBuffer(renderType);
-        return VertexMultiConsumer.create(glintConsumer, itemConsumer);
+        if (glint.simultaneous()) {
+            VertexConsumer[] consumers = new VertexConsumer[colors.length + 1];
+            for (int i = 0; i < colors.length; i++) {
+                buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f;
+                buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f;
+                buf[2] = ( colors[i]        & 0xFF) / 255.0f;
+                buf[3] = 1.0f;
+                consumers[i] = buffer.getBuffer(CustomGlint.forGlint(glint, buf, isItem, i));
+            }
+            consumers[colors.length] = buffer.getBuffer(renderType);
+            return VertexMultiConsumer.create(consumers);
+        } else {
+            int color = computeAnimatedColor(glint);
+            buf[0] = ((color >> 16) & 0xFF) / 255.0f;
+            buf[1] = ((color >>  8) & 0xFF) / 255.0f;
+            buf[2] = ( color        & 0xFF) / 255.0f;
+            buf[3] = 1.0f;
+            return VertexMultiConsumer.create(buffer.getBuffer(CustomGlint.forGlint(glint, buf, isItem, 0)), buffer.getBuffer(renderType));
+        }
     }
 
-    /**
-     * Computes the ARGB color to use for the glint this frame based on game time.
-     *
-     * <ul>
-     *   <li>Single color: returned immediately — no time math.</li>
-     *   <li>Multi-color, {@code interpolate=false}: selects the color whose slot the current tick falls in.</li>
-     *   <li>Multi-color, {@code interpolate=true}: linearly lerps RGB between the current and next color
-     *       using the fractional position within the current slot.</li>
-     * </ul>
-     *
-     * <p>Full cycle length = {@code (20 * colors.length) / speed} ticks.
-     * At {@code speed=1.0}: 20 ticks per color. {@code speed=2.0}: 10 ticks/color. {@code speed=0.5}: 40 ticks/color.
-     */
     private static int computeAnimatedColor(CustomGlint.Data glint) {
         int[] colors = glint.colors();
         if (colors.length == 1) return colors[0];
-
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-
-        // Total ticks for one full cycle through all colors.
         float totalTicks = (20.0f * colors.length) / glint.speed();
-
-        // t in [0, colors.length): fractional position across the color array.
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
-
         if (!glint.interpolate()) return colors[idx];
-
-        // Lerp RGB between colors[idx] and colors[idx+1] using the fractional part of t.
         float frac = t - (int) t;
-        int c1 = colors[idx];
-        int c2 = colors[(idx + 1) % colors.length];
+        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
         int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
-        int g = (int)(((c1 >> 8) & 0xFF) * (1 - frac) + ((c2 >> 8) & 0xFF) * frac);
-        int b = (int)((c1 & 0xFF) * (1 - frac) + (c2 & 0xFF) * frac);
+        int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
+        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 }

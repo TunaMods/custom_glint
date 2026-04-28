@@ -36,7 +36,7 @@ public class CustomGlintMod {
                 CustomGlint.write(icon,
                         new ResourceLocation("customglint", "textures/glint/wave.png"),
                         new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
-                        0.5f, true, 1.0f);
+                        0.5f, true, 1.0f, true);
                 return icon;
             })
             .displayItems((parameters, output) -> output.accept(GLINT_WAND.get()))

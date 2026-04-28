@@ -2,6 +2,7 @@ package net.tunamods.customglint.common.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -63,36 +64,45 @@ public class HumanoidArmorLayerMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return;
 
-        int color = computeAnimatedColor(glint);
+        int[] colors = glint.colors();
         float[] buf = COLOR_BUF.get();
-        buf[0] = ((color >> 16) & 0xFF) / 255.0f;
-        buf[1] = ((color >>  8) & 0xFF) / 255.0f;
-        buf[2] = ( color        & 0xFF) / 255.0f;
-        buf[3] = 1.0f;
+        VertexConsumer combined;
 
-        VertexConsumer glintConsumer = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf));
-        model.renderToBuffer(poseStack, glintConsumer, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        if (glint.simultaneous()) {
+            VertexConsumer[] consumers = new VertexConsumer[colors.length];
+            for (int i = 0; i < colors.length; i++) {
+                buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f;
+                buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f;
+                buf[2] = ( colors[i]        & 0xFF) / 255.0f;
+                buf[3] = 1.0f;
+                consumers[i] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf, i));
+            }
+            combined = colors.length == 1 ? consumers[0] : VertexMultiConsumer.create(consumers);
+        } else {
+            int color = computeAnimatedColor(glint);
+            buf[0] = ((color >> 16) & 0xFF) / 255.0f;
+            buf[1] = ((color >>  8) & 0xFF) / 255.0f;
+            buf[2] = ( color        & 0xFF) / 255.0f;
+            buf[3] = 1.0f;
+            combined = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf, 0));
+        }
+        model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     private static int computeAnimatedColor(CustomGlint.Data glint) {
         int[] colors = glint.colors();
         if (colors.length == 1) return colors[0];
-
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-
         float totalTicks = (20.0f * colors.length) / glint.speed();
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
-
         if (!glint.interpolate()) return colors[idx];
-
         float frac = t - (int) t;
-        int c1 = colors[idx];
-        int c2 = colors[(idx + 1) % colors.length];
+        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
         int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
         int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
-        int b = (int)((c1        & 0xFF) * (1 - frac) + (c2        & 0xFF) * frac);
+        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 }
