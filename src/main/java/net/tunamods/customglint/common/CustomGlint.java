@@ -1,5 +1,5 @@
 // MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
-package net.tunamods.customglint.common.glint;
+package net.tunamods.customglint.common;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;

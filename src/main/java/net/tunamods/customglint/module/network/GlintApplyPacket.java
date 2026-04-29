@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.network;
 
-import net.tunamods.customglint.common.glint.CustomGlint;
+import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
