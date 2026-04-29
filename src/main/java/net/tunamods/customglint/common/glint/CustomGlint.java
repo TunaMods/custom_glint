@@ -315,5 +315,22 @@ public final class CustomGlint extends RenderStateShard {
         });
     }
 
+    public static int computeAnimatedColor(Data glint) {
+        int[] colors = glint.colors();
+        if (colors.length == 1) return colors[0];
+        Minecraft mc = Minecraft.getInstance();
+        long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
+        float totalTicks = (20.0f * colors.length) / glint.speed();
+        float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        int idx = (int) t % colors.length;
+        if (!glint.interpolate()) return colors[idx];
+        float frac = t - (int) t;
+        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
+        int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
+        int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
+        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
     private CustomGlint() { super("", () -> {}, () -> {}); }
 }

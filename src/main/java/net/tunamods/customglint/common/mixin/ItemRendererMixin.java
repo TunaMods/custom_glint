@@ -8,7 +8,6 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.glint.CustomGlint;
@@ -197,7 +196,7 @@ public class ItemRendererMixin {
             consumers[colors.length] = buffer.getBuffer(renderType);
             return VertexMultiConsumer.create(consumers);
         } else {
-            int color = computeAnimatedColor(glint);
+            int color = CustomGlint.computeAnimatedColor(glint);
             buf[0] = ((color >> 16) & 0xFF) / 255.0f;
             buf[1] = ((color >>  8) & 0xFF) / 255.0f;
             buf[2] = ( color        & 0xFF) / 255.0f;
@@ -206,20 +205,4 @@ public class ItemRendererMixin {
         }
     }
 
-    private static int computeAnimatedColor(CustomGlint.Data glint) {
-        int[] colors = glint.colors();
-        if (colors.length == 1) return colors[0];
-        Minecraft mc = Minecraft.getInstance();
-        long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        float totalTicks = (20.0f * colors.length) / glint.speed();
-        float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
-        int idx = (int) t % colors.length;
-        if (!glint.interpolate()) return colors[idx];
-        float frac = t - (int) t;
-        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
-        int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
-        int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
-        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
-    }
 }
