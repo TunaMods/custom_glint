@@ -40,6 +40,9 @@ public class GlintCommand {
         DESIGNS.put("swirl",      CustomGlint.SWIRL);
         DESIGNS.put("wave",       CustomGlint.WAVE);
         DESIGNS.put("zigzag",     CustomGlint.ZIGZAG);
+        DESIGNS.put("crystal",    CustomGlint.CRYSTAL);
+        DESIGNS.put("ember",      CustomGlint.EMBER);
+        DESIGNS.put("vein",       CustomGlint.VEIN);
 
         COLORS.put("red",        CustomGlint.RED);
         COLORS.put("orange",     CustomGlint.ORANGE);

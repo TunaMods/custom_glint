@@ -31,11 +31,11 @@ public class GlintEditorScreen extends Screen {
     private static final int PREVIEW_SZ = 80;
 
     private static final String[] DESIGNS = {
-        "checker", "crosshatch", "diamonds", "dots",
-        "fire",    "grid",       "hexagon",  "pulse",
-        "ripple",  "scales",     "sparkle",  "stars",
-        "stripes", "swirl",      "wave",     "zigzag",
-        "vanilla"
+        "checker",  "crosshatch", "diamonds", "dots",
+        "fire",     "grid",       "hexagon",  "pulse",
+        "ripple",   "scales",     "sparkle",  "stars",
+        "stripes",  "swirl",      "wave",     "zigzag",
+        "crystal",  "ember",      "vein",     "vanilla"
     };
 
     private static ResourceLocation designRL(String name) {

@@ -75,7 +75,10 @@ public final class CustomGlint extends RenderStateShard {
     public static final ResourceLocation STRIPES    = new ResourceLocation(MOD_ID, "textures/glint/stripes.png");
     public static final ResourceLocation SWIRL      = new ResourceLocation(MOD_ID, "textures/glint/swirl.png");
     public static final ResourceLocation WAVE       = new ResourceLocation(MOD_ID, "textures/glint/wave.png");
-    public static final ResourceLocation ZIGZAG     = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
+    public static final ResourceLocation ZIGZAG      = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
+    public static final ResourceLocation CRYSTAL     = new ResourceLocation(MOD_ID, "textures/glint/crystal.png");
+    public static final ResourceLocation EMBER       = new ResourceLocation(MOD_ID, "textures/glint/ember.png");
+    public static final ResourceLocation VEIN        = new ResourceLocation(MOD_ID, "textures/glint/vein.png");
 
     // ── NBT ──────────────────────────────────────────────────────────────────
 
