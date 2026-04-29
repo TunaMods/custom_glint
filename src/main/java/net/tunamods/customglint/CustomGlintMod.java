@@ -2,8 +2,10 @@
 package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintWandItem;
 import net.tunamods.customglint.module.network.ModNetworking;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
@@ -56,8 +58,13 @@ public class CustomGlintMod {
         ModNetworking.register();
 
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+    }
+
+    private void registerCommands(RegisterCommandsEvent event) {
+        GlintCommand.register(event.getDispatcher());
     }
 }
