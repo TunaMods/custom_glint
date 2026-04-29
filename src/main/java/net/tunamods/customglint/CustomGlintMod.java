@@ -1,7 +1,7 @@
 // MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint;
 
-import net.tunamods.customglint.common.glint.CustomGlint;
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintWandItem;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.core.registries.Registries;

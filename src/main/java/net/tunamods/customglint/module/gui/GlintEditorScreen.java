@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.gui;
 
-import net.tunamods.customglint.common.glint.CustomGlint;
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.network.GlintApplyPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.client.Minecraft;
