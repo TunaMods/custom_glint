@@ -26,7 +26,59 @@ to open the editor.
   - To remove a glint, hold the glinted item in your off-hand and click
     "Remove Glint" while holding the wand in your main hand.
 
-The wand remembers your last config. Re-opening it pre-fills everything.
+
+================================================================================
+  JAVA API
+================================================================================
+
+All glint logic is in CustomGlint. Import it and call write() on any ItemStack.
+The class exposes named constants for every built-in color and design so you
+never need raw integers or ResourceLocation strings.
+
+  // Apply a glint (all fields)
+  CustomGlint.write(
+      stack,
+      CustomGlint.WAVE,                          // design
+      new int[]{CustomGlint.RED, CustomGlint.BLUE}, // colors
+      1.0f,   // speed  (1.0 = 20 ticks/color)
+      true,   // interpolate (smooth lerp between colors)
+      1.0f,   // patternScale (1.0 = default tiling)
+      true);  // simultaneous (all colors rendered as layers at once)
+
+  // Single static color
+  CustomGlint.write(stack, CustomGlint.SPARKLE,
+      new int[]{CustomGlint.GOLD}, 1.0f, true, 1.0f, true);
+
+  // Check presence (cheaper than read)
+  boolean has = CustomGlint.has(stack);
+
+  // Read the data record (returns null if no glint)
+  CustomGlint.Data data = CustomGlint.read(stack);
+  if (data != null) {
+      ResourceLocation design = data.design();
+      int[] colors            = data.colors();
+      float speed             = data.speed();
+      boolean interpolate     = data.interpolate();
+      float scale             = data.patternScale();
+      boolean simultaneous    = data.simultaneous();
+  }
+
+  // Remove
+  CustomGlint.remove(stack);
+
+  // Compute the animated color for the current game tick
+  int color = CustomGlint.computeAnimatedColor(data);
+
+COLOR CONSTANTS
+  CustomGlint.RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE,
+  BLUE, PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
+
+  Any other color: CustomGlint.color("FFD700")  →  int  (GOLD, etc.)
+
+DESIGN CONSTANTS
+  CustomGlint.CHECKER, CROSSHATCH, DIAMONDS, DOTS, FIRE, GRID,
+  HEXAGON, PULSE, RIPPLE, SCALES, SPARKLE, STARS, STRIPES,
+  SWIRL, WAVE, ZIGZAG
 
 
 ================================================================================
