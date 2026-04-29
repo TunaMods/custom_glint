@@ -22,6 +22,8 @@ removed from the item in your main hand. Requires operator permission.
     speed    0.25–8.0 (optional, default 1.0)
     smooth   true/false interpolation (optional, default true)
 
+  patternScale defaults to 1.0. simultaneous defaults to false (cycle mode).
+
   /glint remove   — removes glint from main-hand item
 
 EXAMPLES

@@ -142,7 +142,7 @@ public class GlintCommand {
             return 0;
         }
 
-        CustomGlint.write(stack, design, colors, speed, smooth, 1.0f, true);
+        CustomGlint.write(stack, design, colors, speed, smooth, 1.0f, false);
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
     }
