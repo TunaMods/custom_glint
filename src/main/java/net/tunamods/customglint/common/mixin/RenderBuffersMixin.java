@@ -38,7 +38,7 @@ public class RenderBuffersMixin {
 
     /**
      * Captures the live {@code fixedBuffers} map reference into
-     * {@link CustomGlintRenderTypes#fixedBufferRegistry} immediately after {@link RenderBuffers}
+     * {@link CustomGlint#fixedBufferRegistry} immediately after {@link RenderBuffers}
      * finishes constructing its built-in entries.
      *
      * <p>Per-config {@link RenderType} instances are created lazily and inserted into this map
