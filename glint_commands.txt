@@ -2,6 +2,39 @@
   CUSTOM GLINT COMMANDS — customglint (Minecraft 1.20.1 / Forge)
 ================================================================================
 
+================================================================================
+  /glint SLASH COMMAND (recommended for in-game use)
+================================================================================
+
+The mod registers /glint directly — no NBT required. Glint is applied to or
+removed from the item in your main hand. Requires operator permission.
+
+  /glint apply <design> <colors> [speed] [smooth]
+
+    design   tab-completes: vanilla, checker, crosshatch, diamonds, dots,
+             fire, grid, hexagon, pulse, ripple, scales, sparkle, stars,
+             stripes, swirl, wave, zigzag
+
+    colors   comma-separated color names (no spaces), tab-completes:
+             red, orange, yellow, lime, green, cyan, light_blue, blue,
+             purple, magenta, pink, brown, white, light_gray, gray, black
+
+    speed    0.25–8.0 (optional, default 1.0)
+    smooth   true/false interpolation (optional, default true)
+
+  /glint remove   — removes glint from main-hand item
+
+EXAMPLES
+  /glint apply sparkle gold
+  /glint apply wave red,blue,purple 0.5
+  /glint apply fire red,orange,yellow 1.2 true
+  /glint apply stripes red,blue 6.0 false
+  /glint remove
+
+================================================================================
+  /give NBT COMMANDS (for datapacks, command blocks, precise control)
+================================================================================
+
 HOW TO READ THESE
 -----------------
   design       → which pattern PNG is used (see "DESIGNS" section below)
@@ -16,7 +49,7 @@ HOW TO READ THESE
 COLOR REFERENCE (hex → signed int)
 ------------------------------------
   Red          0xFF0000  →  -65536
-  Orange       0xFF8000  →  -32768
+  Orange       0xFF6600  →  -40960
   Yellow       0xFFFF00  →    -256
   Lime         0x7FFF00  → -8388864
   Green        0x00FF00  → -16711936
@@ -40,8 +73,9 @@ COLOR REFERENCE (hex → signed int)
   White        0xFFFFFF  →        -1
   Black        0x000000  → -16777216
 
-DESIGNS (16 built-in)
-----------------------
+DESIGNS (16 custom + vanilla)
+------------------------------
+  minecraft:textures/misc/enchanted_glint_item.png  (vanilla)
   customglint:textures/glint/checker.png
   customglint:textures/glint/crosshatch.png
   customglint:textures/glint/diamonds.png
@@ -103,7 +137,7 @@ Red fire on netherite axe:
 /give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-65536],speed:1.0f,interpolate:1b}} 1
 
 Orange fire on diamond sword:
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-32768],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-40960],speed:1.0f,interpolate:1b}} 1
 
 Dark red fire on netherite sword:
 /give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712],speed:1.0f,interpolate:1b}} 1
@@ -168,16 +202,16 @@ Indigo diamonds on trident:
 ================================================================================
 
 -- RAINBOW (red → orange → yellow → green → blue → violet, wave, slow) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
 
 -- RAINBOW FAST (sparkle) --
-/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:2.0f,interpolate:1b}} 1
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:2.0f,interpolate:1b}} 1
 
 -- FIRE GRADIENT (dark red → red → orange → yellow, fire pattern) --
-/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
 
 -- FIRE GRADIENT MEDIUM SPEED (wave) --
-/give @p minecraft:diamond_axe{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_axe{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.5f,interpolate:1b}} 1
 
 -- ICE (white → sky blue → cyan → dark blue) --
 /give @p minecraft:trident{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.6f,interpolate:1b}} 1
@@ -192,7 +226,7 @@ Indigo diamonds on trident:
 /give @p minecraft:trident{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-16777077,-16776961,-16711681,-16728065,-1],speed:0.7f,interpolate:1b}} 1
 
 -- SUNSET (red → orange → yellow → magenta → purple) --
-/give @p minecraft:bow{customglint:{design:"customglint:textures/glint/stripes.png",colors:[I;-65536,-32768,-256,-65281,-8388353],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:bow{customglint:{design:"customglint:textures/glint/stripes.png",colors:[I;-65536,-40960,-256,-65281,-8388353],speed:0.8f,interpolate:1b}} 1
 
 -- GALAXY (dark blue → indigo → purple → violet → white → back) --
 /give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1,-1146130,-8388353],speed:0.4f,interpolate:1b}} 1
@@ -201,7 +235,7 @@ Indigo diamonds on trident:
 /give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/diamonds.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
 
 -- LAVA (black → dark red → red → orange → yellow) --
-/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.6f,interpolate:1b}} 1
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.6f,interpolate:1b}} 1
 
 -- COTTON CANDY (hot pink → lavender → cyan → hot pink) --
 /give @p minecraft:crossbow{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-38476,-1644806,-16711681,-38476],speed:1.0f,interpolate:1b}} 1
@@ -247,7 +281,7 @@ Indigo diamonds on trident:
 /give @p minecraft:crossbow{customglint:{design:"customglint:textures/glint/grid.png",colors:[I;-65536,-256,-16711936],speed:1.0f,interpolate:0b}} 1
 
 -- DISCO (hard switch, 6 colors, fast) --
-/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-65281],speed:5.0f,interpolate:0b}} 1
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-65281],speed:5.0f,interpolate:0b}} 1
 
 -- ALERT BLINK (red → black, very fast) --
 /give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-65536,-16777216],speed:8.0f,interpolate:0b}} 1
@@ -259,42 +293,42 @@ Indigo diamonds on trident:
 /give @p minecraft:netherite_pickaxe{customglint:{design:"customglint:textures/glint/stripes.png",colors:[I;-65536,-1,-16776961],speed:1.5f,interpolate:0b}} 1
 
 -- HALLOWEEN (orange → black → purple, hard) --
-/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-32768,-16777216,-8388353],speed:1.0f,interpolate:0b}} 1
+/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-40960,-16777216,-8388353],speed:1.0f,interpolate:0b}} 1
 
 ================================================================================
   SPEED SHOWCASE (same rainbow on same item, speed varies)
 ================================================================================
 
 -- Very slow (0.2) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:0.2f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:0.2f,interpolate:1b}} 1
 
 -- Slow (0.5) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
 
 -- Normal (1.0) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
 
 -- Fast (2.0) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:2.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:2.0f,interpolate:1b}} 1
 
 -- Very fast (5.0) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:5.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:5.0f,interpolate:1b}} 1
 
 -- Insane (10.0) --
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:10.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:10.0f,interpolate:1b}} 1
 
 ================================================================================
   DESIGN SHOWCASE (same fire theme across every design)
 ================================================================================
 
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/stripes.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/grid.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/diamonds.png",colors:[I;-7667712,-65536,-32768,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/stripes.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/grid.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/diamonds.png",colors:[I;-7667712,-65536,-40960,-256],speed:1.0f,interpolate:1b}} 1
 
 ================================================================================
   FULL ARMOR SETS
@@ -307,10 +341,10 @@ Indigo diamonds on trident:
 /give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
 
 -- FIRE ARMOR SET (fire pattern, lava colors) --
-/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
-/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
-/give @p minecraft:netherite_leggings{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
-/give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_leggings{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
 
 -- ICE ARMOR SET (scales, white → cyan gradient) --
 /give @p minecraft:diamond_helmet{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.5f,interpolate:1b}} 1
@@ -329,7 +363,7 @@ Indigo diamonds on trident:
 ================================================================================
 
 -- Glowing totem (rainbow wave) --
-/give @p minecraft:totem_of_undying{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:totem_of_undying{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
 
 -- Glowing shield (galaxy sparkle) --
 /give @p minecraft:shield{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
@@ -340,14 +374,14 @@ Indigo diamonds on trident:
 -- Glowing elytra (cyan/blue ocean) --
 /give @p minecraft:elytra{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-16777077,-16776961,-16711681,-16728065,-1],speed:0.7f,interpolate:1b}} 1
 
--- Glowing mace (blood moon pulse) --
-/give @p minecraft:mace{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
+-- Glowing crossbow (blood moon pulse) --
+/give @p minecraft:crossbow{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
 
 -- Glowing fishing rod (aquamarine wave) --
 /give @p minecraft:fishing_rod{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-8388652],speed:1.0f,interpolate:1b}} 1
 
 -- Glowing flint and steel (fire colors) --
-/give @p minecraft:flint_and_steel{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-65536,-32768,-256],speed:1.2f,interpolate:1b}} 1
+/give @p minecraft:flint_and_steel{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-65536,-40960,-256],speed:1.2f,interpolate:1b}} 1
 
 ================================================================================
   NOTES

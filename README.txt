@@ -26,6 +26,9 @@ to open the editor.
   - To remove a glint, hold the glinted item in your off-hand and click
     "Remove Glint" while holding the wand in your main hand.
 
+The design grid includes a "vanilla" option that uses the standard Minecraft
+enchantment glint texture with your chosen colors and animation settings.
+
 
 ================================================================================
   JAVA API
@@ -76,6 +79,7 @@ COLOR CONSTANTS
   Any other color: CustomGlint.color("FFD700")  →  int  (GOLD, etc.)
 
 DESIGN CONSTANTS
+  CustomGlint.VANILLA (minecraft enchanted glint),
   CustomGlint.CHECKER, CROSSHATCH, DIAMONDS, DOTS, FIRE, GRID,
   HEXAGON, PULSE, RIPPLE, SCALES, SPARKLE, STARS, STRIPES,
   SWIRL, WAVE, ZIGZAG
@@ -131,15 +135,58 @@ NOTES
 
 
 ================================================================================
-  DESIGNS (16 built-in)
+  /glint COMMAND
+================================================================================
+
+The mod registers a server-side command for applying and removing glints using
+named color and design tokens instead of raw NBT integers. Requires operator
+permission (or a command block).
+
+APPLY
+-----
+  /glint apply <design> <colors> [speed] [smooth]
+
+    design   — design name (tab-completes). One of:
+               vanilla, checker, crosshatch, diamonds, dots, fire, grid,
+               hexagon, pulse, ripple, scales, sparkle, stars, stripes,
+               swirl, wave, zigzag
+
+    colors   — comma-separated color names (no spaces). Tab-completes after
+               each comma. One of:
+               red, orange, yellow, lime, green, cyan, light_blue, blue,
+               purple, magenta, pink, brown, white, light_gray, gray, black
+
+    speed    — animation rate 0.25–8.0 (default 1.0)
+    smooth   — true = smooth lerp, false = hard cut (default true)
+
+  The glint is written to whatever item you are holding in your main hand.
+  patternScale and simultaneous always default to 1.0 / true via this command.
+
+EXAMPLES
+  /glint apply wave red,blue,purple
+  /glint apply sparkle gold 0.5
+  /glint apply fire red,orange,yellow 1.2 true
+  /glint apply stripes red,blue 6.0 false
+
+REMOVE
+------
+  /glint remove
+
+  Removes the custom glint from the item in your main hand.
+  Fails with a message if the item has no custom glint or your hand is empty.
+
+
+================================================================================
+  DESIGNS (16 custom + vanilla)
 ================================================================================
 
   checker    crosshatch   diamonds   dots
   fire       grid         hexagon    pulse
   ripple     scales       sparkle    stars
   stripes    swirl        wave       zigzag
+  vanilla    (minecraft:textures/misc/enchanted_glint_item.png)
 
-  Format: customglint:textures/glint/<name>.png
+  Format for custom designs: customglint:textures/glint/<name>.png
 
   Custom designs: drop any PNG into assets/customglint/textures/glint/.
   The system converts it to grayscale at runtime on first use and applies
@@ -151,7 +198,7 @@ NOTES
 ================================================================================
 
   Red          0xFF0000  →  -65536
-  Orange       0xFF8000  →  -32768
+  Orange       0xFF6600  →  -40960
   Yellow       0xFFFF00  →    -256
   Lime         0x7FFF00  → -8388864
   Green        0x00FF00  → -16711936
@@ -201,10 +248,10 @@ Blue sparkle on diamond pickaxe:
 -- MULTI-COLOR ANIMATED (smooth lerp) --
 
 Rainbow (wave, slow):
-/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
 
 Fire gradient (dark red → red → orange → yellow):
-/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
 
 Ice (white → sky blue → cyan → dark blue):
 /give @p minecraft:trident{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.6f,interpolate:1b}} 1
@@ -216,7 +263,7 @@ Ocean (dark blue → blue → cyan → sky blue → white):
 /give @p minecraft:trident{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-16777077,-16776961,-16711681,-16728065,-1],speed:0.7f,interpolate:1b}} 1
 
 Lava (black → dark red → red → orange → yellow):
-/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.6f,interpolate:1b}} 1
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.6f,interpolate:1b}} 1
 
 Blood Moon (dark red → red → dark red, pulse):
 /give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
@@ -246,7 +293,7 @@ Christmas (wave, hard red/green):
 /give @p minecraft:diamond_axe{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936],speed:1.0f,interpolate:0b}} 1
 
 Halloween (fire, orange/black/purple):
-/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-32768,-16777216,-8388353],speed:1.0f,interpolate:0b}} 1
+/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-40960,-16777216,-8388353],speed:1.0f,interpolate:0b}} 1
 
 
 -- FULL ARMOR SETS --
@@ -258,10 +305,10 @@ Galaxy armor (sparkle, slow lerp):
 /give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
 
 Fire armor (fire pattern, lava colors):
-/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
-/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
-/give @p minecraft:netherite_leggings{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
-/give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_leggings{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-40960,-256],speed:0.8f,interpolate:1b}} 1
 
 Ice armor (scales, white → cyan gradient):
 /give @p minecraft:diamond_helmet{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.5f,interpolate:1b}} 1
@@ -273,7 +320,7 @@ Ice armor (scales, white → cyan gradient):
 -- MISC ITEMS --
 
 Glowing totem (rainbow wave):
-/give @p minecraft:totem_of_undying{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
+/give @p minecraft:totem_of_undying{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-40960,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
 
 Glowing elytra (ocean):
 /give @p minecraft:elytra{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-16777077,-16776961,-16711681,-16728065,-1],speed:0.7f,interpolate:1b}} 1
@@ -281,8 +328,8 @@ Glowing elytra (ocean):
 Glowing shield (galaxy):
 /give @p minecraft:shield{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
 
-Glowing mace (blood moon pulse):
-/give @p minecraft:mace{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
+Glowing crossbow (blood moon pulse):
+/give @p minecraft:crossbow{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
 
 
 ================================================================================
@@ -331,7 +378,7 @@ are also there, so you never need raw integers or ResourceLocation strings.
   CustomGlint.remove(stack);
 
   // Color constants: CustomGlint.RED, BLUE, GREEN, GOLD, WHITE, etc.
-  // Design constants: CustomGlint.WAVE, FIRE, SPARKLE, GALAXY, etc.
+  // Design constants: CustomGlint.VANILLA, WAVE, FIRE, SPARKLE, CHECKER, etc.
   // Compute animated color for the current tick (useful for custom rendering):
   int color = CustomGlint.computeAnimatedColor(data);
 
