@@ -59,6 +59,7 @@ public final class CustomGlint extends RenderStateShard {
 
     // ── Designs ───────────────────────────────────────────────────────────────
 
+    public static final ResourceLocation VANILLA    = new ResourceLocation("minecraft", "textures/misc/enchanted_glint_item.png");
     public static final ResourceLocation CHECKER    = new ResourceLocation(MOD_ID, "textures/glint/checker.png");
     public static final ResourceLocation CROSSHATCH = new ResourceLocation(MOD_ID, "textures/glint/crosshatch.png");
     public static final ResourceLocation DIAMONDS   = new ResourceLocation(MOD_ID, "textures/glint/diamonds.png");
@@ -148,20 +149,20 @@ public final class CustomGlint extends RenderStateShard {
     }
 
     private static ResourceLocation generateTexture(ResourceLocation design) {
-        LOGGER.info("[CustomGlint] Generating grayscale texture: design={}", design);
+        LOGGER.info("[{}/CustomGlint] Generating grayscale texture: design={}", MOD_ID, design);
         Minecraft mc = Minecraft.getInstance();
         NativeImage source;
         try {
             var resource = mc.getResourceManager().getResource(design);
             if (resource.isEmpty()) {
-                LOGGER.warn("[CustomGlint] Design texture not found: {}", design);
+                LOGGER.warn("[{}/CustomGlint] Design texture not found: {}", MOD_ID, design);
                 return design;
             }
             try (InputStream stream = resource.get().open()) {
                 source = NativeImage.read(stream);
             }
         } catch (IOException e) {
-            LOGGER.error("[CustomGlint] Failed to load design {}: {}", design, e.getMessage());
+            LOGGER.error("[{}/CustomGlint] Failed to load design {}: {}", MOD_ID, design, e.getMessage());
             return design;
         }
 
