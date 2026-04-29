@@ -160,7 +160,7 @@ APPLY
     smooth   — true = smooth lerp, false = hard cut (default true)
 
   The glint is written to whatever item you are holding in your main hand.
-  patternScale and simultaneous always default to 1.0 / true via this command.
+  patternScale defaults to 1.0. simultaneous defaults to false (cycle mode).
 
 EXAMPLES
   /glint apply wave red,blue,purple
