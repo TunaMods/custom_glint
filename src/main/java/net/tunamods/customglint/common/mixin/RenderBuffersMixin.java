@@ -34,7 +34,7 @@ import java.util.SortedMap;
 public class RenderBuffersMixin {
 
     /** Direct access to the vanilla fixed-buffer map so we can insert our render type. */
-    @Shadow private SortedMap<RenderType, BufferBuilder> fixedBuffers;
+    @Shadow(aliases = {"f_110093_"}) private SortedMap<RenderType, BufferBuilder> fixedBuffers;
 
     /**
      * Captures the live {@code fixedBuffers} map reference into
