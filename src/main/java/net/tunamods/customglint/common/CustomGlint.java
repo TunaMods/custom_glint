@@ -327,10 +327,11 @@ public final class CustomGlint extends RenderStateShard {
         if (!glint.interpolate()) return colors[idx];
         float frac = t - (int) t;
         int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
+        int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
         int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
         int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
         int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private CustomGlint() { super("", () -> {}, () -> {}); }
