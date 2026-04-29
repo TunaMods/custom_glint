@@ -16,7 +16,7 @@ import java.util.SortedMap;
 
 /**
  * Exposes the live {@code fixedBuffers} map from {@link RenderBuffers} so that
- * {@link CustomGlintRenderTypes#forGlint} can register new per-config {@link RenderType}s into it
+ * {@link CustomGlint#forGlint} can register new per-config {@link RenderType}s into it
  * at render time.
  *
  * <h3>Why fixedBuffers matters</h3>
@@ -42,7 +42,7 @@ public class RenderBuffersMixin {
      * finishes constructing its built-in entries.
      *
      * <p>Per-config {@link RenderType} instances are created lazily and inserted into this map
-     * by {@link CustomGlintRenderTypes#forGlint} at render time, not here.
+     * by {@link CustomGlint#forGlint} at render time, not here.
      */
     @Inject(method = "<init>", at = @At("RETURN"))
     private void cg_registerGlintBuffer(CallbackInfo ci) {
