@@ -1,37 +1,65 @@
-Custom Glints
-Minecraft 1.20.1 / Forge 47.x
+Custom Glints — Minecraft 1.20.1 / Forge 47.x
 MIT License — attribution required
-==============================
+================================================================================
 
 Per-item animated enchantment glint with full color and timing control.
-Everything lives in NBT — works on any item without touching registries
-or loot tables.
+Works on any item or armor piece. Everything lives in NBT — no registry
+changes, no loot table edits, no item subclasses.
 
-This project ships as both a ready-to-drop-in mod AND as source you can
-embed in your own mod under the MIT license. See "INTEGRATING INTO YOUR
-OWN MOD" below.
+Ships with a Glint Wand for in-game editing and a full NBT command surface
+for server admins and datapacks. Source can be embedded in your own mod
+without taking this as a dependency — see the bottom of this file.
 
 
 ================================================================================
-  COMMAND USAGE
+  USING THE GLINT WAND
 ================================================================================
 
-FORMAT
+Find the Glint Wand in the Custom Glints creative tab. Hold it and right-click
+to open the editor.
+
+  - Pick any item from the item list on the left.
+  - Choose a pattern from the 4x4 design grid.
+  - Add up to 8 color slots. Edit each via hex input or R/G/B sliders.
+  - Adjust speed (0.25x – 8.0x) and toggle smooth color interpolation.
+  - Click "Get Item" — the item lands in your inventory with the glint applied.
+  - To remove a glint, hold the glinted item in your off-hand and click
+    "Remove Glint" while holding the wand in your main hand.
+
+The wand remembers your last config. Re-opening it pre-fills everything.
+
+
+================================================================================
+  NBT COMMAND FORMAT
+================================================================================
+
+  /give @p <item>{<modid>:{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>}}
+
+  The tag key is the mod ID: "customglint" in the standalone version.
+  Embedding devs: it changes automatically when you change MOD_ID.
+
+FIELDS
 ------
-  /give @p <item>{customglint:{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>}} 1
+  design        ResourceLocation of the pattern PNG.
+                Format: customglint:textures/glint/<name>.png
+                Custom PNGs are supported — drop them in the assets folder.
 
-  scale and simultaneous are optional; defaults shown below.
+  colors        One or more signed 32-bit ARGB ints. Alpha byte is ignored.
+                simultaneous:1b (default): all colors rendered as layers at once.
+                simultaneous:0b: colors cycle one at a time.
 
-  design       — pattern ResourceLocation: customglint:textures/glint/<name>.png
-  colors       — one or more signed 32-bit ARGB ints (alpha ignored)
-                 simultaneous:1b (default): all colors rendered at once as overlapping layers
-                 simultaneous:0b: colors cycle one at a time
-  speed        — animation rate multiplier: 1.0 = 20 ticks/color
-                 0.25 = slow, 8.0 = fast; values outside this range work via command
-  interpolate  — 1b = smooth lerp between colors, 0b = hard cut (cycle mode only)
-  scale        — texture tiling multiplier; 1.0 = default pattern size (default: 1.0)
-  simultaneous — 1b = render all colors as separate layers at once (default)
-                 0b = cycle through colors one at a time
+  speed         Animation rate multiplier. 1.0 = 20 ticks per color.
+                0.25 = very slow, 8.0 = very fast. Clamped to 1.0 if <= 0.
+
+  interpolate   1b = smooth lerp between colors (cycle mode only).
+                0b = hard cut between colors.
+
+  scale         Texture tiling multiplier. 1.0 = default size. (optional, default 1.0)
+                Clamped to 1.0 if <= 0.
+
+  simultaneous  1b = all color slots rendered as overlapping layers simultaneously.
+                0b = cycle through one color at a time.
+                (optional, default 1b)
 
 EXAMPLE
 -------
@@ -43,11 +71,11 @@ REMOVE GLINT
 
 NOTES
 -----
-  - The alpha byte of each color is always ignored. Full opacity only.
-  - Speed <= 0 is clamped to 1.0 at read time.
-  - scale <= 0 is clamped to 1.0 at read time.
-  - interpolate:0b with only 1 color is identical to interpolate:1b.
-  - simultaneous:1b with only 1 color is identical to simultaneous:0b.
+  - Alpha byte of each color int is always ignored. Full opacity only.
+  - interpolate:0b with 1 color is identical to interpolate:1b.
+  - simultaneous:1b with 1 color is identical to simultaneous:0b.
+  - Speed values below ~0.1 look static; above ~10.0 individual colors
+    become invisible due to cycle speed.
 
 
 ================================================================================
@@ -60,8 +88,10 @@ NOTES
   stripes    swirl        wave       zigzag
 
   Format: customglint:textures/glint/<name>.png
-  Add your own by dropping any PNG into assets/customglint/textures/glint/.
-  The system converts it to grayscale at runtime on first use.
+
+  Custom designs: drop any PNG into assets/customglint/textures/glint/.
+  The system converts it to grayscale at runtime on first use and applies
+  your color on top via shader tint.
 
 
 ================================================================================
@@ -86,11 +116,11 @@ NOTES
   Hot Pink     0xFF69B4  →    -38476
   Coral        0xFF6347  →    -40121
   Dark Red     0x8B0000  →  -7667712
-  Gold         0xFFD700  →    -10496
+  Gold         0xFFD700  →  -10496
   Aquamarine   0x7FFFD4  →  -8388652
   Lavender     0xE6E6FA  →  -1644806
   Silver       0xC0C0C0  →  -4144960
-  White        0xFFFFFF  →        -1
+  White        0xFFFFFF  →       -1
   Black        0x000000  → -16777216
 
   To convert any hex color: parse as unsigned int, cast to signed int.
@@ -98,26 +128,174 @@ NOTES
 
 
 ================================================================================
-  INTEGRATING INTO YOUR OWN MOD (source embedding, MIT)
+  COMMAND EXAMPLES
 ================================================================================
 
-Attribution is required. Keep the MIT header in each file you copy.
+-- SINGLE COLOR --
+
+Red wave on diamond sword:
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b}} 1
+
+White wave on netherite chestplate:
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-1],speed:1.0f,interpolate:1b}} 1
+
+Gold sparkle on netherite helmet:
+/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-10496],speed:1.0f,interpolate:1b}} 1
+
+Blue sparkle on diamond pickaxe:
+/give @p minecraft:diamond_pickaxe{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16776961],speed:1.0f,interpolate:1b}} 1
+
+
+-- MULTI-COLOR ANIMATED (smooth lerp) --
+
+Rainbow (wave, slow):
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:0.5f,interpolate:1b}} 1
+
+Fire gradient (dark red → red → orange → yellow):
+/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+
+Ice (white → sky blue → cyan → dark blue):
+/give @p minecraft:trident{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.6f,interpolate:1b}} 1
+
+Galaxy (sparkle, slow):
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1,-1146130,-8388353],speed:0.4f,interpolate:1b}} 1
+
+Ocean (dark blue → blue → cyan → sky blue → white):
+/give @p minecraft:trident{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-16777077,-16776961,-16711681,-16728065,-1],speed:0.7f,interpolate:1b}} 1
+
+Lava (black → dark red → red → orange → yellow):
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.6f,interpolate:1b}} 1
+
+Blood Moon (dark red → red → dark red, pulse):
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
+
+Cyber (cyan → purple → magenta, fast):
+/give @p minecraft:netherite_pickaxe{customglint:{design:"customglint:textures/glint/grid.png",colors:[I;-16711681,-8388353,-65281],speed:2.0f,interpolate:1b}} 1
+
+Amethyst (diamonds):
+/give @p minecraft:diamond_axe{customglint:{design:"customglint:textures/glint/diamonds.png",colors:[I;-11861886,-8388353,-1146130,-1644806,-1146130,-8388353],speed:0.6f,interpolate:1b}} 1
+
+Cotton Candy (sparkle):
+/give @p minecraft:crossbow{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-38476,-1644806,-16711681,-38476],speed:1.0f,interpolate:1b}} 1
+
+
+-- MULTI-COLOR ANIMATED (hard cut) --
+
+Police Lights (stripes, very fast):
+/give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/stripes.png",colors:[I;-65536,-16776961],speed:6.0f,interpolate:0b}} 1
+
+Strobe Rainbow (sparkle, fast):
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-65536,-256,-16711936,-16776961,-8388353],speed:4.0f,interpolate:0b}} 1
+
+Alert Blink (red → black, very fast):
+/give @p minecraft:netherite_sword{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-65536,-16777216],speed:8.0f,interpolate:0b}} 1
+
+Christmas (wave, hard red/green):
+/give @p minecraft:diamond_axe{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936],speed:1.0f,interpolate:0b}} 1
+
+Halloween (fire, orange/black/purple):
+/give @p minecraft:netherite_axe{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-32768,-16777216,-8388353],speed:1.0f,interpolate:0b}} 1
+
+
+-- FULL ARMOR SETS --
+
+Galaxy armor (sparkle, slow lerp):
+/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:netherite_leggings{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
+
+Fire armor (fire pattern, lava colors):
+/give @p minecraft:netherite_helmet{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_chestplate{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_leggings{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+/give @p minecraft:netherite_boots{customglint:{design:"customglint:textures/glint/fire.png",colors:[I;-16777216,-7667712,-65536,-32768,-256],speed:0.8f,interpolate:1b}} 1
+
+Ice armor (scales, white → cyan gradient):
+/give @p minecraft:diamond_helmet{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_chestplate{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_leggings{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.5f,interpolate:1b}} 1
+/give @p minecraft:diamond_boots{customglint:{design:"customglint:textures/glint/scales.png",colors:[I;-1,-16728065,-16711681,-16777077],speed:0.5f,interpolate:1b}} 1
+
+
+-- MISC ITEMS --
+
+Glowing totem (rainbow wave):
+/give @p minecraft:totem_of_undying{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-32768,-256,-16711936,-16776961,-1146130],speed:1.0f,interpolate:1b}} 1
+
+Glowing elytra (ocean):
+/give @p minecraft:elytra{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-16777077,-16776961,-16711681,-16728065,-1],speed:0.7f,interpolate:1b}} 1
+
+Glowing shield (galaxy):
+/give @p minecraft:shield{customglint:{design:"customglint:textures/glint/sparkle.png",colors:[I;-16777077,-11861886,-8388353,-1146130,-1],speed:0.5f,interpolate:1b}} 1
+
+Glowing mace (blood moon pulse):
+/give @p minecraft:mace{customglint:{design:"customglint:textures/glint/pulse.png",colors:[I;-7667712,-65536,-7667712],speed:0.5f,interpolate:1b}} 1
+
+
+================================================================================
+  KNOWN LIMITATIONS
+================================================================================
+
+  - clearTextures() is not wired to a resource reload listener. Textures
+    survive pack reloads until clearTextures() is called manually.
+
+  - Speed values below ~0.1 cycle so slowly they look static for minutes.
+    Values above ~10.0 cycle so fast individual colors become invisible.
+
+  - If a player's inventory is full when clicking "Get Item" in the editor,
+    the item is silently dropped.
+
+
+================================================================================
+  EMBEDDING IN YOUR OWN MOD (no dependency required)
+================================================================================
+
+You can copy the glint system directly into your mod under the MIT license.
+Attribution required — keep the MIT header in each file you copy.
+The Glint Wand, GUI, and networking (module/) are optional. You can drive
+everything through CustomGlint.write() alone and skip them entirely.
+
+JAVA API
+--------
+All public methods live in CustomGlint. The design and color constants
+are also there, so you never need raw integers or ResourceLocation strings.
+
+  // Apply a glint
+  CustomGlint.write(stack, CustomGlint.WAVE,
+      new int[]{CustomGlint.RED, CustomGlint.BLUE},
+      1.0f,   // speed
+      true,   // interpolate
+      1.0f,   // patternScale
+      true);  // simultaneous
+
+  // Check presence
+  boolean hasGlint = CustomGlint.has(stack);
+
+  // Read data (returns null if absent)
+  CustomGlint.Data data = CustomGlint.read(stack);
+
+  // Remove
+  CustomGlint.remove(stack);
+
+  // Color constants: CustomGlint.RED, BLUE, GREEN, GOLD, WHITE, etc.
+  // Design constants: CustomGlint.WAVE, FIRE, SPARKLE, GALAXY, etc.
+  // Compute animated color for the current tick (useful for custom rendering):
+  int color = CustomGlint.computeAnimatedColor(data);
 
 MULTI-MOD SAFETY
 ----------------
-Multiple mods can embed this code simultaneously without conflicting:
+Multiple mods embedding this code simultaneously do not conflict:
 
-  - Render types and texture namespaces are all scoped to MOD_ID, so each
-    embedded copy registers its own isolated set — no overlap.
+  - Render types and texture namespaces are scoped to MOD_ID — each embedded
+    copy registers its own isolated set with no overlap.
 
-  - The mixin intercepts use @Inject (not @Redirect). @Inject stacks across
-    mods; @Redirect does not — only one mod's redirect fires per call site.
-    Every inject checks isCancelled() first and yields if another mod already
-    handled the item, so mods compose cleanly.
+  - Mixin intercepts use @Inject, not @Redirect. @Inject stacks across mods;
+    @Redirect does not. Every inject checks isCancelled() first and yields if
+    another mod already handled the item.
 
-  - NBT key collisions are avoided automatically. TAG is derived from MOD_ID,
-    so changing MOD_ID (which you must do anyway) also changes the NBT key.
-    No separate manual step required.
+  - The NBT tag key is derived from MOD_ID automatically. Changing MOD_ID
+    (which you must do) also changes the key — no manual step needed.
 
 STEP 1 — Copy source files
 
@@ -136,7 +314,7 @@ STEP 2 — Wire MOD_ID
 
   Change that import to point to your own main mod class. The field must be
   named MOD_ID. That one field drives all ResourceLocation namespaces,
-  render type names, and the NBT key — nothing else needs changing.
+  render type names, and the NBT tag key — nothing else needs changing.
 
 STEP 3 — Copy textures
 
@@ -145,12 +323,12 @@ STEP 3 — Copy textures
 
   Update design paths in your code or /give examples from
   "customglint:textures/glint/..." to "<yourmodid>:textures/glint/...".
+  The design constants in CustomGlint update automatically via MOD_ID.
 
 STEP 4 — Mixin config
 
   The mixin classes must live in a package that matches the "package" field
-  in your mixins JSON. Getting this wrong causes the mixins to silently fail
-  to load at startup.
+  in your mixins JSON. Getting this wrong causes the mixins to silently fail.
 
   If you already have a mixins JSON, add to its "client" array:
     "ItemRendererMixin",
@@ -175,45 +353,3 @@ STEP 4 — Mixin config
   Register it in your mods.toml:
     [[mixins]]
     config="<yourmodid>.mixins.json"
-
-
-================================================================================
-  HOW IT WORKS (brief)
-================================================================================
-
-ItemRendererMixin intercepts getFoilBuffer / getFoilBufferDirect every render
-frame. If the item has a customglint NBT tag, it reads the Data record and
-returns a VertexMultiConsumer that writes geometry to the custom glint layer(s)
-and the item's base layer simultaneously. In simultaneous mode one consumer is
-created per color slot; in cycle mode a single animated color is computed for
-the current tick.
-
-HumanoidArmorLayerMixin applies the same logic to worn armor, using a separate
-render type path (EQUAL depth test + VIEW_OFFSET_Z_LAYERING) so the glint
-aligns with the armor surface depth rather than clipping through it.
-
-RenderBuffersMixin captures the fixedBuffers map from RenderBuffers at
-construction time. Each distinct glint config gets its own RenderType and
-dedicated BufferBuilder inserted into that map — required so geometry is not
-silently dropped when switching render types mid-batch.
-
-CustomGlint.getTexture() converts the source PNG to grayscale on first use
-and registers it as a DynamicTexture. The shader then tints it using
-setShaderColor(), which is how color animation works.
-
-The RenderType cache key includes design, full color array, speed, interpolate,
-isItem, scale, and color index. Color index lets simultaneous mode create one
-RenderType per color slot. The current frame color is never part of the key —
-it flows into the RenderType through a closed-over float[4] holder updated on
-every call.
-
-
-================================================================================
-  KNOWN LIMITATIONS
-================================================================================
-
-  - clearTextures() is not wired to a resource reload listener. Textures
-    survive pack reloads until clearTextures() is called manually.
-
-  - Speed values below ~0.1 cycle so slowly they look static for minutes.
-    Values above ~10.0 cycle so fast individual colors become invisible.
