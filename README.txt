@@ -154,9 +154,9 @@ APPLY
   /glint apply <design> <colors> [speed] [smooth]
 
     design   — design name (tab-completes). One of:
-               vanilla, checker, crosshatch, diamonds, dots, fire, grid,
-               hexagon, pulse, ripple, scales, sparkle, stars, stripes,
-               swirl, wave, zigzag
+               vanilla, checker, crosshatch, crystal, diamonds, dots,
+               ember, fire, grid, hexagon, pulse, ripple, scales, sparkle,
+               stars, stripes, swirl, vein, wave, zigzag
 
     colors   — comma-separated color names (no spaces). Tab-completes after
                each comma. One of:
@@ -184,13 +184,14 @@ REMOVE
 
 
 ================================================================================
-  DESIGNS (16 custom + vanilla)
+  DESIGNS (19 custom + vanilla)
 ================================================================================
 
-  checker    crosshatch   diamonds   dots
-  fire       grid         hexagon    pulse
-  ripple     scales       sparkle    stars
-  stripes    swirl        wave       zigzag
+  checker    crosshatch   crystal    diamonds
+  dots       ember        fire       grid
+  hexagon    pulse        ripple     scales
+  sparkle    stars        stripes    swirl
+  vein       wave         zigzag
   vanilla    (minecraft:textures/misc/enchanted_glint_item.png)
 
   Format for custom designs: customglint:textures/glint/<name>.png
