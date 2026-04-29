@@ -6,6 +6,7 @@ import net.tunamods.customglint.module.item.GlintWandItem;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -31,6 +32,7 @@ public class CustomGlintMod {
             () -> new GlintWandItem(new Item.Properties().stacksTo(1)));
 
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
+            .title(Component.translatable("itemGroup.customglint.glint_tab"))
             .withTabsBefore(CreativeModeTabs.COMBAT)
             .icon(() -> {
                 ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
