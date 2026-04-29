@@ -20,9 +20,13 @@ to open the editor.
 
   - Pick any item from the item list on the left.
   - Choose a pattern from the 4x4 design grid.
-  - Add up to 8 color slots. Edit each via hex input or R/G/B sliders.
+  - Add up to 8 color slots. Edit each via hex input or R/G/B/A fields.
+  - The A field (0–255) controls opacity/brightness for that color slot.
+    255 = full intensity, 0 = invisible. Use lower values to tone down
+    colors that are too bright at certain scales or on bright patterns.
   - Adjust speed (0.25x – 8.0x) and toggle smooth color interpolation.
   - Click "Get Item" — the item lands in your inventory with the glint applied.
+    The wand remembers your settings so re-opening pre-fills the last config.
   - To remove a glint, hold the glinted item in your off-hand and click
     "Remove Glint" while holding the wand in your main hand.
 
@@ -100,7 +104,10 @@ FIELDS
                 Format: customglint:textures/glint/<name>.png
                 Custom PNGs are supported — drop them in the assets folder.
 
-  colors        One or more signed 32-bit ARGB ints. Alpha byte is ignored.
+  colors        One or more signed 32-bit ARGB ints.
+                Alpha byte controls brightness: 0xFF = full, 0x00 = invisible.
+                Applied as an RGB multiplier — the blend mode is additive, so
+                this dims the glint rather than blending it with the background.
                 simultaneous:1b (default): all colors rendered as layers at once.
                 simultaneous:0b: colors cycle one at a time.
 

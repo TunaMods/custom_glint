@@ -89,6 +89,8 @@ public class GlintApplyPacket {
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, designRL, pkt.colors, pkt.speed, pkt.interpolate, pkt.patternScale, pkt.simultaneous);
                 player.addItem(given);
+                ItemStack wand = player.getItemInHand(pkt.wandHand);
+                if (!wand.isEmpty()) CustomGlint.write(wand, designRL, pkt.colors, pkt.speed, pkt.interpolate, pkt.patternScale, pkt.simultaneous);
             }
         });
         ctx.get().setPacketHandled(true);
