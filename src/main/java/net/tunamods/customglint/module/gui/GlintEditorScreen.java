@@ -27,7 +27,7 @@ public class GlintEditorScreen extends Screen {
 
     // ── Layout constants ────────────────────────────────────────────────────
     private static final int PANEL_W    = 300;
-    private static final int PANEL_H    = 276;
+    private static final int PANEL_H    = 292;
     private static final int PREVIEW_SZ = 80;
 
     private static final String[] DESIGNS = {
@@ -62,7 +62,7 @@ public class GlintEditorScreen extends Screen {
     private boolean         simultaneous    = true;
     private int             editingColorIdx = 0;
 
-    private int editR = 0x88, editG = 0x44, editB = 0xEE;
+    private int editR = 0x88, editG = 0x44, editB = 0xEE, editA = 0xFF;
 
     private Item      previewItem  = Items.NETHERITE_SWORD;
     private ItemStack previewStack = ItemStack.EMPTY;
@@ -75,7 +75,7 @@ public class GlintEditorScreen extends Screen {
     private static final int VISIBLE_ROWS = 8, ROW_H = 18;
 
     // ── Widget refs ─────────────────────────────────────────────────────────
-    private EditBox        hexBox, rBox, gBox, bBox;
+    private EditBox        hexBox, rBox, gBox, bBox, aBox;
     private EditBox        searchBox;
     private final Button[] designBtns = new Button[DESIGNS.length];
 
@@ -107,6 +107,7 @@ public class GlintEditorScreen extends Screen {
 
     private void loadEditRGB() {
         int c = editingColorIdx < colors.size() ? colors.get(editingColorIdx) : 0xFF8844EE;
+        editA = (c >> 24) & 0xFF;
         editR = (c >> 16) & 0xFF;
         editG = (c >>  8) & 0xFF;
         editB =  c        & 0xFF;
@@ -114,7 +115,7 @@ public class GlintEditorScreen extends Screen {
 
     private void saveEditRGB() {
         if (editingColorIdx < colors.size())
-            colors.set(editingColorIdx, 0xFF000000 | (editR << 16) | (editG << 8) | editB);
+            colors.set(editingColorIdx, (editA << 24) | (editR << 16) | (editG << 8) | editB);
     }
 
     private void syncHexFromRGB() {
@@ -128,6 +129,7 @@ public class GlintEditorScreen extends Screen {
         if (rBox != null) { rBox.setResponder(null); rBox.setValue(String.valueOf(editR)); rBox.setResponder(this::onRChanged); }
         if (gBox != null) { gBox.setResponder(null); gBox.setValue(String.valueOf(editG)); gBox.setResponder(this::onGChanged); }
         if (bBox != null) { bBox.setResponder(null); bBox.setValue(String.valueOf(editB)); bBox.setResponder(this::onBChanged); }
+        if (aBox != null) { aBox.setResponder(null); aBox.setValue(String.valueOf(editA)); aBox.setResponder(this::onAChanged); }
     }
 
     // ── EditBox responders ───────────────────────────────────────────────────
@@ -168,6 +170,15 @@ public class GlintEditorScreen extends Screen {
             int v = Integer.parseInt(s);
             int c = Math.max(0, Math.min(255, v));
             editB = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
+            if (c != v) syncChannelBoxes();
+        } catch (NumberFormatException ignored) {}
+    }
+
+    private void onAChanged(String s) {
+        try {
+            int v = Integer.parseInt(s);
+            int c = Math.max(0, Math.min(255, v));
+            editA = c; saveEditRGB(); refreshPreview();
             if (c != v) syncChannelBoxes();
         } catch (NumberFormatException ignored) {}
     }
@@ -245,29 +256,35 @@ public class GlintEditorScreen extends Screen {
         bBox.setValue(String.valueOf(editB));
         bBox.setResponder(this::onBChanged);
 
+        // A (opacity) EditBox
+        aBox = addRenderableWidget(new EditBox(font, px + 116, py + 192, 36, 12, Component.literal("A")));
+        aBox.setMaxLength(3);
+        aBox.setValue(String.valueOf(editA));
+        aBox.setResponder(this::onAChanged);
+
         // Speed [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
             speed = Math.max(0.25f, Math.round((speed - 0.25f) * 4) / 4.0f);
             refreshPreview();
-        }).bounds(px + 148, py + 196, 14, 14).build());
+        }).bounds(px + 148, py + 212, 14, 14).build());
 
         // Speed [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             speed = Math.min(8.0f, Math.round((speed + 0.25f) * 4) / 4.0f);
             refreshPreview();
-        }).bounds(px + 196, py + 196, 14, 14).build());
+        }).bounds(px + 196, py + 212, 14, 14).build());
 
         // Pattern Scale [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
             patternScale = Math.max(0.25f, Math.round((patternScale - 0.25f) * 4) / 4.0f);
             refreshPreview();
-        }).bounds(px + 148, py + 212, 14, 14).build());
+        }).bounds(px + 148, py + 228, 14, 14).build());
 
         // Pattern Scale [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             patternScale = Math.min(4.0f, Math.round((patternScale + 0.25f) * 4) / 4.0f);
             refreshPreview();
-        }).bounds(px + 196, py + 212, 14, 14).build());
+        }).bounds(px + 196, py + 228, 14, 14).build());
 
         // Smooth toggle
         addRenderableWidget(Button.builder(
@@ -275,7 +292,7 @@ public class GlintEditorScreen extends Screen {
             interpolate = !interpolate;
             b.setMessage(Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")));
             refreshPreview();
-        }).bounds(px + 100, py + 230, 90, 14).build());
+        }).bounds(px + 100, py + 246, 90, 14).build());
 
         // Simultaneous toggle
         addRenderableWidget(Button.builder(
@@ -283,7 +300,7 @@ public class GlintEditorScreen extends Screen {
             simultaneous = !simultaneous;
             b.setMessage(Component.literal(simultaneous ? "Mode: All" : "Mode: Cycle"));
             refreshPreview();
-        }).bounds(px + 196, py + 230, 96, 14).build());
+        }).bounds(px + 196, py + 246, 96, 14).build());
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
@@ -300,20 +317,20 @@ public class GlintEditorScreen extends Screen {
             String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
                     wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, simultaneous, itemId));
-        }).bounds(px + 8, py + 256, 90, 14).build());
+        }).bounds(px + 8, py + 272, 90, 14).build());
 
         // Apply glint to item already in the other hand
         addRenderableWidget(Button.builder(Component.literal("Apply to Hand"), b -> {
             int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
                     wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, simultaneous, ""));
-        }).bounds(px + 105, py + 256, 90, 14).build());
+        }).bounds(px + 105, py + 272, 90, 14).build());
 
         // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
             ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
                     wandHand, true, "", new int[0], 1.0f, true, 1.0f, true, ""));
-        }).bounds(px + 202, py + 256, 90, 14).build());
+        }).bounds(px + 202, py + 272, 90, 14).build());
 
         // Item picker search box — managed manually
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.literal("Search items..."));
@@ -366,8 +383,9 @@ public class GlintEditorScreen extends Screen {
         g.drawString(font, "R:", px + 100, py + 146, 0xFF6666);
         g.drawString(font, "G:", px + 100, py + 162, 0x66FF66);
         g.drawString(font, "B:", px + 100, py + 178, 0x6666FF);
-        g.drawString(font, "Speed:",  px + 100, py + 198, 0xAAAAAA);
-        g.drawString(font, "Scale:",  px + 100, py + 214, 0xAAAAAA);
+        g.drawString(font, "A:", px + 100, py + 194, 0xAAAAAA);
+        g.drawString(font, "Speed:",  px + 100, py + 214, 0xAAAAAA);
+        g.drawString(font, "Scale:",  px + 100, py + 230, 0xAAAAAA);
 
         // Design selection highlight (behind buttons)
         for (int i = 0; i < DESIGNS.length; i++) {
@@ -403,8 +421,8 @@ public class GlintEditorScreen extends Screen {
         g.fill(px + 120, py + 128, px + 132, py + 140,
                0xFF000000 | (colors.get(editingColorIdx) & 0xFFFFFF));
 
-        g.drawCenteredString(font, String.format("%.2f×", speed),        px + 175, py + 198, 0xFFFFFF);
-        g.drawCenteredString(font, String.format("%.2f×", patternScale), px + 175, py + 214, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", speed),        px + 175, py + 214, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", patternScale), px + 175, py + 230, 0xFFFFFF);
 
         // Item picker overlay — translated forward so it clips above the item preview (Z=200) and widgets
         if (showPicker) {
