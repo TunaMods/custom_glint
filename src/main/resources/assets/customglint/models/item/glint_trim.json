@@ -1,0 +1,28 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "minecraft:item/ward_armor_trim_smithing_template"
+  },
+  "overrides": [
+    { "predicate": { "custom_model_data": 1  }, "model": "customglint:item/trim/checker"    },
+    { "predicate": { "custom_model_data": 2  }, "model": "customglint:item/trim/crosshatch" },
+    { "predicate": { "custom_model_data": 3  }, "model": "customglint:item/trim/crystal"    },
+    { "predicate": { "custom_model_data": 4  }, "model": "customglint:item/trim/diamonds"   },
+    { "predicate": { "custom_model_data": 5  }, "model": "customglint:item/trim/dots"       },
+    { "predicate": { "custom_model_data": 6  }, "model": "customglint:item/trim/ember"      },
+    { "predicate": { "custom_model_data": 7  }, "model": "customglint:item/trim/fire"       },
+    { "predicate": { "custom_model_data": 8  }, "model": "customglint:item/trim/grid"       },
+    { "predicate": { "custom_model_data": 9  }, "model": "customglint:item/trim/hexagon"    },
+    { "predicate": { "custom_model_data": 10 }, "model": "customglint:item/trim/pulse"      },
+    { "predicate": { "custom_model_data": 11 }, "model": "customglint:item/trim/ripple"     },
+    { "predicate": { "custom_model_data": 12 }, "model": "customglint:item/trim/scales"     },
+    { "predicate": { "custom_model_data": 13 }, "model": "customglint:item/trim/sparkle"    },
+    { "predicate": { "custom_model_data": 14 }, "model": "customglint:item/trim/stars"      },
+    { "predicate": { "custom_model_data": 15 }, "model": "customglint:item/trim/stripes"    },
+    { "predicate": { "custom_model_data": 16 }, "model": "customglint:item/trim/swirl"      },
+    { "predicate": { "custom_model_data": 17 }, "model": "customglint:item/trim/vein"       },
+    { "predicate": { "custom_model_data": 18 }, "model": "customglint:item/trim/wave"       },
+    { "predicate": { "custom_model_data": 19 }, "model": "customglint:item/trim/zigzag"     },
+    { "predicate": { "custom_model_data": 20 }, "model": "customglint:item/trim/vanilla"    }
+  ]
+}

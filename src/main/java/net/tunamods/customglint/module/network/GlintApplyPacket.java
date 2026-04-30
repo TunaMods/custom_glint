@@ -57,7 +57,7 @@ public class GlintApplyPacket {
         boolean remove = buf.readBoolean();
         if (remove) return new GlintApplyPacket(hand, true, "", new int[0], 1.0f, true, 1.0f, true, "");
         String design = buf.readUtf();
-        int len = buf.readVarInt();
+        int len = Math.min(buf.readVarInt(), 8);
         int[] colors = new int[len];
         for (int i = 0; i < len; i++) colors[i] = buf.readInt();
         float speed = buf.readFloat();

@@ -17,54 +17,11 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Core mixin — intercepts {@link ItemRenderer#render} to inject custom per-item glint rendering.
- *
- * <h3>Full render flow</h3>
- * <ol>
- *   <li>{@link ItemRenderer#render} is called by Minecraft to draw an item.</li>
- *   <li>{@code @Inject HEAD} captures the {@link ItemStack} into {@link #CURRENT_STACK} so it is
- *       accessible inside the injected helper calls below (which don't receive the stack).</li>
- *   <li>Vanilla internally calls {@code getFoilBuffer} or {@code getFoilBufferDirect} to build the
- *       composite {@link VertexConsumer} for the item geometry.</li>
- *   <li>{@code @Inject HEAD cancellable} on those calls routes them to {@link #applyGlint}, which:
- *     <ul>
- *       <li>Reads {@link CustomGlint.Data} from the captured stack's NBT.</li>
- *       <li>If a custom glint is present: computes the current animated color, acquires the
- *           pre-allocated glint {@link com.mojang.blaze3d.vertex.BufferBuilder} via
- *           {@link CustomGlint#forGlint}, and returns a {@link VertexMultiConsumer} that writes
- *           item geometry to both the base layer and the glint layer simultaneously.</li>
- *       <li>If no custom glint: falls through to vanilla {@code getFoilBuffer}/{@code getFoilBufferDirect}
- *           unmodified.</li>
- *     </ul>
- *   </li>
- *   <li>{@code @Inject RETURN} clears {@link #CURRENT_STACK} after the render call completes.</li>
- * </ol>
- *
- * <h3>Dual SRG / named targets</h3>
- * Every inject targets both the obfuscated SRG method name (e.g. {@code m_115143_})
- * and the deobfuscated named signature. {@code require=0} on all of them means neither target is
- * mandatory — if one doesn't match (e.g. you're in a dev environment where only the named form exists,
- * or in production where only the SRG form exists), the other handles it. This prevents the mod from
- * crashing if either mapping is absent.
- */
+/** Intercepts getFoilBuffer/getFoilBufferDirect to inject custom per-item glint. Dual SRG/named targets, require=0 on all. */
 @Mixin(ItemRenderer.class)
 public class ItemRendererMixin {
 
-    /**
-     * Holds the {@link ItemStack} currently being rendered, set at the entry of
-     * {@link ItemRenderer#render} and cleared on exit.
-     *
-     * <p>ThreadLocal because rendering can theoretically be called from multiple threads
-     * (though in practice it runs on the render thread). Using ThreadLocal avoids any
-     * static-field race condition.
-     */
     private static final ThreadLocal<ItemStack> CURRENT_STACK = new ThreadLocal<>();
-
-    /**
-     * Reusable float[4] RGBA buffer per thread — avoids allocating a new array every frame
-     * for every item that has a custom glint.
-     */
     private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     // ── Stack capture (HEAD) ──────────────────────────────────────────────────
@@ -106,8 +63,7 @@ public class ItemRendererMixin {
     }
 
     // ── getFoilBuffer intercepts ─────────────────────────────────────────────
-    // getFoilBuffer is called for batched (indirect) rendering — items in world, item frames, etc.
-    // @Inject stacks across mods; isCancelled() check yields to any mod that already handled this item.
+    // getFoilBuffer = batched rendering (world items, item frames). @Inject stacks; isCancelled() yields.
 
     /** SRG target: intercepts getFoilBuffer in obfuscated environments. */
     @Inject(method = "m_115211_", at = @At("HEAD"), cancellable = true, require = 0)
@@ -131,7 +87,7 @@ public class ItemRendererMixin {
     }
 
     // ── getFoilBufferDirect intercepts ───────────────────────────────────────
-    // getFoilBufferDirect is called for direct (GUI / immediate-mode) rendering.
+    // getFoilBufferDirect = direct/GUI (immediate-mode) rendering.
 
     /** SRG target: intercepts getFoilBufferDirect in obfuscated environments. */
     @Inject(method = "m_115222_", at = @At("HEAD"), cancellable = true, require = 0)
@@ -156,24 +112,7 @@ public class ItemRendererMixin {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Core logic: if the currently-rendering stack has a {@code custom_glint} tag, injects the
-     * custom glint layer. Otherwise delegates to vanilla.
-     *
-     * <p>When a custom glint IS present:
-     * <ol>
-     *   <li>Computes the current animated color from the glint's color array + game time.</li>
-     *   <li>Calls {@link CustomGlint#forGlint} which returns a {@link RenderType} specific
-     *       to this glint config, updating its closed-over color holder with the current frame color.
-     *       The RenderType is created on first use and registered into {@code fixedBuffers} so it has
-     *       its own dedicated {@link com.mojang.blaze3d.vertex.BufferBuilder}.</li>
-     *   <li>Returns {@link VertexMultiConsumer#create(VertexConsumer...)} combining the per-config
-     *       glint buffer and the item's base buffer — so geometry lands in both simultaneously.</li>
-     * </ol>
-     *
-     * @param isItem {@code true} when called from the {@code getFoilBuffer} path (batched/world rendering);
-     *               {@code false} for the {@code getFoilBufferDirect} path (GUI rendering).
-     */
+    /** Returns a VertexMultiConsumer combining the custom glint layer(s) + base renderType, or null if no glint. */
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
         ItemStack stack = CURRENT_STACK.get();
         if (stack == null) return null;

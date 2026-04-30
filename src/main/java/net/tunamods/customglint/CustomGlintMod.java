@@ -3,9 +3,21 @@ package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.command.GlintCommand;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlintWandItem;
+import net.tunamods.customglint.module.loot.GlintLootModifier;
+import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.network.ModNetworking;
+import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimSmithingRecipe;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.entity.player.ItemFishedEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import com.mojang.serialization.Codec;
+import net.minecraftforge.common.loot.IGlobalLootModifier;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
@@ -14,24 +26,45 @@ import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 
 @Mod(CustomGlintMod.MOD_ID)
 public class CustomGlintMod {
     public static final String MOD_ID = "customglint";
 
-    public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
-    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
+    public static final DeferredRegister<Item> ITEMS =
+            DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
+            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
+    public static final DeferredRegister<Codec<? extends IGlobalLootModifier>> LOOT_MODIFIER_SERIALIZERS =
+            DeferredRegister.create(ForgeRegistries.Keys.GLOBAL_LOOT_MODIFIER_SERIALIZERS, MOD_ID);
+    public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS =
+            DeferredRegister.create(ForgeRegistries.RECIPE_SERIALIZERS, MOD_ID);
+
+    public static final RegistryObject<Codec<GlintLootModifier>> GLINT_LOOT_MODIFIER =
+            LOOT_MODIFIER_SERIALIZERS.register("glint_loot_modifier", GlintLootModifier.CODEC);
+    public static final RegistryObject<Codec<GlintTrimLootModifier>> GLINT_TRIM_LOOT_MODIFIER =
+            LOOT_MODIFIER_SERIALIZERS.register("glint_trim_loot_modifier", GlintTrimLootModifier.CODEC);
 
     public static final RegistryObject<GlintWandItem> GLINT_WAND = ITEMS.register("glint_wand",
             () -> new GlintWandItem(new Item.Properties().stacksTo(1)));
+
+    public static final RegistryObject<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
+            () -> new GlintTrimItem(new Item.Properties().stacksTo(16)));
+
+    public static final RegistryObject<RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_dye", () -> GlintTrimDyeRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlintTrimMergeRecipe>> GLINT_TRIM_MERGE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_merge", () -> GlintTrimMergeRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlintTrimSmithingRecipe>> GLINT_TRIM_SMITHING_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_smithing", () -> GlintTrimSmithingRecipe.SERIALIZER);
 
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
@@ -44,7 +77,17 @@ public class CustomGlintMod {
                         0.5f, true, 1.0f, true);
                 return icon;
             })
-            .displayItems((parameters, output) -> output.accept(GLINT_WAND.get()))
+            .displayItems((parameters, output) -> {
+                output.accept(GLINT_WAND.get());
+                for (String pattern : GlintTrimItem.PATTERNS) {
+                    ItemStack trim = new ItemStack(GLINT_TRIM.get());
+                    ResourceLocation loc = pattern.equals("vanilla")
+                        ? CustomGlint.VANILLA
+                        : new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
+                    GlintTrimItem.setPattern(trim, loc);
+                    output.accept(trim);
+                }
+            })
             .build());
 
     public CustomGlintMod() {
@@ -54,11 +97,16 @@ public class CustomGlintMod {
 
         ITEMS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
+        LOOT_MODIFIER_SERIALIZERS.register(modEventBus);
+        RECIPE_SERIALIZERS.register(modEventBus);
 
         ModNetworking.register();
 
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
+        MinecraftForge.EVENT_BUS.addListener(this::onCraft);
+        MinecraftForge.EVENT_BUS.addListener(this::onFish);
+        MinecraftForge.EVENT_BUS.addListener(this::onMobDrop);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -66,5 +114,26 @@ public class CustomGlintMod {
 
     private void registerCommands(RegisterCommandsEvent event) {
         GlintCommand.register(event.getDispatcher());
+    }
+
+    private void onCraft(PlayerEvent.ItemCraftedEvent event) {
+        CustomGlint.applyCraftGlint(event.getCrafting());
+        if (event.getInventory().getContainerSize() == 3 && CustomGlint.has(event.getCrafting())) {
+            CustomGlint.Data data = CustomGlint.read(event.getCrafting());
+            if (data != null) {
+                ItemStack trim = new ItemStack(GLINT_TRIM.get());
+                GlintTrimItem.setPattern(trim, data.design());
+                for (int color : data.colors()) GlintTrimItem.addColor(trim, color);
+                event.getEntity().addItem(trim);
+            }
+        }
+    }
+
+    private void onFish(ItemFishedEvent event) {
+        event.getDrops().forEach(CustomGlint::applyFishingGlint);
+    }
+
+    private void onMobDrop(LivingDropsEvent event) {
+        event.getDrops().forEach(entity -> CustomGlint.applyMobDropGlint(entity.getItem()));
     }
 }

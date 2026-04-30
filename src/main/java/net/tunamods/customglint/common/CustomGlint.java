@@ -14,6 +14,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix4f;
 import org.slf4j.Logger;
@@ -136,6 +137,86 @@ public final class CustomGlint extends RenderStateShard {
         if (stack.hasTag()) stack.getTag().remove(TAG);
     }
 
+    public static ItemStack glinted(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        ItemStack stack = new ItemStack(item);
+        write(stack, design, colors, speed, interpolate, patternScale, simultaneous);
+        return stack;
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors) {
+        write(stack, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int color) {
+        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
+    }
+
+    public static ItemStack glinted(Item item, ResourceLocation design, int[] colors) {
+        return glinted(item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static ItemStack glinted(Item item, ResourceLocation design, int color) {
+        return glinted(item, design, new int[]{color}, 1.0f, true, 1.0f, true);
+    }
+
+    public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
+
+    public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        CRAFT_GLINTS.put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors) {
+        registerCraftGlint(item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void applyCraftGlint(ItemStack stack) {
+        Data data = CRAFT_GLINTS.get(stack.getItem());
+        if (data == null) return;
+        write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+    }
+
+    public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
+
+    public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        FISHING_GLINTS.put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors) {
+        registerFishingGlint(item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void applyFishingGlint(ItemStack stack) {
+        Data data = FISHING_GLINTS.get(stack.getItem());
+        if (data == null) return;
+        write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+    }
+
+    public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
+
+    public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        MOB_DROP_GLINTS.put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors) {
+        registerMobDropGlint(item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void applyMobDropGlint(ItemStack stack) {
+        Data data = MOB_DROP_GLINTS.get(stack.getItem());
+        if (data == null) return;
+        write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+    }
+
+    public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
+
+    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
+        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
     // ── Texture cache ─────────────────────────────────────────────────────────
 
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -202,7 +283,7 @@ public final class CustomGlint extends RenderStateShard {
     private static final Map<String, RenderType> BY_ARMOR_GLINT   = new HashMap<>();
 
     public static RenderType forArmorGlint(Data glint, float[] frameColor, int colorIdx) {
-        String key = "armor|" + glint.design() + "|" + glint.speed() + "|" + glint.patternScale() + "|" + colorIdx;
+        String key = "armor|" + glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
