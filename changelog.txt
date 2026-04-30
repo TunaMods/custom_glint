@@ -1,1 +1,27 @@
+[1.1.0]
+
+- Added Glint Trims: found randomly in world loot chests. Each trim carries a glint pattern and
+  up to 8 color slots. Combine with a dye in a crafting grid to add a color. Merge two trims
+  together to combine their color lists. Apply at a smithing table with glowstone dust to stamp
+  the glint onto any item. The trim is returned after smithing so it can be reused.
+
+- Added /glint command for operators: /glint apply <design> <colors> [speed] [smooth] and
+  /glint remove. Applies and removes glints using named tokens without touching NBT directly.
+
+- Added 3 new glint designs: crystal, ember, vein (20 designs total including vanilla).
+
+- Added vanilla enchantment texture as a selectable glint design.
+
+- Added per-color brightness control: the A field in the editor (0-255) now dims individual color
+  slots. 255 = full intensity, 0 = invisible.
+
+- Fixed: the Glint Wand now remembers your last settings when you re-open the editor.
+
+- Fixed: armor glint brightness now matches the A value set in the editor.
+
+- Fixed: two players wearing armor with the same design but different colors no longer bleed
+  each other's colors.
+
+- Fixed: vanilla glint trim now displays "Vanilla Glint Trim" in its tooltip.
+
 1.0.0 release
