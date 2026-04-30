@@ -10,6 +10,13 @@ Ships with a Glint Wand for in-game editing and a full NBT command surface
 for server admins and datapacks. Source can be embedded in your own mod
 without taking this as a dependency — see the bottom of this file.
 
+Also includes Glint Trims — lootable template items found in chests around
+the world. Each trim carries a glint pattern (wave, fire, sparkle, etc.) and
+can be dyed to load up to 8 colors onto it. Combine two trims in a crafting
+grid to merge their color lists. Once colored, apply the trim to any item at
+a smithing table with glowstone dust to stamp the full glint onto it. The
+trim is returned after crafting so you can reuse it.
+
 
 ================================================================================
   USING THE GLINT WAND
@@ -76,6 +83,32 @@ never need raw integers or ResourceLocation strings.
   // Compute the animated color for the current game tick
   int color = CustomGlint.computeAnimatedColor(data);
 
+  // Create a pre-glinted ItemStack in one call (useful in creative tab displayItems)
+  ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
+      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // Auto-apply a glint whenever a specific item is crafted
+  // Call once during setup; fires automatically via PlayerEvent.ItemCraftedEvent
+  CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE,
+      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // Auto-apply a glint to a specific fishing catch
+  // Fires on ItemFishedEvent — only applies when that exact item is reeled in
+  CustomGlint.registerFishingGlint(Items.NAME_TAG, CustomGlint.SPARKLE,
+      new int[]{CustomGlint.CYAN, CustomGlint.WHITE}, 1.5f, true, 1.0f, true);
+
+  // Auto-apply a glint to a specific mob drop
+  // Fires on LivingDropsEvent — applies to the drop before it hits the ground
+  CustomGlint.registerMobDropGlint(Items.NETHER_STAR, CustomGlint.PULSE,
+      new int[]{CustomGlint.WHITE, CustomGlint.YELLOW}, 2.0f, true, 1.0f, true);
+
+  // Auto-apply a glint to a specific item from a specific loot table
+  // Handled by a Global Loot Modifier — fires for chests, mobs, fishing, and advancements
+  CustomGlint.registerLootGlint(
+      new ResourceLocation("minecraft", "chests/end_city_treasure"),
+      Items.DIAMOND_HORSE_ARMOR, CustomGlint.CRYSTAL,
+      new int[]{CustomGlint.CYAN, CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
 COLOR CONSTANTS
   CustomGlint.RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE,
   BLUE, PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
@@ -84,9 +117,9 @@ COLOR CONSTANTS
 
 DESIGN CONSTANTS
   CustomGlint.VANILLA (minecraft enchanted glint),
-  CustomGlint.CHECKER, CROSSHATCH, DIAMONDS, DOTS, FIRE, GRID,
+  CustomGlint.CHECKER, CROSSHATCH, CRYSTAL, DIAMONDS, DOTS, EMBER, FIRE, GRID,
   HEXAGON, PULSE, RIPPLE, SCALES, SPARKLE, STARS, STRIPES,
-  SWIRL, WAVE, ZIGZAG
+  SWIRL, VEIN, WAVE, ZIGZAG
 
 
 ================================================================================
@@ -134,7 +167,8 @@ REMOVE GLINT
 
 NOTES
 -----
-  - Alpha byte of each color int is always ignored. Full opacity only.
+  - Alpha byte of each color int controls brightness: 0xFF = full, 0x00 = invisible.
+    Applied as an RGB multiplier before the shader — dims the glint, not true transparency.
   - interpolate:0b with 1 color is identical to interpolate:1b.
   - simultaneous:1b with 1 color is identical to simultaneous:0b.
   - Speed values below ~0.1 look static; above ~10.0 individual colors
@@ -283,6 +317,33 @@ are also there, so you never need raw integers or ResourceLocation strings.
   // Design constants: CustomGlint.VANILLA, WAVE, FIRE, SPARKLE, CHECKER, etc.
   // Compute animated color for the current tick (useful for custom rendering):
   int color = CustomGlint.computeAnimatedColor(data);
+
+  // Create a pre-glinted ItemStack in one call (for creative tab displayItems lambdas)
+  ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
+      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // Auto-apply a glint whenever an item is crafted
+  CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE,
+      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // Auto-apply a glint to a specific fishing catch
+  CustomGlint.registerFishingGlint(Items.NAME_TAG, CustomGlint.SPARKLE,
+      new int[]{CustomGlint.CYAN, CustomGlint.WHITE}, 1.5f, true, 1.0f, true);
+
+  // Auto-apply a glint to a specific mob drop (fires on LivingDropsEvent)
+  CustomGlint.registerMobDropGlint(Items.NETHER_STAR, CustomGlint.PULSE,
+      new int[]{CustomGlint.WHITE, CustomGlint.YELLOW}, 2.0f, true, 1.0f, true);
+
+  // Auto-apply a glint to an item from a specific loot table (Global Loot Modifier)
+  // Works for chests, mob loot, fishing tables, and advancement rewards
+  CustomGlint.registerLootGlint(
+      new ResourceLocation("minecraft", "chests/end_city_treasure"),
+      Items.DIAMOND_HORSE_ARMOR, CustomGlint.CRYSTAL,
+      new int[]{CustomGlint.CYAN, CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // All four register calls follow the same signature pattern.
+  // Call them once during your mod's setup — all event listeners and the
+  // Global Loot Modifier are already wired in CustomGlintMod.
 
 MULTI-MOD SAFETY
 ----------------
