@@ -17,20 +17,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Intercepts {@link HumanoidArmorLayer#renderArmorPiece} at RETURN to draw a custom
- * animated glint on top of each armor piece for any living entity wearing an item with
- * a {@code custom_glint} NBT tag.
- *
- * <p>Injects at RETURN so vanilla armor rendering (including vanilla enchantment glint
- * for enchanted items) completes first; the custom glint layer is drawn on top via a
- * separate {@code model.renderToBuffer} call into the per-config fixed-buffer glint
- * {@link net.minecraft.client.renderer.RenderType}.
- *
- * <p>Dual SRG / named targets with {@code require=0} on both — same pattern as
- * {@link ItemRendererMixin}. Named targets use {@code remap=false} to match literally
- * in dev; SRG targets match in prod. One fires per environment, never both.
- */
+/** Intercepts renderArmorPiece at RETURN to draw custom glint on top of vanilla armor rendering. Dual SRG/named targets, require=0 on both. */
 @Mixin(HumanoidArmorLayer.class)
 public class HumanoidArmorLayerMixin {
 
@@ -71,18 +58,20 @@ public class HumanoidArmorLayerMixin {
         if (glint.simultaneous()) {
             VertexConsumer[] consumers = new VertexConsumer[colors.length];
             for (int i = 0; i < colors.length; i++) {
-                buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f;
-                buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f;
-                buf[2] = ( colors[i]        & 0xFF) / 255.0f;
+                float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
+                buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
+                buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
                 consumers[i] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf, i));
             }
             combined = colors.length == 1 ? consumers[0] : VertexMultiConsumer.create(consumers);
         } else {
             int color = CustomGlint.computeAnimatedColor(glint);
-            buf[0] = ((color >> 16) & 0xFF) / 255.0f;
-            buf[1] = ((color >>  8) & 0xFF) / 255.0f;
-            buf[2] = ( color        & 0xFF) / 255.0f;
+            float a = ((color >> 24) & 0xFF) / 255.0f;
+            buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+            buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+            buf[2] = ( color        & 0xFF) / 255.0f * a;
             buf[3] = 1.0f;
             combined = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf, 0));
         }
