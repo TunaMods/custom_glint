@@ -1,22 +1,6 @@
 [1.1.0]
 
-Added
-- Tooltips on all tear items describing what they do.
-- Improved armor glint render scale — patterns now tile much more densely on armor pieces instead
-  of appearing as large blobs.
-- Glint Trims with multiple layers now show a layer count in the tooltip. Hold Shift to expand and
-  see each layer's design and colors.
-- Renamed "Black Tear" to "Black Glint Tear".
-
-Fixed
-- Smithing a multi-layer Glint Trim now correctly applies all layers to the result (previously only
-  the first layer was written).
-- Merging two Glint Trims (color merge or layer merge) now requires both trims to have at least one
-  dyed color. No-color base trims are rejected by both recipes.
-
----
-
-Added
+Added:
 - Multi-layer glint system: items can now carry multiple independent glint layers, each with its own
   design, colors, speed, interpolate, scale, and simultaneous settings. NBT format changed from a flat
   tag to a `layers` list of compound tags. Old single-layer NBT is still read for backward compatibility.
@@ -39,8 +23,14 @@ Added
   255 = full intensity, 0 = invisible.
 - 5 new glint designs: crystal, ember, vein, solid, skulls (22 designs total including vanilla).
 - Vanilla enchantment texture as a selectable glint design.
+- Tooltips on all tear items describing what they do.
+- Improved armor glint render scale — patterns now tile much more densely on armor pieces instead
+  of appearing as large blobs.
+- Glint Trims with multiple layers now show a layer count in the tooltip. Hold Shift to expand and
+  see each layer's design and colors.
+- Renamed "Black Tear" to "Black Glint Tear".
 
-Fixed
+Fixed:
 - Smithing recipe now reads simultaneous, speed, and interpolate from the trim's preview glint instead
   of hardcoding them. Apply a Simultaneous or Sequential Tear to a trim before smithing to set the
   render mode on the result.
@@ -49,7 +39,11 @@ Fixed
 - Armor glint brightness now matches the A value set in the editor.
 - Two players wearing armor with the same design but different colors no longer bleed each other's colors.
 - Vanilla glint trim now displays "Vanilla Glint Trim" in its tooltip.
+- Smithing a multi-layer Glint Trim now correctly applies all layers to the result (previously only
+  the first layer was written).
+- Merging two Glint Trims (color merge or layer merge) now requires both trims to have at least one
+  dyed color. No-color base trims are rejected by both recipes.
 
----
+[1.0.0]
 
-1.0.0 release
+- Release
