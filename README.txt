@@ -13,8 +13,9 @@ without taking this as a dependency — see the bottom of this file.
 Also includes Glint Trims — lootable template items found in chests around
 the world. Each trim carries a glint pattern (wave, fire, sparkle, etc.) and
 can be dyed to load up to 8 colors onto it. Combine two trims in a crafting
-grid to merge their color lists. Duplicate a trim (1 trim + 7 diamonds +
-1 glowstone in a 3×3 grid) to get 2 copies. Once colored, apply the trim
+grid to merge their color lists. Duplicate a trim by placing it in the center
+of a 3×3 crafting grid, glowstone dust at the bottom center, and diamonds in
+all remaining 7 slots — yields 2 copies. Once colored, apply the trim
 to any item at a smithing table with glowstone dust to stamp the full glint
 onto it.
 
@@ -22,6 +23,14 @@ Glint Tears are creative tab items that change the render mode on any glinted
 item: place a Simultaneous Tear or Sequential Tear with a glinted item in a
 crafting grid to toggle whether all colors render as stacked layers at once
 (simultaneous) or cycle through one at a time (sequential).
+
+The Glint Layer Tear is a separate item for combining layers from two Glint
+Trims. Place a Layer Tear with two glinted Glint Trims in a crafting grid to
+merge their layer arrays into one trim (up to 8 layers total). Each layer keeps
+its own design, colors, speed, and all other settings. This is distinct from
+merging two trims with no tear, which only combines color lists within a shared
+design. Layer Tears can drop alongside trims from any loot source at a 20%
+chance, and are also found in the Custom Glints creative tab.
 
 
 ================================================================================
@@ -81,19 +90,21 @@ never need raw integers or ResourceLocation strings.
   // Read the data record (returns null if no glint)
   CustomGlint.Data data = CustomGlint.read(stack);
   if (data != null) {
-      ResourceLocation design = data.design();
-      int[] colors            = data.colors();
-      float speed             = data.speed();
-      boolean interpolate     = data.interpolate();
-      float scale             = data.patternScale();
-      boolean simultaneous    = data.simultaneous();
+      for (CustomGlint.Layer layer : data.layers()) {
+          ResourceLocation design = layer.design();
+          int[] colors            = layer.colors();
+          float speed             = layer.speed();
+          boolean interpolate     = layer.interpolate();
+          float scale             = layer.patternScale();
+          boolean simultaneous    = layer.simultaneous();
+      }
   }
 
   // Remove
   CustomGlint.remove(stack);
 
   // Compute the animated color for the current game tick
-  int color = CustomGlint.computeAnimatedColor(data);
+  int color = CustomGlint.computeAnimatedColor(data, layerIdx);
 
   // Create a pre-glinted ItemStack in one call (useful in creative tab displayItems)
   ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
@@ -329,7 +340,7 @@ are also there, so you never need raw integers or ResourceLocation strings.
   // Color constants: CustomGlint.RED, BLUE, GREEN, GOLD, WHITE, etc.
   // Design constants: CustomGlint.VANILLA, WAVE, FIRE, SPARKLE, CHECKER, etc.
   // Compute animated color for the current tick (useful for custom rendering):
-  int color = CustomGlint.computeAnimatedColor(data);
+  int color = CustomGlint.computeAnimatedColor(data, layerIdx);
 
   // Create a pre-glinted ItemStack in one call (for creative tab displayItems lambdas)
   ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
