@@ -1,5 +1,19 @@
 [1.1.0]
 
+- Added multi-layer glint system: items can now carry multiple independent glint layers, each with its own
+  design, colors, speed, interpolate, scale, and simultaneous settings. NBT format changed from a flat
+  tag to a `layers` list of compound tags. Old single-layer NBT is still read for backward compatibility.
+
+- Added Glint Tears: two creative tab items (Simultaneous Tear and Sequential Tear). Craft either with any
+  glinted item to toggle the simultaneous mode on all of its glint layers without changing any other settings.
+
+- Added Glint Trim duplication recipe: place a Glint Trim (with pattern and at least one color) + 7 Diamonds +
+  1 Glowstone Dust filling a full 3×3 crafting grid to receive 2 copies of the trim.
+
+- Added 2 new glint designs: solid, skulls (22 designs total including vanilla).
+
+- GlintEditorScreen now supports multi-layer editing via a layer selector.
+
 - Added Glint Trims: found randomly in world loot chests. Each trim carries a glint pattern and
   up to 8 color slots. Combine with a dye in a crafting grid to add a color. Merge two trims
   together to combine their color lists. Apply at a smithing table with glowstone dust to stamp
@@ -8,7 +22,7 @@
 - Added /glint command for operators: /glint apply <design> <colors> [speed] [smooth] and
   /glint remove. Applies and removes glints using named tokens without touching NBT directly.
 
-- Added 3 new glint designs: crystal, ember, vein (20 designs total including vanilla).
+- Added 3 new glint designs: crystal, ember, vein.
 
 - Added vanilla enchantment texture as a selectable glint design.
 

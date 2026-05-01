@@ -13,9 +13,15 @@ without taking this as a dependency — see the bottom of this file.
 Also includes Glint Trims — lootable template items found in chests around
 the world. Each trim carries a glint pattern (wave, fire, sparkle, etc.) and
 can be dyed to load up to 8 colors onto it. Combine two trims in a crafting
-grid to merge their color lists. Once colored, apply the trim to any item at
-a smithing table with glowstone dust to stamp the full glint onto it. The
-trim is returned after crafting so you can reuse it.
+grid to merge their color lists. Duplicate a trim (1 trim + 7 diamonds +
+1 glowstone in a 3×3 grid) to get 2 copies. Once colored, apply the trim
+to any item at a smithing table with glowstone dust to stamp the full glint
+onto it.
+
+Glint Tears are creative tab items that change the render mode on any glinted
+item: place a Simultaneous Tear or Sequential Tear with a glinted item in a
+crafting grid to toggle whether all colors render as stacked layers at once
+(simultaneous) or cycle through one at a time (sequential).
 
 
 ================================================================================
@@ -49,7 +55,7 @@ All glint logic is in CustomGlint. Import it and call write() on any ItemStack.
 The class exposes named constants for every built-in color and design so you
 never need raw integers or ResourceLocation strings.
 
-  // Apply a glint (all fields)
+  // Apply a single-layer glint (all fields)
   CustomGlint.write(
       stack,
       CustomGlint.WAVE,                          // design
@@ -58,6 +64,12 @@ never need raw integers or ResourceLocation strings.
       true,   // interpolate (smooth lerp between colors)
       1.0f,   // patternScale (1.0 = default tiling)
       true);  // simultaneous (all colors rendered as layers at once)
+
+  // Apply a multi-layer glint (each Layer is rendered independently)
+  CustomGlint.write(stack, new CustomGlint.Layer[]{
+      new CustomGlint.Layer(CustomGlint.WAVE,    new int[]{CustomGlint.RED},  1.0f, true, 1.0f, true),
+      new CustomGlint.Layer(CustomGlint.SPARKLE, new int[]{CustomGlint.BLUE}, 2.0f, true, 1.0f, false),
+  });
 
   // Single static color
   CustomGlint.write(stack, CustomGlint.SPARKLE,
@@ -118,7 +130,7 @@ COLOR CONSTANTS
 DESIGN CONSTANTS
   CustomGlint.VANILLA (minecraft enchanted glint),
   CustomGlint.CHECKER, CROSSHATCH, CRYSTAL, DIAMONDS, DOTS, EMBER, FIRE, GRID,
-  HEXAGON, PULSE, RIPPLE, SCALES, SPARKLE, STARS, STRIPES,
+  HEXAGON, PULSE, RIPPLE, SCALES, SKULLS, SOLID, SPARKLE, STARS, STRIPES,
   SWIRL, VEIN, WAVE, ZIGZAG
 
 
@@ -126,7 +138,7 @@ DESIGN CONSTANTS
   NBT COMMAND FORMAT
 ================================================================================
 
-  /give @p <item>{<modid>:{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>}}
+  /give @p <item>{<modid>:{layers:[{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>,scale:<f>,simultaneous:<b>}]}}
 
   The tag key is the mod ID: "customglint" in the standalone version.
   Embedding devs: it changes automatically when you change MOD_ID.
@@ -159,7 +171,7 @@ FIELDS
 
 EXAMPLE
 -------
-  /give @p minecraft:diamond_sword{customglint:{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b}} 1
+  /give @p minecraft:diamond_sword{customglint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}} 1
 
 REMOVE GLINT
 ------------
@@ -189,8 +201,8 @@ APPLY
 
     design   — design name (tab-completes). One of:
                vanilla, checker, crosshatch, crystal, diamonds, dots,
-               ember, fire, grid, hexagon, pulse, ripple, scales, sparkle,
-               stars, stripes, swirl, vein, wave, zigzag
+               ember, fire, grid, hexagon, pulse, ripple, scales, skulls,
+               solid, sparkle, stars, stripes, swirl, vein, wave, zigzag
 
     colors   — comma-separated color names (no spaces). Tab-completes after
                each comma. One of:
@@ -218,14 +230,15 @@ REMOVE
 
 
 ================================================================================
-  DESIGNS (19 custom + vanilla)
+  DESIGNS (21 custom + vanilla)
 ================================================================================
 
   checker    crosshatch   crystal    diamonds
   dots       ember        fire       grid
   hexagon    pulse        ripple     scales
-  sparkle    stars        stripes    swirl
-  vein       wave         zigzag
+  skulls     solid        sparkle    stars
+  stripes    swirl        vein       wave
+  zigzag
   vanilla    (minecraft:textures/misc/enchanted_glint_item.png)
 
   Format for custom designs: customglint:textures/glint/<name>.png
