@@ -38,7 +38,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public boolean isBaseIngredient(ItemStack stack) {
-        return !stack.isEmpty();
+        return !stack.isEmpty() && !(stack.getItem() instanceof GlintTrimItem);
     }
 
     @Override
@@ -60,9 +60,13 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         ResourceLocation pattern = GlintTrimItem.getPattern(template);
         int[] colors             = GlintTrimItem.getColors(template);
         if (pattern == null || colors.length == 0) return ItemStack.EMPTY;
+        CustomGlint.Data preview = CustomGlint.read(template);
+        boolean simultaneous = preview != null && preview.layers().length > 0 && preview.layers()[0].simultaneous();
+        float speed          = preview != null && preview.layers().length > 0 ? preview.layers()[0].speed() : 1.0f;
+        boolean interpolate  = preview == null || preview.layers().length == 0 || preview.layers()[0].interpolate();
         ItemStack result = base.copy();
         result.setCount(1);
-        CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
+        CustomGlint.write(result, pattern, colors, speed, interpolate, 1.0f, simultaneous);
         return result;
     }
 
