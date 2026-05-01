@@ -391,7 +391,7 @@ public final class CustomGlint extends RenderStateShard {
         // Trident issue: always using 8.0 caused tiny tiling on 3D model faces.
         float scale = isItem ? 8.0f : 0.16f;
         Layer layer = glint.layers()[layerIdx];
-        String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx;
+        String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_GLINT.computeIfAbsent(key, k -> {

@@ -226,55 +226,6 @@ public class GlintEditorScreen extends Screen {
         px = (width  - PANEL_W) / 2;
         py = (height - PANEL_H) / 2;
 
-        // Layer navigation: ◄ ► + − buttons in the header row
-        addRenderableWidget(Button.builder(Component.literal("◄"), b -> {
-            if (selectedLayer > 0) {
-                selectedLayer--;
-                editingColorIdx = 0;
-                loadEditRGB();
-                rebuildWidgets();
-            }
-        }).bounds(px + 152, py + 6, 14, 14).build());
-
-        addRenderableWidget(Button.builder(Component.literal("►"), b -> {
-            if (selectedLayer < layerDesigns.size() - 1) {
-                selectedLayer++;
-                editingColorIdx = 0;
-                loadEditRGB();
-                rebuildWidgets();
-            }
-        }).bounds(px + 168, py + 6, 14, 14).build());
-
-        addRenderableWidget(Button.builder(Component.literal("+"), b -> {
-            layerDesigns.add(layerDesigns.get(selectedLayer));
-            List<Integer> lc = new ArrayList<>();
-            lc.add(0xFF8844EE);
-            layerColors.add(lc);
-            layerSpeeds.add(layerSpeeds.get(selectedLayer));
-            layerInterpolates.add(layerInterpolates.get(selectedLayer));
-            layerScales.add(layerScales.get(selectedLayer));
-            layerSimultaneous.add(layerSimultaneous.get(selectedLayer));
-            selectedLayer = layerDesigns.size() - 1;
-            editingColorIdx = 0;
-            loadEditRGB();
-            rebuildWidgets();
-        }).bounds(px + 186, py + 6, 14, 14).build());
-
-        addRenderableWidget(Button.builder(Component.literal("−"), b -> {
-            if (layerDesigns.size() > 1) {
-                layerDesigns.remove(selectedLayer);
-                layerColors.remove(selectedLayer);
-                layerSpeeds.remove(selectedLayer);
-                layerInterpolates.remove(selectedLayer);
-                layerScales.remove(selectedLayer);
-                layerSimultaneous.remove(selectedLayer);
-                if (selectedLayer >= layerDesigns.size()) selectedLayer = layerDesigns.size() - 1;
-                editingColorIdx = 0;
-                loadEditRGB();
-                rebuildWidgets();
-            }
-        }).bounds(px + 202, py + 6, 14, 14).build());
-
         // Design buttons — 4 columns, as many rows as needed
         for (int i = 0; i < DESIGNS.length; i++) {
             final String d = DESIGNS[i];
@@ -464,8 +415,25 @@ public class GlintEditorScreen extends Screen {
 
         g.drawString(font, "Item:", px + 8, py + 102, 0xAAAAAA);
 
-        // Right column header: current layer indicator + nav buttons
-        g.drawString(font, "Layer " + (selectedLayer + 1) + "/" + layerDesigns.size(), px + 100, py + 8, 0xFFFFAA);
+        // Layer tabs: numbered box per layer, red X zone on selected, + box at end
+        int tabRowY = py + 6;
+        for (int i = 0; i < layerDesigns.size(); i++) {
+            int tx = px + 100 + i * 22;
+            boolean sel = (i == selectedLayer);
+            g.fill(tx - 1, tabRowY - 1, tx + 21, tabRowY + 15, sel ? 0xFF88CC88 : 0xFF444444);
+            g.fill(tx, tabRowY, tx + 20, tabRowY + 14, sel ? 0xFF44AA44 : 0xFF2A2A2A);
+            g.drawCenteredString(font, String.valueOf(i + 1), tx + 10, tabRowY + 3, 0xFFFFFF);
+            if (sel && layerDesigns.size() > 1) {
+                g.fill(tx + 13, tabRowY, tx + 20, tabRowY + 8, 0xFFCC2222);
+                g.drawString(font, "x", tx + 14, tabRowY + 1, 0xFFFFFF);
+            }
+        }
+        if (layerDesigns.size() < 8) {
+            int plusX = px + 100 + layerDesigns.size() * 22;
+            g.fill(plusX - 1, tabRowY - 1, plusX + 21, tabRowY + 15, 0xFF444444);
+            g.fill(plusX, tabRowY, plusX + 20, tabRowY + 14, 0xFF1A2A1A);
+            g.drawCenteredString(font, "+", plusX + 10, tabRowY + 3, 0xFF88FF88);
+        }
 
         g.drawString(font, "Colors:", px + 100, py + 140, 0xFFFFAA);
         g.drawString(font, "Hex:", px + 100, py + 170, 0xAAAAAA);
@@ -591,6 +559,52 @@ public class GlintEditorScreen extends Screen {
                 }
             }
             return true;
+        }
+
+        // Layer tab clicks
+        int tabRowY = py + 6;
+        if (my >= tabRowY && my < tabRowY + 14) {
+            for (int i = 0; i < layerDesigns.size(); i++) {
+                int tx = px + 100 + i * 22;
+                if (mx >= tx && mx < tx + 20) {
+                    if (i == selectedLayer && layerDesigns.size() > 1 && mx >= tx + 13) {
+                        layerDesigns.remove(i);
+                        layerColors.remove(i);
+                        layerSpeeds.remove(i);
+                        layerInterpolates.remove(i);
+                        layerScales.remove(i);
+                        layerSimultaneous.remove(i);
+                        if (selectedLayer >= layerDesigns.size()) selectedLayer = layerDesigns.size() - 1;
+                        editingColorIdx = 0;
+                        loadEditRGB();
+                        Minecraft.getInstance().tell(this::rebuildWidgets);
+                    } else if (i != selectedLayer) {
+                        selectedLayer = i;
+                        editingColorIdx = 0;
+                        loadEditRGB();
+                        Minecraft.getInstance().tell(this::rebuildWidgets);
+                    }
+                    return true;
+                }
+            }
+            if (layerDesigns.size() < 8) {
+                int plusX = px + 100 + layerDesigns.size() * 22;
+                if (mx >= plusX && mx < plusX + 20) {
+                    layerDesigns.add(layerDesigns.get(selectedLayer));
+                    List<Integer> lc = new ArrayList<>();
+                    lc.add(0xFF8844EE);
+                    layerColors.add(lc);
+                    layerSpeeds.add(layerSpeeds.get(selectedLayer));
+                    layerInterpolates.add(layerInterpolates.get(selectedLayer));
+                    layerScales.add(layerScales.get(selectedLayer));
+                    layerSimultaneous.add(layerSimultaneous.get(selectedLayer));
+                    selectedLayer = layerDesigns.size() - 1;
+                    editingColorIdx = 0;
+                    loadEditRGB();
+                    Minecraft.getInstance().tell(this::rebuildWidgets);
+                    return true;
+                }
+            }
         }
 
         // Swatch clicks
