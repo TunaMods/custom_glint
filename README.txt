@@ -32,6 +32,11 @@ merging two trims with no tear, which only combines color lists within a shared
 design. Layer Tears can drop alongside trims from any loot source at a 20%
 chance, and are also found in the Custom Glints creative tab.
 
+The Black Tear removes all glint data from any glinted item. Place a Black Tear
+with any glinted item in a crafting grid to strip the glint entirely — the item
+is returned clean. Black Tears drop from any loot source at the same 20% chance
+as the other tears, and are also found in the Custom Glints creative tab.
+
 
 ================================================================================
   USING THE GLINT WAND
