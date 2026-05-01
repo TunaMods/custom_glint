@@ -375,7 +375,7 @@ public final class CustomGlint extends RenderStateShard {
                             m.translate(-f, f1, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
                             m.translate(f, f1, 0.0F);
-                            m.scale(0.16f * layer.patternScale());
+                            m.scale(1.0f * layer.patternScale());
                             RenderSystem.setTextureMatrix(m);
                         }, RenderSystem::resetTextureMatrix))
                     .createCompositeState(false));

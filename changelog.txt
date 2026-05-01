@@ -2,6 +2,8 @@
 
 Added
 - Tooltips on all tear items describing what they do.
+- Improved armor glint render scale — patterns now tile much more densely on armor pieces instead
+  of appearing as large blobs.
 - Glint Trims with multiple layers now show a layer count in the tooltip. Hold Shift to expand and
   see each layer's design and colors.
 - Renamed "Black Tear" to "Black Glint Tear".

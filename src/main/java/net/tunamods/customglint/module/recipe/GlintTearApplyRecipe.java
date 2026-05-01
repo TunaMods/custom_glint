@@ -2,6 +2,7 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
@@ -33,7 +34,7 @@ public class GlintTearApplyRecipe extends CustomRecipe {
                     || s.getItem() == CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get()) {
                 if (hasTear) return false;
                 hasTear = true;
-            } else if (CustomGlint.has(s)) {
+            } else if (CustomGlint.has(s) && !(s.getItem() instanceof GlintTrimItem && GlintTrimItem.getColors(s).length == 0)) {
                 if (hasGlinted) return false;
                 hasGlinted = true;
             } else {
