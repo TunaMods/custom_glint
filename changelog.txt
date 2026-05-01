@@ -1,6 +1,20 @@
 [1.1.0]
 
 Added
+- Tooltips on all tear items describing what they do.
+- Glint Trims with multiple layers now show a layer count in the tooltip. Hold Shift to expand and
+  see each layer's design and colors.
+- Renamed "Black Tear" to "Black Glint Tear".
+
+Fixed
+- Smithing a multi-layer Glint Trim now correctly applies all layers to the result (previously only
+  the first layer was written).
+- Merging two Glint Trims (color merge or layer merge) now requires both trims to have at least one
+  dyed color. No-color base trims are rejected by both recipes.
+
+---
+
+Added
 - Multi-layer glint system: items can now carry multiple independent glint layers, each with its own
   design, colors, speed, interpolate, scale, and simultaneous settings. NBT format changed from a flat
   tag to a `layers` list of compound tags. Old single-layer NBT is still read for backward compatibility.

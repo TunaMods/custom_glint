@@ -66,7 +66,11 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         boolean interpolate  = preview == null || preview.layers().length == 0 || preview.layers()[0].interpolate();
         ItemStack result = base.copy();
         result.setCount(1);
-        CustomGlint.write(result, pattern, colors, speed, interpolate, 1.0f, simultaneous);
+        if (preview != null && preview.layers().length > 1) {
+            CustomGlint.write(result, preview.layers());
+        } else {
+            CustomGlint.write(result, pattern, colors, speed, interpolate, 1.0f, simultaneous);
+        }
         return result;
     }
 

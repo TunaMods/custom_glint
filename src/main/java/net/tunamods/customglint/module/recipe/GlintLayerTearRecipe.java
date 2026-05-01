@@ -36,7 +36,7 @@ public class GlintLayerTearRecipe extends CustomRecipe {
             if (s.getItem() instanceof GlintLayerTearItem) {
                 if (hasTear) return false;
                 hasTear = true;
-            } else if (s.getItem() instanceof GlintTrimItem && CustomGlint.has(s)) {
+            } else if (s.getItem() instanceof GlintTrimItem && CustomGlint.has(s) && GlintTrimItem.getColors(s).length > 0) {
                 if (glint1.isEmpty()) glint1 = s;
                 else if (glint2.isEmpty()) glint2 = s;
                 else return false;

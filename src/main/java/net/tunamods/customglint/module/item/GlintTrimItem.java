@@ -2,6 +2,7 @@ package net.tunamods.customglint.module.item;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -100,6 +101,36 @@ public class GlintTrimItem extends Item {
         int[] colors = getColors(pStack);
         if (colors.length == 0) {
             pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
+            return;
+        }
+        CustomGlint.Data data = CustomGlint.read(pStack);
+        if (data != null && data.layers().length > 1) {
+            int n = data.layers().length;
+            pTooltipComponents.add(Component.literal("Apply with Glowstone Dust at a smithing table"));
+            if (!Screen.hasShiftDown()) {
+                pTooltipComponents.add(Component.literal(n + " layers").withStyle(ChatFormatting.DARK_AQUA));
+                pTooltipComponents.add(Component.literal("Hold Shift").withStyle(ChatFormatting.GOLD));
+            } else {
+                for (int i = 0; i < n; i++) {
+                    CustomGlint.Layer layer = data.layers()[i];
+                    String dname = layer.design().equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(layer.design()));
+                    pTooltipComponents.add(Component.literal("Layer " + (i + 1)).withStyle(ChatFormatting.WHITE));
+                    pTooltipComponents.add(Component.literal("  " + dname).withStyle(ChatFormatting.GRAY));
+                    if (layer.colors().length > 0) {
+                        MutableComponent lc = Component.literal("  Colors: ").withStyle(ChatFormatting.GRAY);
+                        for (int k = 0; k < layer.colors().length; k++) {
+                            int rgb = layer.colors()[k] & 0xFFFFFF;
+                            String cname = "#" + String.format("%06X", rgb);
+                            for (int j = 0; j < DYE_COLORS.length; j++) {
+                                if (DYE_COLORS[j] == layer.colors()[k]) { cname = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
+                            }
+                            if (k > 0) lc = lc.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
+                            lc = lc.append(Component.literal(cname).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
+                        }
+                        pTooltipComponents.add(lc);
+                    }
+                }
+            }
         } else {
             pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + " — apply with Glowstone Dust at a smithing table"));
             MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
