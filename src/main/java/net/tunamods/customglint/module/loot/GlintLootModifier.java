@@ -35,7 +35,7 @@ public class GlintLootModifier extends LootModifier {
         for (ItemStack stack : generatedLoot) {
             CustomGlint.Data data = glints.get(stack.getItem());
             if (data != null)
-                CustomGlint.write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+                CustomGlint.write(stack, data.layers());
         }
         return generatedLoot;
     }

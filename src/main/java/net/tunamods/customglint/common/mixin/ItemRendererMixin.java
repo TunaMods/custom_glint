@@ -112,37 +112,44 @@ public class ItemRendererMixin {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Returns a VertexMultiConsumer combining the custom glint layer(s) + base renderType, or null if no glint. */
+    /** Returns a VertexMultiConsumer combining all glint layers + base renderType, or null if no glint. */
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
         ItemStack stack = CURRENT_STACK.get();
         if (stack == null) return null;
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return null;
 
-        int[] colors = glint.colors();
+        CustomGlint.Layer[] layers = glint.layers();
         float[] buf = COLOR_BUF.get();
 
-        if (glint.simultaneous()) {
-            VertexConsumer[] consumers = new VertexConsumer[colors.length + 1];
-            for (int i = 0; i < colors.length; i++) {
-                float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
+        int totalConsumers = 0;
+        for (CustomGlint.Layer layer : layers)
+            totalConsumers += layer.simultaneous() ? layer.colors().length : 1;
+        VertexConsumer[] consumers = new VertexConsumer[totalConsumers + 1];
+        int ci = 0;
+        for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+            int[] colors = layers[layerIdx].colors();
+            if (layers[layerIdx].simultaneous()) {
+                for (int i = 0; i < colors.length; i++) {
+                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
+                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
+                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
+                    buf[3] = 1.0f;
+                    consumers[ci++] = buffer.getBuffer(CustomGlint.forGlint(glint, layerIdx, buf, isItem, i));
+                }
+            } else {
+                int color = CustomGlint.computeAnimatedColor(glint, layerIdx);
+                float a = ((color >> 24) & 0xFF) / 255.0f;
+                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+                buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
-                consumers[i] = buffer.getBuffer(CustomGlint.forGlint(glint, buf, isItem, i));
+                consumers[ci++] = buffer.getBuffer(CustomGlint.forGlint(glint, layerIdx, buf, isItem, 0));
             }
-            consumers[colors.length] = buffer.getBuffer(renderType);
-            return VertexMultiConsumer.create(consumers);
-        } else {
-            int color = CustomGlint.computeAnimatedColor(glint);
-            float a = ((color >> 24) & 0xFF) / 255.0f;
-            buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-            buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-            buf[2] = ( color        & 0xFF) / 255.0f * a;
-            buf[3] = 1.0f;
-            return VertexMultiConsumer.create(buffer.getBuffer(CustomGlint.forGlint(glint, buf, isItem, 0)), buffer.getBuffer(renderType));
         }
+        consumers[ci] = buffer.getBuffer(renderType);
+        return VertexMultiConsumer.create(consumers);
     }
 
 }

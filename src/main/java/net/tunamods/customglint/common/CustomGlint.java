@@ -13,6 +13,8 @@ import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -31,9 +33,13 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 public final class CustomGlint extends RenderStateShard {
 
+    // ── Layer ─────────────────────────────────────────────────────────────────
+
+    public record Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {}
+
     // ── Data ─────────────────────────────────────────────────────────────────
 
-    public record Data(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {}
+    public record Data(Layer[] layers) {}
 
     // ── Colors ────────────────────────────────────────────────────────────────
 
@@ -80,10 +86,13 @@ public final class CustomGlint extends RenderStateShard {
     public static final ResourceLocation CRYSTAL     = new ResourceLocation(MOD_ID, "textures/glint/crystal.png");
     public static final ResourceLocation EMBER       = new ResourceLocation(MOD_ID, "textures/glint/ember.png");
     public static final ResourceLocation VEIN        = new ResourceLocation(MOD_ID, "textures/glint/vein.png");
+    public static final ResourceLocation SOLID       = new ResourceLocation(MOD_ID, "textures/glint/solid.png");
+    public static final ResourceLocation SKULLS      = new ResourceLocation(MOD_ID, "textures/glint/skulls.png");
 
     // ── NBT ──────────────────────────────────────────────────────────────────
 
     private static final String TAG             = MOD_ID;
+    private static final String LAYERS_KEY      = "layers";
     private static final String DESIGN_KEY      = "design";
     private static final String COLORS_KEY      = "colors";
     private static final String SPEED_KEY       = "speed";
@@ -98,39 +107,69 @@ public final class CustomGlint extends RenderStateShard {
         if (!root.contains(TAG)) return null;
         CompoundTag tag = root.getCompound(TAG);
 
-        String design = tag.getString(DESIGN_KEY);
-        if (design.isEmpty()) return null;
+        float globalSpeed = tag.contains(SPEED_KEY) ? tag.getFloat(SPEED_KEY) : 1.0f;
+        if (globalSpeed <= 0) globalSpeed = 1.0f;
+        boolean globalInterpolate = !tag.contains(INTERPOLATE_KEY) || tag.getBoolean(INTERPOLATE_KEY);
+        float globalScale = tag.contains(SCALE_KEY) ? tag.getFloat(SCALE_KEY) : 1.0f;
+        if (globalScale <= 0) globalScale = 1.0f;
+        boolean globalSimultaneous = !tag.contains(SIMULTANEOUS_KEY) || tag.getBoolean(SIMULTANEOUS_KEY);
 
-        if (!tag.contains(COLORS_KEY)) return null;
-        int[] colors = tag.getIntArray(COLORS_KEY);
-        if (colors.length == 0) return null;
+        Layer[] layers;
+        if (tag.contains(LAYERS_KEY)) {
+            ListTag list = tag.getList(LAYERS_KEY, Tag.TAG_COMPOUND);
+            if (list.isEmpty()) return null;
+            layers = new Layer[list.size()];
+            for (int i = 0; i < list.size(); i++) {
+                CompoundTag lt = list.getCompound(i);
+                String design = lt.getString(DESIGN_KEY);
+                if (design.isEmpty()) return null;
+                if (!lt.contains(COLORS_KEY)) return null;
+                int[] colors = lt.getIntArray(COLORS_KEY);
+                if (colors.length == 0) return null;
+                float speed = lt.contains(SPEED_KEY) ? lt.getFloat(SPEED_KEY) : globalSpeed;
+                if (speed <= 0) speed = 1.0f;
+                boolean interpolate = lt.contains(INTERPOLATE_KEY) ? lt.getBoolean(INTERPOLATE_KEY) : globalInterpolate;
+                float patternScale = lt.contains(SCALE_KEY) ? lt.getFloat(SCALE_KEY) : globalScale;
+                if (patternScale <= 0) patternScale = 1.0f;
+                boolean simultaneous = lt.contains(SIMULTANEOUS_KEY) ? lt.getBoolean(SIMULTANEOUS_KEY) : globalSimultaneous;
+                layers[i] = new Layer(new ResourceLocation(design), colors, speed, interpolate, patternScale, simultaneous);
+            }
+        } else {
+            // backward compat: old single-layer format
+            String design = tag.getString(DESIGN_KEY);
+            if (design.isEmpty()) return null;
+            if (!tag.contains(COLORS_KEY)) return null;
+            int[] colors = tag.getIntArray(COLORS_KEY);
+            if (colors.length == 0) return null;
+            layers = new Layer[]{ new Layer(new ResourceLocation(design), colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
+        }
 
-        float speed = tag.contains(SPEED_KEY) ? tag.getFloat(SPEED_KEY) : 1.0f;
-        if (speed <= 0) speed = 1.0f;
-
-        boolean interpolate = !tag.contains(INTERPOLATE_KEY) || tag.getBoolean(INTERPOLATE_KEY);
-
-        float patternScale = tag.contains(SCALE_KEY) ? tag.getFloat(SCALE_KEY) : 1.0f;
-        if (patternScale <= 0) patternScale = 1.0f;
-
-        boolean simultaneous = !tag.contains(SIMULTANEOUS_KEY) || tag.getBoolean(SIMULTANEOUS_KEY);
-
-        return new Data(new ResourceLocation(design), colors, speed, interpolate, patternScale, simultaneous);
+        return new Data(layers);
     }
 
     public static boolean has(ItemStack stack) {
         return stack.hasTag() && stack.getTag().contains(TAG);
     }
 
-    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+    public static void write(ItemStack stack, Layer[] layers) {
         CompoundTag tag = new CompoundTag();
-        tag.putString(DESIGN_KEY, design.toString());
-        tag.putIntArray(COLORS_KEY, colors);
-        tag.putFloat(SPEED_KEY, speed);
-        tag.putBoolean(INTERPOLATE_KEY, interpolate);
-        tag.putFloat(SCALE_KEY, patternScale);
-        tag.putBoolean(SIMULTANEOUS_KEY, simultaneous);
+        ListTag list = new ListTag();
+        for (Layer layer : layers) {
+            CompoundTag lt = new CompoundTag();
+            lt.putString(DESIGN_KEY, layer.design().toString());
+            lt.putIntArray(COLORS_KEY, layer.colors());
+            lt.putFloat(SPEED_KEY, layer.speed());
+            lt.putBoolean(INTERPOLATE_KEY, layer.interpolate());
+            lt.putFloat(SCALE_KEY, layer.patternScale());
+            lt.putBoolean(SIMULTANEOUS_KEY, layer.simultaneous());
+            list.add(lt);
+        }
+        tag.put(LAYERS_KEY, list);
         stack.getOrCreateTag().put(TAG, tag);
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) });
     }
 
     public static void remove(ItemStack stack) {
@@ -162,7 +201,7 @@ public final class CustomGlint extends RenderStateShard {
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        CRAFT_GLINTS.put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
     }
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors) {
@@ -172,13 +211,13 @@ public final class CustomGlint extends RenderStateShard {
     public static void applyCraftGlint(ItemStack stack) {
         Data data = CRAFT_GLINTS.get(stack.getItem());
         if (data == null) return;
-        write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+        write(stack, data.layers());
     }
 
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
     public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        FISHING_GLINTS.put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
     }
 
     public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors) {
@@ -188,13 +227,13 @@ public final class CustomGlint extends RenderStateShard {
     public static void applyFishingGlint(ItemStack stack) {
         Data data = FISHING_GLINTS.get(stack.getItem());
         if (data == null) return;
-        write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+        write(stack, data.layers());
     }
 
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        MOB_DROP_GLINTS.put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
     }
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors) {
@@ -204,13 +243,13 @@ public final class CustomGlint extends RenderStateShard {
     public static void applyMobDropGlint(ItemStack stack) {
         Data data = MOB_DROP_GLINTS.get(stack.getItem());
         if (data == null) return;
-        write(stack, data.design(), data.colors(), data.speed(), data.interpolate(), data.patternScale(), data.simultaneous());
+        write(stack, data.layers());
     }
 
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
 
     public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(design, colors, speed, interpolate, patternScale, simultaneous));
+        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
     }
 
     public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
@@ -282,12 +321,13 @@ public final class CustomGlint extends RenderStateShard {
     private static final Map<String, RenderType> BY_GLINT         = new HashMap<>();
     private static final Map<String, RenderType> BY_ARMOR_GLINT   = new HashMap<>();
 
-    public static RenderType forArmorGlint(Data glint, float[] frameColor, int colorIdx) {
-        String key = "armor|" + glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.patternScale() + "|" + colorIdx;
+    public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        String key = "armor|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
-            ResourceLocation tex = glint.design();
+            ResourceLocation tex = layer.design();
             RenderType rt = RenderType.create(
                 MOD_ID + ":custom_armor_glint",
                 DefaultVertexFormat.POSITION_TEX,
@@ -324,8 +364,8 @@ public final class CustomGlint extends RenderStateShard {
                     .setLayeringState(VIEW_OFFSET_Z_LAYERING)
                     .setTransparencyState(GLINT_TRANSPARENCY)
                     .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_armor_glint_texturing", () -> {
-                            float phase = (float)colorIdx / Math.max(1, glint.colors().length);
-                            long t = (long)(Util.getMillis() * 8.0 * glint.speed());
+                            float phase = (float)colorIdx / Math.max(1, layer.colors().length);
+                            long t = (long)(Util.getMillis() * 8.0 * layer.speed());
                             float f  = (float)(t % 110000L) / 110000.0F + phase;
                             float f1 = (float)(t % 30000L)  /  30000.0F;
                             Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
@@ -335,7 +375,7 @@ public final class CustomGlint extends RenderStateShard {
                             m.translate(-f, f1, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
                             m.translate(f, f1, 0.0F);
-                            m.scale(0.16f * glint.patternScale());
+                            m.scale(0.16f * layer.patternScale());
                             RenderSystem.setTextureMatrix(m);
                         }, RenderSystem::resetTextureMatrix))
                     .createCompositeState(false));
@@ -345,16 +385,17 @@ public final class CustomGlint extends RenderStateShard {
         });
     }
 
-    public static RenderType forGlint(Data glint, float[] frameColor, boolean isItem, int colorIdx) {
+    public static RenderType forGlint(Data glint, int layerIdx, float[] frameColor, boolean isItem, int colorIdx) {
         // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
         // isItem=false → 3D entity model (trident, etc.) → scale 0.16 matches vanilla entityGlint().
         // Trident issue: always using 8.0 caused tiny tiling on 3D model faces.
         float scale = isItem ? 8.0f : 0.16f;
-        String key = glint.design() + "|" + Arrays.toString(glint.colors()) + "|" + glint.speed() + "|" + glint.interpolate() + "|" + isItem + "|" + glint.patternScale() + "|" + colorIdx;
+        Layer layer = glint.layers()[layerIdx];
+        String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         return BY_GLINT.computeIfAbsent(key, k -> {
-            ResourceLocation tex = glint.design();
+            ResourceLocation tex = layer.design();
             RenderType rt = RenderType.create(
                 MOD_ID + ":custom_glint",
                 DefaultVertexFormat.POSITION_TEX,
@@ -379,8 +420,8 @@ public final class CustomGlint extends RenderStateShard {
                     .setDepthTestState(EQUAL_DEPTH_TEST)
                     .setTransparencyState(GLINT_TRANSPARENCY)
                     .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_texturing", () -> {
-                            float phase = (float)colorIdx / Math.max(1, glint.colors().length);
-                            long t = (long)(Util.getMillis() * 8.0 * glint.speed());
+                            float phase = (float)colorIdx / Math.max(1, layer.colors().length);
+                            long t = (long)(Util.getMillis() * 8.0 * layer.speed());
                             float f  = (float)(t % 110000L) / 110000.0F + phase;
                             float f1 = (float)(t % 30000L)  /  30000.0F;
                             Matrix4f m = new Matrix4f().translation(-f, 0.0F, 0.0F);
@@ -390,7 +431,7 @@ public final class CustomGlint extends RenderStateShard {
                             m.translate(-f, 0.0F, 0.0F);
                             m.rotateZ((float)(Math.PI / 3.0));
                             m.translate(f + f1, 0.0F, 0.0F);
-                            m.scale(scale * glint.patternScale());
+                            m.scale(scale * layer.patternScale());
                             RenderSystem.setTextureMatrix(m);
                         }, RenderSystem::resetTextureMatrix))
                     .createCompositeState(false));
@@ -400,15 +441,16 @@ public final class CustomGlint extends RenderStateShard {
         });
     }
 
-    public static int computeAnimatedColor(Data glint) {
-        int[] colors = glint.colors();
+    public static int computeAnimatedColor(Data glint, int layerIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        int[] colors = layer.colors();
         if (colors.length == 1) return colors[0];
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        float totalTicks = (20.0f * colors.length) / glint.speed();
+        float totalTicks = (20.0f * colors.length) / layer.speed();
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
-        if (!glint.interpolate()) return colors[idx];
+        if (!layer.interpolate()) return colors[idx];
         float frac = t - (int) t;
         int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
         int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);

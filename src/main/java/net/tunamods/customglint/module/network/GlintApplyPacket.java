@@ -16,24 +16,13 @@ public class GlintApplyPacket {
 
     public final InteractionHand wandHand;
     public final boolean remove;
-    public final String design;
-    public final int[] colors;
-    public final float speed;
-    public final boolean interpolate;
-    public final float patternScale;
-    public final boolean simultaneous;
+    public final CustomGlint.Layer[] layers;
     public final String itemId;
 
-    public GlintApplyPacket(InteractionHand wandHand, boolean remove,
-                             String design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous, String itemId) {
+    public GlintApplyPacket(InteractionHand wandHand, boolean remove, CustomGlint.Layer[] layers, String itemId) {
         this.wandHand = wandHand;
         this.remove = remove;
-        this.design = design;
-        this.colors = colors;
-        this.speed = speed;
-        this.interpolate = interpolate;
-        this.patternScale = patternScale;
-        this.simultaneous = simultaneous;
+        this.layers = layers;
         this.itemId = itemId;
     }
 
@@ -41,13 +30,16 @@ public class GlintApplyPacket {
         buf.writeEnum(pkt.wandHand);
         buf.writeBoolean(pkt.remove);
         if (!pkt.remove) {
-            buf.writeUtf(pkt.design);
-            buf.writeVarInt(pkt.colors.length);
-            for (int c : pkt.colors) buf.writeInt(c);
-            buf.writeFloat(pkt.speed);
-            buf.writeBoolean(pkt.interpolate);
-            buf.writeFloat(pkt.patternScale);
-            buf.writeBoolean(pkt.simultaneous);
+            buf.writeVarInt(pkt.layers.length);
+            for (CustomGlint.Layer layer : pkt.layers) {
+                buf.writeUtf(layer.design().toString());
+                buf.writeVarInt(layer.colors().length);
+                for (int c : layer.colors()) buf.writeInt(c);
+                buf.writeFloat(layer.speed());
+                buf.writeBoolean(layer.interpolate());
+                buf.writeFloat(layer.patternScale());
+                buf.writeBoolean(layer.simultaneous());
+            }
             buf.writeUtf(pkt.itemId);
         }
     }
@@ -55,17 +47,22 @@ public class GlintApplyPacket {
     public static GlintApplyPacket decode(FriendlyByteBuf buf) {
         InteractionHand hand = buf.readEnum(InteractionHand.class);
         boolean remove = buf.readBoolean();
-        if (remove) return new GlintApplyPacket(hand, true, "", new int[0], 1.0f, true, 1.0f, true, "");
-        String design = buf.readUtf();
-        int len = Math.min(buf.readVarInt(), 8);
-        int[] colors = new int[len];
-        for (int i = 0; i < len; i++) colors[i] = buf.readInt();
-        float speed = buf.readFloat();
-        boolean interp = buf.readBoolean();
-        float patternScale = buf.readFloat();
-        boolean simultaneous = buf.readBoolean();
+        if (remove) return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "");
+        int layerCount = Math.min(buf.readVarInt(), 8);
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
+        for (int i = 0; i < layerCount; i++) {
+            String design = buf.readUtf();
+            int colorLen = Math.min(buf.readVarInt(), 8);
+            int[] colors = new int[colorLen];
+            for (int j = 0; j < colorLen; j++) colors[j] = buf.readInt();
+            float speed = buf.readFloat();
+            boolean interp = buf.readBoolean();
+            float scale = buf.readFloat();
+            boolean simultaneous = buf.readBoolean();
+            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous);
+        }
         String itemId = buf.readUtf();
-        return new GlintApplyPacket(hand, false, design, colors, speed, interp, patternScale, simultaneous, itemId);
+        return new GlintApplyPacket(hand, false, layers, itemId);
     }
 
     public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
@@ -79,18 +76,15 @@ public class GlintApplyPacket {
                 if (!target.isEmpty()) CustomGlint.remove(target);
             } else if (pkt.itemId.isEmpty()) {
                 ItemStack target = player.getItemInHand(otherHand);
-                if (!target.isEmpty()) {
-                    CustomGlint.write(target, new ResourceLocation(pkt.design), pkt.colors, pkt.speed, pkt.interpolate, pkt.patternScale, pkt.simultaneous);
-                }
+                if (!target.isEmpty()) CustomGlint.write(target, pkt.layers);
             } else {
                 Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(pkt.itemId));
                 if (item == null) return;
-                ResourceLocation designRL = new ResourceLocation(pkt.design);
                 ItemStack given = new ItemStack(item);
-                CustomGlint.write(given, designRL, pkt.colors, pkt.speed, pkt.interpolate, pkt.patternScale, pkt.simultaneous);
+                CustomGlint.write(given, pkt.layers);
                 player.addItem(given);
                 ItemStack wand = player.getItemInHand(pkt.wandHand);
-                if (!wand.isEmpty()) CustomGlint.write(wand, designRL, pkt.colors, pkt.speed, pkt.interpolate, pkt.patternScale, pkt.simultaneous);
+                if (!wand.isEmpty()) CustomGlint.write(wand, pkt.layers);
             }
         });
         ctx.get().setPacketHandled(true);
