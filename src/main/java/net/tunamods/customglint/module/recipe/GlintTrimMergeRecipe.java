@@ -28,8 +28,10 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
             if (s.isEmpty()) continue;
             if (!(s.getItem() instanceof GlintTrimItem)) return false;
             if (GlintTrimItem.getPattern(s) == null) return false;
+            int[] c = GlintTrimItem.getColors(s);
+            if (c.length == 0) return false;
             trimCount++;
-            totalColors += GlintTrimItem.getColors(s).length;
+            totalColors += c.length;
         }
         return trimCount == 2 && totalColors <= 8;
     }
