@@ -50,6 +50,13 @@ public class GlintTrimLootModifier extends LootModifier {
         }
 
         generatedLoot.add(trim);
+
+        if (context.getRandom().nextFloat() < DROP_CHANCE)
+            generatedLoot.add(CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+
+        if (context.getRandom().nextFloat() < DROP_CHANCE)
+            generatedLoot.add(CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
+
         return generatedLoot;
     }
 

@@ -1,9 +1,14 @@
 package net.tunamods.customglint.module.item;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -28,7 +33,7 @@ public class GlintTrimItem extends Item {
     public static final List<String> PATTERNS = List.of(
         "checker", "crosshatch", "crystal", "diamonds", "dots", "ember", "fire",
         "grid", "hexagon", "pulse", "ripple", "scales", "sparkle", "stars", "stripes",
-        "swirl", "vein", "wave", "zigzag", "vanilla"
+        "swirl", "vein", "wave", "zigzag", "vanilla", "solid", "skulls"
     );
 
     public GlintTrimItem(Properties pProperties) {
@@ -97,6 +102,17 @@ public class GlintTrimItem extends Item {
             pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
         } else {
             pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + " — apply with Glowstone Dust at a smithing table"));
+            MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
+            for (int i = 0; i < colors.length; i++) {
+                int rgb = colors[i] & 0xFFFFFF;
+                String name = "#" + String.format("%06X", rgb);
+                for (int j = 0; j < DYE_COLORS.length; j++) {
+                    if (DYE_COLORS[j] == colors[i]) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
+                }
+                if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
+                line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
+            }
+            pTooltipComponents.add(line);
         }
     }
 

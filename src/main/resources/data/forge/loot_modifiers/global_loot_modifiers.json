@@ -1,0 +1,7 @@
+{
+  "replace": false,
+  "entries": [
+    "customglint:glint_loot_modifier",
+    "customglint:glint_trim_loot_modifier"
+  ]
+}

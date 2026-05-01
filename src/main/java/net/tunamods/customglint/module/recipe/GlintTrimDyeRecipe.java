@@ -1,7 +1,9 @@
 package net.tunamods.customglint.module.recipe;
 
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.item.DyeItem;
@@ -39,8 +41,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
                 return false;
             }
         }
-        return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlintTrimItem.getColors(trim).length < 8;
+        return filled == 2 && !trim.isEmpty() && !dye.isEmpty();
     }
 
     @Override
@@ -56,7 +57,10 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        GlintTrimItem.addColor(result, GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()]);
+        int[] colors = new int[]{ GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()] };
+        result.getOrCreateTag().put(GlintTrimItem.COLORS_TAG, new IntArrayTag(colors));
+        ResourceLocation pattern = GlintTrimItem.getPattern(result);
+        if (pattern != null) CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
         return result;
     }
 

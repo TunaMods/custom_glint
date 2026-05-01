@@ -51,30 +51,36 @@ public class HumanoidArmorLayerMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return;
 
-        int[] colors = glint.colors();
+        CustomGlint.Layer[] layers = glint.layers();
         float[] buf = COLOR_BUF.get();
-        VertexConsumer combined;
 
-        if (glint.simultaneous()) {
-            VertexConsumer[] consumers = new VertexConsumer[colors.length];
-            for (int i = 0; i < colors.length; i++) {
-                float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
+        int totalConsumers = 0;
+        for (CustomGlint.Layer layer : layers)
+            totalConsumers += layer.simultaneous() ? layer.colors().length : 1;
+        VertexConsumer[] consumers = new VertexConsumer[totalConsumers];
+        int ci = 0;
+        for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+            int[] colors = layers[layerIdx].colors();
+            if (layers[layerIdx].simultaneous()) {
+                for (int i = 0; i < colors.length; i++) {
+                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
+                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
+                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
+                    buf[3] = 1.0f;
+                    consumers[ci++] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, layerIdx, buf, i));
+                }
+            } else {
+                int color = CustomGlint.computeAnimatedColor(glint, layerIdx);
+                float a = ((color >> 24) & 0xFF) / 255.0f;
+                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+                buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
-                consumers[i] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf, i));
+                consumers[ci++] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, layerIdx, buf, 0));
             }
-            combined = colors.length == 1 ? consumers[0] : VertexMultiConsumer.create(consumers);
-        } else {
-            int color = CustomGlint.computeAnimatedColor(glint);
-            float a = ((color >> 24) & 0xFF) / 255.0f;
-            buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-            buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-            buf[2] = ( color        & 0xFF) / 255.0f * a;
-            buf[3] = 1.0f;
-            combined = buffer.getBuffer(CustomGlint.forArmorGlint(glint, buf, 0));
         }
+        VertexConsumer combined = consumers.length == 1 ? consumers[0] : VertexMultiConsumer.create(consumers);
         model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 

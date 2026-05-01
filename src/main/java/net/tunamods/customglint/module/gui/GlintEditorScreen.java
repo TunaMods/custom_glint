@@ -27,7 +27,7 @@ public class GlintEditorScreen extends Screen {
 
     // ── Layout constants ────────────────────────────────────────────────────
     private static final int PANEL_W    = 300;
-    private static final int PANEL_H    = 292;
+    private static final int PANEL_H    = 308;
     private static final int PREVIEW_SZ = 80;
 
     private static final String[] DESIGNS = {
@@ -35,7 +35,8 @@ public class GlintEditorScreen extends Screen {
         "fire",     "grid",       "hexagon",  "pulse",
         "ripple",   "scales",     "sparkle",  "stars",
         "stripes",  "swirl",      "wave",     "zigzag",
-        "crystal",  "ember",      "vein",     "vanilla"
+        "crystal",  "ember",      "vein",     "vanilla",
+        "solid",    "skulls"
     };
 
     private static ResourceLocation designRL(String name) {
@@ -54,13 +55,16 @@ public class GlintEditorScreen extends Screen {
     // ── State ───────────────────────────────────────────────────────────────
     private final InteractionHand wandHand;
 
-    private String          selectedDesign  = "sparkle";
-    private final List<Integer> colors      = new ArrayList<>();
-    private float           speed           = 1.0f;
-    private boolean         interpolate     = true;
-    private float           patternScale    = 1.0f;
-    private boolean         simultaneous    = true;
-    private int             editingColorIdx = 0;
+    // per-layer state
+    private final List<String>        layerDesigns      = new ArrayList<>();
+    private final List<List<Integer>> layerColors       = new ArrayList<>();
+    private final List<Float>         layerSpeeds       = new ArrayList<>();
+    private final List<Boolean>       layerInterpolates = new ArrayList<>();
+    private final List<Float>         layerScales       = new ArrayList<>();
+    private final List<Boolean>       layerSimultaneous = new ArrayList<>();
+    private int selectedLayer = 0;
+
+    private int editingColorIdx = 0;
 
     private int editR = 0x88, editG = 0x44, editB = 0xEE, editA = 0xFF;
 
@@ -91,21 +95,39 @@ public class GlintEditorScreen extends Screen {
         if (mc.player != null) {
             CustomGlint.Data d = CustomGlint.read(mc.player.getItemInHand(hand));
             if (d != null) {
-                selectedDesign = designShortName(d.design());
-                for (int c : d.colors()) colors.add(c);
-                speed        = d.speed();
-                interpolate  = d.interpolate();
-                patternScale  = d.patternScale();
-                simultaneous  = d.simultaneous();
+                for (CustomGlint.Layer layer : d.layers()) {
+                    layerDesigns.add(designShortName(layer.design()));
+                    List<Integer> lc = new ArrayList<>();
+                    for (int c : layer.colors()) lc.add(c);
+                    layerColors.add(lc);
+                    layerSpeeds.add(layer.speed());
+                    layerInterpolates.add(layer.interpolate());
+                    layerScales.add(layer.patternScale());
+                    layerSimultaneous.add(layer.simultaneous());
+                }
             }
         }
-        if (colors.isEmpty()) colors.add(0xFF8844EE);
+        if (layerDesigns.isEmpty()) {
+            layerDesigns.add("sparkle");
+            List<Integer> lc = new ArrayList<>();
+            lc.add(0xFF8844EE);
+            layerColors.add(lc);
+            layerSpeeds.add(1.0f);
+            layerInterpolates.add(true);
+            layerScales.add(1.0f);
+            layerSimultaneous.add(true);
+        }
         loadEditRGB();
     }
 
     // ── Color helpers ────────────────────────────────────────────────────────
 
+    private List<Integer> currentColors() {
+        return layerColors.get(selectedLayer);
+    }
+
     private void loadEditRGB() {
+        List<Integer> colors = currentColors();
         int c = editingColorIdx < colors.size() ? colors.get(editingColorIdx) : 0xFF8844EE;
         editA = (c >> 24) & 0xFF;
         editR = (c >> 16) & 0xFF;
@@ -114,6 +136,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void saveEditRGB() {
+        List<Integer> colors = currentColors();
         if (editingColorIdx < colors.size())
             colors.set(editingColorIdx, (editA << 24) | (editR << 16) | (editG << 8) | editB);
     }
@@ -187,10 +210,13 @@ public class GlintEditorScreen extends Screen {
 
     private void refreshPreview() {
         previewStack = new ItemStack(previewItem);
-        if (!colors.isEmpty()) {
-            int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
-            CustomGlint.write(previewStack, designRL(selectedDesign), arr, speed, interpolate, patternScale, simultaneous);
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
+        for (int i = 0; i < layers.length; i++) {
+            int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
+            layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
+                    layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
         }
+        CustomGlint.write(previewStack, layers);
     }
 
     // ── Init ─────────────────────────────────────────────────────────────────
@@ -200,111 +226,166 @@ public class GlintEditorScreen extends Screen {
         px = (width  - PANEL_W) / 2;
         py = (height - PANEL_H) / 2;
 
-        // Design buttons — 4 rows of 4
+        // Layer navigation: ◄ ► + − buttons in the header row
+        addRenderableWidget(Button.builder(Component.literal("◄"), b -> {
+            if (selectedLayer > 0) {
+                selectedLayer--;
+                editingColorIdx = 0;
+                loadEditRGB();
+                rebuildWidgets();
+            }
+        }).bounds(px + 152, py + 6, 14, 14).build());
+
+        addRenderableWidget(Button.builder(Component.literal("►"), b -> {
+            if (selectedLayer < layerDesigns.size() - 1) {
+                selectedLayer++;
+                editingColorIdx = 0;
+                loadEditRGB();
+                rebuildWidgets();
+            }
+        }).bounds(px + 168, py + 6, 14, 14).build());
+
+        addRenderableWidget(Button.builder(Component.literal("+"), b -> {
+            layerDesigns.add(layerDesigns.get(selectedLayer));
+            List<Integer> lc = new ArrayList<>();
+            lc.add(0xFF8844EE);
+            layerColors.add(lc);
+            layerSpeeds.add(layerSpeeds.get(selectedLayer));
+            layerInterpolates.add(layerInterpolates.get(selectedLayer));
+            layerScales.add(layerScales.get(selectedLayer));
+            layerSimultaneous.add(layerSimultaneous.get(selectedLayer));
+            selectedLayer = layerDesigns.size() - 1;
+            editingColorIdx = 0;
+            loadEditRGB();
+            rebuildWidgets();
+        }).bounds(px + 186, py + 6, 14, 14).build());
+
+        addRenderableWidget(Button.builder(Component.literal("−"), b -> {
+            if (layerDesigns.size() > 1) {
+                layerDesigns.remove(selectedLayer);
+                layerColors.remove(selectedLayer);
+                layerSpeeds.remove(selectedLayer);
+                layerInterpolates.remove(selectedLayer);
+                layerScales.remove(selectedLayer);
+                layerSimultaneous.remove(selectedLayer);
+                if (selectedLayer >= layerDesigns.size()) selectedLayer = layerDesigns.size() - 1;
+                editingColorIdx = 0;
+                loadEditRGB();
+                rebuildWidgets();
+            }
+        }).bounds(px + 202, py + 6, 14, 14).build());
+
+        // Design buttons — 4 columns, as many rows as needed
         for (int i = 0; i < DESIGNS.length; i++) {
             final String d = DESIGNS[i];
             int col = i % 4, row = i / 4;
             designBtns[i] = addRenderableWidget(
                 Button.builder(Component.literal(d), b -> {
-                    selectedDesign = d;
+                    layerDesigns.set(selectedLayer, d);
                     refreshPreview();
-                }).bounds(px + 100 + col * 48, py + 18 + row * 16, 46, 14).build()
+                }).bounds(px + 100 + col * 48, py + 22 + row * 16, 46, 14).build()
             );
         }
 
         // Remove last color [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
+            List<Integer> colors = currentColors();
             if (colors.size() > 1) {
                 colors.remove(colors.size() - 1);
                 if (editingColorIdx >= colors.size()) editingColorIdx = colors.size() - 1;
                 loadEditRGB();
                 rebuildWidgets();
             }
-        }).bounds(px + 100 + colors.size() * 18, py + 110, 14, 14).build());
+        }).bounds(px + 100 + currentColors().size() * 18, py + 150, 14, 14).build());
 
         // Add color [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
+            List<Integer> colors = currentColors();
             if (colors.size() < 8) {
                 colors.add(0xFF8844EE);
                 editingColorIdx = colors.size() - 1;
                 loadEditRGB();
                 rebuildWidgets();
             }
-        }).bounds(px + 100 + colors.size() * 18 + 16, py + 110, 14, 14).build());
+        }).bounds(px + 100 + currentColors().size() * 18 + 16, py + 150, 14, 14).build());
 
         // Hex EditBox
-        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 128, 58, 12, Component.literal("Hex")));
+        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 168, 58, 12, Component.literal("Hex")));
         hexBox.setMaxLength(6);
         hexBox.setValue(String.format("%06X", (editR << 16) | (editG << 8) | editB));
         hexBox.setResponder(this::onHexChanged);
 
         // R EditBox
-        rBox = addRenderableWidget(new EditBox(font, px + 116, py + 144, 36, 12, Component.literal("R")));
+        rBox = addRenderableWidget(new EditBox(font, px + 116, py + 184, 36, 12, Component.literal("R")));
         rBox.setMaxLength(3);
         rBox.setValue(String.valueOf(editR));
         rBox.setResponder(this::onRChanged);
 
         // G EditBox
-        gBox = addRenderableWidget(new EditBox(font, px + 116, py + 160, 36, 12, Component.literal("G")));
+        gBox = addRenderableWidget(new EditBox(font, px + 116, py + 200, 36, 12, Component.literal("G")));
         gBox.setMaxLength(3);
         gBox.setValue(String.valueOf(editG));
         gBox.setResponder(this::onGChanged);
 
         // B EditBox
-        bBox = addRenderableWidget(new EditBox(font, px + 116, py + 176, 36, 12, Component.literal("B")));
+        bBox = addRenderableWidget(new EditBox(font, px + 116, py + 216, 36, 12, Component.literal("B")));
         bBox.setMaxLength(3);
         bBox.setValue(String.valueOf(editB));
         bBox.setResponder(this::onBChanged);
 
         // A (opacity) EditBox
-        aBox = addRenderableWidget(new EditBox(font, px + 116, py + 192, 36, 12, Component.literal("A")));
+        aBox = addRenderableWidget(new EditBox(font, px + 116, py + 232, 36, 12, Component.literal("A")));
         aBox.setMaxLength(3);
         aBox.setValue(String.valueOf(editA));
         aBox.setResponder(this::onAChanged);
 
         // Speed [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
-            speed = Math.max(0.25f, Math.round((speed - 0.25f) * 4) / 4.0f);
+            layerSpeeds.set(selectedLayer, Math.max(0.25f, Math.round((layerSpeeds.get(selectedLayer) - 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 148, py + 212, 14, 14).build());
+        }).bounds(px + 148, py + 252, 14, 14).build());
 
         // Speed [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
-            speed = Math.min(8.0f, Math.round((speed + 0.25f) * 4) / 4.0f);
+            layerSpeeds.set(selectedLayer, Math.min(8.0f, Math.round((layerSpeeds.get(selectedLayer) + 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 196, py + 212, 14, 14).build());
+        }).bounds(px + 196, py + 252, 14, 14).build());
 
         // Pattern Scale [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
-            patternScale = Math.max(0.25f, Math.round((patternScale - 0.25f) * 4) / 4.0f);
+            layerScales.set(selectedLayer, Math.max(0.25f, Math.round((layerScales.get(selectedLayer) - 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 148, py + 228, 14, 14).build());
+        }).bounds(px + 148, py + 268, 14, 14).build());
 
         // Pattern Scale [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
-            patternScale = Math.min(4.0f, Math.round((patternScale + 0.25f) * 4) / 4.0f);
+            layerScales.set(selectedLayer, Math.min(4.0f, Math.round((layerScales.get(selectedLayer) + 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 196, py + 228, 14, 14).build());
+        }).bounds(px + 196, py + 268, 14, 14).build());
 
         // Smooth toggle
         addRenderableWidget(Button.builder(
-                Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")), b -> {
-            interpolate = !interpolate;
-            b.setMessage(Component.literal("Smooth: " + (interpolate ? "ON" : "OFF")));
+                Component.literal("Smooth: " + (layerInterpolates.get(selectedLayer) ? "ON" : "OFF")), b -> {
+            boolean interp = !layerInterpolates.get(selectedLayer);
+            layerInterpolates.set(selectedLayer, interp);
+            b.setMessage(Component.literal("Smooth: " + (interp ? "ON" : "OFF")));
             refreshPreview();
-        }).bounds(px + 100, py + 246, 90, 14).build());
+        }).bounds(px + 100, py + 286, 90, 14).build());
 
         // Simultaneous toggle
         addRenderableWidget(Button.builder(
-                Component.literal(simultaneous ? "Mode: All" : "Mode: Cycle"), b -> {
-            simultaneous = !simultaneous;
-            b.setMessage(Component.literal(simultaneous ? "Mode: All" : "Mode: Cycle"));
+                Component.literal(layerSimultaneous.get(selectedLayer) ? "Mode: Simultaneous" : "Mode: Cycle"), b -> {
+            boolean sim = !layerSimultaneous.get(selectedLayer);
+            layerSimultaneous.set(selectedLayer, sim);
+            b.setMessage(Component.literal(sim ? "Mode: Simultaneous" : "Mode: Cycle"));
             refreshPreview();
-        }).bounds(px + 196, py + 246, 96, 14).build());
+        }).bounds(px + 196, py + 286, 96, 14).build());
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
-            if (allItems == null) allItems = new ArrayList<>(ForgeRegistries.ITEMS.getValues());
+            if (allItems == null) allItems = ForgeRegistries.ITEMS.getValues().stream()
+                    .filter(item -> { ResourceLocation k = ForgeRegistries.ITEMS.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
+                    .collect(Collectors.toList());
             filterItems(searchBox != null ? searchBox.getValue() : "");
             pickerScroll = 0;
             showPicker = true;
@@ -313,24 +394,31 @@ public class GlintEditorScreen extends Screen {
 
         // Give new item with glint
         addRenderableWidget(Button.builder(Component.literal("Get Item"), b -> {
-            int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
+            CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
+            for (int i = 0; i < layers.length; i++) {
+                int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
+                layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
+                        layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
+            }
             String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, simultaneous, itemId));
-        }).bounds(px + 8, py + 272, 90, 14).build());
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId));
+        }).bounds(px + 8, py + 128, 80, 14).build());
 
         // Apply glint to item already in the other hand
         addRenderableWidget(Button.builder(Component.literal("Apply to Hand"), b -> {
-            int[] arr = colors.stream().mapToInt(Integer::intValue).toArray();
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, false, designRL(selectedDesign).toString(), arr, speed, interpolate, patternScale, simultaneous, ""));
-        }).bounds(px + 105, py + 272, 90, 14).build());
+            CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
+            for (int i = 0; i < layers.length; i++) {
+                int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
+                layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
+                        layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
+            }
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, ""));
+        }).bounds(px + 8, py + 144, 80, 14).build());
 
         // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(
-                    wandHand, true, "", new int[0], 1.0f, true, 1.0f, true, ""));
-        }).bounds(px + 202, py + 272, 90, 14).build());
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], ""));
+        }).bounds(px + 8, py + 160, 80, 14).build());
 
         // Item picker search box — managed manually
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.literal("Search items..."));
@@ -376,20 +464,21 @@ public class GlintEditorScreen extends Screen {
 
         g.drawString(font, "Item:", px + 8, py + 102, 0xAAAAAA);
 
-        // Right labels
-        g.drawString(font, "Design:", px + 100, py + 8, 0xFFFFAA);
-        g.drawString(font, "Colors:", px + 100, py + 100, 0xFFFFAA);
-        g.drawString(font, "Hex:", px + 100, py + 130, 0xAAAAAA);
-        g.drawString(font, "R:", px + 100, py + 146, 0xFF6666);
-        g.drawString(font, "G:", px + 100, py + 162, 0x66FF66);
-        g.drawString(font, "B:", px + 100, py + 178, 0x6666FF);
-        g.drawString(font, "A:", px + 100, py + 194, 0xAAAAAA);
-        g.drawString(font, "Speed:",  px + 100, py + 214, 0xAAAAAA);
-        g.drawString(font, "Scale:",  px + 100, py + 230, 0xAAAAAA);
+        // Right column header: current layer indicator + nav buttons
+        g.drawString(font, "Layer " + (selectedLayer + 1) + "/" + layerDesigns.size(), px + 100, py + 8, 0xFFFFAA);
+
+        g.drawString(font, "Colors:", px + 100, py + 140, 0xFFFFAA);
+        g.drawString(font, "Hex:", px + 100, py + 170, 0xAAAAAA);
+        g.drawString(font, "R:", px + 100, py + 186, 0xFF6666);
+        g.drawString(font, "G:", px + 100, py + 202, 0x66FF66);
+        g.drawString(font, "B:", px + 100, py + 218, 0x6666FF);
+        g.drawString(font, "A:", px + 100, py + 234, 0xAAAAAA);
+        g.drawString(font, "Speed:",  px + 100, py + 254, 0xAAAAAA);
+        g.drawString(font, "Scale:",  px + 100, py + 270, 0xAAAAAA);
 
         // Design selection highlight (behind buttons)
         for (int i = 0; i < DESIGNS.length; i++) {
-            if (DESIGNS[i].equals(selectedDesign) && designBtns[i] != null) {
+            if (DESIGNS[i].equals(layerDesigns.get(selectedLayer)) && designBtns[i] != null) {
                 Button b = designBtns[i];
                 g.fill(b.getX() - 1, b.getY() - 1,
                        b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1, 0xFF44AA44);
@@ -408,21 +497,22 @@ public class GlintEditorScreen extends Screen {
             pose.popPose();
         }
 
-        // Color swatches (after super, on top of widget chrome)
+        // Color swatches for current layer (after super, on top of widget chrome)
+        List<Integer> colors = currentColors();
         for (int i = 0; i < colors.size(); i++) {
             int sx = px + 100 + i * 18;
-            int sy = py + 110;
+            int sy = py + 150;
             g.fill(sx - 1, sy - 1, sx + 17, sy + 17,
                    i == editingColorIdx ? 0xFFFFFFFF : 0xFF555555);
             g.fill(sx, sy, sx + 16, sy + 16, 0xFF000000 | (colors.get(i) & 0xFFFFFF));
         }
 
         // Current-color swatch beside "Hex:" label
-        g.fill(px + 120, py + 128, px + 132, py + 140,
+        g.fill(px + 120, py + 168, px + 132, py + 180,
                0xFF000000 | (colors.get(editingColorIdx) & 0xFFFFFF));
 
-        g.drawCenteredString(font, String.format("%.2f×", speed),        px + 175, py + 214, 0xFFFFFF);
-        g.drawCenteredString(font, String.format("%.2f×", patternScale), px + 175, py + 230, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", layerSpeeds.get(selectedLayer)),  px + 175, py + 254, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", layerScales.get(selectedLayer)), px + 175, py + 270, 0xFFFFFF);
 
         // Item picker overlay — translated forward so it clips above the item preview (Z=200) and widgets
         if (showPicker) {
@@ -481,8 +571,6 @@ public class GlintEditorScreen extends Screen {
         if (showPicker) {
             int ox = pickerOX(), oy = pickerOY();
 
-            // Only forward to the search box when the click is inside it; forwarding unconditionally
-            // calls setFocused(false) for any click outside its bounds, silently breaking keyboard input.
             if (mx >= ox + 2 && mx < ox + OW - 2 && my >= oy + 3 && my < oy + 17) {
                 searchBox.mouseClicked(mx, my, btn);
             }
@@ -506,7 +594,8 @@ public class GlintEditorScreen extends Screen {
         }
 
         // Swatch clicks
-        if (my >= py + 110 && my < py + 126) {
+        if (my >= py + 150 && my < py + 166) {
+            List<Integer> colors = currentColors();
             for (int i = 0; i < colors.size(); i++) {
                 int sx = px + 100 + i * 18;
                 if (mx >= sx && mx < sx + 16) {

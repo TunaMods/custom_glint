@@ -8,6 +8,9 @@ import net.tunamods.customglint.module.item.GlintWandItem;
 import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.network.ModNetworking;
+import net.tunamods.customglint.module.item.GlintTearItem;
+import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSmithingRecipe;
@@ -59,8 +62,18 @@ public class CustomGlintMod {
     public static final RegistryObject<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
             () -> new GlintTrimItem(new Item.Properties().stacksTo(16)));
 
+    public static final RegistryObject<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.register("glint_tear_simultaneous",
+            () -> new GlintTearItem(new Item.Properties().stacksTo(16), true));
+
+    public static final RegistryObject<GlintTearItem> GLINT_TEAR_SEQUENTIAL = ITEMS.register("glint_tear_sequential",
+            () -> new GlintTearItem(new Item.Properties().stacksTo(16), false));
+
+    public static final RegistryObject<RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_tear_apply", () -> GlintTearApplyRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_dye", () -> GlintTrimDyeRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlintTrimDuplicateRecipe>> GLINT_TRIM_DUPLICATE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_duplicate", () -> GlintTrimDuplicateRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimMergeRecipe>> GLINT_TRIM_MERGE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_merge", () -> GlintTrimMergeRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimSmithingRecipe>> GLINT_TRIM_SMITHING_SERIALIZER =
@@ -79,6 +92,8 @@ public class CustomGlintMod {
             })
             .displayItems((parameters, output) -> {
                 output.accept(GLINT_WAND.get());
+                output.accept(GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+                output.accept(GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(GLINT_TRIM.get());
                     ResourceLocation loc = pattern.equals("vanilla")
@@ -118,13 +133,10 @@ public class CustomGlintMod {
 
     private void onCraft(PlayerEvent.ItemCraftedEvent event) {
         CustomGlint.applyCraftGlint(event.getCrafting());
-        if (event.getInventory().getContainerSize() == 3 && CustomGlint.has(event.getCrafting())) {
-            CustomGlint.Data data = CustomGlint.read(event.getCrafting());
-            if (data != null) {
-                ItemStack trim = new ItemStack(GLINT_TRIM.get());
-                GlintTrimItem.setPattern(trim, data.design());
-                for (int color : data.colors()) GlintTrimItem.addColor(trim, color);
-                event.getEntity().addItem(trim);
+        if (event.getInventory().getContainerSize() == 3) {
+            ItemStack template = event.getInventory().getItem(0);
+            if (template.getItem() == GLINT_TRIM.get()) {
+                event.getEntity().addItem(template.copy());
             }
         }
     }

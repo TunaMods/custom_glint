@@ -43,6 +43,8 @@ public class GlintCommand {
         DESIGNS.put("crystal",    CustomGlint.CRYSTAL);
         DESIGNS.put("ember",      CustomGlint.EMBER);
         DESIGNS.put("vein",       CustomGlint.VEIN);
+        DESIGNS.put("solid",      CustomGlint.SOLID);
+        DESIGNS.put("skulls",     CustomGlint.SKULLS);
 
         COLORS.put("red",        CustomGlint.RED);
         COLORS.put("orange",     CustomGlint.ORANGE);
