@@ -21,33 +21,28 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingContainer pInv, Level pLevel) {
-        int trimCount   = 0;
-        int totalColors = 0;
+        int trimCount = 0;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (!(s.getItem() instanceof GlintTrimItem)) return false;
             if (GlintTrimItem.getPattern(s) == null) return false;
-            int[] c = GlintTrimItem.getColors(s);
-            if (c.length == 0) return false;
+            if (GlintTrimItem.getColors(s).length == 0) return false;
             trimCount++;
-            totalColors += c.length;
         }
-        return trimCount == 2 && totalColors <= 8;
+        return trimCount >= 2;
     }
 
     @Override
     public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
-        ItemStack first  = ItemStack.EMPTY;
-        ItemStack second = ItemStack.EMPTY;
+        ItemStack result = ItemStack.EMPTY;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
-            if (first.isEmpty()) first = s;
-            else second = s;
+            if (result.isEmpty()) { result = s; continue; }
+            result = GlintTrimItem.mergeColors(result, s);
         }
-        if (first.isEmpty() || second.isEmpty()) return ItemStack.EMPTY;
-        return GlintTrimItem.mergeColors(first, second);
+        return result;
     }
 
     @Override
