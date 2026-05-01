@@ -12,6 +12,8 @@ Added
 - Glint Layer Tear: craft with two glinted Glint Trims to merge their layer arrays into one trim (up to
   8 total layers). Each layer keeps its own design, colors, speed, and animation settings. Drops from
   loot at the same 20% chance as the other tears.
+- Black Tear: craft with any glinted item to strip all glint data from it. The item is returned clean.
+  Drops from loot at the same 20% chance as the other tears.
 - Glint Trim duplication recipe: Trim (center) + 7 Diamonds + 1 Glowstone Dust in a full 3x3 grid
   yields 2 copies.
 - /glint command for operators: /glint apply <design> <colors> [speed] [smooth] and /glint remove.
