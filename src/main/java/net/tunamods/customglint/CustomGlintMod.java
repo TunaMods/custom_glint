@@ -142,12 +142,6 @@ public class CustomGlintMod {
 
     private void onCraft(PlayerEvent.ItemCraftedEvent event) {
         CustomGlint.applyCraftGlint(event.getCrafting());
-        if (event.getInventory().getContainerSize() == 3) {
-            ItemStack template = event.getInventory().getItem(0);
-            if (template.getItem() == GLINT_TRIM.get()) {
-                event.getEntity().addItem(template.copy());
-            }
-        }
     }
 
     private void onFish(ItemFishedEvent event) {
