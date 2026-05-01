@@ -4,6 +4,7 @@
   "item.customglint.glint_tear_simultaneous": "Simultaneous Glint Tear",
   "item.customglint.glint_tear_sequential": "Sequential Glint Tear",
   "item.customglint.glint_layer_tear": "Layer Glint Tear",
+  "item.customglint.glint_black_tear": "Black Tear",
   "itemGroup.customglint.glint_tab": "Custom Glints",
 
   "trim_pattern.customglint.checker": "Checker Trim",

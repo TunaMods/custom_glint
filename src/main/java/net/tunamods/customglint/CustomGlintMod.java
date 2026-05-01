@@ -10,8 +10,10 @@ import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.tunamods.customglint.module.item.GlintTearItem;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
+import net.tunamods.customglint.module.item.GlintBlackTearItem;
 import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
+import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
@@ -73,6 +75,9 @@ public class CustomGlintMod {
     public static final RegistryObject<GlintLayerTearItem> GLINT_LAYER_TEAR = ITEMS.register("glint_layer_tear",
             () -> new GlintLayerTearItem(new Item.Properties().stacksTo(16)));
 
+    public static final RegistryObject<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.register("glint_black_tear",
+            () -> new GlintBlackTearItem(new Item.Properties().stacksTo(16)));
+
     public static final RegistryObject<RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_tear_apply", () -> GlintTearApplyRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
@@ -86,6 +91,9 @@ public class CustomGlintMod {
 
     public static final RegistryObject<RecipeSerializer<GlintLayerTearRecipe>> GLINT_LAYER_TEAR_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_layer_tear", () -> GlintLayerTearRecipe.SERIALIZER);
+
+    public static final RegistryObject<RecipeSerializer<GlintBlackTearRecipe>> GLINT_BLACK_TEAR_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_black_tear", () -> GlintBlackTearRecipe.SERIALIZER);
 
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
@@ -103,6 +111,7 @@ public class CustomGlintMod {
                 output.accept(GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
                 output.accept(GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 output.accept(GLINT_LAYER_TEAR.get().getDefaultInstance());
+                output.accept(GLINT_BLACK_TEAR.get().getDefaultInstance());
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(GLINT_TRIM.get());
                     ResourceLocation loc = pattern.equals("vanilla")
