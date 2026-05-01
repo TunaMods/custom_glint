@@ -22,28 +22,20 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingContainer pInv, Level pLevel) {
-        ItemStack trim = ItemStack.EMPTY;
-        int diamonds = 0;
-        int glowstone = 0;
-        int filled = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        if (pInv.getWidth() != 3 || pInv.getHeight() != 3) return false;
+        for (int i = 0; i < 9; i++) {
             ItemStack s = pInv.getItem(i);
-            if (s.isEmpty()) continue;
-            filled++;
-            if (s.getItem() instanceof GlintTrimItem) {
-                if (!trim.isEmpty()) return false;
-                trim = s;
-            } else if (s.is(Items.DIAMOND)) {
-                diamonds++;
-            } else if (s.is(Items.GLOWSTONE)) {
-                glowstone++;
+            if (i == 4) {
+                if (!(s.getItem() instanceof GlintTrimItem)) return false;
+                if (GlintTrimItem.getPattern(s) == null) return false;
+                if (GlintTrimItem.getColors(s).length == 0) return false;
+            } else if (i == 7) {
+                if (!s.is(Items.GLOWSTONE_DUST)) return false;
             } else {
-                return false;
+                if (!s.is(Items.DIAMOND)) return false;
             }
         }
-        return filled == 9 && !trim.isEmpty() && diamonds == 7 && glowstone == 1
-                && GlintTrimItem.getPattern(trim) != null
-                && GlintTrimItem.getColors(trim).length > 0;
+        return true;
     }
 
     @Override
