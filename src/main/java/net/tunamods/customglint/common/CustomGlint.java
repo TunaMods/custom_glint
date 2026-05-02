@@ -198,6 +198,8 @@ public final class CustomGlint extends RenderStateShard {
         return glinted(item, design, new int[]{color}, 1.0f, true, 1.0f, true);
     }
 
+    //
+
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -213,6 +215,8 @@ public final class CustomGlint extends RenderStateShard {
         if (data == null) return;
         write(stack, data.layers());
     }
+
+    //
 
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
@@ -230,6 +234,8 @@ public final class CustomGlint extends RenderStateShard {
         write(stack, data.layers());
     }
 
+    //
+
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -245,6 +251,8 @@ public final class CustomGlint extends RenderStateShard {
         if (data == null) return;
         write(stack, data.layers());
     }
+
+    //
 
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
 
