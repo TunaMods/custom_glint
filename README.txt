@@ -10,7 +10,6 @@ Drop the compiled jar into any Forge 1.20.1 modpack and grab the Glint Wand
 from the Custom Glints creative tab to get started. For server/datapack use,
 see the NBT format and /glint command below.
 
-
 ================================================================================
   EMBEDDING IN YOUR OWN MOD (no dependency required)
 ================================================================================
