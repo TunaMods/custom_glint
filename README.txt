@@ -6,387 +6,19 @@ Per-item animated enchantment glint with full color and timing control.
 Works on any item or armor piece. Everything lives in NBT — no registry
 changes, no loot table edits, no item subclasses.
 
-Ships with a Glint Wand for in-game editing and a full NBT command surface
-for server admins and datapacks. Source can be embedded in your own mod
-without taking this as a dependency — see the bottom of this file.
-
-Also includes Glint Trims — lootable template items found in chests around
-the world. Each trim carries a glint pattern (wave, fire, sparkle, etc.) and
-can be dyed to load up to 8 colors onto it. Combine two trims in a crafting
-grid to merge their color lists. Duplicate a trim by placing it in the center
-of a 3×3 crafting grid, glowstone dust at the bottom center, and diamonds in
-all remaining 7 slots — yields 2 copies. Once colored, apply the trim
-to any item at a smithing table with glowstone dust to stamp the full glint
-onto it.
-
-Glint Tears are creative tab items that change the render mode on any glinted
-item: place a Simultaneous Tear or Sequential Tear with a glinted item in a
-crafting grid to toggle whether all colors render as stacked layers at once
-(simultaneous) or cycle through one at a time (sequential).
-
-The Glint Layer Tear is a separate item for combining layers from two Glint
-Trims. Place a Layer Tear with two glinted Glint Trims in a crafting grid to
-merge their layer arrays into one trim (up to 8 layers total). Each layer keeps
-its own design, colors, speed, and all other settings. This is distinct from
-merging two trims with no tear, which only combines color lists within a shared
-design. Layer Tears can drop alongside trims from any loot source at a 20%
-chance, and are also found in the Custom Glints creative tab.
-
-The Black Tear removes all glint data from any glinted item. Place a Black Tear
-with any glinted item in a crafting grid to strip the glint entirely — the item
-is returned clean. Black Tears drop from any loot source at the same 20% chance
-as the other tears, and are also found in the Custom Glints creative tab.
-
-
-================================================================================
-  USING THE GLINT WAND
-================================================================================
-
-Find the Glint Wand in the Custom Glints creative tab. Hold it and right-click
-to open the editor.
-
-  - Pick any item from the item list on the left.
-  - Choose a pattern from the 4x4 design grid.
-  - Add up to 8 color slots. Edit each via hex input or R/G/B/A fields.
-  - The A field (0–255) controls opacity/brightness for that color slot.
-    255 = full intensity, 0 = invisible. Use lower values to tone down
-    colors that are too bright at certain scales or on bright patterns.
-  - Adjust speed (0.25x – 8.0x) and toggle smooth color interpolation.
-  - Click "Get Item" — the item lands in your inventory with the glint applied.
-    The wand remembers your settings so re-opening pre-fills the last config.
-  - To remove a glint, hold the glinted item in your off-hand and click
-    "Remove Glint" while holding the wand in your main hand.
-
-The design grid includes a "vanilla" option that uses the standard Minecraft
-enchantment glint texture with your chosen colors and animation settings.
-
-
-================================================================================
-  JAVA API
-================================================================================
-
-All glint logic is in CustomGlint. Import it and call write() on any ItemStack.
-The class exposes named constants for every built-in color and design so you
-never need raw integers or ResourceLocation strings.
-
-  // Apply a single-layer glint (all fields)
-  CustomGlint.write(
-      stack,
-      CustomGlint.WAVE,                          // design
-      new int[]{CustomGlint.RED, CustomGlint.BLUE}, // colors
-      1.0f,   // speed  (1.0 = 20 ticks/color)
-      true,   // interpolate (smooth lerp between colors)
-      1.0f,   // patternScale (1.0 = default tiling)
-      true);  // simultaneous (all colors rendered as layers at once)
-
-  // Apply a multi-layer glint (each Layer is rendered independently)
-  CustomGlint.write(stack, new CustomGlint.Layer[]{
-      new CustomGlint.Layer(CustomGlint.WAVE,    new int[]{CustomGlint.RED},  1.0f, true, 1.0f, true),
-      new CustomGlint.Layer(CustomGlint.SPARKLE, new int[]{CustomGlint.BLUE}, 2.0f, true, 1.0f, false),
-  });
-
-  // Single static color
-  CustomGlint.write(stack, CustomGlint.SPARKLE,
-      new int[]{CustomGlint.GOLD}, 1.0f, true, 1.0f, true);
-
-  // Check presence (cheaper than read)
-  boolean has = CustomGlint.has(stack);
-
-  // Read the data record (returns null if no glint)
-  CustomGlint.Data data = CustomGlint.read(stack);
-  if (data != null) {
-      for (CustomGlint.Layer layer : data.layers()) {
-          ResourceLocation design = layer.design();
-          int[] colors            = layer.colors();
-          float speed             = layer.speed();
-          boolean interpolate     = layer.interpolate();
-          float scale             = layer.patternScale();
-          boolean simultaneous    = layer.simultaneous();
-      }
-  }
-
-  // Remove
-  CustomGlint.remove(stack);
-
-  // Compute the animated color for the current game tick
-  int color = CustomGlint.computeAnimatedColor(data, layerIdx);
-
-  // Create a pre-glinted ItemStack in one call (useful in creative tab displayItems)
-  ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
-      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
-
-  // Auto-apply a glint whenever a specific item is crafted
-  // Call once during setup; fires automatically via PlayerEvent.ItemCraftedEvent
-  CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE,
-      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
-
-  // Auto-apply a glint to a specific fishing catch
-  // Fires on ItemFishedEvent — only applies when that exact item is reeled in
-  CustomGlint.registerFishingGlint(Items.NAME_TAG, CustomGlint.SPARKLE,
-      new int[]{CustomGlint.CYAN, CustomGlint.WHITE}, 1.5f, true, 1.0f, true);
-
-  // Auto-apply a glint to a specific mob drop
-  // Fires on LivingDropsEvent — applies to the drop before it hits the ground
-  CustomGlint.registerMobDropGlint(Items.NETHER_STAR, CustomGlint.PULSE,
-      new int[]{CustomGlint.WHITE, CustomGlint.YELLOW}, 2.0f, true, 1.0f, true);
-
-  // Auto-apply a glint to a specific item from a specific loot table
-  // Handled by a Global Loot Modifier — fires for chests, mobs, fishing, and advancements
-  CustomGlint.registerLootGlint(
-      new ResourceLocation("minecraft", "chests/end_city_treasure"),
-      Items.DIAMOND_HORSE_ARMOR, CustomGlint.CRYSTAL,
-      new int[]{CustomGlint.CYAN, CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
-
-COLOR CONSTANTS
-  CustomGlint.RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE,
-  BLUE, PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
-
-  Any other color: CustomGlint.color("FFD700")  →  int  (GOLD, etc.)
-
-DESIGN CONSTANTS
-  CustomGlint.VANILLA (minecraft enchanted glint),
-  CustomGlint.CHECKER, CROSSHATCH, CRYSTAL, DIAMONDS, DOTS, EMBER, FIRE, GRID,
-  HEXAGON, PULSE, RIPPLE, SCALES, SKULLS, SOLID, SPARKLE, STARS, STRIPES,
-  SWIRL, VEIN, WAVE, ZIGZAG
-
-
-================================================================================
-  NBT COMMAND FORMAT
-================================================================================
-
-  /give @p <item>{<modid>:{layers:[{design:"<rl>",colors:[I;<ints>],speed:<f>,interpolate:<b>,scale:<f>,simultaneous:<b>}]}}
-
-  The tag key is the mod ID: "customglint" in the standalone version.
-  Embedding devs: it changes automatically when you change MOD_ID.
-
-FIELDS
-------
-  design        ResourceLocation of the pattern PNG.
-                Format: customglint:textures/glint/<name>.png
-                Custom PNGs are supported — drop them in the assets folder.
-
-  colors        One or more signed 32-bit ARGB ints.
-                Alpha byte controls brightness: 0xFF = full, 0x00 = invisible.
-                Applied as an RGB multiplier — the blend mode is additive, so
-                this dims the glint rather than blending it with the background.
-                simultaneous:1b (default): all colors rendered as layers at once.
-                simultaneous:0b: colors cycle one at a time.
-
-  speed         Animation rate multiplier. 1.0 = 20 ticks per color.
-                0.25 = very slow, 8.0 = very fast. Clamped to 1.0 if <= 0.
-
-  interpolate   1b = smooth lerp between colors (cycle mode only).
-                0b = hard cut between colors.
-
-  scale         Texture tiling multiplier. 1.0 = default size. (optional, default 1.0)
-                Clamped to 1.0 if <= 0.
-
-  simultaneous  1b = all color slots rendered as overlapping layers simultaneously.
-                0b = cycle through one color at a time.
-                (optional, default 1b)
-
-EXAMPLE
--------
-  /give @p minecraft:diamond_sword{customglint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}} 1
-
-REMOVE GLINT
-------------
-  /item replace entity @s weapon.mainhand nbt remove customglint
-
-NOTES
------
-  - Alpha byte of each color int controls brightness: 0xFF = full, 0x00 = invisible.
-    Applied as an RGB multiplier before the shader — dims the glint, not true transparency.
-  - interpolate:0b with 1 color is identical to interpolate:1b.
-  - simultaneous:1b with 1 color is identical to simultaneous:0b.
-  - Speed values below ~0.1 look static; above ~10.0 individual colors
-    become invisible due to cycle speed.
-
-
-================================================================================
-  /glint COMMAND
-================================================================================
-
-The mod registers a server-side command for applying and removing glints using
-named color and design tokens instead of raw NBT integers. Requires operator
-permission (or a command block).
-
-APPLY
------
-  /glint apply <design> <colors> [speed] [smooth]
-
-    design   — design name (tab-completes). One of:
-               vanilla, checker, crosshatch, crystal, diamonds, dots,
-               ember, fire, grid, hexagon, pulse, ripple, scales, skulls,
-               solid, sparkle, stars, stripes, swirl, vein, wave, zigzag
-
-    colors   — comma-separated color names (no spaces). Tab-completes after
-               each comma. One of:
-               red, orange, yellow, lime, green, cyan, light_blue, blue,
-               purple, magenta, pink, brown, white, light_gray, gray, black
-
-    speed    — animation rate 0.25–8.0 (default 1.0)
-    smooth   — true = smooth lerp, false = hard cut (default true)
-
-  The glint is written to whatever item you are holding in your main hand.
-  patternScale defaults to 1.0. simultaneous defaults to false (cycle mode).
-
-EXAMPLES
-  /glint apply wave red,blue,purple
-  /glint apply sparkle gold 0.5
-  /glint apply fire red,orange,yellow 1.2 true
-  /glint apply stripes red,blue 6.0 false
-
-REMOVE
-------
-  /glint remove
-
-  Removes the custom glint from the item in your main hand.
-  Fails with a message if the item has no custom glint or your hand is empty.
-
-
-================================================================================
-  DESIGNS (21 custom + vanilla)
-================================================================================
-
-  checker    crosshatch   crystal    diamonds
-  dots       ember        fire       grid
-  hexagon    pulse        ripple     scales
-  skulls     solid        sparkle    stars
-  stripes    swirl        vein       wave
-  zigzag
-  vanilla    (minecraft:textures/misc/enchanted_glint_item.png)
-
-  Format for custom designs: customglint:textures/glint/<name>.png
-
-  Custom designs: drop any PNG into assets/customglint/textures/glint/.
-  The system converts it to grayscale at runtime on first use and applies
-  your color on top via shader tint.
-
-
-================================================================================
-  COLOR REFERENCE (hex → signed int)
-================================================================================
-
-  Red          0xFF0000  →  -65536
-  Orange       0xFF6600  →  -40960
-  Yellow       0xFFFF00  →    -256
-  Lime         0x7FFF00  → -8388864
-  Green        0x00FF00  → -16711936
-  Forest Green 0x228B22  → -14513374
-  Teal         0x008080  → -16744320
-  Cyan         0x00FFFF  → -16711681
-  Sky Blue     0x00BFFF  → -16728065
-  Blue         0x0000FF  → -16776961
-  Dark Blue    0x00008B  → -16777077
-  Indigo       0x4B0082  → -11861886
-  Violet       0xEE82EE  →  -1146130
-  Purple       0x8000FF  →  -8388353
-  Magenta      0xFF00FF  →    -65281
-  Hot Pink     0xFF69B4  →    -38476
-  Coral        0xFF6347  →    -40121
-  Dark Red     0x8B0000  →  -7667712
-  Gold         0xFFD700  →  -10496
-  Aquamarine   0x7FFFD4  →  -8388652
-  Lavender     0xE6E6FA  →  -1644806
-  Silver       0xC0C0C0  →  -4144960
-  White        0xFFFFFF  →       -1
-  Black        0x000000  → -16777216
-
-  To convert any hex color: parse as unsigned int, cast to signed int.
-  Example: 0xFF8844EE = 4286930158 unsigned = -8037134 signed.
-
-
-================================================================================
-  KNOWN LIMITATIONS
-================================================================================
-
-  - clearTextures() is not wired to a resource reload listener. Textures
-    survive pack reloads until clearTextures() is called manually.
-
-  - Speed values below ~0.1 cycle so slowly they look static for minutes.
-    Values above ~10.0 cycle so fast individual colors become invisible.
-
-  - If a player's inventory is full when clicking "Get Item" in the editor,
-    the item is silently dropped.
+Drop the compiled jar into any Forge 1.20.1 modpack and grab the Glint Wand
+from the Custom Glints creative tab to get started. For server/datapack use,
+see the NBT format and /glint command below.
 
 
 ================================================================================
   EMBEDDING IN YOUR OWN MOD (no dependency required)
 ================================================================================
 
-You can copy the glint system directly into your mod under the MIT license.
+Copy the glint system directly into your mod under the MIT license.
 Attribution required — keep the MIT header in each file you copy.
 The Glint Wand, GUI, and networking (module/) are optional. You can drive
 everything through CustomGlint.write() alone and skip them entirely.
-
-JAVA API
---------
-All public methods live in CustomGlint. The design and color constants
-are also there, so you never need raw integers or ResourceLocation strings.
-
-  // Apply a glint
-  CustomGlint.write(stack, CustomGlint.WAVE,
-      new int[]{CustomGlint.RED, CustomGlint.BLUE},
-      1.0f,   // speed
-      true,   // interpolate
-      1.0f,   // patternScale
-      true);  // simultaneous
-
-  // Check presence
-  boolean hasGlint = CustomGlint.has(stack);
-
-  // Read data (returns null if absent)
-  CustomGlint.Data data = CustomGlint.read(stack);
-
-  // Remove
-  CustomGlint.remove(stack);
-
-  // Color constants: CustomGlint.RED, BLUE, GREEN, GOLD, WHITE, etc.
-  // Design constants: CustomGlint.VANILLA, WAVE, FIRE, SPARKLE, CHECKER, etc.
-  // Compute animated color for the current tick (useful for custom rendering):
-  int color = CustomGlint.computeAnimatedColor(data, layerIdx);
-
-  // Create a pre-glinted ItemStack in one call (for creative tab displayItems lambdas)
-  ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
-      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
-
-  // Auto-apply a glint whenever an item is crafted
-  CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE,
-      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
-
-  // Auto-apply a glint to a specific fishing catch
-  CustomGlint.registerFishingGlint(Items.NAME_TAG, CustomGlint.SPARKLE,
-      new int[]{CustomGlint.CYAN, CustomGlint.WHITE}, 1.5f, true, 1.0f, true);
-
-  // Auto-apply a glint to a specific mob drop (fires on LivingDropsEvent)
-  CustomGlint.registerMobDropGlint(Items.NETHER_STAR, CustomGlint.PULSE,
-      new int[]{CustomGlint.WHITE, CustomGlint.YELLOW}, 2.0f, true, 1.0f, true);
-
-  // Auto-apply a glint to an item from a specific loot table (Global Loot Modifier)
-  // Works for chests, mob loot, fishing tables, and advancement rewards
-  CustomGlint.registerLootGlint(
-      new ResourceLocation("minecraft", "chests/end_city_treasure"),
-      Items.DIAMOND_HORSE_ARMOR, CustomGlint.CRYSTAL,
-      new int[]{CustomGlint.CYAN, CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
-
-  // All four register calls follow the same signature pattern.
-  // Call them once during your mod's setup — all event listeners and the
-  // Global Loot Modifier are already wired in CustomGlintMod.
-
-MULTI-MOD SAFETY
-----------------
-Multiple mods embedding this code simultaneously do not conflict:
-
-  - Render types and texture namespaces are scoped to MOD_ID — each embedded
-    copy registers its own isolated set with no overlap.
-
-  - Mixin intercepts use @Inject, not @Redirect. @Inject stacks across mods;
-    @Redirect does not. Every inject checks isCancelled() first and yields if
-    another mod already handled the item.
-
-  - The NBT tag key is derived from MOD_ID automatically. Changing MOD_ID
-    (which you must do) also changes the key — no manual step needed.
 
 STEP 1 — Copy source files
 
@@ -444,3 +76,102 @@ STEP 4 — Mixin config
   Register it in your mods.toml:
     [[mixins]]
     config="<yourmodid>.mixins.json"
+
+MULTI-MOD SAFETY
+----------------
+Multiple mods embedding this code simultaneously do not conflict:
+
+  - Render types and texture namespaces are scoped to MOD_ID — each embedded
+    copy registers its own isolated set with no overlap.
+
+  - Mixin intercepts use @Inject, not @Redirect. @Inject stacks across mods;
+    @Redirect does not. Every inject checks isCancelled() first and yields if
+    another mod already handled the item.
+
+  - The NBT tag key is derived from MOD_ID automatically. Changing MOD_ID
+    (which you must do) also changes the key — no manual step needed.
+
+
+================================================================================
+  JAVA API
+================================================================================
+
+All public methods live in CustomGlint.
+
+  // Apply a glint (full args)
+  CustomGlint.write(stack, CustomGlint.WAVE,
+      new int[]{CustomGlint.RED, CustomGlint.BLUE},
+      1.0f,   // speed (1.0 = 20 ticks/color)
+      true,   // interpolate (smooth lerp between colors)
+      1.0f,   // patternScale
+      true);  // simultaneous (all colors as stacked layers vs. cycling)
+
+  // Multi-layer glint
+  CustomGlint.write(stack, new CustomGlint.Layer[]{
+      new CustomGlint.Layer(CustomGlint.WAVE,    new int[]{CustomGlint.RED},  1.0f, true, 1.0f, true),
+      new CustomGlint.Layer(CustomGlint.SPARKLE, new int[]{CustomGlint.BLUE}, 2.0f, true, 1.0f, false),
+  });
+
+  // Presence check (cheaper than read)
+  boolean has = CustomGlint.has(stack);
+
+  // Read back
+  CustomGlint.Data data = CustomGlint.read(stack);
+
+  // Remove
+  CustomGlint.remove(stack);
+
+  // Pre-glinted ItemStack in one call (useful in creative tab displayItems)
+  ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
+      new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // Auto-apply on craft / fishing / mob drop / loot table (call once during setup)
+  CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{CustomGlint.PURPLE});
+  CustomGlint.registerFishingGlint(Items.NAME_TAG, CustomGlint.SPARKLE, new int[]{CustomGlint.CYAN});
+  CustomGlint.registerMobDropGlint(Items.NETHER_STAR, CustomGlint.PULSE, new int[]{CustomGlint.WHITE});
+  CustomGlint.registerLootGlint(
+      new ResourceLocation("minecraft", "chests/end_city_treasure"),
+      Items.DIAMOND_HORSE_ARMOR, CustomGlint.CRYSTAL, new int[]{CustomGlint.CYAN, CustomGlint.PURPLE});
+
+COLOR CONSTANTS
+  CustomGlint.RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE,
+  BLUE, PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
+  Any other color: CustomGlint.color("FFD700")
+
+DESIGN CONSTANTS
+  CustomGlint.VANILLA, CHECKER, CROSSHATCH, CRYSTAL, DIAMONDS, DOTS, EMBER,
+  FIRE, GRID, HEXAGON, PULSE, RIPPLE, SCALES, SKULLS, SOLID, SPARKLE, STARS,
+  STRIPES, SWIRL, VEIN, WAVE, ZIGZAG
+
+
+================================================================================
+  NBT COMMAND FORMAT
+================================================================================
+
+  /give @p <item>{customglint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}} 1
+
+  Tag key = mod ID ("customglint" standalone; your MOD_ID when embedded).
+  speed: 1.0 = 20 ticks/color. interpolate: 1b = smooth. simultaneous: 1b = all colors at once.
+  Alpha byte of each color int = brightness (0xFF full, 0x00 invisible).
+
+  Remove: /item replace entity @s weapon.mainhand nbt remove customglint
+
+
+================================================================================
+  /glint COMMAND
+================================================================================
+
+  /glint apply <design> <colors> [speed] [smooth]   — applies to main-hand item
+  /glint remove                                      — removes from main-hand item
+
+  design: vanilla, checker, crosshatch, crystal, diamonds, dots, ember, fire,
+          grid, hexagon, pulse, ripple, scales, skulls, solid, sparkle, stars,
+          stripes, swirl, vein, wave, zigzag
+
+  colors: comma-separated names — red, orange, yellow, lime, green, cyan,
+          light_blue, blue, purple, magenta, pink, brown, white, light_gray,
+          gray, black
+
+  Examples:
+    /glint apply wave red,blue,purple
+    /glint apply fire red,orange,yellow 1.2 true
