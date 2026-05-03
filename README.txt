@@ -15,10 +15,8 @@ see the NBT format and /glint command below.
   EMBEDDING IN YOUR OWN MOD (no dependency required)
 ================================================================================
 
-Copy the glint system directly into your mod under the MIT license.
+Copy the common/ folder directly into your mod under the MIT license.
 Attribution required — keep the MIT header in each file you copy.
-The Glint Wand, GUI, and networking (module/) are optional. You can drive
-everything through CustomGlint.write() alone and skip them entirely.
 
 STEP 1 — Copy source files
 
