@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.gui;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.network.GlintApplyPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.client.Minecraft;
@@ -27,29 +28,24 @@ public class GlintEditorScreen extends Screen {
 
     // ── Layout constants ────────────────────────────────────────────────────
     private static final int PANEL_W    = 300;
-    private static final int PANEL_H    = 308;
+    private static final int PANEL_H    = 208;
     private static final int PREVIEW_SZ = 80;
-
-    private static final String[] DESIGNS = {
-        "checker",  "crosshatch", "diamonds", "dots",
-        "fire",     "grid",       "hexagon",  "pulse",
-        "ripple",   "scales",     "sparkle",  "stars",
-        "stripes",  "swirl",      "wave",     "zigzag",
-        "crystal",  "ember",      "vein",     "vanilla",
-        "solid",    "skulls"
-    };
 
     private static ResourceLocation designRL(String name) {
         if ("vanilla".equals(name)) return CustomGlint.VANILLA;
+        if (name.contains(":")) {
+            int c = name.indexOf(':');
+            return new ResourceLocation(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
+        }
         return new ResourceLocation("customglint", "textures/glint/" + name + ".png");
     }
 
     private static String designShortName(ResourceLocation rl) {
         if (rl.equals(CustomGlint.VANILLA)) return "vanilla";
         String p = rl.getPath();
-        int s = p.lastIndexOf('/') + 1;
-        int e = p.endsWith(".png") ? p.length() - 4 : p.length();
-        return p.substring(s, e);
+        String base = p.startsWith("textures/glint/") ? p.substring("textures/glint/".length()) : p;
+        String name = base.endsWith(".png") ? base.substring(0, base.length() - 4) : base;
+        return rl.getNamespace().equals("customglint") ? name : rl.getNamespace() + ":" + name;
     }
 
     // ── State ───────────────────────────────────────────────────────────────
@@ -78,10 +74,16 @@ public class GlintEditorScreen extends Screen {
     private int        pickerScroll  = 0;
     private static final int VISIBLE_ROWS = 8, ROW_H = 18;
 
+    // ── Design-picker overlay ───────────────────────────────────────────────
+    private boolean      showDesignPicker = false;
+    private List<String> filteredDesigns  = new ArrayList<>();
+    private int          designScroll     = 0;
+    private EditBox      designSearchBox;
+    private static final int DESIGN_ROWS = 10, DESIGN_ROW_H = 13;
+
     // ── Widget refs ─────────────────────────────────────────────────────────
-    private EditBox        hexBox, rBox, gBox, bBox, aBox;
-    private EditBox        searchBox;
-    private final Button[] designBtns = new Button[DESIGNS.length];
+    private EditBox hexBox, rBox, gBox, bBox, aBox;
+    private EditBox searchBox;
 
     private int px, py;
 
@@ -219,6 +221,21 @@ public class GlintEditorScreen extends Screen {
         CustomGlint.write(previewStack, layers);
     }
 
+    // ── Design picker helpers ────────────────────────────────────────────────
+
+    private void filterDesigns(String query) {
+        String lq = query.toLowerCase();
+        filteredDesigns = lq.isEmpty() ? new ArrayList<>(GlintTrimItem.PATTERNS) : GlintTrimItem.PATTERNS.stream()
+                .filter(d -> d.contains(lq))
+                .collect(Collectors.toList());
+        designScroll = Math.max(0, Math.min(designScroll, Math.max(0, filteredDesigns.size() - DESIGN_ROWS)));
+    }
+
+    private static final int DPW = 190, DPH = DESIGN_ROWS * DESIGN_ROW_H + 20;
+
+    private int dpX() { return px + 98; }
+    private int dpY() { return py + 38; }
+
     // ── Init ─────────────────────────────────────────────────────────────────
 
     @Override
@@ -226,17 +243,21 @@ public class GlintEditorScreen extends Screen {
         px = (width  - PANEL_W) / 2;
         py = (height - PANEL_H) / 2;
 
-        // Design buttons — 4 columns, as many rows as needed
-        for (int i = 0; i < DESIGNS.length; i++) {
-            final String d = DESIGNS[i];
-            int col = i % 4, row = i / 4;
-            designBtns[i] = addRenderableWidget(
-                Button.builder(Component.literal(d), b -> {
-                    layerDesigns.set(selectedLayer, d);
-                    refreshPreview();
-                }).bounds(px + 100 + col * 48, py + 22 + row * 16, 46, 14).build()
-            );
-        }
+        // Design picker trigger button — full right-column width, shows current design
+        final String curDesign = layerDesigns.get(selectedLayer);
+        addRenderableWidget(Button.builder(
+                Component.literal("Design: " + curDesign + " ▼"), b -> {
+            filterDesigns(designSearchBox != null ? designSearchBox.getValue() : "");
+            designScroll = Math.max(0, filteredDesigns.indexOf(layerDesigns.get(selectedLayer)));
+            showDesignPicker = true;
+            if (designSearchBox != null) designSearchBox.setFocused(true);
+        }).bounds(px + 100, py + 22, PANEL_W - 104, 14).build());
+
+        // Design search box — managed manually (not added to renderables)
+        designSearchBox = new EditBox(font, 0, 0, DPW - 4, 12, Component.literal("Search designs..."));
+        designSearchBox.setMaxLength(30);
+        designSearchBox.setResponder(s -> { designScroll = 0; filterDesigns(s); });
+        filterDesigns("");
 
         // Remove last color [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
@@ -247,7 +268,7 @@ public class GlintEditorScreen extends Screen {
                 loadEditRGB();
                 rebuildWidgets();
             }
-        }).bounds(px + 100 + currentColors().size() * 18, py + 150, 14, 14).build());
+        }).bounds(px + 100 + currentColors().size() * 18, py + 50, 14, 14).build());
 
         // Add color [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
@@ -258,34 +279,34 @@ public class GlintEditorScreen extends Screen {
                 loadEditRGB();
                 rebuildWidgets();
             }
-        }).bounds(px + 100 + currentColors().size() * 18 + 16, py + 150, 14, 14).build());
+        }).bounds(px + 100 + currentColors().size() * 18 + 16, py + 50, 14, 14).build());
 
         // Hex EditBox
-        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 168, 58, 12, Component.literal("Hex")));
+        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 68, 58, 12, Component.literal("Hex")));
         hexBox.setMaxLength(6);
         hexBox.setValue(String.format("%06X", (editR << 16) | (editG << 8) | editB));
         hexBox.setResponder(this::onHexChanged);
 
         // R EditBox
-        rBox = addRenderableWidget(new EditBox(font, px + 116, py + 184, 36, 12, Component.literal("R")));
+        rBox = addRenderableWidget(new EditBox(font, px + 116, py + 84, 36, 12, Component.literal("R")));
         rBox.setMaxLength(3);
         rBox.setValue(String.valueOf(editR));
         rBox.setResponder(this::onRChanged);
 
         // G EditBox
-        gBox = addRenderableWidget(new EditBox(font, px + 116, py + 200, 36, 12, Component.literal("G")));
+        gBox = addRenderableWidget(new EditBox(font, px + 116, py + 100, 36, 12, Component.literal("G")));
         gBox.setMaxLength(3);
         gBox.setValue(String.valueOf(editG));
         gBox.setResponder(this::onGChanged);
 
         // B EditBox
-        bBox = addRenderableWidget(new EditBox(font, px + 116, py + 216, 36, 12, Component.literal("B")));
+        bBox = addRenderableWidget(new EditBox(font, px + 116, py + 116, 36, 12, Component.literal("B")));
         bBox.setMaxLength(3);
         bBox.setValue(String.valueOf(editB));
         bBox.setResponder(this::onBChanged);
 
         // A (opacity) EditBox
-        aBox = addRenderableWidget(new EditBox(font, px + 116, py + 232, 36, 12, Component.literal("A")));
+        aBox = addRenderableWidget(new EditBox(font, px + 116, py + 132, 36, 12, Component.literal("A")));
         aBox.setMaxLength(3);
         aBox.setValue(String.valueOf(editA));
         aBox.setResponder(this::onAChanged);
@@ -294,25 +315,25 @@ public class GlintEditorScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
             layerSpeeds.set(selectedLayer, Math.max(0.25f, Math.round((layerSpeeds.get(selectedLayer) - 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 148, py + 252, 14, 14).build());
+        }).bounds(px + 148, py + 152, 14, 14).build());
 
         // Speed [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             layerSpeeds.set(selectedLayer, Math.min(8.0f, Math.round((layerSpeeds.get(selectedLayer) + 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 196, py + 252, 14, 14).build());
+        }).bounds(px + 196, py + 152, 14, 14).build());
 
         // Pattern Scale [−]
         addRenderableWidget(Button.builder(Component.literal("−"), b -> {
             layerScales.set(selectedLayer, Math.max(0.25f, Math.round((layerScales.get(selectedLayer) - 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 148, py + 268, 14, 14).build());
+        }).bounds(px + 148, py + 168, 14, 14).build());
 
         // Pattern Scale [+]
         addRenderableWidget(Button.builder(Component.literal("+"), b -> {
             layerScales.set(selectedLayer, Math.min(4.0f, Math.round((layerScales.get(selectedLayer) + 0.25f) * 4) / 4.0f));
             refreshPreview();
-        }).bounds(px + 196, py + 268, 14, 14).build());
+        }).bounds(px + 196, py + 168, 14, 14).build());
 
         // Smooth toggle
         addRenderableWidget(Button.builder(
@@ -321,7 +342,7 @@ public class GlintEditorScreen extends Screen {
             layerInterpolates.set(selectedLayer, interp);
             b.setMessage(Component.literal("Smooth: " + (interp ? "ON" : "OFF")));
             refreshPreview();
-        }).bounds(px + 100, py + 286, 90, 14).build());
+        }).bounds(px + 100, py + 186, 90, 14).build());
 
         // Simultaneous toggle
         addRenderableWidget(Button.builder(
@@ -330,7 +351,7 @@ public class GlintEditorScreen extends Screen {
             layerSimultaneous.set(selectedLayer, sim);
             b.setMessage(Component.literal(sim ? "Mode: Simultaneous" : "Mode: Cycle"));
             refreshPreview();
-        }).bounds(px + 196, py + 286, 96, 14).build());
+        }).bounds(px + 196, py + 186, 96, 14).build());
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
@@ -415,7 +436,7 @@ public class GlintEditorScreen extends Screen {
 
         g.drawString(font, "Item:", px + 8, py + 102, 0xAAAAAA);
 
-        // Layer tabs: numbered box per layer, red X zone on selected, + box at end
+        // Layer tabs
         int tabRowY = py + 6;
         for (int i = 0; i < layerDesigns.size(); i++) {
             int tx = px + 100 + i * 22;
@@ -435,27 +456,18 @@ public class GlintEditorScreen extends Screen {
             g.drawCenteredString(font, "+", plusX + 10, tabRowY + 3, 0xFF88FF88);
         }
 
-        g.drawString(font, "Colors:", px + 100, py + 140, 0xFFFFAA);
-        g.drawString(font, "Hex:", px + 100, py + 170, 0xAAAAAA);
-        g.drawString(font, "R:", px + 100, py + 186, 0xFF6666);
-        g.drawString(font, "G:", px + 100, py + 202, 0x66FF66);
-        g.drawString(font, "B:", px + 100, py + 218, 0x6666FF);
-        g.drawString(font, "A:", px + 100, py + 234, 0xAAAAAA);
-        g.drawString(font, "Speed:",  px + 100, py + 254, 0xAAAAAA);
-        g.drawString(font, "Scale:",  px + 100, py + 270, 0xAAAAAA);
-
-        // Design selection highlight (behind buttons)
-        for (int i = 0; i < DESIGNS.length; i++) {
-            if (DESIGNS[i].equals(layerDesigns.get(selectedLayer)) && designBtns[i] != null) {
-                Button b = designBtns[i];
-                g.fill(b.getX() - 1, b.getY() - 1,
-                       b.getX() + b.getWidth() + 1, b.getY() + b.getHeight() + 1, 0xFF44AA44);
-            }
-        }
+        g.drawString(font, "Colors:", px + 100, py + 40, 0xFFFFAA);
+        g.drawString(font, "Hex:", px + 100, py + 70, 0xAAAAAA);
+        g.drawString(font, "R:", px + 100, py + 86, 0xFF6666);
+        g.drawString(font, "G:", px + 100, py + 102, 0x66FF66);
+        g.drawString(font, "B:", px + 100, py + 118, 0x6666FF);
+        g.drawString(font, "A:", px + 100, py + 134, 0xAAAAAA);
+        g.drawString(font, "Speed:",  px + 100, py + 154, 0xAAAAAA);
+        g.drawString(font, "Scale:",  px + 100, py + 170, 0xAAAAAA);
 
         super.render(g, mx, my, dt);
 
-        // Item preview (after super so it renders on top of the box background)
+        // Item preview
         if (!previewStack.isEmpty()) {
             var pose = g.pose();
             pose.pushPose();
@@ -465,29 +477,72 @@ public class GlintEditorScreen extends Screen {
             pose.popPose();
         }
 
-        // Color swatches for current layer (after super, on top of widget chrome)
+        // Color swatches
         List<Integer> colors = currentColors();
         for (int i = 0; i < colors.size(); i++) {
             int sx = px + 100 + i * 18;
-            int sy = py + 150;
+            int sy = py + 50;
             g.fill(sx - 1, sy - 1, sx + 17, sy + 17,
                    i == editingColorIdx ? 0xFFFFFFFF : 0xFF555555);
             g.fill(sx, sy, sx + 16, sy + 16, 0xFF000000 | (colors.get(i) & 0xFFFFFF));
         }
 
-        // Current-color swatch beside "Hex:" label
-        g.fill(px + 120, py + 168, px + 132, py + 180,
+        g.fill(px + 120, py + 68, px + 132, py + 80,
                0xFF000000 | (colors.get(editingColorIdx) & 0xFFFFFF));
 
-        g.drawCenteredString(font, String.format("%.2f×", layerSpeeds.get(selectedLayer)),  px + 175, py + 254, 0xFFFFFF);
-        g.drawCenteredString(font, String.format("%.2f×", layerScales.get(selectedLayer)), px + 175, py + 270, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", layerSpeeds.get(selectedLayer)),  px + 175, py + 154, 0xFFFFFF);
+        g.drawCenteredString(font, String.format("%.2f×", layerScales.get(selectedLayer)), px + 175, py + 170, 0xFFFFFF);
 
-        // Item picker overlay — translated forward so it clips above the item preview (Z=200) and widgets
+        // Design picker overlay
+        if (showDesignPicker) {
+            g.pose().pushPose();
+            g.pose().translate(0, 0, 400);
+            renderDesignPicker(g, mx, my);
+            g.pose().popPose();
+        }
+
+        // Item picker overlay
         if (showPicker) {
             g.pose().pushPose();
             g.pose().translate(0, 0, 400);
             renderPicker(g, mx, my);
             g.pose().popPose();
+        }
+    }
+
+    // ── Design picker rendering ───────────────────────────────────────────────
+
+    private void renderDesignPicker(GuiGraphics g, int mx, int my) {
+        int ox = dpX(), oy = dpY();
+
+        g.fill(ox - 1, oy - 1, ox + DPW + 1, oy + DPH + 1, 0xFF666666);
+        g.fill(ox, oy, ox + DPW, oy + DPH, 0xEE111111);
+
+        designSearchBox.setX(ox + 2);
+        designSearchBox.setY(oy + 3);
+        designSearchBox.setWidth(DPW - 4);
+        designSearchBox.render(g, mx, my, 0);
+
+        int listY = oy + 20;
+        int sbX   = ox + DPW - 5;
+        String active = layerDesigns.get(selectedLayer);
+
+        for (int i = 0; i < DESIGN_ROWS && designScroll + i < filteredDesigns.size(); i++) {
+            String d = filteredDesigns.get(designScroll + i);
+            int ry = listY + i * DESIGN_ROW_H;
+            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + DESIGN_ROW_H;
+            if (d.equals(active)) g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, 0x6044AA44);
+            if (hovered)          g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, 0x40FFFFFF);
+            g.drawString(font, d, ox + 4, ry + 3, 0xDDDDDD);
+        }
+
+        if (filteredDesigns.size() > DESIGN_ROWS) {
+            int trackH = DESIGN_ROWS * DESIGN_ROW_H;
+            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+            int thumbH = Math.max(8, trackH * DESIGN_ROWS / filteredDesigns.size());
+            int thumbY = listY + (int)((trackH - thumbH) * (float) designScroll
+                    / (filteredDesigns.size() - DESIGN_ROWS));
+            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
         }
     }
 
@@ -536,12 +591,38 @@ public class GlintEditorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mx, double my, int btn) {
+        // Design picker
+        if (showDesignPicker) {
+            int ox = dpX(), oy = dpY();
+
+            if (mx >= ox + 2 && mx < ox + DPW - 2 && my >= oy + 3 && my < oy + 17)
+                designSearchBox.mouseClicked(mx, my, btn);
+
+            if (mx < ox || mx >= ox + DPW || my < oy || my >= oy + DPH) {
+                showDesignPicker = false;
+                return true;
+            }
+
+            int listY = oy + 20;
+            if (my >= listY && mx < ox + DPW - 5) {
+                int row = (int)(my - listY) / DESIGN_ROW_H;
+                int idx = designScroll + row;
+                if (row < DESIGN_ROWS && idx < filteredDesigns.size()) {
+                    layerDesigns.set(selectedLayer, filteredDesigns.get(idx));
+                    showDesignPicker = false;
+                    refreshPreview();
+                    Minecraft.getInstance().tell(this::rebuildWidgets);
+                }
+            }
+            return true;
+        }
+
+        // Item picker
         if (showPicker) {
             int ox = pickerOX(), oy = pickerOY();
 
-            if (mx >= ox + 2 && mx < ox + OW - 2 && my >= oy + 3 && my < oy + 17) {
+            if (mx >= ox + 2 && mx < ox + OW - 2 && my >= oy + 3 && my < oy + 17)
                 searchBox.mouseClicked(mx, my, btn);
-            }
 
             if (mx < ox || mx >= ox + OW || my < oy || my >= oy + OH) {
                 showPicker = false;
@@ -608,7 +689,7 @@ public class GlintEditorScreen extends Screen {
         }
 
         // Swatch clicks
-        if (my >= py + 150 && my < py + 166) {
+        if (my >= py + 50 && my < py + 66) {
             List<Integer> colors = currentColors();
             for (int i = 0; i < colors.size(); i++) {
                 int sx = px + 100 + i * 18;
@@ -627,6 +708,11 @@ public class GlintEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scancode, int mods) {
+        if (showDesignPicker) {
+            if (designSearchBox.keyPressed(key, scancode, mods)) return true;
+            if (key == 256) { showDesignPicker = false; return true; }
+            return true;
+        }
         if (showPicker) {
             if (searchBox.keyPressed(key, scancode, mods)) return true;
             if (key == 256) { showPicker = false; return true; }
@@ -637,12 +723,21 @@ public class GlintEditorScreen extends Screen {
 
     @Override
     public boolean charTyped(char c, int mods) {
+        if (showDesignPicker) return designSearchBox.charTyped(c, mods);
         if (showPicker) return searchBox.charTyped(c, mods);
         return super.charTyped(c, mods);
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double delta) {
+        if (showDesignPicker) {
+            int ox = dpX(), oy = dpY();
+            if (mx >= ox && mx < ox + DPW && my >= oy && my < oy + DPH) {
+                int maxScroll = Math.max(0, filteredDesigns.size() - DESIGN_ROWS);
+                designScroll = Math.max(0, Math.min(maxScroll, designScroll - (int) Math.signum(delta)));
+                return true;
+            }
+        }
         if (showPicker) {
             int ox = pickerOX(), oy = pickerOY();
             if (mx >= ox && mx < ox + OW && my >= oy && my < oy + OH) {

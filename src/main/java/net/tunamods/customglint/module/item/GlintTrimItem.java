@@ -16,12 +16,15 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class GlintTrimItem extends Item {
     public static final String PATTERN_TAG = "pattern";
     public static final String COLORS_TAG  = "colors";
+    public static final String SPEED_TAG   = "speed";
+    public static final String SCALE_TAG   = "scale";
 
     // ARGB per DyeColor ordinal: WHITE ORANGE MAGENTA LIGHT_BLUE YELLOW LIME PINK
     //                             GRAY  LIGHT_GRAY CYAN PURPLE BLUE BROWN GREEN RED BLACK
@@ -31,11 +34,16 @@ public class GlintTrimItem extends Item {
         0xFFFF0000, 0xFF333333
     };
 
-    public static final List<String> PATTERNS = List.of(
-        "checker", "crosshatch", "crystal", "diamonds", "dots", "ember", "fire",
+    public static final List<String> PATTERNS = new ArrayList<>(List.of(
+        "checker", "crosshatch", "crystal", "diamonds", "ember", "fire",
         "grid", "hexagon", "pulse", "ripple", "scales", "sparkle", "stars", "stripes",
-        "swirl", "vein", "wave", "zigzag", "vanilla", "solid", "skulls"
-    );
+        "swirl", "vein", "wave", "zigzag", "vanilla", "solid",
+        "arcs", "aurora", "blobs", "cascade", "chevron", "coral", "cracks",
+        "debris", "plate", "dunes", "feather", "frost", "glitch", "glow", "halo",
+        "tile", "lightning", "marble", "matrix", "mesh", "mosaic", "net",
+        "oil", "petal", "plasma", "prism", "sand", "sheen", "shimmer", "silk",
+        "slash", "smoke", "static", "tide", "weave"
+    ));
 
     public GlintTrimItem(Properties pProperties) {
         super(pProperties);
@@ -53,7 +61,7 @@ public class GlintTrimItem extends Item {
         int idx = PATTERNS.indexOf(name);
         if (idx >= 0) stack.getOrCreateTag().putInt("CustomModelData", idx + 1);
         int[] colors = getColors(stack);
-        CustomGlint.write(stack, pattern, colors.length > 0 ? colors : new int[]{0xFFFFFFFF}, 1.0f, true, 1.0f, false);
+        CustomGlint.write(stack, pattern, colors.length > 0 ? colors : new int[]{0xFFFFFFFF}, getSpeed(stack), true, getScale(stack), false);
     }
 
     public static int[] getColors(ItemStack stack) {
@@ -68,7 +76,7 @@ public class GlintTrimItem extends Item {
         next[current.length] = color;
         stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(next));
         ResourceLocation pattern = getPattern(stack);
-        if (pattern != null) CustomGlint.write(stack, pattern, next, 1.0f, true, 1.0f, false);
+        if (pattern != null) CustomGlint.write(stack, pattern, next, getSpeed(stack), true, getScale(stack), false);
         return true;
     }
 
@@ -84,8 +92,38 @@ public class GlintTrimItem extends Item {
         if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
         result.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(merged));
         ResourceLocation pattern = getPattern(result);
-        if (pattern != null) CustomGlint.write(result, pattern, merged, 1.0f, true, 1.0f, false);
+        if (pattern != null) CustomGlint.write(result, pattern, merged, getSpeed(result), true, getScale(result), false);
         return result;
+    }
+
+    public static float getSpeed(ItemStack stack) {
+        if (!stack.hasTag() || !stack.getTag().contains(SPEED_TAG)) return 1.0f;
+        return stack.getTag().getFloat(SPEED_TAG);
+    }
+
+    public static void setSpeed(ItemStack stack, float speed) {
+        stack.getOrCreateTag().putFloat(SPEED_TAG, speed);
+        CustomGlint.Data preview = CustomGlint.read(stack);
+        if (preview == null || preview.layers().length <= 1) {
+            ResourceLocation pattern = getPattern(stack);
+            int[] colors = getColors(stack);
+            if (pattern != null) CustomGlint.write(stack, pattern, colors.length > 0 ? colors : new int[]{0xFFFFFFFF}, speed, true, getScale(stack), false);
+        }
+    }
+
+    public static float getScale(ItemStack stack) {
+        if (!stack.hasTag() || !stack.getTag().contains(SCALE_TAG)) return 1.0f;
+        return stack.getTag().getFloat(SCALE_TAG);
+    }
+
+    public static void setScale(ItemStack stack, float scale) {
+        stack.getOrCreateTag().putFloat(SCALE_TAG, scale);
+        CustomGlint.Data preview = CustomGlint.read(stack);
+        if (preview == null || preview.layers().length <= 1) {
+            ResourceLocation pattern = getPattern(stack);
+            int[] colors = getColors(stack);
+            if (pattern != null) CustomGlint.write(stack, pattern, colors.length > 0 ? colors : new int[]{0xFFFFFFFF}, getSpeed(stack), true, scale, false);
+        }
     }
 
     @Override
@@ -133,6 +171,10 @@ public class GlintTrimItem extends Item {
             }
         } else {
             pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + " — apply with Glowstone Dust at a smithing table"));
+            float speed = getSpeed(pStack);
+            float scale = getScale(pStack);
+            if (speed != 1.0f) pTooltipComponents.add(Component.literal("Speed: " + (int) speed + "×").withStyle(ChatFormatting.AQUA));
+            if (scale != 1.0f) pTooltipComponents.add(Component.literal("Scale: " + scale + "×").withStyle(ChatFormatting.AQUA));
             MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
             for (int i = 0; i < colors.length; i++) {
                 int rgb = colors[i] & 0xFFFFFF;

@@ -15,13 +15,26 @@ import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimBlankDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSmithingRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
+import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.entity.player.ItemFishedEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import com.mojang.serialization.Codec;
 import net.minecraftforge.common.loot.IGlobalLootModifier;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -84,6 +97,8 @@ public class CustomGlintMod {
             RECIPE_SERIALIZERS.register("glint_trim_dye", () -> GlintTrimDyeRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimDuplicateRecipe>> GLINT_TRIM_DUPLICATE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_duplicate", () -> GlintTrimDuplicateRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlintTrimBlankDuplicateRecipe>> GLINT_TRIM_BLANK_DUPLICATE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_blank_duplicate", () -> GlintTrimBlankDuplicateRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimMergeRecipe>> GLINT_TRIM_MERGE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_merge", () -> GlintTrimMergeRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimSmithingRecipe>> GLINT_TRIM_SMITHING_SERIALIZER =
@@ -94,6 +109,11 @@ public class CustomGlintMod {
 
     public static final RegistryObject<RecipeSerializer<GlintBlackTearRecipe>> GLINT_BLACK_TEAR_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_black_tear", () -> GlintBlackTearRecipe.SERIALIZER);
+
+    public static final RegistryObject<RecipeSerializer<GlintTrimSpeedRecipe>> GLINT_TRIM_SPEED_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_speed", () -> GlintTrimSpeedRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlintTrimScaleRecipe>> GLINT_TRIM_SCALE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_scale", () -> GlintTrimScaleRecipe.SERIALIZER);
 
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
@@ -114,14 +134,22 @@ public class CustomGlintMod {
                 output.accept(GLINT_BLACK_TEAR.get().getDefaultInstance());
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(GLINT_TRIM.get());
-                    ResourceLocation loc = pattern.equals("vanilla")
-                        ? CustomGlint.VANILLA
-                        : new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
+                    ResourceLocation loc;
+                    if (pattern.equals("vanilla")) {
+                        loc = CustomGlint.VANILLA;
+                    } else if (pattern.contains(":")) {
+                        int c = pattern.indexOf(':');
+                        loc = new ResourceLocation(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
+                    } else {
+                        loc = new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
+                    }
                     GlintTrimItem.setPattern(trim, loc);
                     output.accept(trim);
                 }
             })
             .build());
+
+    private final List<String> dataPackDesigns = new ArrayList<>();
 
     public CustomGlintMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
@@ -137,12 +165,34 @@ public class CustomGlintMod {
 
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
+        MinecraftForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         MinecraftForge.EVENT_BUS.addListener(this::onCraft);
         MinecraftForge.EVENT_BUS.addListener(this::onFish);
         MinecraftForge.EVENT_BUS.addListener(this::onMobDrop);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+    }
+
+    private void onAddReloadListeners(AddReloadListenerEvent event) {
+        event.addListener(new SimpleJsonResourceReloadListener(new Gson(), "customglint/designs") {
+            @Override
+            protected void apply(Map<ResourceLocation, JsonElement> object, ResourceManager manager, ProfilerFiller profiler) {
+                GlintTrimItem.PATTERNS.removeAll(dataPackDesigns);
+                dataPackDesigns.clear();
+                for (JsonElement file : object.values()) {
+                    if (!file.isJsonArray()) continue;
+                    for (JsonElement entry : file.getAsJsonArray()) {
+                        if (!entry.isJsonPrimitive()) continue;
+                        String name = entry.getAsString();
+                        if (!GlintTrimItem.PATTERNS.contains(name)) {
+                            GlintTrimItem.PATTERNS.add(name);
+                            dataPackDesigns.add(name);
+                        }
+                    }
+                }
+            }
+        });
     }
 
     private void registerCommands(RegisterCommandsEvent event) {

@@ -1,5 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
+import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import com.google.gson.JsonObject;
@@ -10,6 +11,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SmithingRecipe;
@@ -69,9 +71,21 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         if (preview != null && preview.layers().length > 1) {
             CustomGlint.write(result, preview.layers());
         } else {
-            CustomGlint.write(result, pattern, colors, speed, interpolate, 1.0f, simultaneous);
+            CustomGlint.write(result, pattern, colors, speed, interpolate, GlintTrimItem.getScale(template), simultaneous);
         }
         return result;
+    }
+
+    @Override
+    public NonNullList<Ingredient> getIngredients() {
+        NonNullList<Ingredient> list = NonNullList.create();
+        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
+        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
+        list.add(Ingredient.of(Items.GLOWSTONE_DUST));
+        return list;
     }
 
     @Override
@@ -81,7 +95,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        return ItemStack.EMPTY;
+        return CustomGlint.glinted(Items.DIAMOND_SWORD, new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000});
     }
 
     @Override

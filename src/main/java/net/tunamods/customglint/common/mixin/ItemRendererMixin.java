@@ -6,6 +6,8 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -122,11 +124,7 @@ public class ItemRendererMixin {
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = COLOR_BUF.get();
 
-        int totalConsumers = 0;
-        for (CustomGlint.Layer layer : layers)
-            totalConsumers += layer.simultaneous() ? layer.colors().length : 1;
-        VertexConsumer[] consumers = new VertexConsumer[totalConsumers + 1];
-        int ci = 0;
+        List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             int[] colors = layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
@@ -136,7 +134,8 @@ public class ItemRendererMixin {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    consumers[ci++] = buffer.getBuffer(CustomGlint.forGlint(glint, layerIdx, buf, isItem, i));
+                    RenderType rt = CustomGlint.forGlint(glint, layerIdx, buf, isItem, i);
+                    if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlint.computeAnimatedColor(glint, layerIdx);
@@ -145,11 +144,13 @@ public class ItemRendererMixin {
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
                 buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
-                consumers[ci++] = buffer.getBuffer(CustomGlint.forGlint(glint, layerIdx, buf, isItem, 0));
+                RenderType rt = CustomGlint.forGlint(glint, layerIdx, buf, isItem, 0);
+                if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }
-        consumers[ci] = buffer.getBuffer(renderType);
-        return VertexMultiConsumer.create(consumers);
+        if (list.isEmpty()) return null;
+        list.add(buffer.getBuffer(renderType));
+        return VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
     }
 
 }

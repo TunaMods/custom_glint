@@ -4,7 +4,10 @@ package net.tunamods.customglint.common.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.model.HumanoidModel;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -54,11 +57,7 @@ public class HumanoidArmorLayerMixin {
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = COLOR_BUF.get();
 
-        int totalConsumers = 0;
-        for (CustomGlint.Layer layer : layers)
-            totalConsumers += layer.simultaneous() ? layer.colors().length : 1;
-        VertexConsumer[] consumers = new VertexConsumer[totalConsumers];
-        int ci = 0;
+        List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             int[] colors = layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
@@ -68,7 +67,8 @@ public class HumanoidArmorLayerMixin {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    consumers[ci++] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, layerIdx, buf, i));
+                    RenderType rt = CustomGlint.forArmorGlint(glint, layerIdx, buf, i);
+                    if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlint.computeAnimatedColor(glint, layerIdx);
@@ -77,10 +77,12 @@ public class HumanoidArmorLayerMixin {
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
                 buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
-                consumers[ci++] = buffer.getBuffer(CustomGlint.forArmorGlint(glint, layerIdx, buf, 0));
+                RenderType rt = CustomGlint.forArmorGlint(glint, layerIdx, buf, 0);
+                if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }
-        VertexConsumer combined = consumers.length == 1 ? consumers[0] : VertexMultiConsumer.create(consumers);
+        if (list.isEmpty()) return;
+        VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
         model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 

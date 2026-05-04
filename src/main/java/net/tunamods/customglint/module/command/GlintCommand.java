@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -19,33 +20,9 @@ import java.util.Map;
 
 public class GlintCommand {
 
-    private static final Map<String, ResourceLocation> DESIGNS = new LinkedHashMap<>();
     private static final Map<String, Integer> COLORS = new LinkedHashMap<>();
 
     static {
-        DESIGNS.put("vanilla",    CustomGlint.VANILLA);
-        DESIGNS.put("checker",    CustomGlint.CHECKER);
-        DESIGNS.put("crosshatch", CustomGlint.CROSSHATCH);
-        DESIGNS.put("diamonds",   CustomGlint.DIAMONDS);
-        DESIGNS.put("dots",       CustomGlint.DOTS);
-        DESIGNS.put("fire",       CustomGlint.FIRE);
-        DESIGNS.put("grid",       CustomGlint.GRID);
-        DESIGNS.put("hexagon",    CustomGlint.HEXAGON);
-        DESIGNS.put("pulse",      CustomGlint.PULSE);
-        DESIGNS.put("ripple",     CustomGlint.RIPPLE);
-        DESIGNS.put("scales",     CustomGlint.SCALES);
-        DESIGNS.put("sparkle",    CustomGlint.SPARKLE);
-        DESIGNS.put("stars",      CustomGlint.STARS);
-        DESIGNS.put("stripes",    CustomGlint.STRIPES);
-        DESIGNS.put("swirl",      CustomGlint.SWIRL);
-        DESIGNS.put("wave",       CustomGlint.WAVE);
-        DESIGNS.put("zigzag",     CustomGlint.ZIGZAG);
-        DESIGNS.put("crystal",    CustomGlint.CRYSTAL);
-        DESIGNS.put("ember",      CustomGlint.EMBER);
-        DESIGNS.put("vein",       CustomGlint.VEIN);
-        DESIGNS.put("solid",      CustomGlint.SOLID);
-        DESIGNS.put("skulls",     CustomGlint.SKULLS);
-
         COLORS.put("red",        CustomGlint.RED);
         COLORS.put("orange",     CustomGlint.ORANGE);
         COLORS.put("yellow",     CustomGlint.YELLOW);
@@ -67,7 +44,7 @@ public class GlintCommand {
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_DESIGNS =
         (ctx, builder) -> {
             String remaining = builder.getRemaining().toLowerCase();
-            for (String name : DESIGNS.keySet()) {
+            for (String name : GlintTrimItem.PATTERNS) {
                 if (name.startsWith(remaining)) builder.suggest(name);
             }
             return builder.buildFuture();
@@ -76,12 +53,15 @@ public class GlintCommand {
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_COLORS =
         (ctx, builder) -> {
             String remaining = builder.getRemaining();
-            int lastComma = remaining.lastIndexOf(',');
-            String prefix  = lastComma >= 0 ? remaining.substring(0, lastComma + 1) : "";
-            String partial = lastComma >= 0 ? remaining.substring(lastComma + 1)    : remaining;
+            boolean quoted = remaining.startsWith("\"");
+            String inner   = quoted ? remaining.substring(1) : remaining;
+            int lastComma  = inner.lastIndexOf(',');
+            String prefix  = lastComma >= 0 ? inner.substring(0, lastComma + 1) : "";
+            String partial = lastComma >= 0 ? inner.substring(lastComma + 1)    : inner;
             for (String name : COLORS.keySet()) {
                 if (name.startsWith(partial.toLowerCase())) {
-                    builder.suggest(prefix + name);
+                    String value = prefix + name;
+                    builder.suggest(quoted ? "\"" + value + "\"" : value);
                 }
             }
             return builder.buildFuture();
@@ -92,40 +72,64 @@ public class GlintCommand {
             .then(Commands.literal("apply")
                 .then(Commands.argument("design", StringArgumentType.word())
                     .suggests(SUGGEST_DESIGNS)
-                    .then(Commands.argument("colors", StringArgumentType.word())
+                    .then(Commands.argument("colors", StringArgumentType.string())
                         .suggests(SUGGEST_COLORS)
                         .executes(ctx -> apply(ctx.getSource(),
                             StringArgumentType.getString(ctx, "design"),
                             StringArgumentType.getString(ctx, "colors"),
-                            1.0f, true))
+                            1.0f, true, 1.0f, false))
                         .then(Commands.argument("speed", FloatArgumentType.floatArg(0.25f, 8.0f))
                             .executes(ctx -> apply(ctx.getSource(),
                                 StringArgumentType.getString(ctx, "design"),
                                 StringArgumentType.getString(ctx, "colors"),
-                                FloatArgumentType.getFloat(ctx, "speed"), true))
+                                FloatArgumentType.getFloat(ctx, "speed"), true, 1.0f, false))
                             .then(Commands.argument("smooth", BoolArgumentType.bool())
                                 .executes(ctx -> apply(ctx.getSource(),
                                     StringArgumentType.getString(ctx, "design"),
                                     StringArgumentType.getString(ctx, "colors"),
                                     FloatArgumentType.getFloat(ctx, "speed"),
-                                    BoolArgumentType.getBool(ctx, "smooth"))))))))
+                                    BoolArgumentType.getBool(ctx, "smooth"), 1.0f, false))
+                                .then(Commands.argument("scale", FloatArgumentType.floatArg(0.25f, 4.0f))
+                                    .executes(ctx -> apply(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "design"),
+                                        StringArgumentType.getString(ctx, "colors"),
+                                        FloatArgumentType.getFloat(ctx, "speed"),
+                                        BoolArgumentType.getBool(ctx, "smooth"),
+                                        FloatArgumentType.getFloat(ctx, "scale"), false))
+                                    .then(Commands.argument("simultaneous", BoolArgumentType.bool())
+                                        .executes(ctx -> apply(ctx.getSource(),
+                                            StringArgumentType.getString(ctx, "design"),
+                                            StringArgumentType.getString(ctx, "colors"),
+                                            FloatArgumentType.getFloat(ctx, "speed"),
+                                            BoolArgumentType.getBool(ctx, "smooth"),
+                                            FloatArgumentType.getFloat(ctx, "scale"),
+                                            BoolArgumentType.getBool(ctx, "simultaneous"))))))))))
             .then(Commands.literal("remove")
                 .executes(ctx -> remove(ctx.getSource()))));
     }
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
-                              float speed, boolean smooth) {
+                              float speed, boolean smooth, float scale, boolean simultaneous) {
         ServerPlayer player = source.getPlayer();
         if (player == null) {
             source.sendFailure(Component.literal("Must be a player"));
             return 0;
         }
 
-        ResourceLocation design = DESIGNS.get(designName.toLowerCase());
-        if (design == null) {
+        String key = designName.toLowerCase();
+        if (!GlintTrimItem.PATTERNS.contains(key)) {
             source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", DESIGNS.keySet())));
+                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
+        }
+        ResourceLocation design;
+        if ("vanilla".equals(key)) {
+            design = CustomGlint.VANILLA;
+        } else if (key.contains(":")) {
+            int c = key.indexOf(':');
+            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
+        } else {
+            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
         }
 
         String[] parts = colorsArg.split(",");
@@ -147,7 +151,7 @@ public class GlintCommand {
             return 0;
         }
 
-        CustomGlint.write(stack, design, colors, speed, smooth, 1.0f, false);
+        CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous);
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
     }

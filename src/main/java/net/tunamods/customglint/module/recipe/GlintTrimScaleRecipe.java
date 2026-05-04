@@ -1,16 +1,13 @@
 package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
-import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.core.NonNullList;
-import net.minecraft.world.item.DyeItem;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
@@ -18,53 +15,47 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
-public class GlintTrimDyeRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintTrimDyeRecipe::new);
+public class GlintTrimScaleRecipe extends CustomRecipe {
+    public static final SimpleCraftingRecipeSerializer<GlintTrimScaleRecipe> SERIALIZER =
+            new SimpleCraftingRecipeSerializer<>(GlintTrimScaleRecipe::new);
 
-    public GlintTrimDyeRecipe(ResourceLocation id, CraftingBookCategory category) {
+    public GlintTrimScaleRecipe(ResourceLocation id, CraftingBookCategory category) {
         super(id, category);
     }
 
     @Override
     public boolean matches(CraftingContainer pInv, Level pLevel) {
         ItemStack trim = ItemStack.EMPTY;
-        ItemStack dye  = ItemStack.EMPTY;
-        int filled = 0;
+        int count = 0;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
-            filled++;
             if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null) {
                 if (!trim.isEmpty()) return false;
                 trim = s;
-            } else if (s.getItem() instanceof DyeItem) {
-                if (!dye.isEmpty()) return false;
-                dye = s;
+            } else if (s.is(Items.SLIME_BALL)) {
+                count++;
             } else {
                 return false;
             }
         }
-        return filled == 2 && !trim.isEmpty() && !dye.isEmpty();
+        return !trim.isEmpty() && count >= 1 && count <= 8;
     }
 
     @Override
     public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
         ItemStack trim = ItemStack.EMPTY;
-        DyeItem dye = null;
+        int count = 0;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlintTrimItem) trim = s;
-            else if (s.getItem() instanceof DyeItem d) dye = d;
+            else if (s.is(Items.SLIME_BALL)) count++;
         }
-        if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
+        if (trim.isEmpty()) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        int[] colors = new int[]{ GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()] };
-        result.getOrCreateTag().put(GlintTrimItem.COLORS_TAG, new IntArrayTag(colors));
-        ResourceLocation pattern = GlintTrimItem.getPattern(result);
-        if (pattern != null) CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
+        GlintTrimItem.setScale(result, count * 0.5f);
         return result;
     }
 
@@ -73,6 +64,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
         GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
+        GlintTrimItem.setScale(result, 2.0f);
         return result;
     }
 
@@ -86,12 +78,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
+        list.add(Ingredient.of(Items.SLIME_BALL));
         return list;
     }
 

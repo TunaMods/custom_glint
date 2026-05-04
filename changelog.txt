@@ -1,3 +1,29 @@
+[1.2.0]
+
+Added:
+- JEI integration: all Glint Trim, Tear, and smithing recipes now display in JEI.
+- 35 new glint designs (55 total, up from 22). New: arcs, aurora, blobs, cascade, chevron,
+  coral, cracks, debris, dunes, feather, frost, glitch, glow, halo, lightning, marble, matrix,
+  mesh, mosaic, net, oil, petal, plasma, plate, prism, sand, sheen, shimmer, silk, slash, smoke,
+  static, tide, tile, weave.
+- Blank Glint Trim duplication: trims with no colors can now be duplicated with the same
+  3x3 diamond recipe (Trim + 7 Diamonds + Glowstone Dust → 2 copies). Previously only
+  trims with at least one color could be duplicated.
+- Trim speed recipe: combine a Glint Trim with 1–8 Redstone Dust to set its animation speed
+  (1 = 1x, 8 = 8x). Craft again with a different count to change it.
+- Trim scale recipe: combine a Glint Trim with 1–8 Slimeballs to set the pattern zoom
+  (1 ball = 0.5x zoom in, 8 balls = 4.0x zoom out). Craft again to change it. Scale carries
+  through to the item when smithing.
+- Data-pack design support: mods and data packs can register custom designs via
+  data/<namespace>/customglint/designs/*.json. Registered designs appear in the editor
+  picker, command suggestions, and the creative tab.
+- The Glint Editor design picker is now a searchable scrollable overlay showing all 55
+  built-in designs plus any data-pack designs, replacing the old fixed grid of 22 buttons.
+- /glint apply now accepts two additional optional arguments: scale (0.25–4.0) and
+  simultaneous (true/false). Tab completion now covers all 55 designs.
+
+Removed:
+- dots and skulls designs.
 
 [1.1.1]
 
