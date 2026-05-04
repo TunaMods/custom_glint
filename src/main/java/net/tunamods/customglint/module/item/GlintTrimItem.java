@@ -35,14 +35,13 @@ public class GlintTrimItem extends Item {
     };
 
     public static final List<String> PATTERNS = new ArrayList<>(List.of(
-        "checker", "crosshatch", "crystal", "diamonds", "ember", "fire",
-        "grid", "hexagon", "pulse", "ripple", "scales", "sparkle", "stars", "stripes",
-        "swirl", "vein", "wave", "zigzag", "vanilla", "solid",
-        "arcs", "aurora", "blobs", "cascade", "chevron", "coral", "cracks",
-        "debris", "plate", "dunes", "feather", "frost", "glitch", "glow", "halo",
-        "tile", "lightning", "marble", "matrix", "mesh", "mosaic", "net",
-        "oil", "petal", "plasma", "prism", "sand", "sheen", "shimmer", "silk",
-        "slash", "smoke", "static", "tide", "weave"
+        "arcs", "aurora", "blobs", "cascade", "checker", "chevron", "coral", "cracks",
+        "crosshatch", "crystal", "debris", "diamonds", "dunes", "ember", "feather", "fire",
+        "frost", "glitch", "glow", "grid", "halo", "hexagon", "lightning", "marble",
+        "matrix", "mesh", "mosaic", "net", "oil", "petal", "plasma", "plate",
+        "prism", "pulse", "ripple", "sand", "scales", "sheen", "shimmer", "silk",
+        "slash", "smoke", "solid", "sparkle", "stars", "static", "stripes", "swirl",
+        "tide", "tile", "vanilla", "vein", "wave", "weave", "zigzag"
     ));
 
     public GlintTrimItem(Properties pProperties) {

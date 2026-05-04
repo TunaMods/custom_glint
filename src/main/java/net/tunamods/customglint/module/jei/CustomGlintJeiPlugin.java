@@ -27,6 +27,8 @@ import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
+import net.minecraft.world.item.crafting.SmithingRecipe;
+import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
 
 import java.util.ArrayList;
@@ -310,6 +312,22 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
     }
 
+    private static class SmithingDisplay extends SmithingTransformRecipe {
+        private final ItemStack glintedResult;
+
+        SmithingDisplay(ResourceLocation id, ItemStack trim, ItemStack glintedResult) {
+            super(id, Ingredient.of(trim), Ingredient.of(glintedResult.getItem()), Ingredient.of(Items.GLOWSTONE_DUST), glintedResult);
+            this.glintedResult = glintedResult;
+        }
+
+        @Override public boolean isSpecial() { return false; }
+
+        @Override
+        public ItemStack getResultItem(RegistryAccess r) {
+            return glintedResult;
+        }
+    }
+
     @Override
     public ResourceLocation getPluginUid() {
         return UID;
@@ -409,5 +427,18 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             scaleDisplays.add(new ScaleDisplay(new ResourceLocation("customglint", "jei_scale_" + n), sparkle, 0xFF00AAFF, n));
         }
         registration.addRecipes(RecipeTypes.CRAFTING, scaleDisplays);
+
+        ItemStack st0 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st0, wave);    GlintTrimItem.addColor(st0, 0xFFFF0000);
+        ItemStack st1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st1, crystal); GlintTrimItem.addColor(st1, 0xFF00FFFF); GlintTrimItem.addColor(st1, 0xFF00AAFF);
+        ItemStack st2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st2, sparkle); GlintTrimItem.addColor(st2, 0xFF8800CC); GlintTrimItem.addColor(st2, 0xFFFF80A0);
+        ItemStack st3 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st3, swirl);   GlintTrimItem.addColor(st3, 0xFFFF0000); GlintTrimItem.addColor(st3, 0xFFFFFF00); GlintTrimItem.addColor(st3, 0xFF00FF00); GlintTrimItem.addColor(st3, 0xFF00FFFF); GlintTrimItem.addColor(st3, 0xFF0000FF);
+        ItemStack st4 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st4, vanilla); GlintTrimItem.addColor(st4, 0xFFFFAA00);
+        List<SmithingRecipe> smithingDisplays = new ArrayList<>();
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_0"), st0, CustomGlint.glinted(Items.DIAMOND_SWORD,    wave,    new int[]{0xFFFF0000})));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_1"), st1, CustomGlint.glinted(Items.DIAMOND_CHESTPLATE, crystal, new int[]{0xFF00FFFF, 0xFF00AAFF})));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_2"), st2, CustomGlint.glinted(Items.BOW,               sparkle, new int[]{0xFF8800CC, 0xFFFF80A0})));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_3"), st3, CustomGlint.glinted(Items.ELYTRA,            swirl,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF})));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_4"), st4, CustomGlint.glinted(Items.ENCHANTED_BOOK,    vanilla, new int[]{0xFFFFAA00})));
+        registration.addRecipes(RecipeTypes.SMITHING, smithingDisplays);
     }
 }
