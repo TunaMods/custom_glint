@@ -2,24 +2,24 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
-public class GlintTrimDuplicateRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlintTrimDuplicateRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintTrimDuplicateRecipe::new);
+public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
+    public static final SimpleCraftingRecipeSerializer<GlintTrimBlankDuplicateRecipe> SERIALIZER =
+            new SimpleCraftingRecipeSerializer<>(GlintTrimBlankDuplicateRecipe::new);
 
-    public GlintTrimDuplicateRecipe(ResourceLocation id, CraftingBookCategory category) {
+    public GlintTrimBlankDuplicateRecipe(ResourceLocation id, CraftingBookCategory category) {
         super(id, category);
     }
 
@@ -31,7 +31,7 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
             if (i == 4) {
                 if (!(s.getItem() instanceof GlintTrimItem)) return false;
                 if (GlintTrimItem.getPattern(s) == null) return false;
-                if (GlintTrimItem.getColors(s).length == 0) return false;
+                if (GlintTrimItem.getColors(s).length != 0) return false;
             } else if (i == 7) {
                 if (!s.is(Items.GLOWSTONE_DUST)) return false;
             } else {
@@ -58,7 +58,6 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get(), 2);
         GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
         return result;
     }
 
@@ -70,7 +69,6 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
         NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
         ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
         GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         for (int i = 0; i < 9; i++) {
             if (i == 4) list.set(i, Ingredient.of(trimExample));
             else if (i == 7) list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));
@@ -81,7 +79,7 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
 
     @Override
     public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth * pHeight >= 9;
+        return pWidth >= 3 && pHeight >= 3;
     }
 
     @Override

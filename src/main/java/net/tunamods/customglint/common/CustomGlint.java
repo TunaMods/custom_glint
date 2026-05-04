@@ -67,27 +67,60 @@ public final class CustomGlint extends RenderStateShard {
     // ── Designs ───────────────────────────────────────────────────────────────
 
     public static final ResourceLocation VANILLA    = new ResourceLocation("minecraft", "textures/misc/enchanted_glint_item.png");
-    public static final ResourceLocation CHECKER    = new ResourceLocation(MOD_ID, "textures/glint/checker.png");
+    public static final ResourceLocation ARCS      = new ResourceLocation(MOD_ID, "textures/glint/arcs.png");
+    public static final ResourceLocation AURORA    = new ResourceLocation(MOD_ID, "textures/glint/aurora.png");
+    public static final ResourceLocation BLOBS     = new ResourceLocation(MOD_ID, "textures/glint/blobs.png");
+    public static final ResourceLocation CASCADE   = new ResourceLocation(MOD_ID, "textures/glint/cascade.png");
+    public static final ResourceLocation CHECKER   = new ResourceLocation(MOD_ID, "textures/glint/checker.png");
+    public static final ResourceLocation CHEVRON   = new ResourceLocation(MOD_ID, "textures/glint/chevron.png");
+    public static final ResourceLocation CORAL     = new ResourceLocation(MOD_ID, "textures/glint/coral.png");
+    public static final ResourceLocation CRACKS    = new ResourceLocation(MOD_ID, "textures/glint/cracks.png");
     public static final ResourceLocation CROSSHATCH = new ResourceLocation(MOD_ID, "textures/glint/crosshatch.png");
-    public static final ResourceLocation DIAMONDS   = new ResourceLocation(MOD_ID, "textures/glint/diamonds.png");
-    public static final ResourceLocation DOTS       = new ResourceLocation(MOD_ID, "textures/glint/dots.png");
-    public static final ResourceLocation FIRE       = new ResourceLocation(MOD_ID, "textures/glint/fire.png");
-    public static final ResourceLocation GRID       = new ResourceLocation(MOD_ID, "textures/glint/grid.png");
-    public static final ResourceLocation HEXAGON    = new ResourceLocation(MOD_ID, "textures/glint/hexagon.png");
-    public static final ResourceLocation PULSE      = new ResourceLocation(MOD_ID, "textures/glint/pulse.png");
-    public static final ResourceLocation RIPPLE     = new ResourceLocation(MOD_ID, "textures/glint/ripple.png");
-    public static final ResourceLocation SCALES     = new ResourceLocation(MOD_ID, "textures/glint/scales.png");
-    public static final ResourceLocation SPARKLE    = new ResourceLocation(MOD_ID, "textures/glint/sparkle.png");
-    public static final ResourceLocation STARS      = new ResourceLocation(MOD_ID, "textures/glint/stars.png");
-    public static final ResourceLocation STRIPES    = new ResourceLocation(MOD_ID, "textures/glint/stripes.png");
-    public static final ResourceLocation SWIRL      = new ResourceLocation(MOD_ID, "textures/glint/swirl.png");
-    public static final ResourceLocation WAVE       = new ResourceLocation(MOD_ID, "textures/glint/wave.png");
-    public static final ResourceLocation ZIGZAG      = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
-    public static final ResourceLocation CRYSTAL     = new ResourceLocation(MOD_ID, "textures/glint/crystal.png");
-    public static final ResourceLocation EMBER       = new ResourceLocation(MOD_ID, "textures/glint/ember.png");
-    public static final ResourceLocation VEIN        = new ResourceLocation(MOD_ID, "textures/glint/vein.png");
-    public static final ResourceLocation SOLID       = new ResourceLocation(MOD_ID, "textures/glint/solid.png");
-    public static final ResourceLocation SKULLS      = new ResourceLocation(MOD_ID, "textures/glint/skulls.png");
+    public static final ResourceLocation CRYSTAL   = new ResourceLocation(MOD_ID, "textures/glint/crystal.png");
+    public static final ResourceLocation DEBRIS    = new ResourceLocation(MOD_ID, "textures/glint/debris.png");
+    public static final ResourceLocation DIAMONDS  = new ResourceLocation(MOD_ID, "textures/glint/diamonds.png");
+    public static final ResourceLocation DUNES     = new ResourceLocation(MOD_ID, "textures/glint/dunes.png");
+    public static final ResourceLocation EMBER     = new ResourceLocation(MOD_ID, "textures/glint/ember.png");
+    public static final ResourceLocation FEATHER   = new ResourceLocation(MOD_ID, "textures/glint/feather.png");
+    public static final ResourceLocation FIRE      = new ResourceLocation(MOD_ID, "textures/glint/fire.png");
+    public static final ResourceLocation FROST     = new ResourceLocation(MOD_ID, "textures/glint/frost.png");
+    public static final ResourceLocation GLITCH    = new ResourceLocation(MOD_ID, "textures/glint/glitch.png");
+    public static final ResourceLocation GLOW      = new ResourceLocation(MOD_ID, "textures/glint/glow.png");
+    public static final ResourceLocation GRID      = new ResourceLocation(MOD_ID, "textures/glint/grid.png");
+    public static final ResourceLocation HALO      = new ResourceLocation(MOD_ID, "textures/glint/halo.png");
+    public static final ResourceLocation HEXAGON   = new ResourceLocation(MOD_ID, "textures/glint/hexagon.png");
+    public static final ResourceLocation LIGHTNING = new ResourceLocation(MOD_ID, "textures/glint/lightning.png");
+    public static final ResourceLocation MARBLE    = new ResourceLocation(MOD_ID, "textures/glint/marble.png");
+    public static final ResourceLocation MATRIX    = new ResourceLocation(MOD_ID, "textures/glint/matrix.png");
+    public static final ResourceLocation MESH      = new ResourceLocation(MOD_ID, "textures/glint/mesh.png");
+    public static final ResourceLocation MOSAIC    = new ResourceLocation(MOD_ID, "textures/glint/mosaic.png");
+    public static final ResourceLocation NET       = new ResourceLocation(MOD_ID, "textures/glint/net.png");
+    public static final ResourceLocation OIL       = new ResourceLocation(MOD_ID, "textures/glint/oil.png");
+    public static final ResourceLocation PETAL     = new ResourceLocation(MOD_ID, "textures/glint/petal.png");
+    public static final ResourceLocation PLASMA    = new ResourceLocation(MOD_ID, "textures/glint/plasma.png");
+    public static final ResourceLocation PLATE     = new ResourceLocation(MOD_ID, "textures/glint/plate.png");
+    public static final ResourceLocation PRISM     = new ResourceLocation(MOD_ID, "textures/glint/prism.png");
+    public static final ResourceLocation PULSE     = new ResourceLocation(MOD_ID, "textures/glint/pulse.png");
+    public static final ResourceLocation RIPPLE    = new ResourceLocation(MOD_ID, "textures/glint/ripple.png");
+    public static final ResourceLocation SAND      = new ResourceLocation(MOD_ID, "textures/glint/sand.png");
+    public static final ResourceLocation SCALES    = new ResourceLocation(MOD_ID, "textures/glint/scales.png");
+    public static final ResourceLocation SHEEN     = new ResourceLocation(MOD_ID, "textures/glint/sheen.png");
+    public static final ResourceLocation SHIMMER   = new ResourceLocation(MOD_ID, "textures/glint/shimmer.png");
+    public static final ResourceLocation SILK      = new ResourceLocation(MOD_ID, "textures/glint/silk.png");
+    public static final ResourceLocation SLASH     = new ResourceLocation(MOD_ID, "textures/glint/slash.png");
+    public static final ResourceLocation SMOKE     = new ResourceLocation(MOD_ID, "textures/glint/smoke.png");
+    public static final ResourceLocation SOLID     = new ResourceLocation(MOD_ID, "textures/glint/solid.png");
+    public static final ResourceLocation SPARKLE   = new ResourceLocation(MOD_ID, "textures/glint/sparkle.png");
+    public static final ResourceLocation STARS     = new ResourceLocation(MOD_ID, "textures/glint/stars.png");
+    public static final ResourceLocation STATIC    = new ResourceLocation(MOD_ID, "textures/glint/static.png");
+    public static final ResourceLocation STRIPES   = new ResourceLocation(MOD_ID, "textures/glint/stripes.png");
+    public static final ResourceLocation SWIRL     = new ResourceLocation(MOD_ID, "textures/glint/swirl.png");
+    public static final ResourceLocation TIDE      = new ResourceLocation(MOD_ID, "textures/glint/tide.png");
+    public static final ResourceLocation TILE      = new ResourceLocation(MOD_ID, "textures/glint/tile.png");
+    public static final ResourceLocation VEIN      = new ResourceLocation(MOD_ID, "textures/glint/vein.png");
+    public static final ResourceLocation WAVE      = new ResourceLocation(MOD_ID, "textures/glint/wave.png");
+    public static final ResourceLocation WEAVE     = new ResourceLocation(MOD_ID, "textures/glint/weave.png");
+    public static final ResourceLocation ZIGZAG    = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
 
     // ── NBT ──────────────────────────────────────────────────────────────────
 
@@ -270,12 +303,16 @@ public final class CustomGlint extends RenderStateShard {
     private static final Map<ResourceLocation, ResourceLocation> textureCache = new HashMap<>();
 
     public static ResourceLocation getTexture(ResourceLocation design) {
-        return textureCache.computeIfAbsent(design, k -> generateTexture(k));
+        if (textureCache.containsKey(design)) return textureCache.get(design);
+        ResourceLocation result = generateTexture(design);
+        textureCache.put(design, result);
+        return result;
     }
 
     public static void clearTextures() {
         Minecraft mc = Minecraft.getInstance();
-        textureCache.values().forEach(loc -> mc.getTextureManager().release(loc));
+        for (ResourceLocation loc : textureCache.values())
+            if (loc != null) mc.getTextureManager().release(loc);
         textureCache.clear();
     }
 
@@ -285,16 +322,12 @@ public final class CustomGlint extends RenderStateShard {
         NativeImage source;
         try {
             var resource = mc.getResourceManager().getResource(design);
-            if (resource.isEmpty()) {
-                LOGGER.warn("[{}/CustomGlint] Design texture not found: {}", MOD_ID, design);
-                return design;
-            }
+            if (resource.isEmpty()) return null;
             try (InputStream stream = resource.get().open()) {
                 source = NativeImage.read(stream);
             }
         } catch (IOException e) {
-            LOGGER.error("[{}/CustomGlint] Failed to load design {}: {}", MOD_ID, design, e.getMessage());
-            return design;
+            return null;
         }
 
         NativeImage gray = new NativeImage(source.getWidth(), source.getHeight(), false);
@@ -331,6 +364,7 @@ public final class CustomGlint extends RenderStateShard {
 
     public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
+        if (getTexture(layer.design()) == null) return null;
         String key = "armor|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
@@ -399,6 +433,7 @@ public final class CustomGlint extends RenderStateShard {
         // Trident issue: always using 8.0 caused tiny tiling on 3D model faces.
         float scale = isItem ? 8.0f : 0.16f;
         Layer layer = glint.layers()[layerIdx];
+        if (getTexture(layer.design()) == null) return null;
         String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);

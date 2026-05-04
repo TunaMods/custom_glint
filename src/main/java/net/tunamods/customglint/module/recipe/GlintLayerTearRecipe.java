@@ -1,13 +1,16 @@
 // MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint.module.recipe;
 
+import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
@@ -73,6 +76,35 @@ public class GlintLayerTearRecipe extends CustomRecipe {
         result.setCount(1);
         CustomGlint.write(result, combined);
         return result;
+    }
+
+    @Override
+    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.addColor(result, 0xFFFF0000);
+        CustomGlint.Layer layer1 = new CustomGlint.Layer(new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000}, 1.0f, true, 1.0f, false);
+        CustomGlint.Layer layer2 = new CustomGlint.Layer(new ResourceLocation("customglint", "textures/glint/sparkle.png"), new int[]{0xFF00AAFF}, 1.0f, true, 1.0f, false);
+        CustomGlint.write(result, new CustomGlint.Layer[]{layer1, layer2});
+        return result;
+    }
+
+    @Override
+    public boolean isSpecial() { return true; }
+
+    @Override
+    public NonNullList<Ingredient> getIngredients() {
+        NonNullList<Ingredient> list = NonNullList.create();
+        list.add(Ingredient.of(CustomGlintMod.GLINT_LAYER_TEAR.get().getDefaultInstance()));
+        ItemStack trim1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trim1, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.addColor(trim1, 0xFFFF0000);
+        ItemStack trim2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trim2, new ResourceLocation("customglint", "textures/glint/sparkle.png"));
+        GlintTrimItem.addColor(trim2, 0xFF00AAFF);
+        list.add(Ingredient.of(trim1));
+        list.add(Ingredient.of(trim2));
+        return list;
     }
 
     @Override

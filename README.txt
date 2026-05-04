@@ -2,9 +2,9 @@ Custom Glints — Minecraft 1.20.1 / Forge 47.x
 MIT License — attribution required
 ================================================================================
 
-Per-item animated enchantment glint with full color and timing control.
+Per-item animated enchantment glint with full color, timing, and scale control.
 Works on any item or armor piece. Everything lives in NBT — no registry
-changes, no loot table edits, no item subclasses.
+changes, no loot table edits, no item subclasses. 55 built-in designs.
 
 Drop the compiled jar into any Forge 1.20.1 modpack and grab the Glint Wand
 from the Custom Glints creative tab to get started. For server/datapack use,
@@ -19,10 +19,10 @@ Attribution required — keep the MIT header in each file you copy.
 
 STEP 1 — Copy source files
 
-    src/.../glint/CustomGlint.java
-    src/.../mixin/ItemRendererMixin.java
-    src/.../mixin/HumanoidArmorLayerMixin.java
-    src/.../mixin/RenderBuffersMixin.java
+    src/.../common/CustomGlint.java
+    src/.../common/mixin/ItemRendererMixin.java
+    src/.../common/mixin/HumanoidArmorLayerMixin.java
+    src/.../common/mixin/RenderBuffersMixin.java
 
   Update the package declaration at the top of each file to match your
   project's package root.
@@ -123,6 +123,9 @@ All public methods live in CustomGlint.
       new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
 
   // Auto-apply on craft / fishing / mob drop / loot table (call once during setup)
+  // Register in your @Mod constructor — NOT in FMLCommonSetupEvent.
+  // FMLCommonSetupEvent fires on a parallel thread pool; these registries are
+  // unsynchronized HashMaps and will race. The constructor runs on the main thread.
   CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{CustomGlint.PURPLE});
   CustomGlint.registerFishingGlint(Items.NAME_TAG, CustomGlint.SPARKLE, new int[]{CustomGlint.CYAN});
   CustomGlint.registerMobDropGlint(Items.NETHER_STAR, CustomGlint.PULSE, new int[]{CustomGlint.WHITE});
@@ -136,9 +139,12 @@ COLOR CONSTANTS
   Any other color: CustomGlint.color("FFD700")
 
 DESIGN CONSTANTS
-  CustomGlint.VANILLA, CHECKER, CROSSHATCH, CRYSTAL, DIAMONDS, DOTS, EMBER,
-  FIRE, GRID, HEXAGON, PULSE, RIPPLE, SCALES, SKULLS, SOLID, SPARKLE, STARS,
-  STRIPES, SWIRL, VEIN, WAVE, ZIGZAG
+  CustomGlint.VANILLA, ARCS, AURORA, BLOBS, CASCADE, CHECKER, CHEVRON, CORAL,
+  CRACKS, CROSSHATCH, CRYSTAL, DEBRIS, DIAMONDS, DUNES, EMBER, FEATHER, FIRE,
+  FROST, GLITCH, GLOW, GRID, HALO, HEXAGON, LIGHTNING, MARBLE, MATRIX, MESH,
+  MOSAIC, NET, OIL, PETAL, PLASMA, PLATE, PRISM, PULSE, RIPPLE, SAND, SCALES,
+  SHEEN, SHIMMER, SILK, SLASH, SMOKE, SOLID, SPARKLE, STARS, STATIC, STRIPES,
+  SWIRL, TIDE, TILE, VEIN, WAVE, WEAVE, ZIGZAG
 
 
 ================================================================================
@@ -158,17 +164,23 @@ DESIGN CONSTANTS
   /glint COMMAND
 ================================================================================
 
-  /glint apply <design> <colors> [speed] [smooth]   — applies to main-hand item
+  /glint apply <design> <colors> [speed] [smooth] [scale] [simultaneous]
+                                                    — applies to main-hand item
   /glint remove                                      — removes from main-hand item
 
-  design: vanilla, checker, crosshatch, crystal, diamonds, dots, ember, fire,
-          grid, hexagon, pulse, ripple, scales, skulls, solid, sparkle, stars,
-          stripes, swirl, vein, wave, zigzag
+  design: any name from the 55 built-in designs (see DESIGN CONSTANTS above),
+          or a data-pack design registered as "namespace:name"
 
-  colors: comma-separated names — red, orange, yellow, lime, green, cyan,
-          light_blue, blue, purple, magenta, pink, brown, white, light_gray,
-          gray, black
+  colors: comma-separated color names, quoted when using multiple colors:
+          red, orange, yellow, lime, green, cyan, light_blue, blue, purple,
+          magenta, pink, brown, white, light_gray, gray, black
+
+  speed:  0.25–8.0 (default 1.0)
+  smooth: true/false interpolation (default true)
+  scale:  0.25–4.0 pattern zoom (default 1.0)
+  simultaneous: true/false — all colors at once vs. cycling (default false)
 
   Examples:
-    /glint apply wave red,blue,purple
-    /glint apply fire red,orange,yellow 1.2 true
+    /glint apply wave "red,blue,purple"
+    /glint apply fire "red,orange,yellow" 1.2 true
+    /glint apply crystal "cyan,white" 1.0 true 2.0 true
