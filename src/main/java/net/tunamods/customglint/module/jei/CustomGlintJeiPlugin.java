@@ -313,18 +313,32 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     }
 
     private static class SmithingDisplay extends SmithingTransformRecipe {
-        private final ItemStack glintedResult;
+        private final ResourceLocation design;
+        private final int[] colors;
+        private final Item base;
+        private final ItemStack trim;
 
-        SmithingDisplay(ResourceLocation id, ItemStack trim, ItemStack glintedResult) {
-            super(id, Ingredient.of(trim), Ingredient.of(glintedResult.getItem()), Ingredient.of(Items.GLOWSTONE_DUST), glintedResult);
-            this.glintedResult = glintedResult;
+        SmithingDisplay(ResourceLocation id, ItemStack trim, ResourceLocation design, int[] colors, Item base) {
+            super(id, Ingredient.of(trim), Ingredient.of(base), Ingredient.of(Items.GLOWSTONE_DUST), new ItemStack(base));
+            this.trim = trim; this.design = design; this.colors = colors; this.base = base;
         }
 
         @Override public boolean isSpecial() { return false; }
 
         @Override
+        public NonNullList<Ingredient> getIngredients() {
+            NonNullList<Ingredient> list = NonNullList.create();
+            list.add(Ingredient.of(trim));
+            list.add(Ingredient.of(base));
+            list.add(Ingredient.of(Items.GLOWSTONE_DUST));
+            return list;
+        }
+
+        @Override
         public ItemStack getResultItem(RegistryAccess r) {
-            return glintedResult;
+            ItemStack result = new ItemStack(base);
+            CustomGlint.write(result, design, colors);
+            return result;
         }
     }
 
@@ -434,11 +448,11 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ItemStack st3 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st3, swirl);   GlintTrimItem.addColor(st3, 0xFFFF0000); GlintTrimItem.addColor(st3, 0xFFFFFF00); GlintTrimItem.addColor(st3, 0xFF00FF00); GlintTrimItem.addColor(st3, 0xFF00FFFF); GlintTrimItem.addColor(st3, 0xFF0000FF);
         ItemStack st4 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st4, vanilla); GlintTrimItem.addColor(st4, 0xFFFFAA00);
         List<SmithingRecipe> smithingDisplays = new ArrayList<>();
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_0"), st0, CustomGlint.glinted(Items.DIAMOND_SWORD,    wave,    new int[]{0xFFFF0000})));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_1"), st1, CustomGlint.glinted(Items.DIAMOND_CHESTPLATE, crystal, new int[]{0xFF00FFFF, 0xFF00AAFF})));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_2"), st2, CustomGlint.glinted(Items.BOW,               sparkle, new int[]{0xFF8800CC, 0xFFFF80A0})));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_3"), st3, CustomGlint.glinted(Items.ELYTRA,            swirl,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF})));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_4"), st4, CustomGlint.glinted(Items.ENCHANTED_BOOK,    vanilla, new int[]{0xFFFFAA00})));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_0"), st0, wave,    new int[]{0xFFFF0000},                                                          Items.DIAMOND_SWORD));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_1"), st1, crystal, new int[]{0xFF00FFFF, 0xFF00AAFF},                                              Items.DIAMOND_CHESTPLATE));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_2"), st2, sparkle, new int[]{0xFF8800CC, 0xFFFF80A0},                                              Items.BOW));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_3"), st3, swirl,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF},          Items.ELYTRA));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_4"), st4, vanilla, new int[]{0xFFFFAA00},                                                          Items.ENCHANTED_BOOK));
         registration.addRecipes(RecipeTypes.SMITHING, smithingDisplays);
     }
 }
