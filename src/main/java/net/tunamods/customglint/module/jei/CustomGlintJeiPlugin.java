@@ -8,6 +8,7 @@ import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.world.Container;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -317,10 +318,11 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         private final int[] colors;
         private final Item base;
         private final ItemStack trim;
+        private final boolean simultaneous;
 
-        SmithingDisplay(ResourceLocation id, ItemStack trim, ResourceLocation design, int[] colors, Item base) {
-            super(id, Ingredient.of(trim), Ingredient.of(base), Ingredient.of(Items.GLOWSTONE_DUST), new ItemStack(base));
-            this.trim = trim; this.design = design; this.colors = colors; this.base = base;
+        SmithingDisplay(ResourceLocation id, ItemStack trim, ResourceLocation design, int[] colors, Item base, boolean simultaneous) {
+            super(id, Ingredient.of(trim), Ingredient.of(base), Ingredient.of(Items.GLOWSTONE_DUST), CustomGlint.glinted(base, design, colors, 1.0f, true, 1.0f, simultaneous));
+            this.trim = trim; this.design = design; this.colors = colors; this.base = base; this.simultaneous = simultaneous;
         }
 
         @Override public boolean isSpecial() { return false; }
@@ -335,9 +337,16 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
 
         @Override
+        public ItemStack assemble(Container pContainer, RegistryAccess pRegistryAccess) {
+            ItemStack result = new ItemStack(base);
+            CustomGlint.write(result, design, colors, 1.0f, true, 1.0f, simultaneous);
+            return result;
+        }
+
+        @Override
         public ItemStack getResultItem(RegistryAccess r) {
             ItemStack result = new ItemStack(base);
-            CustomGlint.write(result, design, colors);
+            CustomGlint.write(result, design, colors, 1.0f, true, 1.0f, simultaneous);
             return result;
         }
     }
@@ -378,9 +387,10 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ResourceLocation wave    = new ResourceLocation("customglint", "textures/glint/wave.png");
         ResourceLocation stripes = new ResourceLocation("customglint", "textures/glint/stripes.png");
         ResourceLocation sparkle = new ResourceLocation("customglint", "textures/glint/sparkle.png");
-        ResourceLocation vanilla    = CustomGlint.VANILLA;
+        ResourceLocation vanilla = CustomGlint.VANILLA;
         ResourceLocation crystal = new ResourceLocation("customglint", "textures/glint/crystal.png");
         ResourceLocation swirl   = new ResourceLocation("customglint", "textures/glint/swirl.png");
+        ResourceLocation aurora  = new ResourceLocation("customglint", "textures/glint/aurora.png");
 
         List<CraftingRecipe> tearDisplays = new ArrayList<>();
         for (boolean sim : new boolean[]{false, true}) {
@@ -444,15 +454,15 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
         ItemStack st0 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st0, wave);    GlintTrimItem.addColor(st0, 0xFFFF0000);
         ItemStack st1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st1, crystal); GlintTrimItem.addColor(st1, 0xFF00FFFF); GlintTrimItem.addColor(st1, 0xFF00AAFF);
-        ItemStack st2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st2, sparkle); GlintTrimItem.addColor(st2, 0xFF8800CC); GlintTrimItem.addColor(st2, 0xFFFF80A0);
+        ItemStack st2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st2, aurora);  GlintTrimItem.addColor(st2, 0xFFFF6600); GlintTrimItem.addColor(st2, 0xFFFFDD00);
         ItemStack st3 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st3, swirl);   GlintTrimItem.addColor(st3, 0xFFFF0000); GlintTrimItem.addColor(st3, 0xFFFFFF00); GlintTrimItem.addColor(st3, 0xFF00FF00); GlintTrimItem.addColor(st3, 0xFF00FFFF); GlintTrimItem.addColor(st3, 0xFF0000FF);
         ItemStack st4 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st4, vanilla); GlintTrimItem.addColor(st4, 0xFFFFAA00);
         List<SmithingRecipe> smithingDisplays = new ArrayList<>();
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_0"), st0, wave,    new int[]{0xFFFF0000},                                                          Items.DIAMOND_SWORD));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_1"), st1, crystal, new int[]{0xFF00FFFF, 0xFF00AAFF},                                              Items.DIAMOND_CHESTPLATE));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_2"), st2, sparkle, new int[]{0xFF8800CC, 0xFFFF80A0},                                              Items.BOW));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_3"), st3, swirl,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF},          Items.ELYTRA));
-        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_4"), st4, vanilla, new int[]{0xFFFFAA00},                                                          Items.ENCHANTED_BOOK));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_0"), st0, wave,    new int[]{0xFFFF0000},                                                          Items.DIAMOND_SWORD,      true));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_1"), st1, crystal, new int[]{0xFF00FFFF, 0xFF00AAFF},                                              Items.DIAMOND_CHESTPLATE, true));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_2"), st2, aurora,  new int[]{0xFFFF6600, 0xFFFFDD00},                                              Items.BOW,                true));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_3"), st3, swirl,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF},          Items.ELYTRA,             false));
+        smithingDisplays.add(new SmithingDisplay(new ResourceLocation("customglint", "jei_smithing_4"), st4, vanilla, new int[]{0xFFFFAA00},                                                          Items.ENCHANTED_BOOK,     true));
         registration.addRecipes(RecipeTypes.SMITHING, smithingDisplays);
     }
 }
