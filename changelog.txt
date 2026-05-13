@@ -1,32 +1,18 @@
 [1.3.0]
 
 Added:
-- Glowing Glint Trim: surround a colored Glint Trim with 8 Glowstone Dust in a 3x3 crafting grid
-  to produce a Glowing Glint Trim. The glowing flag carries through smithing — items stamped from
-  a glowing trim inherit the effect.
-- Outline effect: glowing items render a colored outline pass after the normal render. Worn armor
-  pieces (including elytra and horse armor) glow with the trim's glint colors as an outline.
-- Elytra glint: custom glint now renders on elytra worn in the chest slot.
-- Horse armor glint: custom glint now renders on horse armor.
-- Client design sync: data-pack registered designs are now sent to clients on join and after
-  /reload, so the editor picker and command tab-completion work correctly in multiplayer.
-- Texture cache now clears automatically on resource pack reload, fixing stale textures after
-  switching packs.
-- CustomGlint.PATTERNS[] and VIBRANT_COLORS[] public arrays added for mods embedding the system.
-
-Changed:
-- Glint Trim item model simplified: all per-pattern model variants removed. The trim now uses a
-  single base texture (customglint:item/glint_trim) with a separate glowing variant texture.
-- 3D entity model glint scale changed from 0.16 to 1.0 for better pattern visibility on items like
-  the trident.
+- Glowing Glint Trim: surround any colored Glint Trim with 8 Glowstone Dust in a 3x3 crafting
+  grid to make it Glowing. Smith a Glowing trim onto an item and the glow transfers too.
+- Glowing items and armor display a colored outline matching your glint colors.
+- Elytra now show custom glint when worn.
+- Horse armor now shows custom glint.
 
 Fixed:
-- GlintApplyPacket now clamps speed ≤ 0 to 1.0 in the decoder, matching the read() behavior.
-- Black Glint Tear now strips the glowing flag when resetting a trim.
-- Smithing recipe now propagates the glowing flag from the template trim to the output item.
-- JEI: namespace:name format patterns now correctly resolve to their texture path in recipe displays.
-- HumanoidArmorLayerMixin now skips non-armor items in the chest slot, preventing a double-render
-  with the new ElytraLayerMixin.
+- Glint patterns now look correct on tridents and other held 3D models.
+- Data-pack designs now appear in the editor picker and command suggestions for all players on a
+  server, not just the host.
+- Changing resource packs no longer leaves stale glint textures behind.
+- Black Glint Tear now fully resets a Glowing trim back to a plain blank trim.
 
 [1.2.0]
 
