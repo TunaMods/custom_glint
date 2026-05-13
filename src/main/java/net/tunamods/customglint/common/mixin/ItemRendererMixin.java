@@ -23,7 +23,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ItemRenderer.class)
 public class ItemRendererMixin {
 
-    private static final ThreadLocal<ItemStack> CURRENT_STACK = new ThreadLocal<>();
     private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     // ── Stack capture (HEAD) ──────────────────────────────────────────────────
@@ -33,7 +32,7 @@ public class ItemRendererMixin {
     private void cg_captureStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        CURRENT_STACK.set(pItemStack);
+        CustomGlint.CURRENT_ITEM_STACK.set(pItemStack);
     }
 
     /** Named target: captures the stack before render begins (dev/deobf environments). */
@@ -44,24 +43,32 @@ public class ItemRendererMixin {
     private void cg_captureStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        CURRENT_STACK.set(pItemStack);
+        CustomGlint.CURRENT_ITEM_STACK.set(pItemStack);
     }
 
-    // ── Stack clear (RETURN) ─────────────────────────────────────────────────
+    // ── Stack clear + item outline (RETURN) ─────────────────────────────────
 
-    /** SRG target: clears the captured stack after render completes. */
+    /** SRG target: applies item outline for glowing items, then clears the captured stack. */
     @Inject(method = "m_115143_", at = @At("RETURN"), require = 0)
-    private void cg_clearStack_srg(CallbackInfo ci) {
-        CURRENT_STACK.remove();
+    private void cg_clearStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
+            boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
+            int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
+        if (!CustomGlint.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
+            CustomGlint.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
+        CustomGlint.CURRENT_ITEM_STACK.remove();
     }
 
-    /** Named target: clears the captured stack after render completes. */
+    /** Named target: applies item outline for glowing items, then clears the captured stack. */
     @Inject(
         method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
         at = @At("RETURN"), require = 0, remap = false
     )
-    private void cg_clearStack_named(CallbackInfo ci) {
-        CURRENT_STACK.remove();
+    private void cg_clearStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
+            boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
+            int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
+        if (!CustomGlint.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
+            CustomGlint.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
+        CustomGlint.CURRENT_ITEM_STACK.remove();
     }
 
     // ── getFoilBuffer intercepts ─────────────────────────────────────────────
@@ -116,7 +123,8 @@ public class ItemRendererMixin {
 
     /** Returns a VertexMultiConsumer combining all glint layers + base renderType, or null if no glint. */
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
-        ItemStack stack = CURRENT_STACK.get();
+        if (CustomGlint.IN_OUTLINE.get()) return null;
+        ItemStack stack = CustomGlint.CURRENT_ITEM_STACK.get();
         if (stack == null) return null;
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return null;

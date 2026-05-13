@@ -5,25 +5,5 @@
   "item.customglint.glint_tear_sequential": "Sequential Glint Tear",
   "item.customglint.glint_layer_tear": "Layer Glint Tear",
   "item.customglint.glint_black_tear": "Black Glint Tear",
-  "itemGroup.customglint.glint_tab": "Custom Glints",
-
-  "trim_pattern.customglint.checker": "Checker Trim",
-  "trim_pattern.customglint.crosshatch": "Crosshatch Trim",
-  "trim_pattern.customglint.crystal": "Crystal Trim",
-  "trim_pattern.customglint.diamonds": "Diamonds Trim",
-  "trim_pattern.customglint.dots": "Dots Trim",
-  "trim_pattern.customglint.ember": "Ember Trim",
-  "trim_pattern.customglint.fire": "Fire Trim",
-  "trim_pattern.customglint.grid": "Grid Trim",
-  "trim_pattern.customglint.hexagon": "Hexagon Trim",
-  "trim_pattern.customglint.pulse": "Pulse Trim",
-  "trim_pattern.customglint.ripple": "Ripple Trim",
-  "trim_pattern.customglint.scales": "Scales Trim",
-  "trim_pattern.customglint.sparkle": "Sparkle Trim",
-  "trim_pattern.customglint.stars": "Stars Trim",
-  "trim_pattern.customglint.stripes": "Stripes Trim",
-  "trim_pattern.customglint.swirl": "Swirl Trim",
-  "trim_pattern.customglint.vein": "Vein Trim",
-  "trim_pattern.customglint.wave": "Wave Trim",
-  "trim_pattern.customglint.zigzag": "Zigzag Trim"
+  "itemGroup.customglint.glint_tab": "Custom Glints"
 }

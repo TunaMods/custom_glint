@@ -21,10 +21,11 @@ import java.util.Arrays;
 import java.util.List;
 
 public class GlintTrimItem extends Item {
-    public static final String PATTERN_TAG = "pattern";
-    public static final String COLORS_TAG  = "colors";
-    public static final String SPEED_TAG   = "speed";
-    public static final String SCALE_TAG   = "scale";
+    public static final String PATTERN_TAG  = "pattern";
+    public static final String COLORS_TAG   = "colors";
+    public static final String SPEED_TAG    = "speed";
+    public static final String SCALE_TAG    = "scale";
+    public static final String GLOWING_TAG  = "glowing";
 
     // ARGB per DyeColor ordinal: WHITE ORANGE MAGENTA LIGHT_BLUE YELLOW LIME PINK
     //                             GRAY  LIGHT_GRAY CYAN PURPLE BLUE BROWN GREEN RED BLACK
@@ -58,7 +59,7 @@ public class GlintTrimItem extends Item {
         stack.getOrCreateTag().putString(PATTERN_TAG, pattern.toString());
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
-        if (idx >= 0) stack.getOrCreateTag().putInt("CustomModelData", idx + 1);
+        if (idx >= 0) stack.getOrCreateTag().putInt("CustomModelData", (isGlowing(stack) ? 1000 : 0) + idx + 1);
         int[] colors = getColors(stack);
         CustomGlint.write(stack, pattern, colors.length > 0 ? colors : new int[]{0xFFFFFFFF}, getSpeed(stack), true, getScale(stack), false);
     }
@@ -110,6 +111,17 @@ public class GlintTrimItem extends Item {
         }
     }
 
+    public static boolean isGlowing(ItemStack stack) {
+        if (!stack.hasTag()) return false;
+        return stack.getTag().getBoolean(GLOWING_TAG);
+    }
+
+    public static void setGlowing(ItemStack stack, boolean glowing) {
+        stack.getOrCreateTag().putBoolean(GLOWING_TAG, glowing);
+        ResourceLocation pattern = getPattern(stack);
+        if (pattern != null) setPattern(stack, pattern);
+    }
+
     public static float getScale(ItemStack stack) {
         if (!stack.hasTag() || !stack.getTag().contains(SCALE_TAG)) return 1.0f;
         return stack.getTag().getFloat(SCALE_TAG);
@@ -130,12 +142,16 @@ public class GlintTrimItem extends Item {
         ResourceLocation pattern = getPattern(pStack);
         if (pattern == null) return super.getName(pStack);
         String name = pattern.equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(pattern));
-        return Component.literal(name + " Glint Trim");
+        String prefix = isGlowing(pStack) ? "Glowing " : "";
+        return Component.literal(prefix + name + " Glint Trim");
     }
 
     @Override
     public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
+        if (isGlowing(pStack)) {
+            pTooltipComponents.add(Component.literal("Glowing — wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));
+        }
         if (colors.length == 0) {
             pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
             return;

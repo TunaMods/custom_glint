@@ -21,6 +21,7 @@ import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
+import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimBlankDuplicateRecipe;
@@ -351,6 +352,40 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
     }
 
+    private static class GlowTrimDisplay extends GlintGlowTrimRecipe {
+        private final ResourceLocation design;
+        private final int color;
+
+        GlowTrimDisplay(ResourceLocation id, ResourceLocation design, int color) {
+            super(id, CraftingBookCategory.MISC);
+            this.design = design; this.color = color;
+        }
+
+        @Override public boolean isSpecial() { return false; }
+
+        @Override
+        public NonNullList<Ingredient> getIngredients() {
+            ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            GlintTrimItem.setPattern(trim, design);
+            GlintTrimItem.addColor(trim, color);
+            NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
+            for (int i = 0; i < 9; i++) {
+                if (i == 4) list.set(i, Ingredient.of(trim));
+                else list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));
+            }
+            return list;
+        }
+
+        @Override
+        public ItemStack getResultItem(RegistryAccess r) {
+            ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            GlintTrimItem.setPattern(result, design);
+            GlintTrimItem.addColor(result, color);
+            GlintTrimItem.setGlowing(result, true);
+            return result;
+        }
+    }
+
     @Override
     public ResourceLocation getPluginUid() {
         return UID;
@@ -367,9 +402,15 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         List<ItemStack> trimVariants = new ArrayList<>();
         for (String patternName : GlintTrimItem.PATTERNS) {
             ItemStack trimVariant = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-            ResourceLocation patternRl = patternName.equals("vanilla")
-                ? CustomGlint.VANILLA
-                : new ResourceLocation("customglint", "textures/glint/" + patternName + ".png");
+            ResourceLocation patternRl;
+            if (patternName.equals("vanilla")) {
+                patternRl = CustomGlint.VANILLA;
+            } else if (patternName.contains(":")) {
+                int c = patternName.indexOf(':');
+                patternRl = new ResourceLocation(patternName.substring(0, c), "textures/glint/" + patternName.substring(c + 1) + ".png");
+            } else {
+                patternRl = new ResourceLocation("customglint", "textures/glint/" + patternName + ".png");
+            }
             GlintTrimItem.setPattern(trimVariant, patternRl);
             trimVariants.add(trimVariant);
         }
@@ -451,6 +492,12 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             scaleDisplays.add(new ScaleDisplay(new ResourceLocation("customglint", "jei_scale_" + n), sparkle, 0xFF00AAFF, n));
         }
         registration.addRecipes(RecipeTypes.CRAFTING, scaleDisplays);
+
+        List<CraftingRecipe> glowTrimDisplays = new ArrayList<>();
+        glowTrimDisplays.add(new GlowTrimDisplay(new ResourceLocation("customglint", "jei_glow_0"), wave,    0xFFFF0000));
+        glowTrimDisplays.add(new GlowTrimDisplay(new ResourceLocation("customglint", "jei_glow_1"), sparkle, 0xFF00AAFF));
+        glowTrimDisplays.add(new GlowTrimDisplay(new ResourceLocation("customglint", "jei_glow_2"), aurora,  0xFFFFDD00));
+        registration.addRecipes(RecipeTypes.CRAFTING, glowTrimDisplays);
 
         ItemStack st0 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st0, wave);    GlintTrimItem.addColor(st0, 0xFFFF0000);
         ItemStack st1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get()); GlintTrimItem.setPattern(st1, crystal); GlintTrimItem.addColor(st1, 0xFF00FFFF); GlintTrimItem.addColor(st1, 0xFF00AAFF);

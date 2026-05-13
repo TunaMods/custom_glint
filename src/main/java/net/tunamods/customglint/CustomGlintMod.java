@@ -7,6 +7,7 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlintWandItem;
 import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
+import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.tunamods.customglint.module.item.GlintTearItem;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
@@ -21,16 +22,22 @@ import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSmithingRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
+import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.entity.player.ItemFishedEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.network.PacketDistributor;
+import net.minecraftforge.server.ServerLifecycleHooks;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -114,6 +121,8 @@ public class CustomGlintMod {
             RECIPE_SERIALIZERS.register("glint_trim_speed", () -> GlintTrimSpeedRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimScaleRecipe>> GLINT_TRIM_SCALE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_scale", () -> GlintTrimScaleRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlintGlowTrimRecipe>> GLINT_GLOW_TRIM_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_glow_trim", () -> GlintGlowTrimRecipe.SERIALIZER);
 
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
@@ -155,7 +164,7 @@ public class CustomGlintMod {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         modEventBus.addListener(this::commonSetup);
-
+        modEventBus.addListener(this::onRegisterClientReloadListeners);
         ITEMS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         LOOT_MODIFIER_SERIALIZERS.register(modEventBus);
@@ -169,9 +178,14 @@ public class CustomGlintMod {
         MinecraftForge.EVENT_BUS.addListener(this::onCraft);
         MinecraftForge.EVENT_BUS.addListener(this::onFish);
         MinecraftForge.EVENT_BUS.addListener(this::onMobDrop);
+        MinecraftForge.EVENT_BUS.addListener(this::onPlayerJoin);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+    }
+
+    private void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener((ResourceManagerReloadListener) manager -> CustomGlint.clearTextures());
     }
 
     private void onAddReloadListeners(AddReloadListenerEvent event) {
@@ -191,12 +205,23 @@ public class CustomGlintMod {
                         }
                     }
                 }
+                if (ServerLifecycleHooks.getCurrentServer() != null) {
+                    GlintDesignSyncPacket packet = new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns));
+                    ModNetworking.CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
+                }
             }
         });
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
         GlintCommand.register(event.getDispatcher());
+    }
+
+    private void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!dataPackDesigns.isEmpty() && event.getEntity() instanceof ServerPlayer player) {
+            ModNetworking.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns)));
+        }
     }
 
     private void onCraft(PlayerEvent.ItemCraftedEvent event) {
@@ -210,4 +235,5 @@ public class CustomGlintMod {
     private void onMobDrop(LivingDropsEvent event) {
         event.getDrops().forEach(entity -> CustomGlint.applyMobDropGlint(entity.getItem()));
     }
+
 }

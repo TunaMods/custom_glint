@@ -56,6 +56,7 @@ public class GlintApplyPacket {
             int[] colors = new int[colorLen];
             for (int j = 0; j < colorLen; j++) colors[j] = buf.readInt();
             float speed = buf.readFloat();
+            if (speed <= 0) speed = 1.0f;
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();

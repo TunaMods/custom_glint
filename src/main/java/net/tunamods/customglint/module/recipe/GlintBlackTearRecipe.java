@@ -71,6 +71,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
                 result.getTag().remove(GlintTrimItem.COLORS_TAG);
                 result.getTag().remove(GlintTrimItem.SPEED_TAG);
                 result.getTag().remove(GlintTrimItem.SCALE_TAG);
+                result.getTag().remove(GlintTrimItem.GLOWING_TAG);
             }
             CustomGlint.remove(result);
             if (pattern != null) GlintTrimItem.setPattern(result, pattern);

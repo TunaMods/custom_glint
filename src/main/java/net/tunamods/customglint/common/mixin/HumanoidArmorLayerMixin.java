@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.renderer.RenderType;
+
 import net.minecraft.client.model.HumanoidModel;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +14,8 @@ import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import org.spongepowered.asm.mixin.Mixin;
@@ -50,7 +53,7 @@ public class HumanoidArmorLayerMixin {
     private static void applyArmorGlint(PoseStack poseStack, MultiBufferSource buffer,
             LivingEntity entity, EquipmentSlot slot, int packedLight, HumanoidModel model) {
         ItemStack stack = entity.getItemBySlot(slot);
-        if (stack.isEmpty()) return;
+        if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return;
 
@@ -84,6 +87,12 @@ public class HumanoidArmorLayerMixin {
         if (list.isEmpty()) return;
         VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
         model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        ResourceLocation armorTex = stack.getItem() instanceof ArmorItem ai
+            ? new ResourceLocation("minecraft", String.format("textures/models/armor/%s_layer_%d.png",
+                    ai.getMaterial().getName(), slot == EquipmentSlot.LEGS ? 2 : 1))
+            : CustomGlint.SOLID;
+        if (CustomGlint.isGlowing(stack))
+            CustomGlint.doModelOutline(poseStack, buffer, packedLight, model, armorTex, glint, slot);
     }
 
 }

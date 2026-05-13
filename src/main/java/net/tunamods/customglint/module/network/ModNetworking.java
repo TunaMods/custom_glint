@@ -21,7 +21,9 @@ public class ModNetworking {
     );
 
     public static void register() {
-        // 0 — GlintApplyPacket  C→S  player applied or removed a custom glint from the glint wand editor
+        // 0 — GlintApplyPacket       C→S  player applied or removed a custom glint from the glint wand editor
         CHANNEL.registerMessage(0, GlintApplyPacket.class, GlintApplyPacket::encode, GlintApplyPacket::decode, GlintApplyPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // 1 — GlintDesignSyncPacket  S→C  syncs data-pack design names to clients on join and reload
+        CHANNEL.registerMessage(1, GlintDesignSyncPacket.class, GlintDesignSyncPacket::encode, GlintDesignSyncPacket::decode, GlintDesignSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 }

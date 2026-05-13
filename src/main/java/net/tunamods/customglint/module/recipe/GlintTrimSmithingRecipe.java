@@ -73,6 +73,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         } else {
             CustomGlint.write(result, pattern, colors, speed, interpolate, GlintTrimItem.getScale(template), simultaneous);
         }
+        if (GlintTrimItem.isGlowing(template)) CustomGlint.setGlowing(result, true);
         return result;
     }
 
