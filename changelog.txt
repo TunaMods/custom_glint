@@ -2,7 +2,7 @@
 
 Added:
 - Glowing Glint Trim: surround any colored Glint Trim with 8 Glowstone Dust in a 3x3 crafting
-  grid to make it Glowing. Smith a Glowing trim onto an item and the glow transfers too.
+  grid. Smith it onto any item to make that item glow.
 - Glowing items and armor display a colored outline matching your glint colors.
 - Elytra now show custom glint when worn.
 - Horse armor now shows custom glint.
