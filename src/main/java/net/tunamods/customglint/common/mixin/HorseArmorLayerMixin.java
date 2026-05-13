@@ -26,12 +26,12 @@ import java.util.List;
 @Mixin(HorseArmorLayer.class)
 public class HorseArmorLayerMixin {
 
-    @Shadow private HorseModel<Horse> model;
+    @Shadow(aliases = {"f_117017_"}) private HorseModel<Horse> model;
 
     private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     /** SRG target: injects at RETURN of render in obfuscated environments. */
-    @Inject(method = "m_116989_", at = @At("RETURN"), require = 0)
+    @Inject(method = "m_6494_", at = @At("RETURN"), require = 0)
     private void cg_horseArmorGlint_srg(PoseStack poseStack, MultiBufferSource buffer,
             int packedLight, Horse entity, float limbSwing, float limbSwingAmount,
             float partialTick, float ageInTicks, float netHeadYaw, float headPitch,

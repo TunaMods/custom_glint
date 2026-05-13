@@ -33,12 +33,12 @@ import java.util.List;
 @Mixin(ElytraLayer.class)
 public class ElytraLayerMixin {
 
-    @Shadow private ElytraModel<?> elytraModel;
+    @Shadow(aliases = {"f_116935_"}) private ElytraModel<?> elytraModel;
 
     private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     /** SRG target: injects at RETURN of render in obfuscated environments. */
-    @Inject(method = "m_116989_", at = @At("RETURN"), require = 0)
+    @Inject(method = "m_6494_", at = @At("RETURN"), require = 0)
     private void cg_elytraGlint_srg(PoseStack poseStack, MultiBufferSource buffer,
             int packedLight, LivingEntity entity, float limbSwing, float limbSwingAmount,
             float partialTick, float ageInTicks, float netHeadYaw, float headPitch,
