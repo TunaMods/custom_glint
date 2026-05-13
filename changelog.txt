@@ -14,6 +14,17 @@ Fixed:
 - Changing resource packs no longer leaves stale glint textures behind.
 - Black Glint Tear now fully resets a Glowing trim back to a plain blank trim.
 
+[Devs]
+- CustomGlint.PATTERNS[] — public ResourceLocation[] of all 55 built-in designs in order.
+- CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid color presets.
+- CustomGlint.CURRENT_ITEM_STACK — ThreadLocal moved from ItemRendererMixin to CustomGlint (public).
+- CustomGlint.isGlowing() / setGlowing() — read/write the glowing flag on any ItemStack.
+- forHorseArmorGlint() — new render type factory for horse armor (EQUAL + NO_LAYERING).
+- GlintDesignSyncPacket (S→C, channel ID 1) — syncs data-pack designs to clients on join and reload.
+- GlintApplyPacket decoder now clamps speed ≤ 0 to 1.0, matching CustomGlint.read().
+- clearTextures() now fires automatically via RegisterClientReloadListenersEvent.
+- JEI: namespace:name pattern format now resolves correctly in recipe displays.
+
 [1.2.0]
 
 Added:
