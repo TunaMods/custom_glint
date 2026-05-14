@@ -105,7 +105,11 @@ public class GlintCommand {
                                             FloatArgumentType.getFloat(ctx, "scale"),
                                             BoolArgumentType.getBool(ctx, "simultaneous"))))))))))
             .then(Commands.literal("remove")
-                .executes(ctx -> remove(ctx.getSource()))));
+                .executes(ctx -> remove(ctx.getSource())))
+            .then(Commands.literal("glow")
+                .then(Commands.argument("enabled", BoolArgumentType.bool())
+                    .executes(ctx -> glow(ctx.getSource(),
+                        BoolArgumentType.getBool(ctx, "enabled"))))));
     }
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
@@ -153,6 +157,29 @@ public class GlintCommand {
 
         CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous);
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
+        return 1;
+    }
+
+    private static int glow(CommandSourceStack source, boolean enabled) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Must be a player"));
+            return 0;
+        }
+
+        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (stack.isEmpty()) {
+            source.sendFailure(Component.literal("Hold an item in your main hand"));
+            return 0;
+        }
+
+        if (enabled && !CustomGlint.has(stack)) {
+            source.sendFailure(Component.literal("Item has no custom glint — apply a glint first"));
+            return 0;
+        }
+
+        CustomGlint.setGlowing(stack, enabled);
+        source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
         return 1;
     }
 

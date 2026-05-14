@@ -22,7 +22,13 @@ STEP 1 — Copy source files
     src/.../common/CustomGlint.java
     src/.../common/mixin/ItemRendererMixin.java
     src/.../common/mixin/HumanoidArmorLayerMixin.java
+    src/.../common/mixin/ElytraLayerMixin.java       (elytra glint + outline)
+    src/.../common/mixin/HorseArmorLayerMixin.java   (horse armor glint + outline)
     src/.../common/mixin/RenderBuffersMixin.java
+
+  ElytraLayerMixin and HorseArmorLayerMixin are optional — omit them if you
+  don't need glint/outline support on those surfaces. The core pipeline
+  (items, armor, wand) works without them.
 
   Update the package declaration at the top of each file to match your
   project's package root.
@@ -53,6 +59,8 @@ STEP 4 — Mixin config
   If you already have a mixins JSON, add to its "client" array:
     "ItemRendererMixin",
     "HumanoidArmorLayerMixin",
+    "ElytraLayerMixin",       (optional — elytra glint + outline)
+    "HorseArmorLayerMixin",   (optional — horse armor glint + outline)
     "RenderBuffersMixin"
 
   If you need a new file, create src/main/resources/<yourmodid>.mixins.json:
@@ -65,6 +73,8 @@ STEP 4 — Mixin config
       "client": [
         "ItemRendererMixin",
         "HumanoidArmorLayerMixin",
+        "ElytraLayerMixin",
+        "HorseArmorLayerMixin",
         "RenderBuffersMixin"
       ],
       "injectors": { "defaultRequire": 1 }
@@ -118,6 +128,11 @@ All public methods live in CustomGlint.
   // Remove
   CustomGlint.remove(stack);
 
+  // Glowing outline (colored border matching glint layer 0)
+  CustomGlint.setGlowing(stack, true);   // enable
+  CustomGlint.setGlowing(stack, false);  // disable
+  boolean g = CustomGlint.isGlowing(stack);
+
   // Pre-glinted ItemStack in one call (useful in creative tab displayItems)
   ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
       new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
@@ -157,6 +172,9 @@ DESIGN CONSTANTS
   speed: 1.0 = 20 ticks/color. interpolate: 1b = smooth. simultaneous: 1b = all colors at once.
   Alpha byte of each color int = brightness (0xFF full, 0x00 invisible).
 
+  Add glowing:1b alongside layers for the colored outline effect:
+  /give @p minecraft:diamond_sword{customglint:{glowing:1b,layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b,scale:1.0f,simultaneous:0b}]}} 1
+
   Remove: /item replace entity @s weapon.mainhand nbt remove customglint
 
 
@@ -167,6 +185,7 @@ DESIGN CONSTANTS
   /glint apply <design> <colors> [speed] [smooth] [scale] [simultaneous]
                                                     — applies to main-hand item
   /glint remove                                      — removes from main-hand item
+  /glint glow <true|false>                           — enables/disables colored outline on main-hand item
 
   design: any name from the 55 built-in designs (see DESIGN CONSTANTS above),
           or a data-pack design registered as "namespace:name"
