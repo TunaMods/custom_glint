@@ -23,8 +23,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ItemRenderer.class)
 public class ItemRendererMixin {
 
-    private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
-
     // ── Stack capture (HEAD) ──────────────────────────────────────────────────
 
     /** SRG target: captures the stack before render begins (obfuscated environments). */
@@ -130,7 +128,7 @@ public class ItemRendererMixin {
         if (glint == null) return null;
 
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = COLOR_BUF.get();
+        float[] buf = CustomGlint.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {

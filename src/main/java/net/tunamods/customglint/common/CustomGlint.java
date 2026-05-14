@@ -149,6 +149,11 @@ public final class CustomGlint extends RenderStateShard {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK
     };
 
+    public static final int[] ALL_COLORS = {
+            RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK,
+            BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
+    };
+
     // ── NBT ──────────────────────────────────────────────────────────────────
 
     private static final String TAG              = MOD_ID;
@@ -214,6 +219,9 @@ public final class CustomGlint extends RenderStateShard {
 
     public static void write(ItemStack stack, Layer[] layers) {
         CompoundTag tag = new CompoundTag();
+        CompoundTag existing = stack.hasTag() ? stack.getTag().getCompound(TAG) : null;
+        if (existing != null && existing.contains(GLOWING_KEY))
+            tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
         ListTag list = new ListTag();
         for (Layer layer : layers) {
             CompoundTag lt = new CompoundTag();
@@ -400,6 +408,7 @@ public final class CustomGlint extends RenderStateShard {
 
     public static SortedMap<RenderType, BufferBuilder> fixedBufferRegistry;
     public static final ThreadLocal<ItemStack> CURRENT_ITEM_STACK = new ThreadLocal<>();
+    public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     private static final Map<String, float[]>    GLINT_COLORS          = new HashMap<>();
     private static final Map<String, RenderType> BY_GLINT              = new HashMap<>();

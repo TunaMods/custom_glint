@@ -35,8 +35,6 @@ public class ElytraLayerMixin {
 
     @Shadow(aliases = {"f_116935_"}) private ElytraModel<?> elytraModel;
 
-    private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
-
     /** SRG target: injects at RETURN of render in obfuscated environments. */
     @Inject(method = "m_6494_", at = @At("RETURN"), require = 0)
     private void cg_elytraGlint_srg(PoseStack poseStack, MultiBufferSource buffer,
@@ -69,7 +67,7 @@ public class ElytraLayerMixin {
         if (glint == null) return;
 
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = COLOR_BUF.get();
+        float[] buf = CustomGlint.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {

@@ -27,8 +27,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(HumanoidArmorLayer.class)
 public class HumanoidArmorLayerMixin {
 
-    private static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
-
     /** SRG target: injects at RETURN of renderArmorPiece in obfuscated environments. */
     @Inject(method = "m_117118_", at = @At("RETURN"), require = 0)
     private void cg_armorGlint_srg(PoseStack pPoseStack, MultiBufferSource pBuffer,
@@ -58,7 +56,7 @@ public class HumanoidArmorLayerMixin {
         if (glint == null) return;
 
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = COLOR_BUF.get();
+        float[] buf = CustomGlint.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
