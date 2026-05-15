@@ -1,4 +1,4 @@
-package net.tunamods.customglint.module.jei;
+package net.tunamods.customglint.module.compat.jei;
 
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
