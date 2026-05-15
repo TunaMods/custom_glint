@@ -12,12 +12,22 @@ loaderVersion="${loader_version_range}" #mandatory This is typically bumped ever
 license="${mod_license}"
 [[mixins]]
 config="custom_glint.mixins.json"
+[[mixins]]
+config="custom_glint.iceandfire.mixins.json"
 # A URL to refer people to when problems occur with this mod
 #issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
 # If your mod is purely client-side and has no multiplayer functionality (be it dedicated servers or Open to LAN),
 # set this to true, and Forge will set the correct displayTest for you and skip loading your mod on dedicated servers.
 #clientSideOnly=true #optional - defaults to false if absent
 # A list of mods - how many allowed here is determined by the individual mod loader
+[[mods]]
+modId="customglint_api"
+version="${mod_version}"
+displayName="Custom Glints API"
+logoFile="customglint.png"
+authors="${mod_authors}"
+description='''The rendering pipeline and NBT API for Custom Glints. Embedders bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
+
 [[mods]] #mandatory
 # The modid of the mod
 modId="${mod_id}" #mandatory
@@ -46,6 +56,12 @@ authors="${mod_authors}" #optional
 # The description text for the mod (multi line!) (#mandatory)
 description='''${mod_description}'''
 # A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
+[[dependencies.${mod_id}]]
+    modId="customglint_api"
+    mandatory=true
+    versionRange="${mod_version}"
+    ordering="BEFORE"
+    side="BOTH"
 [[dependencies.${mod_id}]] #optional
     # the modid of the dependency
     modId="forge" #mandatory
