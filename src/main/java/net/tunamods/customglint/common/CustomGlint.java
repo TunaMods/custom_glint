@@ -19,6 +19,7 @@ import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -364,7 +365,19 @@ public final class CustomGlint extends RenderStateShard {
         for (ResourceLocation loc : textureCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
         textureCache.clear();
+        if (fixedBufferRegistry != null) {
+            for (RenderType rt : BY_GLINT.values())             fixedBufferRegistry.remove(rt);
+            for (RenderType rt : BY_ARMOR_GLINT.values())       fixedBufferRegistry.remove(rt);
+            for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) fixedBufferRegistry.remove(rt);
+            for (RenderType rt : BY_OUTLINE.values())           fixedBufferRegistry.remove(rt);
+        }
+        BY_GLINT.clear();
+        BY_ARMOR_GLINT.clear();
+        BY_HORSE_ARMOR_GLINT.clear();
+        BY_OUTLINE.clear();
+        GLINT_COLORS.clear();
     }
+
 
     private static ResourceLocation generateTexture(ResourceLocation design) {
         LOGGER.info("[{}/CustomGlint] Generating grayscale texture: design={}", MOD_ID, design);
@@ -400,7 +413,13 @@ public final class CustomGlint extends RenderStateShard {
 
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
         ResourceLocation loc = new ResourceLocation(MOD_ID, "glint/" + safePath);
-        mc.getTextureManager().register(loc, new DynamicTexture(gray));
+        DynamicTexture dt = new DynamicTexture(gray);
+        mc.getTextureManager().register(loc, dt);
+        dt.bind();
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         return loc;
     }
 
@@ -421,10 +440,10 @@ public final class CustomGlint extends RenderStateShard {
         String key = "armor|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
-        return BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
+        RenderType cached = BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
             ResourceLocation tex = layer.design();
             RenderType rt = RenderType.create(
-                    MOD_ID + ":custom_armor_glint",
+                    MOD_ID + ":custom_armor_glint|" + k.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
                     VertexFormat.Mode.QUADS,
                     256,
@@ -478,6 +497,9 @@ public final class CustomGlint extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
     }
 
     // Horse armor uses entityCutoutNoCull (no polygon offset / no VIEW_OFFSET_Z_LAYERING).
@@ -489,10 +511,10 @@ public final class CustomGlint extends RenderStateShard {
         String key = "horse|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
-        return BY_HORSE_ARMOR_GLINT.computeIfAbsent(key, k -> {
+        RenderType cached = BY_HORSE_ARMOR_GLINT.computeIfAbsent(key, k -> {
             ResourceLocation tex = layer.design();
             RenderType rt = RenderType.create(
-                    MOD_ID + ":custom_horse_armor_glint",
+                    MOD_ID + ":custom_horse_armor_glint|" + k.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
                     VertexFormat.Mode.QUADS,
                     256,
@@ -535,22 +557,29 @@ public final class CustomGlint extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
     }
 
     public static RenderType forGlint(Data glint, int layerIdx, float[] frameColor, boolean isItem, int colorIdx) {
         // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
         // isItem=false → 3D entity model (trident, etc.) → 1.0 gives visible pattern detail;
         // vanilla entityGlint() uses 0.16 but that tiles too infrequently for custom designs.
-        float scale = isItem ? 8.0f : 1.0f;
+        TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(TextureAtlas.LOCATION_BLOCKS);
+        int atlasW = atlas.width;
+        int atlasH = atlas.height;
+        float scaleU = isItem ? (8.0f * atlasW / 1024.0f) : 1.0f;
+        float scaleV = isItem ? (8.0f * atlasH / 512.0f) : 1.0f;
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
         String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
-        return BY_GLINT.computeIfAbsent(key, k -> {
+        RenderType cached = BY_GLINT.computeIfAbsent(key, k -> {
             ResourceLocation tex = layer.design();
             RenderType rt = RenderType.create(
-                    MOD_ID + ":custom_glint",
+                    MOD_ID + ":custom_glint|" + k.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
                     VertexFormat.Mode.QUADS,
                     256,
@@ -584,7 +613,7 @@ public final class CustomGlint extends RenderStateShard {
                                 m.translate(-f, 0.0F, 0.0F);
                                 m.rotateZ((float)(Math.PI / 3.0));
                                 m.translate(f + f1, 0.0F, 0.0F);
-                                m.scale(scale * layer.patternScale());
+                                m.scale(scaleU * layer.patternScale(), scaleV * layer.patternScale(), 1.0f);
                                 RenderSystem.setTextureMatrix(m);
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
@@ -592,6 +621,9 @@ public final class CustomGlint extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
     }
 
     public static int computeAnimatedColor(Data glint, int layerIdx) {
@@ -622,7 +654,7 @@ public final class CustomGlint extends RenderStateShard {
 
     /** Outline RenderType: uses the vanilla outline shader with vertex colors, writes to the main framebuffer. */
     public static RenderType forOutline(ResourceLocation texture) {
-        return BY_OUTLINE.computeIfAbsent(texture, tex -> {
+        RenderType cached = BY_OUTLINE.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline",
                     DefaultVertexFormat.POSITION_COLOR_TEX,
@@ -640,6 +672,9 @@ public final class CustomGlint extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
     }
 
     /** Returns the current animated color (ARGB) from layer 0 of the glint, for use as outline color. */
