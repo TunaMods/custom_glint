@@ -7,6 +7,8 @@ import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.renderer.RenderType;
 
 import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.Model;
+import net.minecraft.client.model.EntityModel;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -17,6 +19,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.client.ForgeHooksClient;
 import net.tunamods.customglint.common.CustomGlint;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -84,13 +87,20 @@ public class HumanoidArmorLayerMixin {
         }
         if (list.isEmpty()) return;
         VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-        model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-        ResourceLocation armorTex = stack.getItem() instanceof ArmorItem ai
-            ? new ResourceLocation("minecraft", String.format("textures/models/armor/%s_layer_%d.png",
-                    ai.getMaterial().getName(), slot == EquipmentSlot.LEGS ? 2 : 1))
-            : CustomGlint.SOLID;
-        if (CustomGlint.isGlowing(stack))
-            CustomGlint.doModelOutline(poseStack, buffer, packedLight, model, armorTex, glint, slot);
+        Model rendererModel = ForgeHooksClient.getArmorModel(entity, stack, slot, model);
+        rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        if (CustomGlint.isGlowing(stack)) {
+            ResourceLocation armorTex = CustomGlint.SOLID;
+            if (stack.getItem() instanceof ArmorItem ai) {
+                String defaultPath = String.format("textures/models/armor/%s_layer_%d.png",
+                        ai.getMaterial().getName(), slot == EquipmentSlot.LEGS ? 2 : 1);
+                String resolved = ForgeHooksClient.getArmorTexture(entity, stack, defaultPath, slot, null);
+                try { armorTex = new ResourceLocation(resolved); }
+                catch (Exception ignored) { armorTex = CustomGlint.SOLID; }
+            }
+            EntityModel<?> outlineModel = rendererModel instanceof EntityModel<?> em ? em : model;
+            CustomGlint.doModelOutline(poseStack, buffer, packedLight, outlineModel, armorTex, glint, slot);
+        }
     }
 
 }
