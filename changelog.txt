@@ -7,14 +7,40 @@ Added:
 - Elytra now show custom glint when worn.
 - Horse armor now shows custom glint.
 
+[Compat]
+- Glints now apply to modded armor sets that ship their own armor models (e.g. Ice and Fire
+  dragon armor, Iron's Spellbooks robes), not just vanilla-shaped armor.
+- Ice and Fire troll weapons now display custom glints when held.
+
 Fixed:
 - Glint patterns now look correct on tridents and other held 3D models.
+- Glint patterns on armor no longer stretch into squares — designs hold their original aspect
+  ratio across all armor pieces.
 - Data-pack designs now appear in the editor picker and command suggestions for all players on a
   server, not just the host.
 - Changing resource packs no longer leaves stale glint textures behind.
 - Black Glint Tear now fully resets a Glowing trim back to a plain blank trim.
 
 [Devs]
+- Mod is now distributed as two artifacts: custom-glint-api (embeddable, common/ only — no wand,
+  tab, recipes, or command) and custom_glint (full standalone, includes the api nested via
+  jarJar). Embedders depend on the api coord; players install the full jar.
+- GitHub raw maven hosts both coords for embedders at
+  https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo. See README.txt for
+  the full embedder build.gradle block.
+- Refmap generation moved to MixinGradle. The previous manual -AoutRefMapFile produced an empty
+  refmap in production, which caused @Shadow fixedBuffers to fail to resolve and triggered the
+  "Duplicate delegates" crash on first foil render in non-dev environments.
+- accesstransformer.cfg added to publicize TextureAtlas width/height and RenderBuffers
+  fixedBuffers (the latter previously reached via @Shadow).
+- HumanoidArmorLayerMixin now routes through ForgeHooksClient.getArmorModel and
+  getArmorTexture, so custom armor models from other mods receive glints automatically.
+- CustomGlint.forGlint() now calibrates pattern scale per-axis against the actual block atlas
+  dimensions, eliminating UV distortion on items whose atlas is non-square.
+- Glint textures now use GL_REPEAT + GL_NEAREST so designs tile cleanly at every scale.
+- RenderType names now include the cache key hash, preventing accidental aliasing when multiple
+  configs would otherwise share a name. clearTextures() now also evicts all cached RenderTypes
+  and BufferBuilders from fixedBufferRegistry.
 - CustomGlint.PATTERNS[] — public ResourceLocation[] of all 55 built-in designs in order.
 - CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid color presets.
 - CustomGlint.CURRENT_ITEM_STACK — ThreadLocal moved from ItemRendererMixin to CustomGlint (public).

@@ -11,92 +11,155 @@ from the Custom Glints creative tab to get started. For server/datapack use,
 see the NBT format and /glint command below.
 
 ================================================================================
-  EMBEDDING IN YOUR OWN MOD (no dependency required)
+  BUNDLING CUSTOM GLINTS IN YOUR MOD (jarJar — recommended)
 ================================================================================
 
-Copy the common/ folder directly into your mod under the MIT license.
-Attribution required — keep the MIT header in each file you copy.
+For modders who want to ship glints with their own mod without forcing players
+to install a separate dependency, the supported path is Forge's jarJar.
 
-STEP 1 — Copy source files
+What this gives you:
 
-    src/.../common/CustomGlint.java
-    src/.../common/mixin/ItemRendererMixin.java
-    src/.../common/mixin/HumanoidArmorLayerMixin.java
-    src/.../common/mixin/ElytraLayerMixin.java       (elytra glint + outline)
-    src/.../common/mixin/HorseArmorLayerMixin.java   (horse armor glint + outline)
-    src/.../common/mixin/RenderBuffersMixin.java
+  - Players download ONE jar (yours). They never see customglint as a separate
+    mod in their mods folder or in the mod list UI.
+  - Forge auto-extracts the nested customglint jar and loads it once at launch.
+  - Multiple mods can each bundle customglint — Forge resolves to a single
+    compatible version across all of them. No class collisions, no duplicate
+    mixin injections, no manual coordination.
+  - If a player ALSO installs standalone customglint, Forge dedupes that too.
+  - No source copying, no MOD_ID rewrites, no asset duplication.
 
-  ElytraLayerMixin and HorseArmorLayerMixin are optional — omit them if you
-  don't need glint/outline support on those surfaces. The core pipeline
-  (items, armor, wand) works without them.
+STEP 1 — Add the Modrinth maven repo
 
-  Update the package declaration at the top of each file to match your
-  project's package root.
+  In your build.gradle:
 
-STEP 2 — Wire MOD_ID
-
-  CustomGlint.java contains:
-    import static <package>.YourMod.MOD_ID;
-
-  Change that import to point to your own main mod class. The field must be
-  named MOD_ID. That one field drives all ResourceLocation namespaces,
-  render type names, and the NBT tag key — nothing else needs changing.
-
-STEP 3 — Copy textures
-
-  Copy assets/customglint/textures/glint/ into your own assets folder:
-    assets/<yourmodid>/textures/glint/
-
-  Update design paths in your code or /give examples from
-  "customglint:textures/glint/..." to "<yourmodid>:textures/glint/...".
-  The design constants in CustomGlint update automatically via MOD_ID.
-
-STEP 4 — Mixin config
-
-  The mixin classes must live in a package that matches the "package" field
-  in your mixins JSON. Getting this wrong causes the mixins to silently fail.
-
-  If you already have a mixins JSON, add to its "client" array:
-    "ItemRendererMixin",
-    "HumanoidArmorLayerMixin",
-    "ElytraLayerMixin",       (optional — elytra glint + outline)
-    "HorseArmorLayerMixin",   (optional — horse armor glint + outline)
-    "RenderBuffersMixin"
-
-  If you need a new file, create src/main/resources/<yourmodid>.mixins.json:
-    {
-      "required": true,
-      "minVersion": "0.8",
-      "package": "<your.package.mixin>",
-      "compatibilityLevel": "JAVA_17",
-      "refmap": "<yourmodid>.mixins.refmap.json",
-      "client": [
-        "ItemRendererMixin",
-        "HumanoidArmorLayerMixin",
-        "ElytraLayerMixin",
-        "HorseArmorLayerMixin",
-        "RenderBuffersMixin"
-      ],
-      "injectors": { "defaultRequire": 1 }
+    repositories {
+        maven {
+            name = "Modrinth"
+            url = "https://api.modrinth.com/maven"
+            content { includeGroup "maven.modrinth" }
+        }
     }
 
-  Register it in your mods.toml:
-    [[mixins]]
-    config="<yourmodid>.mixins.json"
+STEP 2 — Declare the jarJar dependency
 
-MULTI-MOD SAFETY
-----------------
-Multiple mods embedding this code simultaneously do not conflict:
+  Modrinth Maven re-namespaces every published mod under the group
+  "maven.modrinth" with the project slug as the artifact name. For Custom
+  Glints the slug is "custom-glints" (plural, hyphenated — taken from the
+  URL https://modrinth.com/mod/custom-glints).
 
-  - Render types and texture namespaces are scoped to MOD_ID — each embedded
-    copy registers its own isolated set with no overlap.
+    dependencies {
+        // Compile-time API access (deobf-resolved for dev).
+        // Bump to the latest version from https://modrinth.com/mod/custom-glints/versions
+        compileOnly fg.deobf("maven.modrinth:custom-glints:1.2.0")
+        runtimeOnly fg.deobf("maven.modrinth:custom-glints:1.2.0")
 
-  - Mixin intercepts use @Inject, not @Redirect. @Inject stacks across mods;
-    @Redirect does not. Every inject checks isCancelled() first and yields if
-    another mod already handled the item.
+        // Nest customglint inside your mod jar at build time. The version range
+        // tells Forge which versions are acceptable when resolving against other
+        // mods that also bundle customglint.
+        jarJar(group: 'maven.modrinth', name: 'custom-glints',
+               version: '[1.2.0,2.0)') {
+            jarJar.ranged(it, '[1.2.0,2.0)')
+        }
+    }
 
-  - The NBT tag key is derived from MOD_ID automatically. Changing MOD_ID
-    (which you must do) also changes the key — no manual step needed.
+  And ensure jarJar is enabled (add near the top of build.gradle if absent):
+
+    jarJar.enable()
+
+  Your build's reobf'd jar will now contain customglint nested under
+  META-INF/jarjar/. Build it with `./gradlew jarJar` — the output is
+  yourmod-<version>-all.jar in build/libs/.
+
+  ALTERNATIVE — Local clone for offline / pre-release development:
+
+    repositories {
+        maven { url = "file:///path/to/custom_glint/mcmodsrepo" }
+    }
+    dependencies {
+        compileOnly fg.deobf("net.tunamods.customglint:custom_glint:1.3.0")
+        runtimeOnly fg.deobf("net.tunamods.customglint:custom_glint:1.3.0")
+        jarJar(group: 'net.tunamods.customglint', name: 'custom_glint',
+               version: '[1.3.0,2.0)') {
+            jarJar.ranged(it, '[1.3.0,2.0)')
+        }
+    }
+
+  Note: local-clone coordinates differ from Modrinth — group is
+  "net.tunamods.customglint" and artifact is "custom_glint" (underscore,
+  singular) because that's what the project publishes from gradle's
+  mod_group_id + project name. Modrinth re-namespaces it under its own
+  group/slug. Pick one path or the other.
+
+STEP 3 — Use the API directly
+
+  In your @Mod class or wherever you set up items:
+
+    import net.tunamods.customglint.common.CustomGlint;
+
+    CustomGlint.registerCraftGlint(MyItems.MAGIC_SWORD.get(),
+        CustomGlint.WAVE, new int[]{CustomGlint.PURPLE, CustomGlint.CYAN});
+
+  All public methods documented under JAVA API below work identically whether
+  customglint is installed standalone or bundled via jarJar — same class, same
+  package, same NBT tag key ("customglint").
+
+
+================================================================================
+  ALTERNATIVE — Declare as a required/optional dependency (no bundling)
+================================================================================
+
+If you'd rather not bundle and just have the player install customglint
+separately, declare it in your META-INF/mods.toml:
+
+    [[dependencies.yourmodid]]
+        modId="customglint"
+        mandatory=true                  # false = soft dep, your mod loads either way
+        versionRange="[1.3,)"
+        ordering="NONE"
+        side="BOTH"
+
+  build.gradle uses compileOnly/runtimeOnly the same way as STEP 2 above, but
+  without the jarJar block. The player downloads both jars from CurseForge /
+  Modrinth themselves.
+
+
+================================================================================
+  ADVANCED — Source copy (NOT recommended for public distribution)
+================================================================================
+
+You CAN still copy the contents of src/main/java/net/tunamods/customglint/common/
+and src/main/java/net/tunamods/customglint/glint/ into your own mod under the
+MIT license — but read this section's warnings carefully first.
+
+WARNING — multi-mod collision risk
+
+  If two mods ship a source-copied customglint without repackaging, every class
+  (CustomGlint, all mixins, all accessors) ends up at the same fully-qualified
+  name in two jars. Forge's classloader cannot resolve duplicates safely — one
+  copy silently wins, or the mod loader hard-fails. The jarJar path above does
+  not have this problem.
+
+  This means source-copy is only safe when you can guarantee no other mod in
+  the pack also embeds customglint. For public CurseForge/Modrinth releases
+  where you don't control the pack composition, use jarJar instead.
+
+  Do NOT copy module/compat/ — those are per-mod compat mixins (e.g. Ice and
+  Fire). They belong to the standalone mod only; bundling them inside an
+  embedded copy makes you responsible for compat upkeep you didn't sign up for.
+
+If you understand the risk and still want to source-copy, the steps are:
+
+  1. Copy src/main/java/net/tunamods/customglint/common/ into your project,
+     updating package declarations and the mixins JSON "package" field.
+  2. Wire MOD_ID — CustomGlint.java imports the constant from your main mod
+     class. That one field drives ResourceLocation namespaces, render type
+     names, and the NBT tag key.
+  3. Copy assets/customglint/textures/glint/ → assets/<yourmodid>/textures/glint/
+  4. Add the mixin classes to your mixins JSON's "client" array, register the
+     config in mods.toml.
+  5. Optional: omit ElytraLayerMixin / HorseArmorLayerMixin if you don't need
+     glint/outline on those surfaces — the core item + humanoid armor pipeline
+     works without them.
 
 
 ================================================================================
