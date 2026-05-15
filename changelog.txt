@@ -6,6 +6,7 @@ Added:
 - Glowing items and armor display a colored outline matching your first glint layer's color.
 - Elytra now show custom glint when worn.
 - Horse armor now shows custom glint.
+- /glint glow <true|false> — toggles the glowing outline on the main-hand item.
 
 [Compat]
 - Glints now apply to modded armor sets that ship their own armor models (e.g. Ice and Fire
@@ -16,6 +17,8 @@ Fixed:
 - Glint patterns now look correct on tridents and other held 3D models.
 - Glint patterns on armor no longer stretch into squares — designs hold their original aspect
   ratio across all armor pieces.
+- Re-writing a glint onto an already-glowing item no longer clears the glowing flag — the
+  outline is preserved across edits in the wand UI, /glint apply, and CustomGlint.write().
 - Data-pack designs now appear in the editor picker and command suggestions for all players on a
   server, not just the host.
 - Changing resource packs no longer leaves stale glint textures behind.
@@ -42,13 +45,26 @@ Fixed:
   configs would otherwise share a name. clearTextures() now also evicts all cached RenderTypes
   and BufferBuilders from fixedBufferRegistry.
 - CustomGlint.PATTERNS[] — public ResourceLocation[] of all 55 built-in designs in order.
-- CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid color presets.
-- CustomGlint.CURRENT_ITEM_STACK — ThreadLocal moved from ItemRendererMixin to CustomGlint (public).
+- CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid colors.
+- CustomGlint.ALL_COLORS[] — public int[] of all 16 dye-named colors.
+- CustomGlint.CURRENT_ITEM_STACK — ThreadLocal<ItemStack> moved from ItemRendererMixin to
+  CustomGlint (public). Set during ItemRenderer.render so glint application can see the stack.
+- CustomGlint.COLOR_BUF — public ThreadLocal<float[4]> shared across all glint mixins to avoid
+  per-frame allocations when packing layer colors into the render type holder.
+- CustomGlint.IN_OUTLINE — public ThreadLocal<Boolean> used to guard against recursive glint
+  application during the stencil-based outline passes.
 - CustomGlint.isGlowing() / setGlowing() — read/write the glowing flag on any ItemStack.
-- forHorseArmorGlint() — new render type factory for horse armor (EQUAL + NO_LAYERING).
-- GlintDesignSyncPacket (S→C, channel ID 1) — syncs data-pack designs to clients on join and reload.
+- CustomGlint.forHorseArmorGlint() — render type factory for horse armor
+  (EQUAL_DEPTH_TEST + NO_LAYERING, distinct from humanoid armor which uses VIEW_OFFSET_Z).
+- CustomGlint.forOutline() — render type factory for the stencil-based outline pass.
+- CustomGlint.doItemOutline() / doModelOutline() — draws the colored outline for held/dropped
+  items and for entity-model armor pieces. Outline color tracks layer 0's animated color.
+- CustomGlint.glintOutlineColor() — returns layer 0's current animated ARGB, the outline tint.
+- GlintDesignSyncPacket (S→C, channel ID 1) — syncs data-pack design names to clients on join
+  and after every /reload.
 - GlintApplyPacket decoder now clamps speed ≤ 0 to 1.0, matching CustomGlint.read().
-- clearTextures() now fires automatically via RegisterClientReloadListenersEvent.
+- clearTextures() now fires automatically via RegisterClientReloadListenersEvent and also
+  evicts every cached RenderType + BufferBuilder from fixedBufferRegistry.
 - JEI: namespace:name pattern format now resolves correctly in recipe displays.
 
 [1.2.0]

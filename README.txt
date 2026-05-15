@@ -6,59 +6,86 @@ Per-item animated enchantment glint with full color, timing, and scale control.
 Works on any item or armor piece. Everything lives in NBT — no registry
 changes, no loot table edits, no item subclasses. 55 built-in designs.
 
-Drop the compiled jar into any Forge 1.20.1 modpack and grab the Glint Wand
-from the Custom Glints creative tab to get started. For server/datapack use,
+For players: drop the standalone jar into any Forge 1.20.1 modpack and grab
+the Glint Wand from the Custom Glints creative tab. For server/datapack use,
 see the NBT format and /glint command below.
 
+For modders: bundle the embeddable api jar inside your own mod via Forge's
+jarJar — your players see one jar, not two. See "BUNDLING" below.
+
+
 ================================================================================
-  BUNDLING CUSTOM GLINTS IN YOUR MOD (jarJar — recommended)
+  TWO ARTIFACTS — api vs full
+================================================================================
+
+  custom-glint-api-<ver>.jar
+      The rendering pipeline and Java API only. No Glint Wand, no creative
+      tab, no recipes, no /glint command. This is what modders bundle via
+      jarJar. Loaded mod ID: customglint_api.
+
+  custom_glint-<ver>.jar
+      The full standalone download. Includes everything in the api plus the
+      Wand, creative tab, Glint Trim / Tear items, smithing + crafting
+      recipes, /glint command, loot modifiers, and JEI integration. The
+      api jar is nested inside this jar via META-INF/jarjar/, so a player
+      who installs ONLY the full jar gets both mods loaded automatically.
+      Loaded mod IDs: customglint + customglint_api.
+
+  Player distribution: the full jar is published to CurseForge / Modrinth.
+  Embedder distribution: the api jar is published to a GitHub raw maven
+  (see "BUNDLING" below). Players never need to touch the maven; modders
+  never need to touch the Modrinth/CurseForge page.
+
+
+================================================================================
+  BUNDLING THE API IN YOUR MOD (jarJar — recommended)
 ================================================================================
 
 For modders who want to ship glints with their own mod without forcing players
-to install a separate dependency, the supported path is Forge's jarJar.
+to install a separate dependency, the supported path is Forge's jarJar against
+the api artifact.
 
 What this gives you:
 
-  - Players download ONE jar (yours). They never see customglint as a separate
-    mod in their mods folder or in the mod list UI.
-  - Forge auto-extracts the nested customglint jar and loads it once at launch.
-  - Multiple mods can each bundle customglint — Forge resolves to a single
+  - Players download ONE jar (yours). They get the rendering pipeline and the
+    Java API only — no Wand, no creative tab, no recipes, no commands. Your
+    mod is in full control of how glints get applied.
+  - Forge auto-extracts the nested api jar and loads it once at launch under
+    the modid "customglint_api".
+  - Multiple mods can each bundle the api — Forge resolves to a single
     compatible version across all of them. No class collisions, no duplicate
     mixin injections, no manual coordination.
-  - If a player ALSO installs standalone customglint, Forge dedupes that too.
-  - No source copying, no MOD_ID rewrites, no asset duplication.
+  - If a player also installs the standalone "Custom Glints" (the full jar),
+    Forge dedupes the api — both the standalone and your bundled copy share
+    one customglint_api instance.
 
-STEP 1 — Add the Modrinth maven repo
+STEP 1 — Add the GitHub raw maven repo
 
-  In your build.gradle:
+  In your build.gradle, alongside your other repositories:
 
     repositories {
         maven {
-            name = "Modrinth"
-            url = "https://api.modrinth.com/maven"
-            content { includeGroup "maven.modrinth" }
+            name = "TunaMods Custom Glints"
+            url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo"
         }
     }
 
-STEP 2 — Declare the jarJar dependency
+  This serves the api jar directly from the repository — no auth, no
+  external maven host. Versions track the 1.20.1 branch.
 
-  Modrinth Maven re-namespaces every published mod under the group
-  "maven.modrinth" with the project slug as the artifact name. For Custom
-  Glints the slug is "custom-glints" (plural, hyphenated — taken from the
-  URL https://modrinth.com/mod/custom-glints).
+STEP 2 — Declare the jarJar dependency
 
     dependencies {
         // Compile-time API access (deobf-resolved for dev).
-        // Bump to the latest version from https://modrinth.com/mod/custom-glints/versions
-        compileOnly fg.deobf("maven.modrinth:custom-glints:1.2.0")
-        runtimeOnly fg.deobf("maven.modrinth:custom-glints:1.2.0")
+        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.3.0")
+        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.3.0")
 
-        // Nest customglint inside your mod jar at build time. The version range
-        // tells Forge which versions are acceptable when resolving against other
-        // mods that also bundle customglint.
-        jarJar(group: 'maven.modrinth', name: 'custom-glints',
-               version: '[1.2.0,2.0)') {
-            jarJar.ranged(it, '[1.2.0,2.0)')
+        // Nest the api jar inside your mod jar at build time. The version
+        // range tells Forge which versions are acceptable when resolving
+        // against other mods that also bundle the api.
+        jarJar(group: 'net.tunamods.customglint', name: 'custom-glint-api',
+               version: '[1.3.0,2.0)') {
+            jarJar.ranged(it, '[1.3.0,2.0)')
         }
     }
 
@@ -66,88 +93,72 @@ STEP 2 — Declare the jarJar dependency
 
     jarJar.enable()
 
-  Your build's reobf'd jar will now contain customglint nested under
-  META-INF/jarjar/. Build it with `./gradlew jarJar` — the output is
-  yourmod-<version>-all.jar in build/libs/.
+  Your build's reobf'd jar will now contain custom-glint-api-<ver>.jar
+  nested under META-INF/jarjar/. Build it with `./gradlew jarJar` — the
+  output is yourmod-<version>-all.jar in build/libs/.
 
-  ALTERNATIVE — Local clone for offline / pre-release development:
+STEP 3 — Use the API
 
-    repositories {
-        maven { url = "file:///path/to/custom_glint/mcmodsrepo" }
-    }
-    dependencies {
-        compileOnly fg.deobf("net.tunamods.customglint:custom_glint:1.3.0")
-        runtimeOnly fg.deobf("net.tunamods.customglint:custom_glint:1.3.0")
-        jarJar(group: 'net.tunamods.customglint', name: 'custom_glint',
-               version: '[1.3.0,2.0)') {
-            jarJar.ranged(it, '[1.3.0,2.0)')
-        }
-    }
-
-  Note: local-clone coordinates differ from Modrinth — group is
-  "net.tunamods.customglint" and artifact is "custom_glint" (underscore,
-  singular) because that's what the project publishes from gradle's
-  mod_group_id + project name. Modrinth re-namespaces it under its own
-  group/slug. Pick one path or the other.
-
-STEP 3 — Use the API directly
-
-  In your @Mod class or wherever you set up items:
+  In your @Mod constructor or wherever you set up items:
 
     import net.tunamods.customglint.common.CustomGlint;
 
     CustomGlint.registerCraftGlint(MyItems.MAGIC_SWORD.get(),
         CustomGlint.WAVE, new int[]{CustomGlint.PURPLE, CustomGlint.CYAN});
 
-  All public methods documented under JAVA API below work identically whether
-  customglint is installed standalone or bundled via jarJar — same class, same
-  package, same NBT tag key ("customglint").
+  All public methods documented under JAVA API below work identically
+  whether the api is bundled inside your jar or loaded from the standalone
+  "Custom Glints" mod — same class, same package, same NBT tag key
+  ("customglint").
 
 
 ================================================================================
   ALTERNATIVE — Declare as a required/optional dependency (no bundling)
 ================================================================================
 
-If you'd rather not bundle and just have the player install customglint
-separately, declare it in your META-INF/mods.toml:
+If you'd rather not bundle and just have the player install one of the mods
+separately, declare it in your META-INF/mods.toml. You can target either the
+api modid (lightweight, no player-facing content) or the full modid (so the
+player gets the Wand + recipes too):
 
     [[dependencies.yourmodid]]
-        modId="customglint"
+        modId="customglint_api"        # or "customglint" if you require the full mod
         mandatory=true                  # false = soft dep, your mod loads either way
         versionRange="[1.3,)"
         ordering="NONE"
         side="BOTH"
 
   build.gradle uses compileOnly/runtimeOnly the same way as STEP 2 above, but
-  without the jarJar block. The player downloads both jars from CurseForge /
-  Modrinth themselves.
+  without the jarJar block. The player downloads the dependency jar from
+  CurseForge / Modrinth themselves.
 
 
 ================================================================================
   ADVANCED — Source copy (NOT recommended for public distribution)
 ================================================================================
 
-You CAN still copy the contents of src/main/java/net/tunamods/customglint/common/
-and src/main/java/net/tunamods/customglint/glint/ into your own mod under the
-MIT license — but read this section's warnings carefully first.
+You CAN copy the contents of src/main/java/net/tunamods/customglint/common/
+into your own mod under the MIT license — but read this section's warnings
+carefully first.
 
 WARNING — multi-mod collision risk
 
-  If two mods ship a source-copied customglint without repackaging, every class
-  (CustomGlint, all mixins, all accessors) ends up at the same fully-qualified
-  name in two jars. Forge's classloader cannot resolve duplicates safely — one
-  copy silently wins, or the mod loader hard-fails. The jarJar path above does
-  not have this problem.
+  If two mods ship a source-copied customglint without repackaging, every
+  class (CustomGlint, all mixins, all accessors) ends up at the same
+  fully-qualified name in two jars. Forge's classloader cannot resolve
+  duplicates safely — one copy silently wins, or the mod loader hard-fails.
+  The jarJar path above does not have this problem.
 
-  This means source-copy is only safe when you can guarantee no other mod in
-  the pack also embeds customglint. For public CurseForge/Modrinth releases
-  where you don't control the pack composition, use jarJar instead.
+  This means source-copy is only safe when you can guarantee no other mod
+  in the pack also embeds customglint. For public CurseForge / Modrinth
+  releases where you don't control the pack composition, use jarJar.
 
-  Do NOT copy module/compat/ — those are per-mod compat mixins (e.g. Ice and
-  Fire). They belong to the standalone mod only; bundling them inside an
-  embedded copy makes you responsible for compat upkeep you didn't sign up for.
+  Do NOT copy module/compat/ — those are per-mod compat mixins (e.g. Ice
+  and Fire) that belong to the standalone mod only. Bundling them inside
+  an embedded copy makes you responsible for compat upkeep you didn't
+  sign up for.
 
-If you understand the risk and still want to source-copy, the steps are:
+If you understand the risk and still want to source-copy:
 
   1. Copy src/main/java/net/tunamods/customglint/common/ into your project,
      updating package declarations and the mixins JSON "package" field.
@@ -155,11 +166,13 @@ If you understand the risk and still want to source-copy, the steps are:
      class. That one field drives ResourceLocation namespaces, render type
      names, and the NBT tag key.
   3. Copy assets/customglint/textures/glint/ → assets/<yourmodid>/textures/glint/
-  4. Add the mixin classes to your mixins JSON's "client" array, register the
-     config in mods.toml.
-  5. Optional: omit ElytraLayerMixin / HorseArmorLayerMixin if you don't need
-     glint/outline on those surfaces — the core item + humanoid armor pipeline
-     works without them.
+  4. Add the mixin classes to your mixins JSON's "client" array, register
+     the config in mods.toml, and copy META-INF/accesstransformer.cfg into
+     your project (publicizes TextureAtlas width/height and RenderBuffers
+     fixedBuffers).
+  5. Optional: omit ElytraLayerMixin / HorseArmorLayerMixin if you don't
+     need glint/outline on those surfaces — the core item + humanoid armor
+     pipeline works without them.
 
 
 ================================================================================
