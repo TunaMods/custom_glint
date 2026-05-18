@@ -2,7 +2,7 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.google.gson.JsonObject;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.FriendlyByteBuf;
@@ -17,12 +17,17 @@ import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.level.Level;
 
-public class GlintTrimSmithingRecipe implements SmithingRecipe {
+/**
+ * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with
+ * glowColors+glowing applied via {@link CustomGlint#setGlowColors}. Does NOT touch any
+ * existing glint Data on the base — Glow Trim is strictly a glow-only application.
+ */
+public class GlowTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();
 
     private final ResourceLocation id;
 
-    public GlintTrimSmithingRecipe(ResourceLocation id) {
+    public GlowTrimSmithingRecipe(ResourceLocation id) {
         this.id = id;
     }
 
@@ -33,16 +38,15 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public boolean isTemplateIngredient(ItemStack stack) {
-        return stack.getItem() instanceof GlintTrimItem
-                && GlintTrimItem.getPattern(stack) != null
-                && GlintTrimItem.getColors(stack).length > 0;
+        return stack.getItem() instanceof GlowTrimItem
+                && GlowTrimItem.getColors(stack).length > 0;
     }
 
     @Override
     public boolean isBaseIngredient(ItemStack stack) {
         return !stack.isEmpty()
-                && !(stack.getItem() instanceof GlintTrimItem)
-                && !(stack.getItem() instanceof net.tunamods.customglint.module.item.GlowTrimItem);
+                && !(stack.getItem() instanceof GlowTrimItem)
+                && !(stack.getItem() instanceof net.tunamods.customglint.module.item.GlintTrimItem);
     }
 
     @Override
@@ -61,30 +65,19 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public ItemStack assemble(Container pContainer, RegistryAccess pRegistryAccess) {
         ItemStack template = pContainer.getItem(0);
         ItemStack base     = pContainer.getItem(1);
-        ResourceLocation pattern = GlintTrimItem.getPattern(template);
-        int[] colors             = GlintTrimItem.getColors(template);
-        if (pattern == null || colors.length == 0) return ItemStack.EMPTY;
-        CustomGlint.Data preview = CustomGlint.read(template);
-        boolean simultaneous = preview != null && preview.layers().length > 0 && preview.layers()[0].simultaneous();
-        float speed          = preview != null && preview.layers().length > 0 ? preview.layers()[0].speed() : 1.0f;
-        boolean interpolate  = preview == null || preview.layers().length == 0 || preview.layers()[0].interpolate();
+        int[] colors = GlowTrimItem.getColors(template);
+        if (colors.length == 0) return ItemStack.EMPTY;
         ItemStack result = base.copy();
         result.setCount(1);
-        if (preview != null && preview.layers().length > 1) {
-            CustomGlint.write(result, preview.layers());
-        } else {
-            CustomGlint.write(result, pattern, colors, speed, interpolate, GlintTrimItem.getScale(template), simultaneous);
-        }
-        if (GlintTrimItem.isGlowing(template)) CustomGlint.setGlowing(result, true);
+        CustomGlint.setGlowColors(result, colors);
         return result;
     }
 
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
+        ItemStack trimExample = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        GlowTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
         list.add(Ingredient.of(Items.GLOWSTONE_DUST));
@@ -98,7 +91,9 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        return CustomGlint.glinted(Items.DIAMOND_SWORD, new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000});
+        ItemStack result = new ItemStack(Items.DIAMOND_SWORD);
+        CustomGlint.setGlowColors(result, new int[]{0xFFFF0000});
+        return result;
     }
 
     @Override
@@ -116,19 +111,19 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         return RecipeType.SMITHING;
     }
 
-    public static class Serializer implements RecipeSerializer<GlintTrimSmithingRecipe> {
+    public static class Serializer implements RecipeSerializer<GlowTrimSmithingRecipe> {
         @Override
-        public GlintTrimSmithingRecipe fromJson(ResourceLocation pRecipeId, JsonObject pSerializedRecipe) {
-            return new GlintTrimSmithingRecipe(pRecipeId);
+        public GlowTrimSmithingRecipe fromJson(ResourceLocation pRecipeId, JsonObject pSerializedRecipe) {
+            return new GlowTrimSmithingRecipe(pRecipeId);
         }
 
         @Override
-        public GlintTrimSmithingRecipe fromNetwork(ResourceLocation pRecipeId, FriendlyByteBuf pBuffer) {
-            return new GlintTrimSmithingRecipe(pRecipeId);
+        public GlowTrimSmithingRecipe fromNetwork(ResourceLocation pRecipeId, FriendlyByteBuf pBuffer) {
+            return new GlowTrimSmithingRecipe(pRecipeId);
         }
 
         @Override
-        public void toNetwork(FriendlyByteBuf pBuffer, GlintTrimSmithingRecipe pRecipe) {
+        public void toNetwork(FriendlyByteBuf pBuffer, GlowTrimSmithingRecipe pRecipe) {
         }
     }
 }

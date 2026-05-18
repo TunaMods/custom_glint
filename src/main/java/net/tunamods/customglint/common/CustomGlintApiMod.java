@@ -1,31 +1,29 @@
-// MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint.common;
 
-import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
-import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
+import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingDropsEvent;
 import net.minecraftforge.event.entity.player.ItemFishedEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.tunamods.customglint.common.client.CustomGlintClientInit;
 
 @Mod(CustomGlintApiMod.MOD_ID)
 public class CustomGlintApiMod {
     public static final String MOD_ID = "customglint_api";
 
     public CustomGlintApiMod() {
-        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
-        modEventBus.addListener(this::onRegisterClientReloadListeners);
+        // Renderer-touching init (BEWLR outline textures, resource reload listener for the texture
+        // cache) happens only on the client. Method-handle target lives in a separate class
+        // (CustomGlintClientInit) so the JVM never resolves CustomGlintRenderer on a dedicated
+        // server — DistExecutor.safeRunWhenOn only invokes the supplier on the matching dist.
+        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> CustomGlintClientInit::run);
 
+        // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
         MinecraftForge.EVENT_BUS.addListener(this::onCraft);
         MinecraftForge.EVENT_BUS.addListener(this::onFish);
         MinecraftForge.EVENT_BUS.addListener(this::onMobDrop);
-    }
-
-    private void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {
-        event.registerReloadListener((ResourceManagerReloadListener) manager -> CustomGlint.clearTextures());
     }
 
     private void onCraft(PlayerEvent.ItemCraftedEvent event) {

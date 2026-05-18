@@ -1,11 +1,10 @@
-// MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint.common.mixin;
 
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.RenderType;
 
-import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,10 +20,10 @@ import java.util.SortedMap;
 @Mixin(RenderBuffers.class)
 public class RenderBuffersMixin {
 
-    @Shadow(aliases = {"f_110093_"}) private SortedMap<RenderType, BufferBuilder> fixedBuffers;
+    @Shadow public SortedMap<RenderType, BufferBuilder> fixedBuffers;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void cg_registerGlintBuffer(CallbackInfo ci) {
-        CustomGlint.fixedBufferRegistry = this.fixedBuffers;
+        CustomGlintRenderer.fixedBufferRegistry = this.fixedBuffers;
     }
 }

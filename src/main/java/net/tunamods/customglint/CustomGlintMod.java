@@ -1,12 +1,14 @@
-// MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlintWandItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
+import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
+import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.tunamods.customglint.module.item.GlintTearItem;
@@ -23,6 +25,9 @@ import net.tunamods.customglint.module.recipe.GlintTrimSmithingRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
+import net.tunamods.customglint.module.recipe.GlowTrimDyeRecipe;
+import net.tunamods.customglint.module.recipe.GlowTrimMergeRecipe;
+import net.tunamods.customglint.module.recipe.GlowTrimSmithingRecipe;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -45,7 +50,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -81,6 +85,9 @@ public class CustomGlintMod {
 
     public static final RegistryObject<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
             () -> new GlintTrimItem(new Item.Properties().stacksTo(16)));
+
+    public static final RegistryObject<GlowTrimItem> GLOW_TRIM = ITEMS.register("glow_trim",
+            () -> new GlowTrimItem(new Item.Properties().stacksTo(16)));
 
     public static final RegistryObject<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.register("glint_tear_simultaneous",
             () -> new GlintTearItem(new Item.Properties().stacksTo(16), true));
@@ -119,10 +126,15 @@ public class CustomGlintMod {
             RECIPE_SERIALIZERS.register("glint_trim_scale", () -> GlintTrimScaleRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintGlowTrimRecipe>> GLINT_GLOW_TRIM_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_glow_trim", () -> GlintGlowTrimRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlowTrimDyeRecipe>> GLOW_TRIM_DYE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glow_trim_dye", () -> GlowTrimDyeRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlowTrimMergeRecipe>> GLOW_TRIM_MERGE_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glow_trim_merge", () -> GlowTrimMergeRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glow_trim_smithing", () -> GlowTrimSmithingRecipe.SERIALIZER);
 
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
-            .withTabsBefore(CreativeModeTabs.COMBAT)
             .icon(() -> {
                 ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
                 CustomGlint.write(icon,
@@ -137,6 +149,7 @@ public class CustomGlintMod {
                 output.accept(GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 output.accept(GLINT_LAYER_TEAR.get().getDefaultInstance());
                 output.accept(GLINT_BLACK_TEAR.get().getDefaultInstance());
+                output.accept(new ItemStack(GLOW_TRIM.get()));
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(GLINT_TRIM.get());
                     ResourceLocation loc;
@@ -166,6 +179,8 @@ public class CustomGlintMod {
         RECIPE_SERIALIZERS.register(modEventBus);
 
         ModNetworking.register();
+        IceAndFireCompat.register();
+        FirstPersonCompat.register();
 
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);

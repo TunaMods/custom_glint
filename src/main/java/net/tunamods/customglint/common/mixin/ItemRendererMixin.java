@@ -1,4 +1,3 @@
-// MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint.common.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -13,13 +12,14 @@ import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Intercepts getFoilBuffer/getFoilBufferDirect to inject custom per-item glint. Dual SRG/named targets, require=0 on all. */
+/** Intercepts render() to capture item stack + trigger glowing outline; intercepts getFoilBuffer/getFoilBufferDirect to inject custom per-item glint. Dual SRG/named targets, require=0 on all. */
 @Mixin(ItemRenderer.class)
 public class ItemRendererMixin {
 
@@ -30,7 +30,7 @@ public class ItemRendererMixin {
     private void cg_captureStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        CustomGlint.CURRENT_ITEM_STACK.set(pItemStack);
+        CustomGlintRenderer.CURRENT_ITEM_STACK.set(pItemStack);
     }
 
     /** Named target: captures the stack before render begins (dev/deobf environments). */
@@ -41,7 +41,7 @@ public class ItemRendererMixin {
     private void cg_captureStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        CustomGlint.CURRENT_ITEM_STACK.set(pItemStack);
+        CustomGlintRenderer.CURRENT_ITEM_STACK.set(pItemStack);
     }
 
     // ── Stack clear + item outline (RETURN) ─────────────────────────────────
@@ -51,9 +51,9 @@ public class ItemRendererMixin {
     private void cg_clearStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        if (!CustomGlint.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
-            CustomGlint.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
-        CustomGlint.CURRENT_ITEM_STACK.remove();
+        if (!CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
+            CustomGlintRenderer.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
+        CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
     }
 
     /** Named target: applies item outline for glowing items, then clears the captured stack. */
@@ -64,9 +64,9 @@ public class ItemRendererMixin {
     private void cg_clearStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        if (!CustomGlint.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
-            CustomGlint.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
-        CustomGlint.CURRENT_ITEM_STACK.remove();
+        if (!CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
+            CustomGlintRenderer.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
+        CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
     }
 
     // ── getFoilBuffer intercepts ─────────────────────────────────────────────
@@ -121,14 +121,21 @@ public class ItemRendererMixin {
 
     /** Returns a VertexMultiConsumer combining all glint layers + base renderType, or null if no glint. */
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
-        if (CustomGlint.IN_OUTLINE.get()) return null;
-        ItemStack stack = CustomGlint.CURRENT_ITEM_STACK.get();
+        // During our stencil/translate outline passes, route all foil requests to the bare base
+        // buffer. Otherwise vanilla's getFoilBuffer returns a VertexMultiConsumer of (glint, base)
+        // — and because our outline MultiBufferSource lambdas redirect every RenderType to the
+        // same underlying builder, the two delegates would share one builder and tear its vertex
+        // state (vertex,vertex,color,color,...,endVertex,endVertex). Items that hardcode
+        // isFoil()=true (e.g. Ice & Fire's ItemAlchemySword — dragonbone_sword_fire/ice/lightning)
+        // tripped this whenever a custom glint+outline was applied: glint worked, outline didn't.
+        if (CustomGlintRenderer.IN_OUTLINE.get()) return buffer.getBuffer(renderType);
+        ItemStack stack = CustomGlintRenderer.CURRENT_ITEM_STACK.get();
         if (stack == null) return null;
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return null;
 
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = CustomGlint.COLOR_BUF.get();
+        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
@@ -140,17 +147,17 @@ public class ItemRendererMixin {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlint.forGlint(glint, layerIdx, buf, isItem, i);
+                    RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
-                int color = CustomGlint.computeAnimatedColor(glint, layerIdx);
+                int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
                 float a = ((color >> 24) & 0xFF) / 255.0f;
                 buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
                 buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
-                RenderType rt = CustomGlint.forGlint(glint, layerIdx, buf, isItem, 0);
+                RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, 0);
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }

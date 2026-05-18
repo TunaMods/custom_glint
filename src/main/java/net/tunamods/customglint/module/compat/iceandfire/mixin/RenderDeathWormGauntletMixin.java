@@ -23,22 +23,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Standalone-only compat: troll weapon BEWLR calls MultiBufferSource.getBuffer(RenderType) directly,
- * bypassing ItemRenderer.getFoilBuffer — so ItemRendererMixin never fires for glint. At RETURN of
- * renderByItem, re-renders MODEL with glint render types, and (if glowing) draws an outline using the
- * weapon's actual TEXTURE so each EnumTroll.Weapon variant gets its own opaque-texel silhouette.
+ * Standalone-only compat: death worm gauntlet BEWLR (RenderDeathWormGauntlet) — same problem shape
+ * as RenderTrollWeapon. One ModelDeathWormGauntlet, three variants (red/white/yellow) selected by
+ * item identity → different textures, same combined geometry. We re-render MODEL with glint render
+ * types at RETURN of renderByItem, capture the variant texture via @Redirect on entityCutoutNoCull
+ * (the gauntlet calls it three times in branches; whichever branch executes is what we capture),
+ * and draw an outline using that texture so per-variant silhouettes match opaque texels.
  *
- * Cannot @Shadow MODEL: the field's runtime descriptor is Lcom/.../ModelTrollWeapon; (an IaF type we
- * cannot reference at compile time since IaF is not a compileOnly dep). Shadowing as Model fails the
- * descriptor match at field resolution. We resolve MODEL via reflection lazily instead.
- *
- * Texture for outline is captured via @Redirect on the RenderType.entityCutoutNoCull(ResourceLocation)
- * call inside renderByItem — the redirected method just calls through to the real one, side-channelling
- * the location into a ThreadLocal for the @Inject at RETURN to consume.
+ * IaF applies translate(0.5, 0.5, 0.5) before rendering MODEL; we re-apply it for glint+outline.
  */
 @Pseudo
-@Mixin(targets = "com.github.alexthe666.iceandfire.client.render.tile.RenderTrollWeapon", remap = false)
-public class RenderTrollWeaponMixin {
+@Mixin(targets = "com.github.alexthe666.iceandfire.client.render.tile.RenderDeathWormGauntlet", remap = false)
+public class RenderDeathWormGauntletMixin {
 
     private static final ThreadLocal<ResourceLocation> CG_TEX = new ThreadLocal<>();
     private static volatile Model CG_MODEL;
@@ -48,7 +44,7 @@ public class RenderTrollWeaponMixin {
         Model m = CG_MODEL;
         if (m != null) return m;
         try {
-            Class<?> cls = Class.forName("com.github.alexthe666.iceandfire.client.render.tile.RenderTrollWeapon");
+            Class<?> cls = Class.forName("com.github.alexthe666.iceandfire.client.render.tile.RenderDeathWormGauntlet");
             Field f = cls.getDeclaredField("MODEL");
             f.setAccessible(true);
             CG_MODEL = (Model) f.get(null);
@@ -63,13 +59,9 @@ public class RenderTrollWeaponMixin {
         CG_REGISTERED = true;
         try {
             CustomGlintRenderer.CUSTOM_OUTLINE_BEWLRS.add(
-                Class.forName("com.github.alexthe666.iceandfire.client.render.tile.RenderTrollWeapon"));
+                Class.forName("com.github.alexthe666.iceandfire.client.render.tile.RenderDeathWormGauntlet"));
         } catch (Throwable ignored) {}
     }
-
-    // ── Capture the texture passed to RenderType.entityCutoutNoCull(loc) inside renderByItem.
-    //    Dual SRG/named pair; the active class-level remap=false makes refmap-free, so SRG name
-    //    works only in obfuscated runtime and named name works only in deobf.
 
     @Redirect(method = "m_108829_",
             at = @At(value = "INVOKE",
@@ -88,9 +80,6 @@ public class RenderTrollWeaponMixin {
         CG_TEX.set(loc);
         return RenderType.entityCutoutNoCull(loc);
     }
-
-    // ── Apply glint + outline at RETURN. Pose has been popped by IaF, so re-apply the
-    //    (0.5, -0.75, 0.5) translate it uses before rendering MODEL.
 
     @Inject(method = "m_108829_", at = @At("RETURN"), require = 0)
     private void cg_apply_srg(ItemStack stack, ItemDisplayContext ctx, PoseStack pose,
@@ -147,7 +136,7 @@ public class RenderTrollWeaponMixin {
                 VertexConsumer combined = list.size() == 1 ? list.get(0)
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
                 pose.pushPose();
-                pose.translate(0.5f, -0.75f, 0.5f);
+                pose.translate(0.5f, 0.5f, 0.5f);
                 model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
                 pose.popPose();
             }
@@ -155,7 +144,7 @@ public class RenderTrollWeaponMixin {
 
         if (tex != null && !CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(stack)) {
             pose.pushPose();
-            pose.translate(0.5f, -0.75f, 0.5f);
+            pose.translate(0.5f, 0.5f, 0.5f);
             CustomGlintRenderer.doBewlrOutline(pose, buffer, light, model, tex, glint);
             pose.popPose();
         }

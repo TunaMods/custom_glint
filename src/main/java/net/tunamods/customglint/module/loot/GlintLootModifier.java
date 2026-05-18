@@ -1,4 +1,3 @@
-// MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint.module.loot;
 
 import com.google.common.base.Suppliers;

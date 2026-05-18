@@ -7,7 +7,6 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootContext;
-import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
 import net.minecraftforge.common.loot.IGlobalLootModifier;
 import net.minecraftforge.common.loot.LootModifier;
@@ -29,8 +28,11 @@ public class GlintTrimLootModifier extends LootModifier {
 
     @Override
     protected ObjectArrayList<ItemStack> doApply(ObjectArrayList<ItemStack> generatedLoot, LootContext context) {
-        if (context.hasParam(LootContextParams.BLOCK_STATE)) return generatedLoot;
-        if (context.hasParam(LootContextParams.DAMAGE_SOURCE)) return generatedLoot;
+        // Chest loot tables only. Without this gate the LM also fires on mob spawn-equipment
+        // rolls (no DAMAGE_SOURCE, no BLOCK_STATE), spamming "Could not equip item" warnings
+        // when Mob.equip can't slot a Trim/Tear anywhere.
+        ResourceLocation tableId = context.getQueriedLootTableId();
+        if (tableId == null || !tableId.getPath().startsWith("chests/")) return generatedLoot;
 
         // Trims: 22% for 1st (semi-rare), 12% conditional for 2nd (~2.6% overall, rare), 8% conditional for 3rd (~0.2% overall, very rare)
         int trimCount = 0;

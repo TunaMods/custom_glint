@@ -1,4 +1,3 @@
-// MIT License — Copyright (c) 2026 Likely Tuna | TunaMods — see LICENSE.txt
 package net.tunamods.customglint.common.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -21,12 +20,13 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Intercepts renderArmorPiece at RETURN to draw custom glint on top of vanilla armor rendering. Dual SRG/named targets, require=0 on both. */
+/** Intercepts renderArmorPiece at RETURN to draw custom glint and (if glowing) stencil outline on vanilla + modded armor. Dual SRG/named targets, require=0 on both. */
 @Mixin(HumanoidArmorLayer.class)
 public class HumanoidArmorLayerMixin {
 
@@ -56,40 +56,45 @@ public class HumanoidArmorLayerMixin {
         ItemStack stack = entity.getItemBySlot(slot);
         if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
+        boolean glowing = CustomGlint.isGlowing(stack);
+        // Bail only if there is nothing to render — no glint AND no glow.
+        if (glint == null && !glowing) return;
 
-        CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = CustomGlint.COLOR_BUF.get();
+        Model rendererModel = ForgeHooksClient.getArmorModel(entity, stack, slot, model);
+        if (glint != null) {
+            CustomGlint.Layer[] layers = glint.layers();
+            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
-        List<VertexConsumer> list = new ArrayList<>();
-        for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-            int[] colors = layers[layerIdx].colors();
-            if (layers[layerIdx].simultaneous()) {
-                for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
+            List<VertexConsumer> list = new ArrayList<>();
+            for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                int[] colors = layers[layerIdx].colors();
+                if (layers[layerIdx].simultaneous()) {
+                    for (int i = 0; i < colors.length; i++) {
+                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
+                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
+                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
+                        buf[3] = 1.0f;
+                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
+                        if (rt != null) list.add(buffer.getBuffer(rt));
+                    }
+                } else {
+                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                    float a = ((color >> 24) & 0xFF) / 255.0f;
+                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+                    buf[2] = ( color        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlint.forArmorGlint(glint, layerIdx, buf, i);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
-            } else {
-                int color = CustomGlint.computeAnimatedColor(glint, layerIdx);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
-                RenderType rt = CustomGlint.forArmorGlint(glint, layerIdx, buf, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
+            }
+            if (!list.isEmpty()) {
+                VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+                rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
             }
         }
-        if (list.isEmpty()) return;
-        VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-        Model rendererModel = ForgeHooksClient.getArmorModel(entity, stack, slot, model);
-        rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-        if (CustomGlint.isGlowing(stack)) {
+        if (glowing) {
             ResourceLocation armorTex = CustomGlint.SOLID;
             if (stack.getItem() instanceof ArmorItem ai) {
                 String defaultPath = String.format("textures/models/armor/%s_layer_%d.png",
@@ -99,7 +104,7 @@ public class HumanoidArmorLayerMixin {
                 catch (Exception ignored) { armorTex = CustomGlint.SOLID; }
             }
             EntityModel<?> outlineModel = rendererModel instanceof EntityModel<?> em ? em : model;
-            CustomGlint.doModelOutline(poseStack, buffer, packedLight, outlineModel, armorTex, glint, slot);
+            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, armorTex, stack, slot);
         }
     }
 

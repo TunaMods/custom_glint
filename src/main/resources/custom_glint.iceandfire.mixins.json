@@ -5,7 +5,15 @@
   "compatibilityLevel": "JAVA_17",
   "refmap": "custom_glint.mixins.refmap.json",
   "client": [
-    "RenderTrollWeaponMixin"
+    "RenderTrollWeaponMixin",
+    "RenderDeathWormGauntletMixin",
+    "LayerDragonArmorMixin",
+    "LayerHippogryphArmorMixin",
+    "LayerHippocampusArmorMixin"
+  ],
+  "mixins": [
+    "EntityHippogryphArmorSyncMixin",
+    "EntityHippocampusArmorSyncMixin"
   ],
   "injectors": {
     "defaultRequire": 0

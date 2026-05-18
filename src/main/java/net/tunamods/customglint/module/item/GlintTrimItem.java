@@ -175,7 +175,7 @@ public class GlintTrimItem extends Item {
                             int rgb = layer.colors()[k] & 0xFFFFFF;
                             String cname = "#" + String.format("%06X", rgb);
                             for (int j = 0; j < DYE_COLORS.length; j++) {
-                                if (DYE_COLORS[j] == layer.colors()[k]) { cname = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
+                                if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) { cname = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
                             }
                             if (k > 0) lc = lc.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
                             lc = lc.append(Component.literal(cname).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
@@ -195,7 +195,7 @@ public class GlintTrimItem extends Item {
                 int rgb = colors[i] & 0xFFFFFF;
                 String name = "#" + String.format("%06X", rgb);
                 for (int j = 0; j < DYE_COLORS.length; j++) {
-                    if (DYE_COLORS[j] == colors[i]) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
+                    if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
                 }
                 if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
                 line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));

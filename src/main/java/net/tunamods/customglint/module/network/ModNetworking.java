@@ -25,5 +25,7 @@ public class ModNetworking {
         CHANNEL.registerMessage(0, GlintApplyPacket.class, GlintApplyPacket::encode, GlintApplyPacket::decode, GlintApplyPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         // 1 — GlintDesignSyncPacket  S→C  syncs data-pack design names to clients on join and reload
         CHANNEL.registerMessage(1, GlintDesignSyncPacket.class, GlintDesignSyncPacket::encode, GlintDesignSyncPacket::decode, GlintDesignSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        // 2 — GlintMountArmorSyncPacket  S→C  syncs IaF hippogryph/hippocampus armor ItemStack to clients (compat — only sent by IaF compat code)
+        CHANNEL.registerMessage(2, GlintMountArmorSyncPacket.class, GlintMountArmorSyncPacket::encode, GlintMountArmorSyncPacket::decode, GlintMountArmorSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 }

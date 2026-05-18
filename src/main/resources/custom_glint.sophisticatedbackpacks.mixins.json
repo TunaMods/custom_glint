@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.tunamods.customglint.module.compat.sophisticatedbackpacks.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "custom_glint.mixins.refmap.json",
+  "client": [
+    "BackpackItemStackRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}
