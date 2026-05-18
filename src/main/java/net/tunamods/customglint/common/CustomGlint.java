@@ -132,7 +132,7 @@ public final class CustomGlint {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK
     };
 
-    /** All 16 named colors including neutrals — full palette for embedder use. */
+    /** All 16 named colors including neutrals — full palette for downstream mod use. */
     public static final int[] ALL_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK,
             BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK

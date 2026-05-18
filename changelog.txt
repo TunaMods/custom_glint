@@ -55,14 +55,20 @@ Fixed:
   cycles through these colors instead of tracking glint layer 0's animated color.
 - The mod is now safe to load on dedicated servers: client-only rendering code lives in
   net.tunamods.customglint.common.client.CustomGlintRenderer (and module.client.* for the
-  standalone). Embedders' server-reachable code should only reference common.CustomGlint —
-  never common.client.*.
+  standalone). When bundling the api via jarJar, server-reachable code should only reference
+  common.CustomGlint — never common.client.*.
 - CustomGlint.PATTERNS[] — public ResourceLocation[] of all 55 built-in designs in order.
 - CustomGlint.ALL_COLORS[] — public int[] of all 16 dye-named colors.
 - CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid colors.
 - Advanced rendering hooks added for mods that draw items or models outside the normal
   ItemRenderer / armor layer flow (outline render types, model/item outline helpers, public
   ThreadLocals). Documented under "ADVANCED — RENDERING HOOKS" in README.txt.
+
+[Known Issues]
+- Shader Support is implemented but not finished. Glow Outlines while using shaders are improperly rendering the entire texture space rather than cutting out on the texture.
+- Some specially rendered modded armor/tools do not gain glint or outlines. Need specific targeted compatibility passes. (Mekanism 3d models etc etc)
+- Glint Wand GUI missing Glowing application button
+- Some item outlines are TOO THICK
 
 [1.2.0]
 

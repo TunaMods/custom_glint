@@ -193,13 +193,13 @@ tasks.named('processResources', ProcessResources).configure {
 }
 
 // --------------------------------------------------------------------------------------------
-// Two-jar split: api jar (embeddable via jarJar) + full jar (Modrinth standalone download).
+// Two-jar split: api jar (consumed via jarJar) + full jar (Modrinth standalone download).
 //
 // apiJar packages only common/* + mixin config + AT + glint textures + mods.api.toml renamed to
-// META-INF/mods.toml. This is what embedders bundle via jarJar — no wand, no tab, no recipes.
+// META-INF/mods.toml. This is what downstream mods bundle via jarJar — no wand, no tab, no recipes.
 //
 // jar (the full standalone) excludes the api content (so api classes only ever exist in one
-// place at runtime — inside the nested api jar) and self-embeds the api jar via
+// place at runtime — inside the nested api jar) and self-bundles the api jar via
 // META-INF/jarjar/, so a player who installs only the full jar still gets the api loaded.
 // --------------------------------------------------------------------------------------------
 
@@ -287,7 +287,7 @@ tasks.named('jar', Jar).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     // Api content lives inside the nested api jar only — drop it from the full jar so classes
-    // aren't loaded twice when the embedder-jarJar path also resolves.
+    // aren't loaded twice when a downstream mod's bundled jarJar copy also resolves.
     exclude 'net/tunamods/customglint/common/**'
     exclude 'META-INF/accesstransformer.cfg'
     exclude 'custom_glint.mixins.json'

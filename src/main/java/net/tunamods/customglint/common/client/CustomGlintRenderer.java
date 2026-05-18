@@ -52,7 +52,7 @@ import net.tunamods.customglint.common.CustomGlint.Layer;
 /**
  * Client-only rendering backend. Split out of {@link CustomGlint} so that the data-API class
  * remains loadable on dedicated servers (where {@link RenderStateShard} and other client classes
- * are absent). Embedders calling render-pipeline methods from client code should use this class;
+ * are absent). Mods bundling the api jar should call render-pipeline methods through this class;
  * NBT/data API stays on {@link CustomGlint}.
  */
 public final class CustomGlintRenderer extends RenderStateShard {

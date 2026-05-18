@@ -11,7 +11,7 @@ version="${mod_version}"
 displayName="Custom Glints API"
 logoFile="customglint.png"
 authors="${mod_authors}"
-description='''The rendering pipeline and NBT API for Custom Glints. Embedders bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
+description='''The rendering pipeline and NBT API for Custom Glints. Other mods bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
 
 [[dependencies.customglint_api]]
     modId="forge"
