@@ -14,12 +14,12 @@ If you're a mod developer, this README covers:
     glowing outlines, color and design constants
   - The NBT format the rendering pipeline reads (useful for /give in your
     own commands or datapack functions)
-  - The /glint command reference (ships in the full standalone only)
 
 Per-item animated enchantment glint with full color, timing, and scale
-control. Works on any item or armor piece. Everything lives in NBT — no
-registry changes, no loot table edits, no item subclasses. 55 built-in
-designs.
+control. Works on any item, armor piece, elytra, or horse armor. Glints
+can also project a colored outline ("glowing" flag). Everything lives in
+NBT — no registry changes, no loot table edits, no item subclasses. 55
+built-in designs, extensible via data packs.
 
 
 ================================================================================
@@ -117,6 +117,13 @@ STEP 3 — Use the API
   "Custom Glints" mod — same class, same package, same NBT tag key
   ("customglint").
 
+  Server safety: everything under net.tunamods.customglint.common is safe
+  to reference from server-reachable code (recipes, items, commands,
+  networking). The rendering pipeline lives in
+  net.tunamods.customglint.common.client.CustomGlintRenderer and must
+  only be referenced from client-only code paths. Mixing the two will
+  ClassNotFoundException on a dedicated server.
+
 
 ================================================================================
   ALTERNATIVE — Declare as a required/optional dependency (no bundling)
@@ -168,14 +175,30 @@ All public methods live in CustomGlint.
   // Remove
   CustomGlint.remove(stack);
 
-  // Glowing outline (colored border matching glint layer 0)
+  // Glowing outline (colored border)
   CustomGlint.setGlowing(stack, true);   // enable
   CustomGlint.setGlowing(stack, false);  // disable
   boolean g = CustomGlint.isGlowing(stack);
 
+  // Independent outline colors. When set, the outline animates through this color
+  // list instead of tracking glint layer 0. Useful if you want a glow without any
+  // glint pattern, or a glow whose color differs from the glint.
+  CustomGlint.setGlowColors(stack, new int[]{CustomGlint.RED, CustomGlint.WHITE});
+  int[]   gc      = CustomGlint.getGlowColors(stack);
+  boolean hasGc   = CustomGlint.hasGlowColors(stack);
+  CustomGlint.clearGlowColors(stack);    // outline falls back to glint layer 0
+
   // Pre-glinted ItemStack in one call (useful in creative tab displayItems)
   ItemStack stack = CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE,
       new int[]{CustomGlint.PURPLE}, 1.0f, true, 1.0f, true);
+
+  // Short-form overloads — speed=1.0, interpolate=true, scale=1.0, simultaneous=false:
+  CustomGlint.write(stack, CustomGlint.WAVE, new int[]{CustomGlint.RED});
+  CustomGlint.write(stack, CustomGlint.WAVE, CustomGlint.RED);         // single color
+  CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{CustomGlint.RED});
+  CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE, CustomGlint.RED);
+  CustomGlint.registerCraftGlint(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{CustomGlint.PURPLE});
+  // (registerFishingGlint / registerMobDropGlint / registerLootGlint all have matching short forms)
 
   // Auto-apply on craft / fishing / mob drop / loot table (call once during setup)
   // Register in your @Mod constructor — NOT in FMLCommonSetupEvent.
@@ -193,6 +216,11 @@ COLOR CONSTANTS
   BLUE, PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
   Any other color: CustomGlint.color("FFD700")
 
+  Iteration arrays (public final int[] / ResourceLocation[]):
+    CustomGlint.ALL_COLORS       — all 16 dye-named colors above, in order
+    CustomGlint.VIBRANT_COLORS   — the 11 vivid ones (drops neutrals/browns)
+    CustomGlint.PATTERNS         — all 55 built-in designs as ResourceLocation[]
+
 DESIGN CONSTANTS
   CustomGlint.VANILLA, ARCS, AURORA, BLOBS, CASCADE, CHECKER, CHEVRON, CORAL,
   CRACKS, CROSSHATCH, CRYSTAL, DEBRIS, DIAMONDS, DUNES, EMBER, FEATHER, FIRE,
@@ -201,6 +229,106 @@ DESIGN CONSTANTS
   SHEEN, SHIMMER, SILK, SLASH, SMOKE, SOLID, SPARKLE, STARS, STATIC, STRIPES,
   SWIRL, TIDE, TILE, VEIN, WAVE, WEAVE, ZIGZAG
 
+  VANILLA resolves to minecraft:textures/misc/enchanted_glint_item.png — the
+  other 54 ship inside the api jar at customglint:textures/glint/<name>.png.
+
+
+================================================================================
+  WHAT THE API HANDLES AUTOMATICALLY
+================================================================================
+
+  - Held items (1st/3rd person, GUI, ground, item frame, glow frame).
+  - 3D held models with custom BEWLR renderers (tridents, etc.) — outline
+    and glint both work without per-item adapter code.
+  - Humanoid armor — including modded armor that ships its own ArmorModel
+    via ForgeHooksClient. No per-mod compat needed.
+  - Elytra (when worn as chestplate).
+  - Horse armor (iron / gold / diamond / modded).
+  - Glowing outline pass — colored stencil border. Tracks layer 0's animated
+    color by default, or an independent setGlowColors() list when set. Works
+    on items AND on all four armor surfaces above.
+  - Atlas-calibrated pattern scale — designs hold aspect ratio when other
+    mods inflate the block atlas to non-square dimensions.
+  - Texture and RenderType eviction on resource pack reload.
+
+  One known render path the api does NOT wire automatically: BEWLR
+  renderers that bypass ItemRenderer.getFoilBuffer entirely (call
+  MultiBufferSource.getBuffer(RenderType) themselves). The standalone full
+  jar ships compat mixins for several such cases (Ice and Fire troll
+  weapons + death worm gauntlets, Sophisticated Backpacks, Epic Knights
+  armor decorations, IaF mount armor); those mixins are NOT in the api
+  jar. If your mod ships a BEWLR like this, apply glint manually via the
+  advanced hooks below.
+
+
+================================================================================
+  ADVANCED — RENDERING HOOKS (for custom renderers)
+================================================================================
+
+If you render an item or model outside the normal ItemRenderer / armor
+layer flow, you can drive the glint pipeline directly. All hooks live on
+CustomGlintRenderer (client-only — gate any reference with FMLEnvironment
+or DistExecutor; never touch this class from server-reachable code).
+
+  import net.tunamods.customglint.common.client.CustomGlintRenderer;
+
+  // Per-frame animated color for an item's outline (ARGB int). Prefers the
+  // independent glowColors list, falls back to glint layer 0, else white.
+  int argb = CustomGlintRenderer.outlineColor(stack);
+
+  // RenderType factories — register lazily; cached by (glint, layer, color, isItem).
+  // All four factories also self-register into RenderBuffers.fixedBuffers.
+  RenderType rt  = CustomGlintRenderer.forGlint(glint, layerIdx, frameColor, isItem, colorIdx);
+  RenderType rtA = CustomGlintRenderer.forArmorGlint(glint, layerIdx, frameColor, colorIdx);
+  RenderType rtH = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
+
+  // Stencil-based colored outline for an entity/armor model. Two-pass
+  // (stencil write + scaled re-render). Pivot/scale tuned for humanoid
+  // and horse models.
+  CustomGlintRenderer.doModelOutline(poseStack, bufferSource, packedLight,
+      model, modelTexture, glint, equipmentSlot);
+
+  // Stencil-based outline for an item. Handles BEWLR + flat-sprite paths.
+  // Skips ItemDisplayContext.GUI internally.
+  CustomGlintRenderer.doItemOutline(stack, displayContext, poseStack,
+      bufferSource, packedLight, overlay);
+
+  // Public ThreadLocals — useful if you proxy the item render call chain
+  // yourself and need glint application to see the stack you're drawing.
+  CustomGlintRenderer.CURRENT_ITEM_STACK   // set during ItemRenderer.render
+  CustomGlintRenderer.IN_OUTLINE           // re-entrance guard during outline passes
+  CustomGlintRenderer.COLOR_BUF            // shared float[4] for color packing
+
+  // Optional gate: install a BooleanSupplier to suppress doModelOutline /
+  // doItemOutline (returns true → skip). Used by the bundled First-Person
+  // Model compat to silence outlines in the 3.5D body view.
+  CustomGlintRenderer.outlineSuppressor = () -> shouldSuppress();
+
+
+================================================================================
+  DATA-PACK DESIGNS
+================================================================================
+
+Designs are extensible at runtime via data packs — useful if you want to
+ship custom glint textures with your mod's resource pack without adding
+constants to CustomGlint.
+
+  1. Put the PNG at:
+       assets/<your_modid>/textures/glint/mydesign.png
+
+  2. In a data pack file under data/<any_namespace>/customglint/designs/
+     <anything>.json, list the design names as a JSON array:
+
+       ["<your_modid>:mydesign", "<your_modid>:another"]
+
+  Names appear in the wand editor and /glint apply suggestions on every
+  client. The server fires a GlintDesignSyncPacket on reload and on player
+  join, so clients with a different design set than the server still see
+  the server's list while connected.
+
+  Designs referenced from NBT use the same path the constants use:
+       customglint:textures/glint/<name>.png   (or your_modid namespace)
+
 
 ================================================================================
   NBT COMMAND FORMAT
@@ -208,7 +336,8 @@ DESIGN CONSTANTS
 
   /give @p <item>{customglint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}} 1
 
-  Tag key = mod ID ("customglint" standalone; your MOD_ID when embedded).
+  Tag key = "customglint" (always — same compiled api jar whether installed standalone or
+  nested via jarJar inside your mod).
   speed: 1.0 = 20 ticks/color. interpolate: 1b = smooth. simultaneous: 1b = all colors at once.
   Alpha byte of each color int = brightness (0xFF full, 0x00 invisible).
 
@@ -216,34 +345,3 @@ DESIGN CONSTANTS
   /give @p minecraft:diamond_sword{customglint:{glowing:1b,layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b,scale:1.0f,simultaneous:0b}]}} 1
 
   Remove: /item replace entity @s weapon.mainhand nbt remove customglint
-
-
-================================================================================
-  /glint COMMAND (full standalone only)
-================================================================================
-
-This command ships in the full standalone jar (modid "customglint") only.
-If you bundled the api jar via jarJar without depending on the full mod,
-this command is not registered — use the Java API or the NBT format above.
-
-  /glint apply <design> <colors> [speed] [smooth] [scale] [simultaneous]
-                                                    — applies to main-hand item
-  /glint remove                                      — removes from main-hand item
-  /glint glow <true|false>                           — enables/disables colored outline on main-hand item
-
-  design: any name from the 55 built-in designs (see DESIGN CONSTANTS above),
-          or a data-pack design registered as "namespace:name"
-
-  colors: comma-separated color names, quoted when using multiple colors:
-          red, orange, yellow, lime, green, cyan, light_blue, blue, purple,
-          magenta, pink, brown, white, light_gray, gray, black
-
-  speed:  0.25–8.0 (default 1.0)
-  smooth: true/false interpolation (default true)
-  scale:  0.25–4.0 pattern zoom (default 1.0)
-  simultaneous: true/false — all colors at once vs. cycling (default false)
-
-  Examples:
-    /glint apply wave "red,blue,purple"
-    /glint apply fire "red,orange,yellow" 1.2 true
-    /glint apply crystal "cyan,white" 1.0 true 2.0 true
