@@ -397,7 +397,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * listener in CustomGlintClientInit; the first STENCIL_WRITE_LAYERING.setup of the frame
      * sees it true, calls glClear(STENCIL_BUFFER_BIT), and unsets it so later WRITE setups
      * (different texture → different cached RT) do NOT wipe earlier silhouettes from the
-     * stencil buffer. Without this gate, under Oculus's FullyBuffered drain (RT order is not
+     * stencil buffer. Without this gate, under a shader mod's FullyBuffered drain (RT order is not
      * call order) a later WRITE.setup's glClear can erase an earlier item's stencil stamp,
      * causing its TEST pass (stencil EQUAL 0) to pass everywhere → filled-blob outline.
      * Reproducible in 3.5D FPM whenever a held outlined item shares the screen with a
@@ -430,8 +430,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
             new RenderStateShard.WriteMaskStateShard(true, false);
 
     /**
-     * Forward-pass outline RenderType used under Iris/Oculus shaders. Why this exists:
-     * Oculus's ShaderKey enum has no OUTLINE entry, so RENDERTYPE_OUTLINE_SHADER draws fall
+     * Forward-pass outline RenderType used under shader mods. Why this exists:
+     * the shader mod's ShaderKey enum has no OUTLINE entry, so RENDERTYPE_OUTLINE_SHADER draws fall
      * through with no destination program under loaded packs. POSITION_COLOR_SHADER maps to
      * ShaderKey.BASIC_COLOR → gbuffers_basic, which is universal across shaderpacks. Format
      * is POSITION_COLOR only (no texture); the dilated mesh is rendered as a flat-colored
@@ -589,7 +589,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Sprite (2D flat item) outline render type for the shader-pack path. Vanilla's
      *  RenderType.entityCutoutNoCull does standard alpha blending → outline draws as a solid
      *  larger copy of the sword, hiding the original at the center. This variant keeps the
-     *  same shader (RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER, mapped to Iris ENTITIES_CUTOUT
+     *  same shader (RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER, mapped to ENTITIES_CUTOUT
      *  so it actually renders under shaderpacks) and the same NEW_ENTITY vertex format
      *  (matches what ItemRenderer.renderQuadList writes), but swaps the transparency to
      *  additive (LIGHTNING_TRANSPARENCY = SrcAlpha + One) and disables depth-write. Effect:
@@ -623,7 +623,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     // Flat-color sprite outline RT for the shader-pack path. POSITION_COLOR (no texture sample)
-    // so Iris's gbuffers_basic-style mapping emits pure outlineColor pixels instead of
+    // so the shader's gbuffers_basic-style mapping emits pure outlineColor pixels instead of
     // outlineColor × spriteTexel. Avoids the "second copy of the textured sprite" artifact
     // that the textured variant (forShaderSpriteOutline) produces under shaders, where the
     // additive blend state is ignored by the deferred composite. Translated copies + LEQUAL +
@@ -695,13 +695,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
         @Override public void unsetDefaultColor() {}
     }
 
-    // Force-binds the vanilla main render target (which has a stencil attachment via Iris's
-    // MixinRenderTarget_StencilBufferTest) and restores the previously-bound FBO on clear.
+    // Force-binds the vanilla main render target (which has a stencil attachment via the shader
+    // mod's stencil-enabling mixin) and restores the previously-bound FBO on clear.
     // Why: vanilla's MAIN_TARGET OutputStateShard is a no-op runnable that assumes the main FBO
-    // is already bound. Under Iris/Oculus's HAND_SOLID phase the gbuffer FBO is bound instead —
+    // is already bound. Under the shader mod's HAND_SOLID phase the gbuffer FBO is bound instead —
     // it has no stencil attachment, so stencil ops are silently dropped and our outline draws
     // the dilated mesh inside the silhouette (visible as a filled plane). Capturing the previous
-    // FBO and restoring it on clear keeps Iris's pipeline state intact.
+    // FBO and restoring it on clear keeps the shader pipeline state intact.
     private static final int[] SAVED_FBO = new int[1];
     private static final RenderStateShard.OutputStateShard FORCE_MAIN_TARGET =
             new RenderStateShard.OutputStateShard("custom_glint_force_main_target",
@@ -714,13 +714,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 });
 
     // Stencil setup baked into a LayeringStateShard so it runs at DRAW time, not submission time.
-    // Why: under Iris/Oculus shaders, RenderBuffers.bufferSource() is replaced with a FullyBufferedMultiBufferSource
+    // Why: under shader mods, RenderBuffers.bufferSource() is replaced with a FullyBufferedMultiBufferSource
     // that captures geometry into BufferSegments and replays them later via BufferSegmentRenderer.draw(), which
     // calls RenderType.setupRenderState() → shader → clearRenderState() at replay time. Raw GL11 calls made
     // between renderToBuffer() invocations execute at submission time and are gone before the actual draw —
     // the stencil pass would replay with full color writes (showing as a filled plane inside the outline) and
     // the test pass would replay without the EQUAL,0 stencil test. Putting the state into shards ties it to
-    // the draw, so it's correct under both vanilla and Oculus.
+    // the draw, so it's correct under both vanilla and shader-mod pipelines.
     // IMPORTANT shard contract:
     //   - WRITE.setup is the ONLY place that clears the stencil buffer (starts a new silhouette).
     //   - WRITE.clear disables stencil (cleanup if no test pass follows, e.g. minMax bounds empty).
@@ -738,7 +738,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     GL11.glStencilMask(0xFF);
                     // Only the FIRST outline of the frame clears the stencil buffer. See
                     // pendingFrameStencilClear's javadoc for why per-RT glClear breaks
-                    // multi-outline scenes under Oculus's FullyBuffered drain.
+                    // multi-outline scenes under the shader mod's FullyBuffered drain.
                     if (pendingFrameStencilClear) {
                         GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
                         pendingFrameStencilClear = false;
@@ -747,7 +747,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_REPLACE, GL11.GL_REPLACE);
                     // Match armorCutoutNoCull's VIEW_OFFSET_Z_LAYERING (polygonOffset(-1,-10))
                     // so stencil-write depth == armor depth → LEQUAL depth-test reliably PASSES
-                    // (via dppass=REPLACE) instead of relying on dpfail=REPLACE. Under Iris/Oculus
+                    // (via dppass=REPLACE) instead of relying on dpfail=REPLACE. Under shader mods
                     // the dpfail path is empirically not honored consistently — outline appears
                     // FILLED while standing, but visible behind the player while crouching (where
                     // polygon-offset slope differs between poses, making the dpfail vs dppass
@@ -907,12 +907,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
         });
         SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
         if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
-        // Force test-bucket drain AFTER all writes under Iris/Oculus FullyBuffered. Write RTs
+        // Force test-bucket drain AFTER all writes under shader-mod FullyBuffered. Write RTs
         // stay in default GENERAL_TRANSPARENT; tagging test as LINES (last bucket) guarantees
         // every WRITE.setup/draw/clear in the batched group completes before any TEST runs —
         // otherwise intra-bucket sort order is undefined and item 2's stencil stamp can land
         // AFTER its EQUAL-0 test, leaving stencil=0 inside the silhouette → filled-blob.
-        // Reflective; no-op when Iris/Oculus is absent. Single shared test RT covers both
+        // Reflective; no-op when no shader mod is present. Single shared test RT covers both
         // doItemOutline and doModelOutline → fixes 2-item, armor+item, and held+ground-drop
         // FPM 3.5D cases uniformly. ⚠ Does NOT affect normal 1P / 3P / ground (those don't
         // batch through FullyBuffered with multi-item entity groups).
@@ -1005,7 +1005,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     public static void doModelOutline(PoseStack poseStack, MultiBufferSource buffer,
             int packedLight, EntityModel<?> model, ResourceLocation texture, int color, EquipmentSlot slot) {
-        // Don't run outline geometry during Iris's shadow pass — wrong buffer format → endVertex crash.
+        // Don't run outline geometry during the shader mod's shadow pass — wrong buffer format → endVertex crash.
         if (isInShadowPass()) return;
         if (outlineSuppressor.getAsBoolean()) return;
         float oR = ((color >> 16) & 0xFF) / 255.0f;
@@ -1015,17 +1015,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // Under an active shader pack: stencil path is dead (no OUTLINE entry in ShaderKey enum),
         // and entity-outline-target routing depends on shaderpack final composite sampling that
         // target — most don't. Forward-pass approach: render dilated model with POSITION_COLOR
-        // shader (universal Iris mapping). Result is a flat-colored silhouette drawn 1.04× larger,
+        // shader (universal shader-mod mapping). Result is a flat-colored silhouette drawn 1.04× larger,
         // visible as a ring of pure color around the actual item. Shaderpack lighting still tints
         // the color since this goes through gbuffers_basic.
         //
-        // ⚠ Gate is `isShaderPackActive()` only — NOT `|| isIrisInstalled()`. Forward-pass uses
+        // ⚠ Gate is `isShaderPackActive()` only — NOT `|| isShaderModInstalled()`. Forward-pass uses
         // POSITION_COLOR with no texture, so the dilated silhouette traces the full HumanoidModel
         // bone geometry (head/body/arms/legs) instead of the armored coverage. Under
-        // Oculus-installed-no-pack the stencil path below works correctly because both passes
+        // shader-mod-installed-no-pack the stencil path below works correctly because both passes
         // are driven through fresh local BufferBuilders + RenderType.end(...) — bypassing
-        // FullyBufferedMultiBufferSource (whose endBatch(RenderType) is a no-op, see oculus jar
-        // m_109912_). Items still gate on isShaderPackActive() only for a different reason —
+        // FullyBufferedMultiBufferSource (whose endBatch(RenderType) is a no-op).
+        // Items still gate on isShaderPackActive() only for a different reason —
         // see doItemOutline / doBewlrOutline.
         if (isShaderPackActive()) {
             int rByte = (color >> 16) & 0xFF;
@@ -1040,7 +1040,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             // otherwise a helmet's inflated mesh extends downward into the chest space and
             // the dilated back faces of one piece read through the front faces of neighbors,
             // producing the "plane bleeding through" artifact the user reported.
-            RenderType outlineRT = asIrisOutline("custom_glint:shader_outline_armor_iris", forShaderArmorOutline());
+            RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_armor_wrap", forShaderArmorOutline());
             float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
@@ -1083,20 +1083,20 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // just queued by HumanoidArmorLayer into a FullyBuffered SegmentedBufferBuilder —
         // are mixed into the same deferred flush as our stencil-write and stencil-test, and
         // the eventual batched draw fills the silhouette instead of forming a ring under
-        // Oculus-no-pack in 3P. Items work without this issue because doItemOutline already
+        // shader-mod-no-pack in 3P. Items work without this issue because doItemOutline already
         // pre-flushes; armor was the odd one out.
         if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
 
         // Route both stencil passes through the outer buffer source (NOT local BufferBuilders).
-        // Why: under Oculus's FullyBufferedMultiBufferSource, `endBatch(RenderType)` is a no-op
-        // (oculus jar m_109912_), so single-RT flushes don't draw immediately — but consecutive
-        // `getBuffer(rt)` calls inside an entity render get an insertion-order EDGE added to
-        // GraphTranslucencyRenderOrderManager's digraph (only when `inGroup`, set by Oculus's
-        // MixinLevelRenderer.preRenderEntity/postRenderEntity around each entity). That edge
-        // forces WRITE→TEST order in the eventual no-arg endBatch flush.
+        // Why: under the shader mod's FullyBufferedMultiBufferSource, `endBatch(RenderType)` is a
+        // no-op, so single-RT flushes don't draw immediately — but consecutive `getBuffer(rt)`
+        // calls inside an entity render get an insertion-order EDGE added to
+        // GraphTranslucencyRenderOrderManager's digraph (only when `inGroup`, set by the shader
+        // mod's per-entity render hook). That edge forces WRITE→TEST order in the eventual no-arg
+        // endBatch flush.
         //
         // Local-BufferBuilder + RenderType.end() (previous approach) bypasses the buffer source
-        // entirely. Empirically that BREAKS armor outline in 3P under Oculus — even though the
+        // entirely. Empirically that BREAKS armor outline in 3P under shader mods — even though the
         // two passes draw synchronously in order, injecting drawWithShader calls while the
         // FullyBuffered SegmentedBufferBuilders are mid-recording vertices for this same player
         // entity corrupts state (filled silhouette / Z artifacts / per-frame flicker). Hand
@@ -1209,18 +1209,18 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
         // Shader-pack forward-pass path: see doModelOutline for rationale.
         //
-        // ⚠ DO NOT widen this gate to `|| isIrisInstalled()` to match doModelOutline. Items go
-        // INVISIBLE under Oculus-installed-no-pack on the forward-pass path: BEWLR/sprite RTs
-        // use entity-shader-based render types, which Iris's FullyBufferedMultiBufferSource
+        // ⚠ DO NOT widen this gate to `|| isShaderModInstalled()` to match doModelOutline. Items go
+        // INVISIBLE under shader-mod-installed-no-pack on the forward-pass path: BEWLR/sprite RTs
+        // use entity-shader-based render types, which the shader mod's FullyBufferedMultiBufferSource
         // batches and flushes at a phase where the depth target is wrong for the outline geometry.
-        // Stencil path under Oculus-no-pack is broken too (solid fill), but visible. Visible-but-
-        // wrong > invisible.
+        // Stencil path under shader-mod-no-pack is broken too (solid fill), but visible.
+        // Visible-but-wrong > invisible.
         if (isShaderPackActive()) {
             int rByte = (color >> 16) & 0xFF;
             int gByte = (color >>  8) & 0xFF;
             int bByte =  color        & 0xFF;
             if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
-            RenderType outlineRT = asIrisOutline("custom_glint:shader_outline_bewlr_iris", forShaderOutline());
+            RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_bewlr_wrap", forShaderOutline());
             VertexConsumer outlineBuf = new PositionColorOnlyConsumer(
                     buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
             IN_OUTLINE.set(true);
@@ -1244,7 +1244,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         Minecraft.getInstance().getMainRenderTarget().enableStencil();
         IN_OUTLINE.set(true);
         try {
-            // Pass 1 (stencil silhouette) — masks + stencil setup baked into writeType shards (Oculus-safe).
+            // Pass 1 (stencil silhouette) — masks + stencil setup baked into writeType shards (shader-mod-safe).
             model.renderToBuffer(poseStack, buffer.getBuffer(writeType), packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
             if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(writeType);
 
@@ -1257,7 +1257,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             poseStack.popPose();
             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
             // Trailing full drain — see doItemOutline for the rationale (atomic per-item stencil
-            // pipeline under Oculus FullyBuffered, otherwise the last item of the frame stays
+            // pipeline under shader-mod FullyBuffered, otherwise the last item of the frame stays
             // queued and its stencil pass sees disrupted state at end-of-frame drain).
             if (buffer instanceof MultiBufferSource.BufferSource postBs) postBs.endBatch();
         } finally {
@@ -1271,13 +1271,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * flushing other items in the main batch while colorMask is disabled. Uses IN_OUTLINE
      * to prevent recursive glint application during the stencil/outline passes.
      *
-     * ── OPEN BUG: FPM 3.5D + Oculus, two held items → 2nd item's outline FILLS ──
-     * Reproduces only in FirstPersonMod 3.5D mode with Oculus installed (no shader pack needed).
+     * ── OPEN BUG: FPM 3.5D + shader mod, two held items → 2nd item's outline FILLS ──
+     * Reproduces only in FirstPersonMod 3.5D mode with a shader mod installed (no shader pack needed).
      * The FIRST-rendered held item outlines correctly; the SECOND fills entirely with the
      * outline color. 3P, vanilla 1P, ground items, and 1 held item all work flawlessly. Repros
      * with two swords (no BEWLR needed), so it's not a BEWLR-path interaction. Both items are
      * rendered inside FPM's player-as-entity render at HEAD of LevelRenderer.render (begins != 0
-     * → Oculus's FullyBufferedMultiBufferSource is in effect).
+     * → the shader mod's FullyBufferedMultiBufferSource is in effect).
      *
      * Attempts that did NOT fix it (all reverted unless noted):
      *   1. Trailing `preBs.endBatch()` at the END of doItemOutline / doBewlrOutline to force
@@ -1294,7 +1294,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *      doModelOutline, gated on FPM-3.5D-active-in-first-person via a new
      *      `CustomGlintRenderer.perItemStencilClear` BooleanSupplier installed by
      *      FirstPersonCompat (FirstPersonAPI.isEnabled() && camera.isFirstPerson()).
-     *      REGRESSION: under Oculus-no-pack + FPM 3.5D, the 1-item case AND armor both started
+     *      REGRESSION: under shader-mod-no-pack + FPM 3.5D, the 1-item case AND armor both started
      *      filling (worse than pre-fix). Reason: the WRITE shard's `setup()` only runs at drain
      *      time under FullyBuffered, not at recording time, so recording-side re-arm doesn't
      *      produce per-item glClear(STENCIL) — it just keeps the gate true long enough that the
@@ -1307,24 +1307,24 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *      so all three outline entry points took the existing POSITION_COLOR / 4-translate path
      *      whenever FPM was rendering the player. Intent: trade shape-perfect stencil for stability
      *      inside FPM's player-as-entity render. REGRESSION (significantly worse): in FPM 3.5D with
-     *      Oculus-installed-no-pack, items had NO outline at all, and armor's outline traced the
+     *      shader-mod-installed-no-pack, items had NO outline at all, and armor's outline traced the
      *      full bone geometry (the "hole texture space" — bone rectangles where armor coverage is
      *      transparent) instead of the armor silhouette. Root cause: the shaderpack-active branch's
      *      RTs (`forShaderArmorOutline` / `forShaderOutline` / `forShaderSpriteOutline`) and the
      *      eye-space-Z trick rely on a real shaderpack composite to land their gbuffers_* output —
-     *      with Oculus loaded but no pack, those RTs route through entity-shader programs whose
+     *      with the shader mod loaded but no pack, those RTs route through entity-shader programs whose
      *      depth/color targets don't match the main FBO at draw time, so items go invisible. And
      *      the armor branch uses POSITION_COLOR with no texture sampling, so alpha-discard can't
      *      reject transparent armor texels → outline becomes the full HumanoidModel bone hull. The
      *      same warnings already in doBewlrOutline:1083 and doModelOutline:923 ("DO NOT widen to
-     *      `|| isIrisInstalled()`") apply equally to FPM-active-no-pack: Oculus + no-pack is the
-     *      poison context regardless of whether FPM is the trigger. Reverted entirely.
+     *      `|| isShaderModInstalled()`") apply equally to FPM-active-no-pack: shader-mod + no-pack
+     *      is the poison context regardless of whether FPM is the trigger. Reverted entirely.
      *
      * Things to try next (notes from analysis, none implemented yet):
      *   - Log inside STENCIL_WRITE_LAYERING_ITEM.setup() / .clear() to confirm how many times
      *     each runs per frame in the 2-sword FPM 3.5D case, and whether glClear(STENCIL) fires
      *     at all for the second item. Speculation has run its course — runtime evidence first.
-     *   - Inspect Oculus's `vertices/MixinBufferBuilder` and `MixinGameRenderer` (not yet
+     *   - Inspect the shader mod's `vertices/MixinBufferBuilder` and `MixinGameRenderer` (not yet
      *     decompiled — context2 line 159/161). Either may explain why the 2nd item's stencil
      *     stamps don't land where expected under FullyBuffered drain.
      *   - Consider an FPM-3.5D-specific code path that bypasses stencil entirely for held items
@@ -1354,21 +1354,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
         Minecraft mc = Minecraft.getInstance();
 
         // Shader-pack forward-pass path: render dilated item geometry through POSITION_COLOR_SHADER
-        // (universal Iris ShaderKey.BASIC_COLOR mapping). All item-render geometry passes through the
+        // (universal shader-mod ShaderKey.BASIC_COLOR mapping). All item-render geometry passes through the
         // wrapping MultiBufferSource → PositionColorOnlyConsumer, producing a flat-colored dilated
         // silhouette. Scaled around the model AABB centroid (captured on the first pass) so the
         // outline ring stays concentric with the item.
         // Items only take forward-pass when a pack is ACTUALLY active — see doBewlrOutline for
-        // the full rationale. ⚠ DO NOT widen this to `|| isIrisInstalled()`.
+        // the full rationale. ⚠ DO NOT widen this to `|| isShaderModInstalled()`.
         if (isShaderPackActive()) {
-            // Under Iris/Oculus shaders the stencil pipeline is dead (no OUTLINE entry in
+            // Under shader mods the stencil pipeline is dead (no OUTLINE entry in
             // ShaderKey enum). Split by item shape:
             //   - Custom-renderer (3D BEWLR) items: dilated POSITION_COLOR mesh around the AABB
             //     centroid via the universally-mapped BASIC_COLOR shader. Result is a flat-color
             //     silhouette slightly larger than the item — reads as an outline at the edges.
             //   - Flat sprite / BakedModel items (swords, tools, modded 3D-modeled items, ground
             //     drops): 4-direction translated pass using RenderType.entityCutoutNoCull(blocks
-            //     atlas) which Iris maps to ENTITIES_CUTOUT (gbuffers_entities). The blocks atlas
+            //     atlas) which the shader mod maps to ENTITIES_CUTOUT (gbuffers_entities). The blocks atlas
             //     alpha-discard preserves the sprite silhouette; ColorOverrideConsumer forces the
             //     vertex color to the outline color so the shader emits ~ outlineColor × texColor.
             net.minecraft.client.player.LocalPlayer rp = mc.player;
@@ -1382,7 +1382,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             boolean customRendererS = mc.getItemRenderer().getModel(stack, mc.level, rp, 0).isCustomRenderer()
                     && !flatOnGroundS;
 
-            // Flush the buffer source BEFORE drawing the outline. Under Oculus's batched
+            // Flush the buffer source BEFORE drawing the outline. Under the shader mod's batched
             // pipeline the item's quads and our outline quads share the same BufferSource and
             // flush in render-type sort order, NOT call order — so the outline can end up
             // flushed before the item, meaning the depth buffer has nothing to test against
@@ -1410,7 +1410,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     float cx = (minMax[0] + minMax[3]) * 0.5f;
                     float cy = (minMax[1] + minMax[4]) * 0.5f;
                     float cz = (minMax[2] + minMax[5]) * 0.5f;
-                    RenderType outlineRT = asIrisOutline("custom_glint:shader_outline_3d_iris", forShaderArmorOutline());
+                    RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_3d_wrap", forShaderArmorOutline());
                     MultiBufferSource outSrc = rt -> new PositionColorOnlyConsumer(
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                     poseStack.pushPose();
@@ -1423,14 +1423,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     poseStack.popPose();
                 } else {
                     // 2D sprite / BakedModel path: 4-translation, entityCutoutNoCull on blocks atlas.
-                    // Iris ENTITIES_CUTOUT mapping is universal; alpha-discard preserves the sprite
+                    // ENTITIES_CUTOUT mapping is universal across shader mods; alpha-discard preserves the sprite
                     // silhouette so the dilated copies form a silhouette-shaped halo rather than a
                     // rectangle. ColorOverrideConsumer forces vertex color to the outline color so
                     // the shader emits ~ outlineColor × spriteTexel. The "extra textured copy" issue
                     // this used to cause under shaders is fixed by the eye-space Z push-back below,
                     // which guarantees the copies sit behind the item depth; only the fringe
                     // extending past the original silhouette survives LEQUAL and is visible.
-                    RenderType outlineRT = asIrisOutline("custom_glint:shader_outline_sprite_iris",
+                    RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_sprite_wrap",
                             forShaderSpriteOutline(new ResourceLocation("minecraft", "textures/atlas/blocks.png")));
                     MultiBufferSource outSrc = rt -> new FullColorOverrideConsumer(
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
@@ -1444,7 +1444,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     // Eye-space Z push-back. mulLocal(T) computes T * pose, so T is applied in
                     // eye-space — translate(_, _, -dz) shifts the dilated copies away from the
                     // camera (eye-space camera looks down -Z, so more-negative Z = further). This
-                    // replaces PUSH_BACK_LAYERING's glPolygonOffset, which Iris does not honor
+                    // replaces PUSH_BACK_LAYERING's glPolygonOffset, which shader mods do not honor
                     // reliably in the outline phase under shader packs — without an actual depth
                     // separation, LEQUAL passes across the entire dilated rectangle and the outline
                     // fills the interior of the sprite. 0.03 in eye-space ≈ 3 cm; large enough to
@@ -1456,9 +1456,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     // large enough to clear z-fight the perspective shrinkage projects the dilated
                     // copies toward screen-center (visible as the outline drifting toward the arm in
                     // 1P, because the held item sits off-center). The 1P hand pass renders
-                    // sequentially (no Iris batched flushing), so the RT's baked PUSH_BACK_LAYERING
+                    // sequentially (no shader-mod batched flushing), so the RT's baked PUSH_BACK_LAYERING
                     // polygon-offset stays alive and is sufficient to push the copies behind the
-                    // sprite without any xy shift. 3P/ground keep the eye-Z translate because Iris
+                    // sprite without any xy shift. 3P/ground keep the eye-Z translate because the shader mod
                     // drops the polygon-offset state during its batched outline phase there.
                     boolean isGroundOrFixedDz = displayContext == ItemDisplayContext.GROUND
                             || displayContext == ItemDisplayContext.FIXED;
@@ -1518,7 +1518,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         try {
             // Route the stencil pass through writeType (MAIN_TARGET + NO_WRITE writeMask + stencil-write
             // layering shard) so the stencil is written to the same FBO the outline pass reads from, and
-            // so color/depth/stencil GL state is applied at DRAW time (Oculus replays buffered segments
+            // so color/depth/stencil GL state is applied at DRAW time (shader mods replay buffered segments
             // long after submission — raw GL11 calls between submissions would be lost). Using native
             // item render types here would bind their own output FBO (ITEM_ENTITY_TARGET, etc.), leaving
             // the main FBO stencil all-zeros and causing the outline to fill the entire item silhouette.
@@ -1587,7 +1587,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     // LEQUAL depth-test fail inside the silhouette → no draw, regardless of stencil
                     // state. Apply to BOTH 1P and 3P: 3.5D FPM renders the held item as 3P (attached
                     // to the player's hand bone), so without this it relied entirely on the stencil
-                    // mask — which fails under Oculus's FullyBuffered drain when a second outlined
+                    // mask — which fails under shader-mod FullyBuffered drain when a second outlined
                     // item shares the screen. Depth-based masking is the reliable backstop.
                     float czOff    = (is1P || is3P) ? -0.01f : 0.0f;
                     float dw = (minMax[3] - minMax[0]) / 16.0f * stepScale;
@@ -1616,7 +1616,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
             }
             // Force a full drain so this item's silhouette+test pipeline executes atomically.
-            // Under Oculus FullyBuffered the per-RT endBatch(rt) calls above are no-ops; without
+            // Under shader-mod FullyBuffered the per-RT endBatch(rt) calls above are no-ops; without
             // this trailing drain, the LAST held item of the frame stays queued until end-of-frame,
             // by which time stencil state from earlier items has been disrupted → silhouette stamp
             // misses → testType (EQUAL,0) passes everywhere → filled-blob. The first item already
@@ -1716,153 +1716,156 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     private CustomGlintRenderer() { super("", () -> {}, () -> {}); }
 
-    // ── Iris/Oculus shader detection ──────────────────────────────────────────
-    // Reflective so we don't need a compileOnly dep on Iris/Oculus. Both ship the
-    // same `net.irisshaders.iris.api.v0.IrisApi` public surface. Resolved once and
-    // cached; called every outline draw, so the Method is cached as a MethodHandle.
+    // ── Shader-mod detection ──────────────────────────────────────────────────
+    // Reflective so we don't need a compileOnly dep on the shader mod. Common shader
+    // mods expose the same public detection surface, resolved once and cached;
+    // called every outline draw, so the Method is cached as a MethodHandle.
     //
-    // Why this matters here: Oculus's ShaderKey enum (the master list of every
+    // Why this matters here: the shader mod's ShaderKey enum (the master list of every
     // RenderType→shader-program mapping under a loaded pack) has no `OUTLINE` entry.
     // That means draws using RENDERTYPE_OUTLINE_SHADER fall through to no destination
     // program under shaders — the stencil setup runs, but the visible color attachment
     // never receives our outline geometry. When a pack is loaded, we route the dilated
     // outline through vanilla's OutlineBufferSource instead — that pipeline (entity
-    // outline target + EntityOutlineShader post-process composite) is one Iris/Oculus
-    // explicitly preserves to keep vanilla glowing working under shaders.
-    private static volatile boolean IRIS_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method IRIS_GET_INSTANCE = null;
-    private static volatile java.lang.reflect.Method IRIS_IS_IN_USE = null;
+    // outline target + EntityOutlineShader post-process composite) is one the shader
+    // mod explicitly preserves to keep vanilla glowing working under shaders.
+    private static volatile boolean SHADER_LOOKUP_DONE = false;
+    private static volatile java.lang.reflect.Method SHADER_GET_INSTANCE = null;
+    private static volatile java.lang.reflect.Method SHADER_IS_IN_USE = null;
 
     public static boolean isShaderPackActive() {
-        if (!IRIS_LOOKUP_DONE) {
+        if (!SHADER_LOOKUP_DONE) {
             synchronized (CustomGlintRenderer.class) {
-                if (!IRIS_LOOKUP_DONE) {
+                if (!SHADER_LOOKUP_DONE) {
                     try {
+                        // FQN reads "iris" because Forge Oculas is a port of Fabric Iris
+                        // one and kept the original `net.irisshaders.*` package paths verbatim —
+                        // this same class is present on Forge. Do not "fix" it.
                         Class<?> api = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-                        IRIS_GET_INSTANCE = api.getMethod("getInstance");
-                        IRIS_IS_IN_USE = api.getMethod("isShaderPackInUse");
+                        SHADER_GET_INSTANCE = api.getMethod("getInstance");
+                        SHADER_IS_IN_USE = api.getMethod("isShaderPackInUse");
                     } catch (Throwable ignored) {
-                        IRIS_GET_INSTANCE = null;
-                        IRIS_IS_IN_USE = null;
+                        SHADER_GET_INSTANCE = null;
+                        SHADER_IS_IN_USE = null;
                     }
-                    IRIS_LOOKUP_DONE = true;
+                    SHADER_LOOKUP_DONE = true;
                 }
             }
         }
-        if (IRIS_IS_IN_USE == null) return false;
+        if (SHADER_IS_IN_USE == null) return false;
         try {
-            Object inst = IRIS_GET_INSTANCE.invoke(null);
-            return (Boolean) IRIS_IS_IN_USE.invoke(inst);
+            Object inst = SHADER_GET_INSTANCE.invoke(null);
+            return (Boolean) SHADER_IS_IN_USE.invoke(inst);
         } catch (Throwable t) {
             return false;
         }
     }
 
     /**
-     * True iff Iris/Oculus is installed (IrisApi class resolved), regardless of whether a
-     * shaderpack is currently active. Oculus replaces the buffer-source pipeline whenever it's
-     * loaded, which breaks our stencil-based outline path even with no pack — so the forward-pass
-     * outline branch needs to trigger on presence, not just active-pack.
+     * True iff a shader mod is installed (detection API class resolved), regardless of whether
+     * a shaderpack is currently active. The shader mod replaces the buffer-source pipeline
+     * whenever it's loaded, which breaks our stencil-based outline path even with no pack —
+     * so the forward-pass outline branch needs to trigger on presence, not just active-pack.
      */
-    public static boolean isIrisInstalled() {
-        if (!IRIS_LOOKUP_DONE) isShaderPackActive();
-        return IRIS_IS_IN_USE != null;
+    public static boolean isShaderModInstalled() {
+        if (!SHADER_LOOKUP_DONE) isShaderPackActive();
+        return SHADER_IS_IN_USE != null;
     }
 
-    // Under Iris/Oculus, every RenderType is mixed in to implement BlendingStateHolder with a
+    // Under shader mods, every RenderType is mixed in to implement BlendingStateHolder with a
     // TransparencyType field (default GENERAL_TRANSPARENT). The batched FullyBufferedMultiBuffer-
     // Source flushes by TransparencyType in enum order (OPAQUE → OPAQUE_DECAL → GENERAL_TRANSPARENT
     // → DECAL → WATER_MASK → LINES). Items use GENERAL_TRANSPARENT; if our outline RT also sits
     // there, the order between item and outline within the same bucket is undefined → outline can
     // flush before item → depth buffer empty when outline draws → polygon-offset/front-face-cull
     // can't reject the interior → outline reads as a filled silhouette. Tagging the outline RT as
-    // LINES (last bucket) forces Iris to flush ALL item geometry first, then our outline — depth
+    // LINES (last bucket) forces the shader mod to flush ALL item geometry first, then our outline — depth
     // ordering works in every camera context (1P / 3P / GROUND). Reflective to avoid compileOnly.
-    private static volatile boolean IRIS_TT_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method IRIS_TT_SET = null;
-    private static volatile Object IRIS_TT_LINES = null;
-    private static final java.util.Set<RenderType> IRIS_TT_TAGGED =
+    private static volatile boolean SHADER_TT_LOOKUP_DONE = false;
+    private static volatile java.lang.reflect.Method SHADER_TT_SET = null;
+    private static volatile Object SHADER_TT_LINES = null;
+    private static final java.util.Set<RenderType> SHADER_TT_TAGGED =
             java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public static void tagAsLateRenderForShaders(RenderType rt) {
         if (rt == null) return;
-        if (IRIS_TT_TAGGED.contains(rt)) return;
-        if (!IRIS_TT_LOOKUP_DONE) {
+        if (SHADER_TT_TAGGED.contains(rt)) return;
+        if (!SHADER_TT_LOOKUP_DONE) {
             synchronized (CustomGlintRenderer.class) {
-                if (!IRIS_TT_LOOKUP_DONE) {
+                if (!SHADER_TT_LOOKUP_DONE) {
                     try {
                         Class<?> ttCls = Class.forName("net.irisshaders.batchedentityrendering.impl.TransparencyType");
                         Class<?> bshCls = Class.forName("net.irisshaders.batchedentityrendering.impl.BlendingStateHolder");
-                        IRIS_TT_SET = bshCls.getMethod("setTransparencyType", ttCls);
+                        SHADER_TT_SET = bshCls.getMethod("setTransparencyType", ttCls);
                         @SuppressWarnings({"rawtypes", "unchecked"})
                         Object lines = Enum.valueOf((Class<? extends Enum>) ttCls, "LINES");
-                        IRIS_TT_LINES = lines;
+                        SHADER_TT_LINES = lines;
                     } catch (Throwable ignored) {
-                        IRIS_TT_SET = null;
-                        IRIS_TT_LINES = null;
+                        SHADER_TT_SET = null;
+                        SHADER_TT_LINES = null;
                     }
-                    IRIS_TT_LOOKUP_DONE = true;
+                    SHADER_TT_LOOKUP_DONE = true;
                 }
             }
         }
-        if (IRIS_TT_SET != null && IRIS_TT_LINES != null) {
-            try { IRIS_TT_SET.invoke(rt, IRIS_TT_LINES); } catch (Throwable ignored) {}
+        if (SHADER_TT_SET != null && SHADER_TT_LINES != null) {
+            try { SHADER_TT_SET.invoke(rt, SHADER_TT_LINES); } catch (Throwable ignored) {}
         }
-        IRIS_TT_TAGGED.add(rt);
+        SHADER_TT_TAGGED.add(rt);
     }
 
-    // Iris/Oculus's official extension point for tagging a RenderType as "outline geometry."
+    // The shader mod's official extension point for tagging a RenderType as "outline geometry."
     // Wrapping a RT with IsOutlineRenderStateShard.INSTANCE via OuterWrappedRenderType causes
     // GbufferPrograms.beginOutline()/endOutline() to fire around the draw call, which is what
-    // Iris itself uses (see MixinLevelRenderer.iris$beginBlockOutline) to mark the vanilla
-    // block-selection outline. Without this tag, our shader-path outline geometry gets routed
-    // through Iris's batched FullyBufferedMultiBufferSource alongside the item geometry and
-    // replayed in render-type sort order — the outline can flush before the item, leaving the
-    // depth buffer empty when LEQUAL runs, so polygon-offset/front-face-cull can't reject the
-    // dilated copies over the interior and the outline reads as a filled silhouette. In 1P
-    // this happened to work because the hand pass renders sequentially; in 3P/GROUND the
-    // entity batch is what breaks ordering. Tagging routes the outline through Iris's outline
-    // phase so it draws in the correct depth context. Reflective lookup so no compileOnly dep.
-    private static volatile boolean IRIS_OUTLINE_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method IRIS_WRAP_OUTLINE_RT = null;
-    private static volatile RenderStateShard IRIS_OUTLINE_SHARD = null;
-    private static final Map<RenderType, RenderType> IRIS_OUTLINE_WRAP_CACHE = new ConcurrentHashMap<>();
+    // the shader mod itself uses to mark the vanilla block-selection outline. Without this tag,
+    // our shader-path outline geometry gets routed through the shader mod's batched
+    // FullyBufferedMultiBufferSource alongside the item geometry and replayed in render-type sort
+    // order — the outline can flush before the item, leaving the depth buffer empty when LEQUAL
+    // runs, so polygon-offset/front-face-cull can't reject the dilated copies over the interior
+    // and the outline reads as a filled silhouette. In 1P this happened to work because the hand
+    // pass renders sequentially; in 3P/GROUND the entity batch is what breaks ordering. Tagging
+    // routes the outline through the shader mod's outline phase so it draws in the correct depth
+    // context. Reflective lookup so no compileOnly dep.
+    private static volatile boolean SHADER_OUTLINE_LOOKUP_DONE = false;
+    private static volatile java.lang.reflect.Method SHADER_WRAP_OUTLINE_RT = null;
+    private static volatile RenderStateShard SHADER_OUTLINE_SHARD = null;
+    private static final Map<RenderType, RenderType> SHADER_OUTLINE_WRAP_CACHE = new ConcurrentHashMap<>();
 
-    public static RenderType asIrisOutline(String name, RenderType rt) {
-        if (!IRIS_OUTLINE_LOOKUP_DONE) {
+    public static RenderType asShaderOutline(String name, RenderType rt) {
+        if (!SHADER_OUTLINE_LOOKUP_DONE) {
             synchronized (CustomGlintRenderer.class) {
-                if (!IRIS_OUTLINE_LOOKUP_DONE) {
+                if (!SHADER_OUTLINE_LOOKUP_DONE) {
                     try {
                         Class<?> wrapCls = Class.forName("net.irisshaders.iris.layer.OuterWrappedRenderType");
                         Class<?> shardCls = Class.forName("net.irisshaders.iris.layer.IsOutlineRenderStateShard");
-                        IRIS_WRAP_OUTLINE_RT = wrapCls.getMethod("wrapExactlyOnce",
+                        SHADER_WRAP_OUTLINE_RT = wrapCls.getMethod("wrapExactlyOnce",
                                 String.class, RenderType.class, RenderStateShard.class);
-                        IRIS_OUTLINE_SHARD = (RenderStateShard) shardCls.getField("INSTANCE").get(null);
+                        SHADER_OUTLINE_SHARD = (RenderStateShard) shardCls.getField("INSTANCE").get(null);
                     } catch (Throwable ignored) {
-                        IRIS_WRAP_OUTLINE_RT = null;
-                        IRIS_OUTLINE_SHARD = null;
+                        SHADER_WRAP_OUTLINE_RT = null;
+                        SHADER_OUTLINE_SHARD = null;
                     }
-                    IRIS_OUTLINE_LOOKUP_DONE = true;
+                    SHADER_OUTLINE_LOOKUP_DONE = true;
                 }
             }
         }
-        if (IRIS_WRAP_OUTLINE_RT == null || IRIS_OUTLINE_SHARD == null) return rt;
-        // Without an active shaderpack, the wrap actively harms entity-shader-based RTs: Iris
-        // auto-injects EntityRenderStateShard onto RENDERTYPE_ENTITY_*_SHADER types, so the
-        // resulting composite fires beginEntities() then beginOutline() — the second call hits
-        // GbufferPrograms.checkReentrancy() with entities=true and throws, aborting the draw.
-        // Iris's outline routing only matters during pack composite anyway, so skip it here.
+        if (SHADER_WRAP_OUTLINE_RT == null || SHADER_OUTLINE_SHARD == null) return rt;
+        // Without an active shaderpack, the wrap actively harms entity-shader-based RTs: the
+        // shader mod auto-injects EntityRenderStateShard onto RENDERTYPE_ENTITY_*_SHADER types,
+        // so the resulting composite fires beginEntities() then beginOutline() — the second call
+        // hits GbufferPrograms.checkReentrancy() with entities=true and throws, aborting the draw.
+        // The shader mod's outline routing only matters during pack composite anyway, so skip it here.
         if (!isShaderPackActive()) return rt;
-        return IRIS_OUTLINE_WRAP_CACHE.computeIfAbsent(rt, k -> {
+        return SHADER_OUTLINE_WRAP_CACHE.computeIfAbsent(rt, k -> {
             try {
-                return (RenderType) IRIS_WRAP_OUTLINE_RT.invoke(null, name, k, IRIS_OUTLINE_SHARD);
+                return (RenderType) SHADER_WRAP_OUTLINE_RT.invoke(null, name, k, SHADER_OUTLINE_SHARD);
             } catch (Throwable t) {
                 return k;
             }
         });
     }
 
-    // Iris's shadow pass re-invokes the full entity/item render pipeline to populate the
+    // The shader mod's shadow pass re-invokes the full entity/item render pipeline to populate the
     // shadowmap. If we run our outline path during shadows, two things go wrong:
     //   1) The shadow pass writes into a separate framebuffer with its own format constraints,
     //      and getBuffer() returns a buffer with a different vertex format than we expect →
