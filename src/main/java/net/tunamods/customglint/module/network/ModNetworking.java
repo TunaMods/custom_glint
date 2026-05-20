@@ -27,5 +27,7 @@ public class ModNetworking {
         CHANNEL.registerMessage(1, GlintDesignSyncPacket.class, GlintDesignSyncPacket::encode, GlintDesignSyncPacket::decode, GlintDesignSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         // 2 — GlintMountArmorSyncPacket  S→C  syncs IaF hippogryph/hippocampus armor ItemStack to clients (compat — only sent by IaF compat code)
         CHANNEL.registerMessage(2, GlintMountArmorSyncPacket.class, GlintMountArmorSyncPacket::encode, GlintMountArmorSyncPacket::decode, GlintMountArmorSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        // 3 — GiveGlintTrimPacket  C→S  gives a GlintTrimItem with current editor settings
+        CHANNEL.registerMessage(3, GiveGlintTrimPacket.class, GiveGlintTrimPacket::encode, GiveGlintTrimPacket::decode, GiveGlintTrimPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 }

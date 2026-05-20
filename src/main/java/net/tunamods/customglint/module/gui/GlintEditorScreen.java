@@ -1,8 +1,13 @@
 package net.tunamods.customglint.module.gui;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.network.GlintApplyPacket;
+import net.tunamods.customglint.module.network.GiveGlintTrimPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -28,7 +33,7 @@ public class GlintEditorScreen extends Screen {
 
     // ── Layout constants ────────────────────────────────────────────────────
     private static final int PANEL_W    = 300;
-    private static final int PANEL_H    = 208;
+    private static final int PANEL_H    = 270;
     private static final int PREVIEW_SZ = 80;
 
     private static ResourceLocation designRL(String name) {
@@ -62,6 +67,17 @@ public class GlintEditorScreen extends Screen {
 
     private int editingColorIdx = 0;
 
+    // glow state
+    private boolean glowEnabled = false;
+    private final List<Integer> glowOverrideColors = new ArrayList<>();
+    private boolean editingGlowColor = false;
+    private int editingGlowColorIdx = 0;
+
+    // trim name and color
+    private String trimName = "";
+    private int trimNameColor = 0xFFFFFFFF;
+    private int nameEditR = 0xFF, nameEditG = 0xFF, nameEditB = 0xFF;
+
     private int editR = 0x88, editG = 0x44, editB = 0xEE, editA = 0xFF;
 
     private Item      previewItem  = Items.NETHERITE_SWORD;
@@ -81,21 +97,31 @@ public class GlintEditorScreen extends Screen {
     private EditBox      designSearchBox;
     private static final int DESIGN_ROWS = 10, DESIGN_ROW_H = 13;
 
+    // ── Glint import overlay ──────────────────────────────────────────────────
+    private boolean      showImportPicker = false;
+    private List<String> availableGlints  = new ArrayList<>();
+    private int          importScroll     = 0;
+    private EditBox      importSearchBox;
+    private static final int IMPORT_ROWS = 10, IMPORT_ROW_H = 13;
+
     // ── Widget refs ─────────────────────────────────────────────────────────
     private EditBox hexBox, rBox, gBox, bBox, aBox;
     private EditBox searchBox;
+    private EditBox trimNameBox, nameHexBox;
+    private EditBox glowHexBox;
 
     private int px, py;
 
     // ── Construction ────────────────────────────────────────────────────────
 
     public GlintEditorScreen(InteractionHand hand) {
-        super(Component.literal("Glint Editor"));
+        super(Component.translatable("screen.customglint.glint_editor.title"));
         this.wandHand = hand;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
-            CustomGlint.Data d = CustomGlint.read(mc.player.getItemInHand(hand));
+            ItemStack wandStack = mc.player.getItemInHand(hand);
+            CustomGlint.Data d = CustomGlint.read(wandStack);
             if (d != null) {
                 for (CustomGlint.Layer layer : d.layers()) {
                     layerDesigns.add(designShortName(layer.design()));
@@ -108,6 +134,8 @@ public class GlintEditorScreen extends Screen {
                     layerSimultaneous.add(layer.simultaneous());
                 }
             }
+            glowEnabled = CustomGlint.isGlowing(wandStack);
+            for (int c : CustomGlint.getGlowColors(wandStack)) glowOverrideColors.add(c);
         }
         if (layerDesigns.isEmpty()) {
             layerDesigns.add("sparkle");
@@ -129,8 +157,13 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void loadEditRGB() {
-        List<Integer> colors = currentColors();
-        int c = editingColorIdx < colors.size() ? colors.get(editingColorIdx) : 0xFF8844EE;
+        int c;
+        if (editingGlowColor && editingGlowColorIdx < glowOverrideColors.size()) {
+            c = glowOverrideColors.get(editingGlowColorIdx);
+        } else {
+            List<Integer> colors = currentColors();
+            c = editingColorIdx < colors.size() ? colors.get(editingColorIdx) : 0xFF8844EE;
+        }
         editA = (c >> 24) & 0xFF;
         editR = (c >> 16) & 0xFF;
         editG = (c >>  8) & 0xFF;
@@ -138,9 +171,13 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void saveEditRGB() {
-        List<Integer> colors = currentColors();
-        if (editingColorIdx < colors.size())
-            colors.set(editingColorIdx, (editA << 24) | (editR << 16) | (editG << 8) | editB);
+        if (editingGlowColor && editingGlowColorIdx < glowOverrideColors.size()) {
+            glowOverrideColors.set(editingGlowColorIdx, (editA << 24) | (editR << 16) | (editG << 8) | editB);
+        } else {
+            List<Integer> colors = currentColors();
+            if (editingColorIdx < colors.size())
+                colors.set(editingColorIdx, (editA << 24) | (editR << 16) | (editG << 8) | editB);
+        }
     }
 
     private void syncHexFromRGB() {
@@ -148,6 +185,22 @@ public class GlintEditorScreen extends Screen {
         hexBox.setResponder(null);
         hexBox.setValue(String.format("%06X", (editR << 16) | (editG << 8) | editB));
         hexBox.setResponder(this::onHexChanged);
+    }
+
+    private void syncGlowHexBox() {
+        if (glowHexBox == null || editingGlowColorIdx >= glowOverrideColors.size()) return;
+        glowHexBox.setResponder(null);
+        glowHexBox.setValue(String.format("%06X", glowOverrideColors.get(editingGlowColorIdx) & 0xFFFFFF));
+        glowHexBox.setResponder(s -> {
+            if (s.length() == 6 && editingGlowColorIdx < glowOverrideColors.size()) {
+                try {
+                    int rgb = Integer.parseInt(s, 16);
+                    int alpha = (glowOverrideColors.get(editingGlowColorIdx) >> 24) & 0xFF;
+                    glowOverrideColors.set(editingGlowColorIdx, (alpha << 24) | rgb);
+                    refreshPreview();
+                } catch (NumberFormatException ignored) {}
+            }
+        });
     }
 
     private void syncChannelBoxes() {
@@ -219,6 +272,12 @@ public class GlintEditorScreen extends Screen {
                     layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
         }
         CustomGlint.write(previewStack, layers);
+        CustomGlint.clearGlowColors(previewStack);
+        CustomGlint.setGlowing(previewStack, glowEnabled);
+        if (glowEnabled && !glowOverrideColors.isEmpty()) {
+            int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
+            CustomGlint.setGlowColors(previewStack, gc);
+        }
     }
 
     // ── Design picker helpers ────────────────────────────────────────────────
@@ -232,9 +291,12 @@ public class GlintEditorScreen extends Screen {
     }
 
     private static final int DPW = 190, DPH = DESIGN_ROWS * DESIGN_ROW_H + 20;
+    private static final int IPW = 190, IPH = IMPORT_ROWS * IMPORT_ROW_H + 20;
 
     private int dpX() { return px + 98; }
     private int dpY() { return py + 38; }
+    private int ipX() { return px + 98; }
+    private int ipY() { return py + 54; }
 
     // ── Init ─────────────────────────────────────────────────────────────────
 
@@ -246,7 +308,7 @@ public class GlintEditorScreen extends Screen {
         // Design picker trigger button — full right-column width, shows current design
         final String curDesign = layerDesigns.get(selectedLayer);
         addRenderableWidget(Button.builder(
-                Component.literal("Design: " + curDesign + " ▼"), b -> {
+                Component.translatable("screen.customglint.glint_editor.design_button", curDesign), b -> {
             filterDesigns(designSearchBox != null ? designSearchBox.getValue() : "");
             designScroll = Math.max(0, filteredDesigns.indexOf(layerDesigns.get(selectedLayer)));
             showDesignPicker = true;
@@ -254,7 +316,7 @@ public class GlintEditorScreen extends Screen {
         }).bounds(px + 100, py + 22, PANEL_W - 104, 14).build());
 
         // Design search box — managed manually (not added to renderables)
-        designSearchBox = new EditBox(font, 0, 0, DPW - 4, 12, Component.literal("Search designs..."));
+        designSearchBox = new EditBox(font, 0, 0, DPW - 4, 12, Component.translatable("screen.customglint.glint_editor.search_designs"));
         designSearchBox.setMaxLength(30);
         designSearchBox.setResponder(s -> { designScroll = 0; filterDesigns(s); });
         filterDesigns("");
@@ -337,24 +399,34 @@ public class GlintEditorScreen extends Screen {
 
         // Smooth toggle
         addRenderableWidget(Button.builder(
-                Component.literal("Smooth: " + (layerInterpolates.get(selectedLayer) ? "ON" : "OFF")), b -> {
+                Component.translatable("screen.customglint.glint_editor.smooth", Component.translatable(layerInterpolates.get(selectedLayer) ? "screen.customglint.glint_editor.on" : "screen.customglint.glint_editor.off")), b -> {
             boolean interp = !layerInterpolates.get(selectedLayer);
             layerInterpolates.set(selectedLayer, interp);
-            b.setMessage(Component.literal("Smooth: " + (interp ? "ON" : "OFF")));
+            b.setMessage(Component.translatable("screen.customglint.glint_editor.smooth", Component.translatable(interp ? "screen.customglint.glint_editor.on" : "screen.customglint.glint_editor.off")));
             refreshPreview();
         }).bounds(px + 100, py + 186, 90, 14).build());
 
         // Simultaneous toggle
         addRenderableWidget(Button.builder(
-                Component.literal(layerSimultaneous.get(selectedLayer) ? "Mode: Simultaneous" : "Mode: Cycle"), b -> {
+                Component.translatable("screen.customglint.glint_editor.mode", Component.translatable(layerSimultaneous.get(selectedLayer) ? "screen.customglint.glint_editor.mode_simultaneous" : "screen.customglint.glint_editor.mode_cycle")), b -> {
             boolean sim = !layerSimultaneous.get(selectedLayer);
             layerSimultaneous.set(selectedLayer, sim);
-            b.setMessage(Component.literal(sim ? "Mode: Simultaneous" : "Mode: Cycle"));
+            b.setMessage(Component.translatable("screen.customglint.glint_editor.mode", Component.translatable(sim ? "screen.customglint.glint_editor.mode_simultaneous" : "screen.customglint.glint_editor.mode_cycle")));
             refreshPreview();
         }).bounds(px + 196, py + 186, 96, 14).build());
 
+        // Import glint from config
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.import"), b -> {
+            showImportPicker = !showImportPicker;
+            importScroll = 0;
+            if (showImportPicker) {
+                scanGlintConfigs();
+                if (importSearchBox != null) importSearchBox.setFocused(true);
+            }
+        }).bounds(px + 8, py + 100, 80, 14).build());
+
         // Change preview item
-        addRenderableWidget(Button.builder(Component.literal("Change Item ▼"), b -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.change_item"), b -> {
             if (allItems == null) allItems = ForgeRegistries.ITEMS.getValues().stream()
                     .filter(item -> { ResourceLocation k = ForgeRegistries.ITEMS.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
@@ -362,40 +434,153 @@ public class GlintEditorScreen extends Screen {
             pickerScroll = 0;
             showPicker = true;
             searchBox.setFocused(true);
-        }).bounds(px + 8, py + 112, 80, 14).build());
+        }).bounds(px + 8, py + 116, 80, 14).build());
 
         // Give new item with glint
-        addRenderableWidget(Button.builder(Component.literal("Get Item"), b -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.give_item"), b -> {
             CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
             for (int i = 0; i < layers.length; i++) {
                 int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
                 layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
+            int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
             String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId));
-        }).bounds(px + 8, py + 128, 80, 14).build());
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId, glowEnabled, gc, trimName, trimNameColor));
+        }).bounds(px + 8, py + 132, 80, 14).build());
+
+        // Give Glint Trim with current settings
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.give_trim"), b -> {
+            CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
+            for (int i = 0; i < layers.length; i++) {
+                int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
+                layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
+                        layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
+            }
+            int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
+            ModNetworking.CHANNEL.sendToServer(new GiveGlintTrimPacket(layers, glowEnabled, gc, trimName, trimNameColor));
+        }).bounds(px + 8, py + 148, 80, 14).build());
 
         // Apply glint to item already in the other hand
-        addRenderableWidget(Button.builder(Component.literal("Apply to Hand"), b -> {
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.apply_hand"), b -> {
             CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
             for (int i = 0; i < layers.length; i++) {
                 int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
                 layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, ""));
-        }).bounds(px + 8, py + 144, 80, 14).build());
+            int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor));
+        }).bounds(px + 8, py + 164, 80, 14).build());
 
         // Remove glint from item in the other hand
-        addRenderableWidget(Button.builder(Component.literal("Remove Glint"), b -> {
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], ""));
-        }).bounds(px + 8, py + 160, 80, 14).build());
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.remove"), b -> {
+            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0]));
+        }).bounds(px + 8, py + 180, 80, 14).build());
+
+        // Glow ON/OFF toggle
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.glow", Component.translatable(glowEnabled ? "screen.customglint.glint_editor.on" : "screen.customglint.glint_editor.off")), b -> {
+            glowEnabled = !glowEnabled;
+            b.setMessage(Component.translatable("screen.customglint.glint_editor.glow", Component.translatable(glowEnabled ? "screen.customglint.glint_editor.on" : "screen.customglint.glint_editor.off")));
+            refreshPreview();
+        }).bounds(px + 8, py + 196, 80, 14).build());
+
+        // Custom Name toggle button
+        addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.name", Component.translatable(trimName.isEmpty() ? "screen.customglint.glint_editor.off" : "screen.customglint.glint_editor.on")), b -> {
+            if (!trimName.isEmpty()) {
+                trimName = "";
+                b.setMessage(Component.translatable("screen.customglint.glint_editor.name", Component.translatable("screen.customglint.glint_editor.off")));
+                if (trimNameBox != null) trimNameBox.setVisible(false);
+                if (nameHexBox != null) nameHexBox.setVisible(false);
+            } else {
+                trimName = "Custom";
+                b.setMessage(Component.translatable("screen.customglint.glint_editor.name", Component.translatable("screen.customglint.glint_editor.on")));
+                if (trimNameBox != null) {
+                    trimNameBox.setValue(trimName);
+                    trimNameBox.setVisible(true);
+                }
+                if (nameHexBox != null) nameHexBox.setVisible(true);
+            }
+        }).bounds(px + 8, py + 212, 80, 14).build());
+
+        // Name text field (positioned below glow info, aligned with Smooth button area)
+        trimNameBox = addRenderableWidget(new EditBox(font, px + 100, py + 238, 90, 12, Component.translatable("screen.customglint.glint_editor.trim_name")));
+        trimNameBox.setMaxLength(32);
+        trimNameBox.setResponder(s -> trimName = s);
+        trimNameBox.setVisible(!trimName.isEmpty());
+
+        // Name color hex box
+        nameHexBox = addRenderableWidget(new EditBox(font, px + 193, py + 238, 50, 12, Component.translatable("screen.customglint.glint_editor.name_color")));
+        nameHexBox.setMaxLength(6);
+        nameHexBox.setValue(String.format("%06X", (trimNameColor >>> 8) & 0xFFFFFF));
+        nameHexBox.setResponder(s -> {
+            if (s.length() == 6) {
+                try {
+                    int rgb = Integer.parseInt(s, 16);
+                    trimNameColor = (rgb << 8) | 0xFF;
+                } catch (NumberFormatException ignored) {}
+            }
+        });
+        nameHexBox.setVisible(!trimName.isEmpty());
+
+        // ── Glow color section (right column, py+202) ──────────────────────────
+
+        if (glowOverrideColors.isEmpty()) {
+            // Auto mode — offer switch to custom
+            addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.auto_to_custom"), b -> {
+                List<Integer> l0 = layerColors.get(0);
+                glowOverrideColors.add(l0.isEmpty() ? 0xFF8844EE : l0.get(0));
+                editingGlowColor = true;
+                editingGlowColorIdx = 0;
+                loadEditRGB();
+                syncChannelBoxes();
+                syncHexFromRGB();
+                rebuildWidgets();
+            }).bounds(px + 162, py + 202, 82, 14).build());
+        } else {
+            // Custom mode — offer switch back to auto
+            addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.custom_to_auto"), b -> {
+                glowOverrideColors.clear();
+                editingGlowColor = false;
+                rebuildWidgets();
+            }).bounds(px + 162, py + 202, 82, 14).build());
+
+            // Glow color hex input — fixed to the right of the toggle button
+            glowHexBox = addRenderableWidget(new EditBox(font, px + 248, py + 204, 46, 12, Component.literal("Glow hex")));
+            glowHexBox.setMaxLength(6);
+            syncGlowHexBox();
+
+            // Remove last glow color [−]
+            addRenderableWidget(Button.builder(Component.literal("−"), b -> {
+                if (glowOverrideColors.size() > 1) {
+                    glowOverrideColors.remove(glowOverrideColors.size() - 1);
+                    if (editingGlowColorIdx >= glowOverrideColors.size()) {
+                        editingGlowColorIdx = glowOverrideColors.size() - 1;
+                    }
+                    if (editingGlowColor) { loadEditRGB(); syncChannelBoxes(); syncHexFromRGB(); }
+                    rebuildWidgets();
+                }
+            }).bounds(px + 100 + glowOverrideColors.size() * 18, py + 218, 14, 14).build());
+
+            // Add glow color [+]
+            addRenderableWidget(Button.builder(Component.literal("+"), b -> {
+                if (glowOverrideColors.size() < 8) {
+                    glowOverrideColors.add(0xFFFFFFFF);
+                    editingGlowColorIdx = glowOverrideColors.size() - 1;
+                    editingGlowColor = true;
+                    loadEditRGB();
+                    syncChannelBoxes();
+                    syncHexFromRGB();
+                    rebuildWidgets();
+                }
+            }).bounds(px + 100 + glowOverrideColors.size() * 18 + 16, py + 218, 14, 14).build());
+        }
 
         // Item picker search box — managed manually
-        searchBox = new EditBox(font, 0, 0, 180, 12, Component.literal("Search items..."));
+        searchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
         searchBox.setMaxLength(40);
         searchBox.setResponder(s -> { pickerScroll = 0; filterItems(s); });
+
 
         refreshPreview();
     }
@@ -413,6 +598,81 @@ public class GlintEditorScreen extends Screen {
         pickerScroll = Math.max(0, Math.min(pickerScroll, Math.max(0, filteredItems.size() - VISIBLE_ROWS)));
     }
 
+    private void scanGlintConfigs() {
+        availableGlints.clear();
+        try {
+            java.nio.file.Path configDir = java.nio.file.Paths.get("config/customglint/trims").toAbsolutePath();
+            if (java.nio.file.Files.exists(configDir)) {
+                java.nio.file.Files.list(configDir)
+                    .filter(p -> p.toString().endsWith(".json"))
+                    .map(p -> p.getFileName().toString().replace(".json", ""))
+                    .sorted()
+                    .forEach(availableGlints::add);
+            }
+        } catch (Exception e) {
+            // Silently fail if config dir doesn't exist
+        }
+    }
+
+    private void loadGlintFromConfig(String name) {
+        try {
+            java.nio.file.Path file = java.nio.file.Paths.get("config/customglint/trims", name + ".json").toAbsolutePath();
+            String json = new String(java.nio.file.Files.readAllBytes(file));
+            com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+
+            layerDesigns.clear();
+            layerColors.clear();
+            layerSpeeds.clear();
+            layerInterpolates.clear();
+            layerScales.clear();
+            layerSimultaneous.clear();
+
+            if (obj.has("layers")) {
+                com.google.gson.JsonArray layers = obj.getAsJsonArray("layers");
+                for (int i = 0; i < Math.min(layers.size(), 8); i++) {
+                    com.google.gson.JsonObject layer = layers.get(i).getAsJsonObject();
+                    String design = layer.get("design").getAsString();
+                    layerDesigns.add(designShortName(new ResourceLocation(design)));
+
+                    List<Integer> colors = new ArrayList<>();
+                    for (com.google.gson.JsonElement e : layer.getAsJsonArray("colors")) {
+                        String colorStr = e.getAsString();
+                        colors.add((int) Long.parseLong(colorStr.replace("0x", ""), 16));
+                    }
+                    layerColors.add(colors);
+                    layerSpeeds.add(layer.has("speed") ? layer.get("speed").getAsFloat() : 1.0f);
+                    layerInterpolates.add(layer.has("interpolate") ? layer.get("interpolate").getAsBoolean() : true);
+                    layerScales.add(layer.has("patternScale") ? layer.get("patternScale").getAsFloat() : 1.0f);
+                    layerSimultaneous.add(layer.has("simultaneous") ? layer.get("simultaneous").getAsBoolean() : true);
+                }
+            }
+
+            if (layerDesigns.isEmpty()) {
+                layerDesigns.add("sparkle");
+                List<Integer> lc = new ArrayList<>();
+                lc.add(0xFF8844EE);
+                layerColors.add(lc);
+                layerSpeeds.add(1.0f);
+                layerInterpolates.add(true);
+                layerScales.add(1.0f);
+                layerSimultaneous.add(true);
+            }
+
+            selectedLayer = 0;
+
+            if (obj.has("glowing")) glowEnabled = obj.get("glowing").getAsBoolean();
+
+            if (trimNameBox != null) trimNameBox.setValue(trimName);
+            loadEditRGB();
+            syncChannelBoxes();
+            syncHexFromRGB();
+            refreshPreview();
+            showImportPicker = false;
+        } catch (Exception e) {
+            // Silently fail
+        }
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
@@ -427,14 +687,13 @@ public class GlintEditorScreen extends Screen {
         g.fill(px + 97, py + 4, px + 98, py + PANEL_H - 4, 0xFF333333);
 
         // Left labels
-        g.drawString(font, "Preview", px + 8, py + 8, 0xFFFFAA);
+        g.drawString(font, Component.translatable("screen.customglint.glint_editor.preview"), px + 8, py + 8, 0xFFFFAA);
 
         // Preview box
         int bx = px + 8, by = py + 18;
         g.fill(bx - 1, by - 1, bx + PREVIEW_SZ + 1, by + PREVIEW_SZ + 1, 0xFF444444);
         g.fill(bx, by, bx + PREVIEW_SZ, by + PREVIEW_SZ, 0xFF222222);
 
-        g.drawString(font, "Item:", px + 8, py + 102, 0xAAAAAA);
 
         // Layer tabs
         int tabRowY = py + 6;
@@ -456,14 +715,18 @@ public class GlintEditorScreen extends Screen {
             g.drawCenteredString(font, "+", plusX + 10, tabRowY + 3, 0xFF88FF88);
         }
 
-        g.drawString(font, "Colors:", px + 100, py + 40, 0xFFFFAA);
-        g.drawString(font, "Hex:", px + 100, py + 70, 0xAAAAAA);
+        g.drawString(font, Component.translatable("screen.customglint.glint_editor.colors"), px + 100, py + 40, 0xFFFFAA);
+        g.drawString(font, Component.translatable("screen.customglint.glint_editor.hex"), px + 100, py + 70, 0xAAAAAA);
         g.drawString(font, "R:", px + 100, py + 86, 0xFF6666);
         g.drawString(font, "G:", px + 100, py + 102, 0x66FF66);
         g.drawString(font, "B:", px + 100, py + 118, 0x6666FF);
         g.drawString(font, "A:", px + 100, py + 134, 0xAAAAAA);
-        g.drawString(font, "Speed:",  px + 100, py + 154, 0xAAAAAA);
-        g.drawString(font, "Scale:",  px + 100, py + 170, 0xAAAAAA);
+        g.drawString(font, Component.translatable("screen.customglint.glint_editor.speed"), px + 100, py + 154, 0xAAAAAA);
+        g.drawString(font, Component.translatable("screen.customglint.glint_editor.scale"), px + 100, py + 170, 0xAAAAAA);
+        g.drawString(font, Component.translatable("screen.customglint.glint_editor.glow_color"), px + 100, py + 204, glowEnabled ? 0xFFFFAA : 0x666666);
+        if (glowOverrideColors.isEmpty()) {
+            g.drawString(font, Component.translatable("screen.customglint.glint_editor.glow_auto"), px + 100, py + 222, glowEnabled ? 0x888888 : 0x444444);
+        }
 
         super.render(g, mx, my, dt);
 
@@ -487,8 +750,21 @@ public class GlintEditorScreen extends Screen {
             g.fill(sx, sy, sx + 16, sy + 16, 0xFF000000 | (colors.get(i) & 0xFFFFFF));
         }
 
-        g.fill(px + 120, py + 68, px + 132, py + 80,
-               0xFF000000 | (colors.get(editingColorIdx) & 0xFFFFFF));
+        int previewColor = (editingGlowColor && editingGlowColorIdx < glowOverrideColors.size())
+                ? glowOverrideColors.get(editingGlowColorIdx)
+                : (colors.isEmpty() ? 0 : colors.get(editingColorIdx));
+        g.fill(px + 120, py + 68, px + 132, py + 80, 0xFF000000 | (previewColor & 0xFFFFFF));
+
+        // Glow override swatches
+        if (!glowOverrideColors.isEmpty()) {
+            for (int i = 0; i < glowOverrideColors.size(); i++) {
+                int sx = px + 100 + i * 18;
+                int sy = py + 218;
+                g.fill(sx - 1, sy - 1, sx + 17, sy + 17,
+                        (editingGlowColor && i == editingGlowColorIdx) ? 0xFFFFFFFF : 0xFF555555);
+                g.fill(sx, sy, sx + 16, sy + 16, 0xFF000000 | (glowOverrideColors.get(i) & 0xFFFFFF));
+            }
+        }
 
         g.drawCenteredString(font, String.format("%.2f×", layerSpeeds.get(selectedLayer)),  px + 175, py + 154, 0xFFFFFF);
         g.drawCenteredString(font, String.format("%.2f×", layerScales.get(selectedLayer)), px + 175, py + 170, 0xFFFFFF);
@@ -498,6 +774,14 @@ public class GlintEditorScreen extends Screen {
             g.pose().pushPose();
             g.pose().translate(0, 0, 400);
             renderDesignPicker(g, mx, my);
+            g.pose().popPose();
+        }
+
+        // Import picker overlay
+        if (showImportPicker) {
+            g.pose().pushPose();
+            g.pose().translate(0, 0, 400);
+            renderImportPicker(g, mx, my);
             g.pose().popPose();
         }
 
@@ -544,6 +828,49 @@ public class GlintEditorScreen extends Screen {
                     / (filteredDesigns.size() - DESIGN_ROWS));
             g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
         }
+    }
+
+    private void renderImportPicker(GuiGraphics g, int mx, int my) {
+        int ox = ipX(), oy = ipY();
+
+        g.fill(ox - 1, oy - 1, ox + IPW + 1, oy + IPH + 1, 0xFF666666);
+        g.fill(ox, oy, ox + IPW, oy + IPH, 0xEE111111);
+
+        if (importSearchBox == null) {
+            importSearchBox = new EditBox(font, ox + 2, oy + 3, IPW - 4, 12, Component.translatable("screen.customglint.glint_editor.search_glints"));
+            importSearchBox.setMaxLength(40);
+            importSearchBox.setResponder(s -> filterGlints(s));
+        }
+        importSearchBox.setX(ox + 2);
+        importSearchBox.setY(oy + 3);
+        importSearchBox.setWidth(IPW - 4);
+        importSearchBox.render(g, mx, my, 0);
+
+        int listY = oy + 20;
+        int sbX   = ox + IPW - 5;
+
+        for (int i = 0; i < IMPORT_ROWS && importScroll + i < availableGlints.size(); i++) {
+            String glint = availableGlints.get(importScroll + i);
+            int ry = listY + i * IMPORT_ROW_H;
+            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
+            if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, 0x40FFFFFF);
+            g.drawString(font, glint, ox + 4, ry + 2, 0xDDDDDD);
+        }
+
+        if (availableGlints.size() > IMPORT_ROWS) {
+            int trackH = IMPORT_ROWS * IMPORT_ROW_H;
+            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+            int thumbH = Math.max(8, trackH * IMPORT_ROWS / availableGlints.size());
+            int thumbY = listY + (int)((trackH - thumbH) * (float) importScroll
+                    / (availableGlints.size() - IMPORT_ROWS));
+            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+        }
+    }
+
+    private void filterGlints(String query) {
+        // Simple prefix filter
+        String lq = query.toLowerCase();
+        // Already have all glints in availableGlints, which are sorted
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────
@@ -612,6 +939,30 @@ public class GlintEditorScreen extends Screen {
                     showDesignPicker = false;
                     refreshPreview();
                     Minecraft.getInstance().tell(this::rebuildWidgets);
+                }
+            }
+            return true;
+        }
+
+        if (showImportPicker) {
+            int ox = ipX(), oy = ipY();
+
+            if (mx >= ox + 2 && mx < ox + DPW - 2 && my >= oy + 3 && my < oy + 17) {
+                if (importSearchBox != null) importSearchBox.mouseClicked(mx, my, btn);
+            }
+
+            if (mx < ox || mx >= ox + DPW || my < oy || my >= oy + DPH) {
+                showImportPicker = false;
+                return true;
+            }
+
+            int listY = oy + 20;
+            if (my >= listY && mx < ox + DPW - 5) {
+                int row = (int)(my - listY) / IMPORT_ROW_H;
+                int idx = importScroll + row;
+                if (row < IMPORT_ROWS && idx < availableGlints.size()) {
+                    loadGlintFromConfig(availableGlints.get(idx));
+                    rebuildWidgets();
                 }
             }
             return true;
@@ -688,16 +1039,33 @@ public class GlintEditorScreen extends Screen {
             }
         }
 
-        // Swatch clicks
+        // Layer swatch clicks
         if (my >= py + 50 && my < py + 66) {
             List<Integer> colors = currentColors();
             for (int i = 0; i < colors.size(); i++) {
                 int sx = px + 100 + i * 18;
                 if (mx >= sx && mx < sx + 16) {
+                    editingGlowColor = false;
                     editingColorIdx = i;
                     loadEditRGB();
                     syncChannelBoxes();
                     syncHexFromRGB();
+                    return true;
+                }
+            }
+        }
+
+        // Glow override swatch clicks
+        if (!glowOverrideColors.isEmpty() && my >= py + 218 && my < py + 234) {
+            for (int i = 0; i < glowOverrideColors.size(); i++) {
+                int sx = px + 100 + i * 18;
+                if (mx >= sx && mx < sx + 16) {
+                    editingGlowColor = true;
+                    editingGlowColorIdx = i;
+                    loadEditRGB();
+                    syncChannelBoxes();
+                    syncHexFromRGB();
+                    syncGlowHexBox();
                     return true;
                 }
             }
@@ -735,6 +1103,14 @@ public class GlintEditorScreen extends Screen {
             if (mx >= ox && mx < ox + DPW && my >= oy && my < oy + DPH) {
                 int maxScroll = Math.max(0, filteredDesigns.size() - DESIGN_ROWS);
                 designScroll = Math.max(0, Math.min(maxScroll, designScroll - (int) Math.signum(delta)));
+                return true;
+            }
+        }
+        if (showImportPicker) {
+            int ox = ipX(), oy = ipY();
+            if (mx >= ox && mx < ox + IPW && my >= oy && my < oy + IPH) {
+                int maxScroll = Math.max(0, availableGlints.size() - IMPORT_ROWS);
+                importScroll = Math.max(0, Math.min(maxScroll, importScroll - (int) Math.signum(delta)));
                 return true;
             }
         }

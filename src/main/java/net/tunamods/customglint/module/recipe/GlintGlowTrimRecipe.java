@@ -1,5 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
@@ -44,6 +45,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
         ItemStack result = trim.copy();
         result.setCount(1);
         GlintTrimItem.setGlowing(result, true);
+        CustomGlint.setGlowing(result, true);
         return result;
     }
 

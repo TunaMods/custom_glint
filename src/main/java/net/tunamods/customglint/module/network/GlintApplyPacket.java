@@ -2,6 +2,8 @@ package net.tunamods.customglint.module.network;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -18,12 +20,24 @@ public class GlintApplyPacket {
     public final boolean remove;
     public final CustomGlint.Layer[] layers;
     public final String itemId;
+    public final boolean glowing;
+    public final int[] glowColors;
+    public final String trimName;
+    public final int trimNameColor;
 
-    public GlintApplyPacket(InteractionHand wandHand, boolean remove, CustomGlint.Layer[] layers, String itemId) {
+    public GlintApplyPacket(InteractionHand wandHand, boolean remove, CustomGlint.Layer[] layers, String itemId, boolean glowing, int[] glowColors) {
+        this(wandHand, remove, layers, itemId, glowing, glowColors, "", 0xFFFFFFFF);
+    }
+
+    public GlintApplyPacket(InteractionHand wandHand, boolean remove, CustomGlint.Layer[] layers, String itemId, boolean glowing, int[] glowColors, String trimName, int trimNameColor) {
         this.wandHand = wandHand;
         this.remove = remove;
         this.layers = layers;
         this.itemId = itemId;
+        this.glowing = glowing;
+        this.glowColors = glowColors;
+        this.trimName = trimName;
+        this.trimNameColor = trimNameColor;
     }
 
     public static void encode(GlintApplyPacket pkt, FriendlyByteBuf buf) {
@@ -41,13 +55,18 @@ public class GlintApplyPacket {
                 buf.writeBoolean(layer.simultaneous());
             }
             buf.writeUtf(pkt.itemId);
+            buf.writeBoolean(pkt.glowing);
+            buf.writeVarInt(pkt.glowColors.length);
+            for (int c : pkt.glowColors) buf.writeInt(c);
+            buf.writeUtf(pkt.trimName);
+            buf.writeInt(pkt.trimNameColor);
         }
     }
 
     public static GlintApplyPacket decode(FriendlyByteBuf buf) {
         InteractionHand hand = buf.readEnum(InteractionHand.class);
         boolean remove = buf.readBoolean();
-        if (remove) return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "");
+        if (remove) return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0]);
         int layerCount = Math.min(buf.readVarInt(), 8);
         CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
         for (int i = 0; i < layerCount; i++) {
@@ -63,7 +82,13 @@ public class GlintApplyPacket {
             layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous);
         }
         String itemId = buf.readUtf();
-        return new GlintApplyPacket(hand, false, layers, itemId);
+        boolean glowing = buf.readBoolean();
+        int gcLen = Math.min(buf.readVarInt(), 8);
+        int[] glowColors = new int[gcLen];
+        for (int i = 0; i < gcLen; i++) glowColors[i] = buf.readInt();
+        String trimName = buf.readUtf();
+        int trimNameColor = buf.readInt();
+        return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor);
     }
 
     public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
@@ -77,17 +102,41 @@ public class GlintApplyPacket {
                 if (!target.isEmpty()) CustomGlint.remove(target);
             } else if (pkt.itemId.isEmpty()) {
                 ItemStack target = player.getItemInHand(otherHand);
-                if (!target.isEmpty()) CustomGlint.write(target, pkt.layers);
+                if (!target.isEmpty()) {
+                    CustomGlint.write(target, pkt.layers);
+                    applyGlow(pkt, target);
+                    applyName(pkt, target);
+                }
             } else {
                 Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(pkt.itemId));
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, pkt.layers);
+                applyGlow(pkt, given);
+                applyName(pkt, given);
                 player.addItem(given);
                 ItemStack wand = player.getItemInHand(pkt.wandHand);
-                if (!wand.isEmpty()) CustomGlint.write(wand, pkt.layers);
+                if (!wand.isEmpty()) {
+                    CustomGlint.write(wand, pkt.layers);
+                    applyGlow(pkt, wand);
+                    applyName(pkt, wand);
+                }
             }
         });
         ctx.get().setPacketHandled(true);
+    }
+
+    private static void applyGlow(GlintApplyPacket pkt, ItemStack stack) {
+        CustomGlint.clearGlowColors(stack);
+        CustomGlint.setGlowing(stack, pkt.glowing);
+        if (pkt.glowColors.length > 0) CustomGlint.setGlowColors(stack, pkt.glowColors);
+    }
+
+    private static void applyName(GlintApplyPacket pkt, ItemStack stack) {
+        if (!pkt.trimName.isEmpty()) {
+            Component displayName = Component.literal(pkt.trimName)
+                .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
+            stack.setHoverName(displayName);
+        }
     }
 }

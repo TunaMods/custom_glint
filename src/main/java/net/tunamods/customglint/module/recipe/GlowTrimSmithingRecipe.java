@@ -70,6 +70,7 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
         ItemStack result = base.copy();
         result.setCount(1);
         CustomGlint.setGlowColors(result, colors);
+        CustomGlint.setGlowing(result, true);
         return result;
     }
 
