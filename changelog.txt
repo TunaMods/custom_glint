@@ -1,3 +1,20 @@
+[1.4.0]
+
+Added:
+- Wand editor now has a Glow section: toggle glow on/off directly in the editor, pick glow
+  colors (auto-matches glint or custom color swatches with hex input), and set a trim display
+  name and name color — all without needing to open the crafting table.
+- /glint extract — pulls the glint from the item in your main hand and gives you a Glint Trim
+  pre-loaded with those settings, so you can transfer or inspect a glint without a wand.
+- /glint export <name> — saves the current main-hand item's glint to
+  config/customglint/trims/<name>.json so you can reload it later via the wand's Import picker.
+- Spanish translation added.
+
+Fixed:
+- With an active shader pack (Iris/Oculus), armor glow outlines now correctly cut out transparent
+  areas instead of filling the entire texture-space rectangle.
+- With an active shader pack, glow outlines now draw in front of clouds instead of behind them.
+
 [1.3.0]
 
 Added:
