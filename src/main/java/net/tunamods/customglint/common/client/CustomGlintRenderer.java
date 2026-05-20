@@ -415,6 +415,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
 
     /** Separate from BY_GLINT: outline uses POSITION_COLOR_TEX + OUTLINE_SHADER, not POSITION_TEX + GLINT_SHADER. */
+    private static final Map<ResourceLocation, RenderType> BY_SHADER_ARMOR_OUTLINE_TEX = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, RenderType> BY_OUTLINE_WRITE = new HashMap<>();
     private static final Map<ResourceLocation, RenderType> BY_OUTLINE_WRITE_ITEM = new HashMap<>();
     private static final Map<ResourceLocation, RenderType> BY_OUTLINE_TEST  = new HashMap<>();
@@ -423,9 +424,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // Disables both color and depth writes — for the stencil silhouette pass.
     private static final RenderStateShard.WriteMaskStateShard NO_WRITE =
             new RenderStateShard.WriteMaskStateShard(false, false);
-    // Color writes on, depth writes off — for the shader-pack forward outline pass.
-    // Want depth-test (so dilated mesh doesn't poke through walls) but no depth-write
-    // (so the dilated mesh doesn't occlude other content drawn later in the same frame).
+    // Color + depth writes on — for the shader-pack forward outline pass.
+    // Depth write is required so the ring pixels write D+ε at their screen positions. Without it,
+    // cloud geometry (gbuffers_clouds runs after gbuffers_entities) finds background depth at the
+    // ring's air pixels, passes LEQUAL, and paints over the outline — making it appear behind clouds.
+    // Depth write at D+ε means anything rendered later at those pixels with depth > D+ε (i.e., more
+    // distant) fails LEQUAL and the ring is preserved. Closer geometry (D' ≤ D+ε) still passes and
+    // renders in front of the ring, so intra-entity ordering is unaffected.
+    // forShellOutlineTextured (elytra, EQUAL depth test) retains COLOR_ONLY_WRITE — EQUAL means
+    // clouds can't overwrite it anyway since D_cloud ≠ D_cape.
     private static final RenderStateShard.WriteMaskStateShard COLOR_ONLY_WRITE =
             new RenderStateShard.WriteMaskStateShard(true, false);
 
@@ -512,7 +519,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             // edge-detect + additive composite to similar effect; we approximate
                             // it here with the dilated shell + additive blend.
                             .setTransparencyState(LIGHTNING_TRANSPARENCY)
-                            .setWriteMaskState(COLOR_ONLY_WRITE)
                             .setLayeringState(CULL_FRONT_PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
@@ -523,6 +529,40 @@ public final class CustomGlintRenderer extends RenderStateShard {
             live.put(SHADER_OUTLINE_ARMOR_TYPE, new BufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
         tagAsLateRenderForShaders(SHADER_OUTLINE_ARMOR_TYPE);
         return SHADER_OUTLINE_ARMOR_TYPE;
+    }
+
+    /**
+     * Textured variant of {@link #forShaderArmorOutline} for the shader-pack path.
+     * Uses NEW_ENTITY + RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER so the armor texture's alpha
+     * channel discards transparent texels. Without this, the dilated shell fills the entire
+     * bone hull (rectangles for head/chest/arms including transparent regions) instead of
+     * tracing only the visible opaque surface — the "whole texture space" artifact.
+     * ENTITY_CUTOUT maps to gbuffers_entities under Iris/Oculus (universal across packs).
+     * Caller must use FullColorOverrideConsumer (not PositionColorOnlyConsumer) so UV is
+     * forwarded to the buffer for alpha-discard; color is still overridden to outline color.
+     */
+    public static RenderType forShaderArmorOutlineTextured(ResourceLocation texture) {
+        return BY_SHADER_ARMOR_OUTLINE_TEX.computeIfAbsent(texture, tex -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":shader_outline_armor_tex_" + tex.getNamespace() + "_" + tex.getPath().replace('/', '_'),
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    1536, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER)
+                            .setTextureState(new TextureStateShard(tex, false, false))
+                            .setCullState(CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setTransparencyState(LIGHTNING_TRANSPARENCY)
+                            .setLayeringState(CULL_FRONT_PUSH_BACK_LAYERING)
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+            tagAsLateRenderForShaders(rt);
+            return rt;
+        });
     }
 
     private static final Map<ResourceLocation, RenderType> BY_SHELL_OUTLINE_TEXTURED = new HashMap<>();
@@ -574,7 +614,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setDepthTestState(LEQUAL_DEPTH_TEST)
                             // Additive blend — see forShaderArmorOutline for rationale.
                             .setTransparencyState(LIGHTNING_TRANSPARENCY)
-                            .setWriteMaskState(COLOR_ONLY_WRITE)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(SHADER_OUTLINE_TYPE, new BufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
@@ -609,7 +648,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setCullState(NO_CULL)
                             .setDepthTestState(LEQUAL_DEPTH_TEST)
                             .setTransparencyState(LIGHTNING_TRANSPARENCY)
-                            .setWriteMaskState(COLOR_ONLY_WRITE)
                             .setLayeringState(PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
@@ -641,7 +679,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setCullState(NO_CULL)
                             .setDepthTestState(LEQUAL_DEPTH_TEST)
                             .setTransparencyState(LIGHTNING_TRANSPARENCY)
-                            .setWriteMaskState(COLOR_ONLY_WRITE)
                             .setLayeringState(PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
@@ -1040,7 +1077,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
             // otherwise a helmet's inflated mesh extends downward into the chest space and
             // the dilated back faces of one piece read through the front faces of neighbors,
             // producing the "plane bleeding through" artifact the user reported.
-            RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_armor_wrap", forShaderArmorOutline());
+            // Textured RT: ENTITY_CUTOUT_NO_CULL_SHADER + armor texture → alpha-discard on
+            // transparent texels. Fixes the "whole texture space" artifact where the untextured
+            // POSITION_COLOR path drew the full bone hull (including transparent holes in chainmail,
+            // boots, etc.) as a solid colored ring instead of tracing only opaque pixel coverage.
+            // NOT wrapped with asShaderOutline: IsOutlineRenderStateShard routes to a separate
+            // outline framebuffer that is composited before clouds, so depth-writing there has no
+            // effect on the cloud composite's scene-depth read. Using the plain RT keeps the outline
+            // in the main scene depth buffer, which cloud composites DO sample to mask geometry.
+            RenderType outlineRT = forShaderArmorOutlineTextured(texture);
             float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
@@ -1052,7 +1097,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
             float cy = (minMax[1] + minMax[4]) * 0.5f;
             float cz = (minMax[2] + minMax[5]) * 0.5f;
             float outlineScale = slot == EquipmentSlot.FEET ? 1.03f : 1.04f;
-            VertexConsumer outlineBuf = new PositionColorOnlyConsumer(
+            // FullColorOverrideConsumer (not PositionColorOnlyConsumer): forwards UV so the
+            // entity cutout shader can sample the texture for alpha-discard.
+            VertexConsumer outlineBuf = new FullColorOverrideConsumer(
                     buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
             poseStack.pushPose();
             poseStack.last().pose().mulLocal(new Matrix4f()
@@ -1220,7 +1267,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             int gByte = (color >>  8) & 0xFF;
             int bByte =  color        & 0xFF;
             if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
-            RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_bewlr_wrap", forShaderOutline());
+            RenderType outlineRT = forShaderOutline(); // not wrapped; see armor path comment
             VertexConsumer outlineBuf = new PositionColorOnlyConsumer(
                     buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
             IN_OUTLINE.set(true);
@@ -1410,7 +1457,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     float cx = (minMax[0] + minMax[3]) * 0.5f;
                     float cy = (minMax[1] + minMax[4]) * 0.5f;
                     float cz = (minMax[2] + minMax[5]) * 0.5f;
-                    RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_3d_wrap", forShaderArmorOutline());
+                    RenderType outlineRT = forShaderArmorOutline(); // not wrapped; see armor path comment
                     MultiBufferSource outSrc = rt -> new PositionColorOnlyConsumer(
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                     poseStack.pushPose();
@@ -1430,8 +1477,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     // this used to cause under shaders is fixed by the eye-space Z push-back below,
                     // which guarantees the copies sit behind the item depth; only the fringe
                     // extending past the original silhouette survives LEQUAL and is visible.
-                    RenderType outlineRT = asShaderOutline("custom_glint:shader_outline_sprite_wrap",
-                            forShaderSpriteOutline(new ResourceLocation("minecraft", "textures/atlas/blocks.png")));
+                    RenderType outlineRT = forShaderSpriteOutline(new ResourceLocation("minecraft", "textures/atlas/blocks.png")); // not wrapped; see armor path comment
                     MultiBufferSource outSrc = rt -> new FullColorOverrideConsumer(
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                     boolean is1P = displayContext == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
@@ -1817,15 +1863,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // The shader mod's official extension point for tagging a RenderType as "outline geometry."
     // Wrapping a RT with IsOutlineRenderStateShard.INSTANCE via OuterWrappedRenderType causes
     // GbufferPrograms.beginOutline()/endOutline() to fire around the draw call, which is what
-    // the shader mod itself uses to mark the vanilla block-selection outline. Without this tag,
-    // our shader-path outline geometry gets routed through the shader mod's batched
-    // FullyBufferedMultiBufferSource alongside the item geometry and replayed in render-type sort
-    // order — the outline can flush before the item, leaving the depth buffer empty when LEQUAL
-    // runs, so polygon-offset/front-face-cull can't reject the dilated copies over the interior
-    // and the outline reads as a filled silhouette. In 1P this happened to work because the hand
-    // pass renders sequentially; in 3P/GROUND the entity batch is what breaks ordering. Tagging
-    // routes the outline through the shader mod's outline phase so it draws in the correct depth
-    // context. Reflective lookup so no compileOnly dep.
+    // the shader mod itself uses to mark the vanilla block-selection outline.
+    //
+    // ⚠ NOT USED for our forward-pass outline RTs (forShaderArmorOutlineTextured, forShaderOutline,
+    // forShaderArmorOutline, forShaderSpriteOutline). IsOutlineRenderStateShard routes draws to a
+    // SEPARATE outline framebuffer that is composited at a different point than the main scene.
+    // Cloud composites (and other post-process effects) read the MAIN SCENE depth texture to mask
+    // geometry — they do not see depth written into the outline framebuffer — so the outline
+    // disappears behind clouds even with depth-write enabled. By NOT wrapping, the outline geometry
+    // goes directly into the main scene depth buffer. Pre-flush + tagAsLateRenderForShaders (LINES
+    // bucket) ensure entity depth is committed before LEQUAL runs, preserving the ring silhouette.
+    // Reflective lookup retained for potential future use; no compileOnly dep.
     private static volatile boolean SHADER_OUTLINE_LOOKUP_DONE = false;
     private static volatile java.lang.reflect.Method SHADER_WRAP_OUTLINE_RT = null;
     private static volatile RenderStateShard SHADER_OUTLINE_SHARD = null;
