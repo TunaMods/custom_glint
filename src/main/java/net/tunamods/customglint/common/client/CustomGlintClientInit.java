@@ -35,6 +35,10 @@ public final class CustomGlintClientInit {
         MinecraftForge.EVENT_BUS.addListener((TickEvent.RenderTickEvent event) -> {
             if (event.phase == TickEvent.Phase.START) {
                 CustomGlintRenderer.pendingFrameStencilClear = true;
+                CustomGlintRenderer.shaderOutlinedThisFrame.clear();
+                CustomGlintRenderer.resetStencilSlots();
+                CustomGlintRenderer.resetStencilDiag();
+                CustomGlintRenderer.probeFrameCounter++;
             }
         });
     }
