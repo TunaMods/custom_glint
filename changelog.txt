@@ -14,6 +14,13 @@ Fixed:
 - With an active shader pack (Iris/Oculus), armor glow outlines now correctly cut out transparent
   areas instead of filling the entire texture-space rectangle.
 - With an active shader pack, glow outlines now draw in front of clouds instead of behind them.
+- With an active shader pack, multiple glowing items (e.g. armor and a held sword) no longer
+  bleed into each other's outlines — each item now uses its own independent stencil channel.
+- With an active shader pack, sprite item outlines (tools, food, gems) now render in the chosen
+  glow color instead of being tinted by the item's texture.
+- With First-Person Mod and an active shader pack, held-item glow outlines no longer drift or
+  misalign as the camera rotates; non-convex models (crossbow, bow) use per-vertex normal
+  displacement and flat sprites use a separate filter pass for a clean ring at all angles.
 
 [1.3.0]
 
