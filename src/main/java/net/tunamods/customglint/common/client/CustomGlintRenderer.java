@@ -97,7 +97,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     private static void buildBlocksAlphaMask() {
-        LOGGER.info("[{}/CustomGlint] buildBlocksAlphaMask: entering", MOD_ID);
         Minecraft mc = Minecraft.getInstance();
         TextureAtlas atlas;
         try {
@@ -112,7 +111,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
         int w = atlas.width;
         int h = atlas.height;
-        LOGGER.info("[{}/CustomGlint] buildBlocksAlphaMask: atlas dims = {}x{}, id={}", MOD_ID, w, h, atlas.getId());
         if (w <= 0 || h <= 0) {
             LOGGER.warn("[{}/CustomGlint] buildBlocksAlphaMask: bad dims, skipping", MOD_ID);
             return;
@@ -152,7 +150,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        LOGGER.info("[{}/CustomGlint] Built {}×{} blocks-atlas alpha mask", MOD_ID, w, h);
         blocksAlphaMaskBuilt = true;
     }
 
@@ -210,7 +207,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
 
     private static ResourceLocation generateTexture(ResourceLocation design) {
-        LOGGER.info("[{}/CustomGlint] Generating grayscale texture: design={}", MOD_ID, design);
         Minecraft mc = Minecraft.getInstance();
         NativeImage source;
         try {
@@ -522,90 +518,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
      */
     public static volatile boolean pendingFrameStencilClear = true;
 
-    // ── Diagnostic logging: stencil/FBO state on first WRITE.setup of each frame ──
-    // Fires AT MOST once per frame (reset by RenderTickEvent.START via {@link #resetStencilDiag()})
-    // AND additionally whenever the state diff from the last logged frame changes — so a shader-pack
-    // toggle that changes GL state shows up as an immediate new log line without waiting for the
-    // throttle. Compare pre-toggle vs post-toggle lines to see what's actually different in GL state.
-    private static volatile String stencilDiagLastSignature = "";
-    // Single shared frame-counter throttle across ALL probe call sites. Incremented by
-    // CustomGlintClientInit's RenderTickEvent.START; probes emit only when (frame % N == 0),
-    // i.e. once per N frames. Bulletproof against sig-cycling within a frame.
-    public static volatile int probeFrameCounter = 0;
-    private static final int PROBE_FRAME_INTERVAL = 300; // ~5s at 60fps
-    // Per-site last-emit-frame map. Each probe site emits at most once per interval window — even
-    // if it is invoked many times within the same allowed frame (e.g. several outlines per frame
-    // all hitting the stencilWriteLayeringSlot.setup site).
-    private static final java.util.Map<String, Integer> probeLastEmitFrame = new java.util.concurrent.ConcurrentHashMap<>();
-    private static boolean probeAllow(String siteId) {
-        int frame = probeFrameCounter;
-        if ((frame % PROBE_FRAME_INTERVAL) != 0) return false;
-        Integer last = probeLastEmitFrame.get(siteId);
-        if (last != null && last == frame) return false;
-        probeLastEmitFrame.put(siteId, frame);
-        return true;
-    }
-    public static void resetStencilDiag() { /* no-op — frame-counter throttle is the only gate now */ }
-    // Cache the resolved Field once we've found it; dump candidate field names on first call to learn
-    // the right name in whatever mapping the user is running (official_1.20.1 vs SRG vs parchment).
-    private static volatile java.lang.reflect.Field useStencilField = null;
-    private static volatile boolean useStencilFieldDumped = false;
-    private static boolean readUseStencilField(com.mojang.blaze3d.pipeline.RenderTarget mainRT) {
-        java.lang.reflect.Field f = useStencilField;
-        if (f == null) {
-            for (java.lang.reflect.Field cand : com.mojang.blaze3d.pipeline.RenderTarget.class.getDeclaredFields()) {
-                if (cand.getType() == boolean.class
-                        && (cand.getName().equalsIgnoreCase("useStencil") || cand.getName().equals("f_83923_"))) {
-                    cand.setAccessible(true);
-                    f = cand;
-                    useStencilField = cand;
-                    break;
-                }
-            }
-            if (f == null && !useStencilFieldDumped) {
-                useStencilFieldDumped = true;
-                StringBuilder sb = new StringBuilder("[CG_PROBE] RenderTarget fields:");
-                for (java.lang.reflect.Field cand : com.mojang.blaze3d.pipeline.RenderTarget.class.getDeclaredFields()) {
-                    sb.append(' ').append(cand.getType().getSimpleName()).append(' ').append(cand.getName()).append(';');
-                }
-                System.err.println(sb.toString());
-                throw new RuntimeException("useStencil field not found on RenderTarget");
-            }
-        }
-        try { return f.getBoolean(mainRT); }
-        catch (IllegalAccessException e) { throw new RuntimeException(e); }
-    }
-
-    private static void logStencilDiag(int v) {
-        if (!probeAllow("stencilDiag")) return;
-        // Build incrementally; print each step's result even if a later step throws. That way an NPE
-        // (e.g. Minecraft.getInstance().getMainRenderTarget() briefly returning null under Iris's
-        // buffer drain) doesn't black out the rest of the line.
-        StringBuilder out = new StringBuilder("[CG_PROBE] STENCIL_DIAG");
-        try {
-            out.append(" stencilTest=").append(GL11.glIsEnabled(GL11.GL_STENCIL_TEST));
-        } catch (Throwable t) { out.append(" stencilTest=THREW(").append(t.getClass().getSimpleName()).append(")"); }
-        com.mojang.blaze3d.pipeline.RenderTarget mainRT = null;
-        try {
-            mainRT = Minecraft.getInstance().getMainRenderTarget();
-            out.append(" mainFbo=").append(mainRT == null ? "null" : mainRT.frameBufferId);
-        } catch (Throwable t) { out.append(" mainFbo=THREW(").append(t.getClass().getSimpleName()).append(")"); }
-        if (mainRT != null) {
-            try { out.append(" useStencil=").append(readUseStencilField(mainRT)); }
-            catch (Throwable t) { out.append(" useStencil=THREW(").append(t.getClass().getSimpleName()).append(")"); }
-        } else {
-            out.append(" useStencil=N/A");
-        }
-        try {
-            int boundFbo = org.lwjgl.opengl.GL30.glGetInteger(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-            out.append(" boundFbo=").append(boundFbo);
-        } catch (Throwable t) { out.append(" boundFbo=THREW(").append(t.getClass().getSimpleName()).append(")"); }
-        try {
-            out.append(" pack=").append(isShaderPackActive()).append(" mod=").append(isShaderModInstalled());
-        } catch (Throwable t) { out.append(" packOrMod=THREW(").append(t.getClass().getSimpleName()).append(")"); }
-        System.err.println(out.toString());
-    }
-
     /**
      * Optional gate consulted at the top of {@link #doModelOutline} and {@link #doItemOutline}.
      * Compat modules (e.g. First Person Mod's 3.5D view, where the player model is hidden/transformed
@@ -706,10 +618,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return new RenderStateShard.LayeringStateShard(
                 "custom_glint_stencil_write_slot_v" + v + (withPolyOffset ? "_po" : ""),
                 () -> {
-                    if (probeAllow("slotWriteSetup")) {
-                        System.err.println("[CG_PROBE] stencilWriteLayeringSlot.setup v=" + v + " po=" + withPolyOffset);
-                    }
-                    logStencilDiag(v);
                     Minecraft.getInstance().getMainRenderTarget().enableStencil();
                     GL11.glEnable(GL11.GL_STENCIL_TEST);
                     GL11.glStencilMask(0xFF);
@@ -2031,12 +1939,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     public static void doModelOutline(PoseStack poseStack, MultiBufferSource buffer,
             int packedLight, EntityModel<?> model, ResourceLocation texture, int color, EquipmentSlot slot) {
-        if (probeAllow("doModelOutline")) {
-            System.err.println("[CG_PROBE] doModelOutline shadow=" + isInShadowPass()
-                    + " suppressed=" + outlineSuppressor.getAsBoolean()
-                    + " pack=" + isShaderPackActive() + " mod=" + isShaderModInstalled()
-                    + " bufSrc=" + buffer.getClass().getName());
-        }
         // Don't run outline geometry during the shader mod's shadow pass — wrong buffer format → endVertex crash.
         if (isInShadowPass()) return;
         if (outlineSuppressor.getAsBoolean()) return;
@@ -2384,12 +2286,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
      */
     public static void doItemOutline(ItemStack stack, ItemDisplayContext displayContext,
             PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
-        if (probeAllow("doItemOutline")) {
-            System.err.println("[CG_PROBE] doItemOutline ctx=" + displayContext
-                    + " shadow=" + isInShadowPass()
-                    + " pack=" + isShaderPackActive() + " mod=" + isShaderModInstalled()
-                    + " bufSrc=" + buffer.getClass().getName());
-        }
         if (displayContext == ItemDisplayContext.GUI) return;
         if (isInShadowPass()) return;
         // Compat: BEWLRs that paint a combined model via per-variant alpha-discarded textures

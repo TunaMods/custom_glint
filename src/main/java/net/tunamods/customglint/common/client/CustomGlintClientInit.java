@@ -37,8 +37,6 @@ public final class CustomGlintClientInit {
                 CustomGlintRenderer.pendingFrameStencilClear = true;
                 CustomGlintRenderer.shaderOutlinedThisFrame.clear();
                 CustomGlintRenderer.resetStencilSlots();
-                CustomGlintRenderer.resetStencilDiag();
-                CustomGlintRenderer.probeFrameCounter++;
             }
         });
     }
