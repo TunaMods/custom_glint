@@ -9,7 +9,9 @@
     "HorseArmorLayerMixin",
     "HumanoidArmorLayerMixin",
     "ItemRendererMixin",
-    "RenderBuffersMixin"
+    "LivingEntityRendererMixin",
+    "RenderBuffersMixin",
+    "RenderLayerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

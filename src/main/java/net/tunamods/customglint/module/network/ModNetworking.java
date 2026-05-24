@@ -29,5 +29,7 @@ public class ModNetworking {
         CHANNEL.registerMessage(2, GlintMountArmorSyncPacket.class, GlintMountArmorSyncPacket::encode, GlintMountArmorSyncPacket::decode, GlintMountArmorSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         // 3 — GiveGlintTrimPacket  C→S  gives a GlintTrimItem with current editor settings
         CHANNEL.registerMessage(3, GiveGlintTrimPacket.class, GiveGlintTrimPacket::encode, GiveGlintTrimPacket::decode, GiveGlintTrimPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // 4 — GlintEntitySyncPacket  S→C  per-instance entity glint NBT for LivingEntities
+        CHANNEL.registerMessage(4, GlintEntitySyncPacket.class, GlintEntitySyncPacket::encode, GlintEntitySyncPacket::decode, GlintEntitySyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 }

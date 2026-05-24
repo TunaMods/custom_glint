@@ -4,8 +4,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 import javax.annotation.Nullable;
@@ -343,6 +346,152 @@ public final class CustomGlint {
         Data data = MOB_DROP_GLINTS.get(stack.getItem());
         if (data == null) return;
         write(stack, data.layers());
+    }
+
+    // ── Entity glint API ──────────────────────────────────────────────────────
+    //
+    // Per-instance: NBT lives in the LivingEntity's persistent data under TAG (same schema as
+    // items). Server writes; a client-side sync packet (GlintEntitySyncPacket) pushes the tag to
+    // tracking players and the client renderer (EntityGlintRenderer) reads from the cache.
+    //
+    // Type-wide: ENTITY_GLINTS is a server-safe registry; the client renderer falls back to it
+    // when no per-instance NBT exists, so all entities of the type render with the same glint
+    // with no per-entity storage or sync.
+
+    public static final Map<EntityType<?>, Data> ENTITY_GLINTS = new HashMap<>();
+
+    public static void registerEntityGlint(EntityType<?> type, Data data) {
+        ENTITY_GLINTS.put(type, data);
+    }
+
+    public static void registerEntityGlint(EntityType<?> type, ResourceLocation design, int[] colors) {
+        registerEntityGlint(type, new Data(new Layer[]{ new Layer(design, colors, 1.0f, true, 1.0f, true) }));
+    }
+
+    @Nullable
+    public static Data getEntityGlint(EntityType<?> type) {
+        return ENTITY_GLINTS.get(type);
+    }
+
+    /** Reads the per-instance entity glint tag (server: from persistentData; client: caller passes the synced tag). */
+    @Nullable
+    public static Data readEntity(LivingEntity entity) {
+        CompoundTag pd = entity.getPersistentData();
+        if (!pd.contains(TAG)) return null;
+        return fromTag(pd.getCompound(TAG));
+    }
+
+    public static boolean hasEntity(LivingEntity entity) {
+        return entity.getPersistentData().contains(TAG);
+    }
+
+    public static void writeEntity(LivingEntity entity, Layer[] layers) {
+        CompoundTag pd = entity.getPersistentData();
+        CompoundTag existing = pd.contains(TAG) ? pd.getCompound(TAG) : null;
+        CompoundTag glintTag = toTag(layers);
+        if (existing != null && existing.contains(GLOWING_KEY))
+            glintTag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
+        if (existing != null && existing.contains(GLOW_COLORS_KEY))
+            glintTag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
+        pd.put(TAG, glintTag);
+    }
+
+    public static void removeEntity(LivingEntity entity) {
+        entity.getPersistentData().remove(TAG);
+    }
+
+    public static boolean isEntityGlowing(LivingEntity entity) {
+        CompoundTag pd = entity.getPersistentData();
+        if (!pd.contains(TAG)) return false;
+        return pd.getCompound(TAG).getBoolean(GLOWING_KEY);
+    }
+
+    public static void setEntityGlowing(LivingEntity entity, boolean glowing) {
+        CompoundTag pd = entity.getPersistentData();
+        CompoundTag glintTag = pd.contains(TAG) ? pd.getCompound(TAG) : new CompoundTag();
+        glintTag.putBoolean(GLOWING_KEY, glowing);
+        pd.put(TAG, glintTag);
+    }
+
+    /** Per-entity Glow Trim colors — drive the outline color animation independently of any
+     *  glint Data, identical semantics to {@link #getGlowColors(ItemStack)} but on a mob. */
+    public static int[] getEntityGlowColors(LivingEntity entity) {
+        CompoundTag pd = entity.getPersistentData();
+        if (!pd.contains(TAG)) return new int[0];
+        CompoundTag tag = pd.getCompound(TAG);
+        if (!tag.contains(GLOW_COLORS_KEY)) return new int[0];
+        return tag.getIntArray(GLOW_COLORS_KEY);
+    }
+
+    public static boolean hasEntityGlowColors(LivingEntity entity) {
+        return getEntityGlowColors(entity).length > 0;
+    }
+
+    /** Sets glowColors AND glowing=true on the entity. Call
+     *  {@code EntityGlintEvents.broadcast(entity)} afterwards (standalone full jar) to push
+     *  the change to tracking clients. */
+    public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
+        CompoundTag pd = entity.getPersistentData();
+        CompoundTag glintTag = pd.contains(TAG) ? pd.getCompound(TAG) : new CompoundTag();
+        glintTag.putIntArray(GLOW_COLORS_KEY, colors);
+        glintTag.putBoolean(GLOWING_KEY, true);
+        pd.put(TAG, glintTag);
+    }
+
+    public static void clearEntityGlowColors(LivingEntity entity) {
+        CompoundTag pd = entity.getPersistentData();
+        if (!pd.contains(TAG)) return;
+        CompoundTag tag = pd.getCompound(TAG);
+        tag.remove(GLOW_COLORS_KEY);
+    }
+
+    /** Returns the raw inner glint tag stored on an ItemStack (or empty CompoundTag if none). */
+    public static CompoundTag itemGlintTag(ItemStack stack) {
+        if (!stack.hasTag() || !stack.getTag().contains(TAG)) return new CompoundTag();
+        return stack.getTag().getCompound(TAG).copy();
+    }
+
+    /** Returns the raw inner glint tag for sync packets (or empty CompoundTag if none). */
+    public static CompoundTag entityGlintTag(LivingEntity entity) {
+        CompoundTag pd = entity.getPersistentData();
+        return pd.contains(TAG) ? pd.getCompound(TAG).copy() : new CompoundTag();
+    }
+
+    /** Replaces the per-instance entity glint tag in one shot (used by the sync packet handler on the server side and by full overwrites). */
+    public static void writeEntityTag(LivingEntity entity, CompoundTag glintTag) {
+        if (glintTag == null || glintTag.isEmpty()) entity.getPersistentData().remove(TAG);
+        else entity.getPersistentData().put(TAG, glintTag.copy());
+    }
+
+    // ── NBT serialization helpers (decoupled from ItemStack) ──────────────────
+
+    /** Decodes the inner glint CompoundTag (the value stored under TAG) into a Data record, or null if invalid/missing. */
+    @Nullable
+    public static Data fromTag(@Nullable CompoundTag glintTag) {
+        if (glintTag == null || glintTag.isEmpty()) return null;
+        ItemStack vehicle = new ItemStack(Items.STONE);
+        CompoundTag root = new CompoundTag();
+        root.put(TAG, glintTag.copy());
+        vehicle.setTag(root);
+        return read(vehicle);
+    }
+
+    /** Returns true if the inner glint tag has glowing=true. */
+    public static boolean tagGlowing(@Nullable CompoundTag glintTag) {
+        return glintTag != null && glintTag.getBoolean(GLOWING_KEY);
+    }
+
+    /** Returns the glowColors int[] from the inner glint tag (empty if absent). */
+    public static int[] tagGlowColors(@Nullable CompoundTag glintTag) {
+        if (glintTag == null || !glintTag.contains(GLOW_COLORS_KEY)) return new int[0];
+        return glintTag.getIntArray(GLOW_COLORS_KEY);
+    }
+
+    /** Encodes a Layer[] into a fresh inner glint CompoundTag (the value placed under TAG). */
+    public static CompoundTag toTag(Layer[] layers) {
+        ItemStack vehicle = new ItemStack(Items.STONE);
+        write(vehicle, layers);
+        return vehicle.getTag().getCompound(TAG).copy();
     }
 
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();

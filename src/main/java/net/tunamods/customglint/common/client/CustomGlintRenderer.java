@@ -153,6 +153,54 @@ public final class CustomGlintRenderer extends RenderStateShard {
         blocksAlphaMaskBuilt = true;
     }
 
+    /** Per-armor-texture alpha-mask cache. Parallel of the source armor PNG with RGB=255 and
+     *  alpha preserved. Bound as Sampler0 in {@link #forShaderArmorOutlineTextured} under shader
+     *  packs so the pack's gbuffers_entities shader computes {@code white × vertexColor =
+     *  vertexColor} — outline ring renders in the chosen color instead of being tinted by the
+     *  armor's albedo (worst case: white outline × red leather armor = red). Cleared on resource
+     *  reload via {@link #clearTextures}. */
+    private static final java.util.Map<ResourceLocation, ResourceLocation> ARMOR_ALPHA_MASKS = new java.util.HashMap<>();
+
+    public static ResourceLocation getArmorAlphaMask(ResourceLocation original) {
+        if (original == null) return null;
+        ResourceLocation cached = ARMOR_ALPHA_MASKS.get(original);
+        if (cached != null) return cached;
+        Minecraft mc = Minecraft.getInstance();
+        NativeImage src;
+        try {
+            var res = mc.getResourceManager().getResource(original);
+            if (res.isEmpty()) return original;
+            try (InputStream stream = res.get().open()) {
+                src = NativeImage.read(stream);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[{}/CustomGlint] getArmorAlphaMask: read threw for {}", MOD_ID, original, t);
+            return original;
+        }
+        NativeImage mask = new NativeImage(src.getWidth(), src.getHeight(), false);
+        try {
+            for (int y = 0; y < src.getHeight(); y++) {
+                for (int x = 0; x < src.getWidth(); x++) {
+                    int pixel = src.getPixelRGBA(x, y);
+                    mask.setPixelRGBA(x, y, (pixel & 0xFF000000) | 0x00FFFFFF);
+                }
+            }
+        } finally {
+            src.close();
+        }
+        String safePath = original.getNamespace() + "_" + original.getPath().replace('/', '_').replace('.', '_');
+        ResourceLocation loc = new ResourceLocation(MOD_ID, "armor_alpha_mask/" + safePath);
+        DynamicTexture dt = new DynamicTexture(mask);
+        mc.getTextureManager().register(loc, dt);
+        dt.bind();
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        ARMOR_ALPHA_MASKS.put(original, loc);
+        return loc;
+    }
+
     public static void clearTextures() {
         Minecraft mc = Minecraft.getInstance();
         for (ResourceLocation loc : textureCache.values())
@@ -162,6 +210,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
             try { mc.getTextureManager().release(BLOCKS_ALPHA_MASK_LOC); } catch (Throwable ignored) {}
             blocksAlphaMaskBuilt = false;
         }
+        for (ResourceLocation loc : ARMOR_ALPHA_MASKS.values()) {
+            try { mc.getTextureManager().release(loc); } catch (Throwable ignored) {}
+        }
+        ARMOR_ALPHA_MASKS.clear();
         if (fixedBufferRegistry != null) {
             for (RenderType rt : BY_GLINT.values())             fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_ARMOR_GLINT.values())       fixedBufferRegistry.remove(rt);
@@ -328,6 +380,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
         SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
         if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
         return cached;
+    }
+
+    /**
+     * Entity body glint (pigs, cows, zombies, … anything rendered through entityCutoutNoCull).
+     * Aliases {@link #forHorseArmorGlint}: same render-state requirements (EQUAL depth + NO_LAYERING),
+     * since LivingEntityRenderer body draws have no polygon offset. Separate method only for caller clarity.
+     */
+    public static RenderType forEntityGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
     }
 
     // Horse armor uses entityCutoutNoCull (no polygon offset / no VIEW_OFFSET_Z_LAYERING).
@@ -1982,7 +2043,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
             // outline framebuffer that is composited before clouds, so depth-writing there has no
             // effect on the cloud composite's scene-depth read. Using the plain RT keeps the outline
             // in the main scene depth buffer, which cloud composites DO sample to mask geometry.
-            RenderType outlineRT = forShaderArmorOutlineTextured(texture);
+            // Bind the alpha-mask parallel of this armor texture (RGB=255, alpha preserved) so
+            // the pack's gbuffers_entities does `vertexColor × white = vertexColor` and the ring
+            // renders in the chosen outline color rather than picking up the armor's albedo.
+            // Same fix as held sprites — see getBlocksAlphaMask / getArmorAlphaMask.
+            RenderType outlineRT = forShaderArmorOutlineTextured(getArmorAlphaMask(texture));
             float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
@@ -2086,6 +2151,30 @@ public final class CustomGlintRenderer extends RenderStateShard {
             } else {
                 poseStack.scale(outlineScale, outlineScale, 1.0f);
             }
+        } else if (slot == null) {
+            // Entity body (slot==null comes from EntityGlintRender, never from armor layers).
+            // The humanoid pivot below (y≈0.9 in entity-local) is chest-height on a player and
+            // sits well above short quadrupeds like pigs/spiders/cows — uniform scale around a
+            // pivot above the model shifts everything downward, clipping the top of the outline.
+            // Fix: scale around the model's own 3D AABB centroid (NullConsumer pre-pass), so the
+            // dilation stays concentric with whatever silhouette the entity actually has.
+            float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
+                               Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
+            poseStack.pushPose();
+            model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
+                    packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+            poseStack.popPose();
+            if (minMax[3] > minMax[0]) {
+                float cx = (minMax[0] + minMax[3]) * 0.5f;
+                float cy = (minMax[1] + minMax[4]) * 0.5f;
+                float cz = (minMax[2] + minMax[5]) * 0.5f;
+                poseStack.last().pose().mulLocal(new Matrix4f()
+                        .translate(cx, cy, cz)
+                        .scale(outlineScale, outlineScale, outlineScale)
+                        .translate(-cx, -cy, -cz));
+            } else {
+                poseStack.scale(outlineScale, outlineScale, outlineScale);
+            }
         } else {
             poseStack.translate(0.0f, -0.95f, 0.0f); // -0.9 - 0.05 downward alignment correction
             poseStack.scale(outlineScale, outlineScale, outlineScale);
@@ -2094,6 +2183,97 @@ public final class CustomGlintRenderer extends RenderStateShard {
         model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
         flushRT(buffer, testType);
         poseStack.popPose();
+    }
+
+    /**
+     * Multi-model entity outline: stamp every entry into ONE shared stencil slot, then dilate-
+     * test each entry's model individually. Resolves the "stray clothing covers torso but base
+     * skeleton outline still draws under it" duplication: each TEST pass only draws ring pixels
+     * where stencil != V, and since every body+overlay silhouette stamped V before any TEST
+     * fired, the ring only forms outside the union of all surfaces. The per-entry dilation
+     * pivot is still computed per model (AABB centroid) so each surface gets a tight 1.04× ring.
+     *
+     * Entries are processed in order. The shader-pack path falls back to per-entry forward
+     * outline (no stencil available) — that path already accepts visible duplication across
+     * overlays because the dilation depth ordering hides most of the conflict.
+     */
+    public static void doMultiModelOutline(PoseStack poseStack, MultiBufferSource buffer,
+            int color, java.util.List<net.tunamods.customglint.common.client.EntityGlintRender.PendingOutline> entries) {
+        if (entries == null || entries.isEmpty()) return;
+        if (isInShadowPass()) return;
+        if (outlineSuppressor.getAsBoolean()) return;
+
+        // Shader-pack: stencil path is dead, dispatch each entry through doModelOutline which
+        // takes its own forward-pass branch. Each entry uses the running ColorModulator color so
+        // they all match. Duplicated rings across overlaps are accepted in this branch; the
+        // shader-pack outline is already imprecise.
+        if (isShaderPackActive()) {
+            for (var e : entries) {
+                poseStack.pushPose();
+                poseStack.last().pose().set(e.pose);
+                poseStack.last().normal().set(e.normal);
+                doModelOutline(poseStack, buffer, e.light, e.model, e.texture, color, null);
+                poseStack.popPose();
+            }
+            return;
+        }
+
+        float oR = ((color >> 16) & 0xFF) / 255.0f;
+        float oG = ((color >>  8) & 0xFF) / 255.0f;
+        float oB = ( color        & 0xFF) / 255.0f;
+        float outlineScale = 1.04f;
+
+        int stencilSlot = nextStencilSlot();
+        Minecraft.getInstance().getMainRenderTarget().enableStencil();
+        // Force-flush queued body / glint / layer drawcalls before the stencil passes so the
+        // stencil-write geometry only contributes stencil bits, not commingled colour vertices.
+        flushAll(buffer);
+
+        // PHASE 1: WRITE every entry's silhouette into the shared slot. REPLACE on pass/dpfail
+        // means later WRITEs on overlapping pixels still leave stencil = V (idempotent).
+        for (var e : entries) {
+            RenderType writeType = forOutlineStencilWrite(stencilSlot, e.texture);
+            poseStack.pushPose();
+            poseStack.last().pose().set(e.pose);
+            poseStack.last().normal().set(e.normal);
+            e.model.renderToBuffer(poseStack, buffer.getBuffer(writeType), e.light,
+                    OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+            flushRT(buffer, writeType);
+            poseStack.popPose();
+        }
+
+        // PHASE 2: TEST every entry dilated around its own AABB centroid. stencilFunc NOTEQUAL V
+        // on the shared slot — since every body+overlay stamped V in phase 1, the dilated ring
+        // is suppressed everywhere any surface exists, leaving the outline only on the union's
+        // outer perimeter.
+        for (var e : entries) {
+            RenderType testType = forOutlineStencilTest(stencilSlot, e.texture);
+            poseStack.pushPose();
+            poseStack.last().pose().set(e.pose);
+            poseStack.last().normal().set(e.normal);
+
+            float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
+                               Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
+            poseStack.pushPose();
+            e.model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
+                    e.light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+            poseStack.popPose();
+            if (minMax[3] > minMax[0]) {
+                float cx = (minMax[0] + minMax[3]) * 0.5f;
+                float cy = (minMax[1] + minMax[4]) * 0.5f;
+                float cz = (minMax[2] + minMax[5]) * 0.5f;
+                poseStack.last().pose().mulLocal(new Matrix4f()
+                        .translate(cx, cy, cz)
+                        .scale(outlineScale, outlineScale, outlineScale)
+                        .translate(-cx, -cy, -cz));
+            } else {
+                poseStack.scale(outlineScale, outlineScale, outlineScale);
+            }
+            e.model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT,
+                    OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+            flushRT(buffer, testType);
+            poseStack.popPose();
+        }
     }
 
     /**
@@ -2894,6 +3074,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     float czOff    = (is1P || is3P) ? -0.01f : 0.0f;
                     float dw = (minMax[3] - minMax[0]) / 16.0f * stepScale;
                     float dh = (minMax[4] - minMax[1]) / 16.0f * stepScale;
+                    // Cap held-context step so oversized sprites (modded greatswords, 32+px
+                    // textures, scale-inflated item models) don't get proportionally thicker
+                    // outlines. AABB/16 assumes a 16-px vanilla sprite; a 2× sword doubles dw.
+                    // Vanilla sword in 1P/3P lands well below this cap, so normal items are
+                    // unaffected.
+                    if (is1P || is3P) {
+                        final float MAX_HELD_STEP = 0.04f;
+                        if (dw > MAX_HELD_STEP) dw = MAX_HELD_STEP;
+                        if (dh > MAX_HELD_STEP) dh = MAX_HELD_STEP;
+                    }
                     poseStack.pushPose();
                     poseStack.last().pose().mulLocal(new Matrix4f().translate(dw, 0, czOff));
                     mc.getItemRenderer().renderStatic(renderPlayer, stack, displayContext, leftHand, poseStack, outlineSrc, mc.level, LightTexture.FULL_BRIGHT, packedOverlay, 0);

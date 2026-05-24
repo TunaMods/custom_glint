@@ -11,13 +11,17 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.BufferedWriter;
@@ -125,7 +129,159 @@ public class GlintCommand {
             .then(Commands.literal("export")
                 .then(Commands.argument("name", StringArgumentType.word())
                     .executes(ctx -> export(ctx.getSource(),
-                        StringArgumentType.getString(ctx, "name"))))));
+                        StringArgumentType.getString(ctx, "name")))))
+            .then(Commands.literal("entity")
+                .then(Commands.argument("targets", EntityArgument.entities())
+                    .then(Commands.literal("apply")
+                        .then(Commands.argument("design", StringArgumentType.word())
+                            .suggests(SUGGEST_DESIGNS)
+                            .then(Commands.argument("colors", StringArgumentType.string())
+                                .suggests(SUGGEST_COLORS)
+                                .executes(ctx -> applyEntity(ctx.getSource(),
+                                    EntityArgument.getEntities(ctx, "targets"),
+                                    StringArgumentType.getString(ctx, "design"),
+                                    StringArgumentType.getString(ctx, "colors"),
+                                    1.0f, true, 1.0f, false, false))
+                                .then(Commands.argument("glowing", BoolArgumentType.bool())
+                                    .executes(ctx -> applyEntity(ctx.getSource(),
+                                        EntityArgument.getEntities(ctx, "targets"),
+                                        StringArgumentType.getString(ctx, "design"),
+                                        StringArgumentType.getString(ctx, "colors"),
+                                        1.0f, true, 1.0f, false,
+                                        BoolArgumentType.getBool(ctx, "glowing")))
+                                    .then(Commands.argument("speed", FloatArgumentType.floatArg(0.25f, 8.0f))
+                                        .executes(ctx -> applyEntity(ctx.getSource(),
+                                            EntityArgument.getEntities(ctx, "targets"),
+                                            StringArgumentType.getString(ctx, "design"),
+                                            StringArgumentType.getString(ctx, "colors"),
+                                            FloatArgumentType.getFloat(ctx, "speed"), true, 1.0f, false,
+                                            BoolArgumentType.getBool(ctx, "glowing")))
+                                        .then(Commands.argument("smooth", BoolArgumentType.bool())
+                                            .executes(ctx -> applyEntity(ctx.getSource(),
+                                                EntityArgument.getEntities(ctx, "targets"),
+                                                StringArgumentType.getString(ctx, "design"),
+                                                StringArgumentType.getString(ctx, "colors"),
+                                                FloatArgumentType.getFloat(ctx, "speed"),
+                                                BoolArgumentType.getBool(ctx, "smooth"), 1.0f, false,
+                                                BoolArgumentType.getBool(ctx, "glowing")))
+                                            .then(Commands.argument("scale", FloatArgumentType.floatArg(0.25f, 4.0f))
+                                                .executes(ctx -> applyEntity(ctx.getSource(),
+                                                    EntityArgument.getEntities(ctx, "targets"),
+                                                    StringArgumentType.getString(ctx, "design"),
+                                                    StringArgumentType.getString(ctx, "colors"),
+                                                    FloatArgumentType.getFloat(ctx, "speed"),
+                                                    BoolArgumentType.getBool(ctx, "smooth"),
+                                                    FloatArgumentType.getFloat(ctx, "scale"), false,
+                                                    BoolArgumentType.getBool(ctx, "glowing")))
+                                                .then(Commands.argument("simultaneous", BoolArgumentType.bool())
+                                                    .executes(ctx -> applyEntity(ctx.getSource(),
+                                                        EntityArgument.getEntities(ctx, "targets"),
+                                                        StringArgumentType.getString(ctx, "design"),
+                                                        StringArgumentType.getString(ctx, "colors"),
+                                                        FloatArgumentType.getFloat(ctx, "speed"),
+                                                        BoolArgumentType.getBool(ctx, "smooth"),
+                                                        FloatArgumentType.getFloat(ctx, "scale"),
+                                                        BoolArgumentType.getBool(ctx, "simultaneous"),
+                                                        BoolArgumentType.getBool(ctx, "glowing")))))))))))
+                    .then(Commands.literal("remove")
+                        .executes(ctx -> removeEntity(ctx.getSource(),
+                            EntityArgument.getEntities(ctx, "targets"))))
+                    .then(Commands.literal("glow")
+                        .then(Commands.argument("enabled", BoolArgumentType.bool())
+                            .executes(ctx -> glowEntity(ctx.getSource(),
+                                EntityArgument.getEntities(ctx, "targets"),
+                                BoolArgumentType.getBool(ctx, "enabled"))))))));
+    }
+
+    private static int applyEntity(CommandSourceStack source, java.util.Collection<? extends Entity> targets,
+                                   String designName, String colorsArg,
+                                   float speed, boolean smooth, float scale, boolean simultaneous,
+                                   boolean glowing) {
+        String key = designName.toLowerCase();
+        if (!GlintTrimItem.PATTERNS.contains(key)) {
+            source.sendFailure(Component.literal(
+                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
+            return 0;
+        }
+        ResourceLocation design;
+        if ("vanilla".equals(key)) {
+            design = CustomGlint.VANILLA;
+        } else if (key.contains(":")) {
+            int c = key.indexOf(':');
+            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
+        } else {
+            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
+        }
+
+        String[] parts = colorsArg.split(",");
+        int[] colors = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            String name = parts[i].trim().toLowerCase();
+            Integer c = COLORS.get(name);
+            if (c == null) {
+                source.sendFailure(Component.literal(
+                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
+                return 0;
+            }
+            colors[i] = c;
+        }
+
+        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
+
+        int count = 0;
+        for (Entity e : targets) {
+            if (!(e instanceof LivingEntity le)) continue;
+            CustomGlint.writeEntity(le, layers);
+            CustomGlint.setEntityGlowing(le, glowing);
+            EntityGlintEvents.broadcast(le);
+            count++;
+        }
+        if (count == 0) {
+            source.sendFailure(Component.literal("No matching living entities"));
+            return 0;
+        }
+        final int n = count;
+        source.sendSuccess(() -> Component.literal("Glint applied to " + n + " entit" + (n == 1 ? "y" : "ies")), false);
+        return count;
+    }
+
+    private static int removeEntity(CommandSourceStack source, java.util.Collection<? extends Entity> targets) {
+        int count = 0;
+        for (Entity e : targets) {
+            if (!(e instanceof LivingEntity le)) continue;
+            if (!CustomGlint.hasEntity(le)) continue;
+            CustomGlint.removeEntity(le);
+            EntityGlintEvents.broadcast(le);
+            count++;
+        }
+        if (count == 0) {
+            source.sendFailure(Component.literal("No matching living entities had a glint"));
+            return 0;
+        }
+        final int n = count;
+        source.sendSuccess(() -> Component.literal("Glint removed from " + n + " entit" + (n == 1 ? "y" : "ies")), false);
+        return count;
+    }
+
+    private static int glowEntity(CommandSourceStack source, java.util.Collection<? extends Entity> targets, boolean enabled) {
+        int count = 0;
+        for (Entity e : targets) {
+            if (!(e instanceof LivingEntity le)) continue;
+            if (enabled && !CustomGlint.hasEntity(le)) continue;
+            CustomGlint.setEntityGlowing(le, enabled);
+            EntityGlintEvents.broadcast(le);
+            count++;
+        }
+        if (count == 0) {
+            source.sendFailure(Component.literal(enabled
+                ? "No matching living entities have a glint to glow"
+                : "No matching living entities"));
+            return 0;
+        }
+        final int n = count;
+        source.sendSuccess(() -> Component.literal((enabled ? "Glowing enabled on " : "Glowing disabled on ") + n + " entit" + (n == 1 ? "y" : "ies")), false);
+        return count;
     }
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
