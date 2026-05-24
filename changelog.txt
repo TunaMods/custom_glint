@@ -36,6 +36,17 @@ Fixed:
 - ElytraSlot: elytras placed in the dedicated elytra Curios slot (or routed back slot) now
   display their custom glint and glow outline, matching the vanilla chestplate elytra behavior.
 
+[Dev]
+- New entity-glint API on CustomGlint: registerEntityGlint(EntityType, Data) and the (type,
+  design, colors) overload for auto-applying glints to entire entity types; ENTITY_GLINTS map
+  exposed for inspection.
+- Entity NBT API mirrors the item API: readEntity / hasEntity / writeEntity / removeEntity,
+  isEntityGlowing / setEntityGlowing, getEntityGlowColors / hasEntityGlowColors /
+  setEntityGlowColors / clearEntityGlowColors.
+- Tag-level helpers for bundling glint data across the wire or NBT files: itemGlintTag(stack),
+  entityGlintTag(entity), writeEntityTag(entity, tag), fromTag(tag), tagGlowing(tag),
+  tagGlowColors(tag), toTag(layers).
+
 [1.3.0]
 
 Added:
