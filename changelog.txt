@@ -45,17 +45,15 @@ Fixed:
   were previously producing a broken half-outline that stenciled onto only one wing face).
 - Epic Knights armor decoration overlays (capes, tabards, trims) now receive the glint and
   glow pass cleanly instead of being skipped or producing a doubled outline.
-- Ice and Fire dragon armor: glints and glow outlines now stay masked to the actual armor
-  texels instead of bleeding across the entire dragon body, and remain stable across
-  buffered render flushes.
-- Ice and Fire hippogryph and hippocampus armor: glow outlines now render cleanly with the
-  same single-ring behavior used for vanilla mounts.
-- Ice and Fire troll weapons and death worm gauntlets: held-item glints now align correctly
-  with the BEWLR's translation offsets.
-- First-Person Mod: held-item glow outlines no longer double up between the third-person
-  and 3.5D body views.
-- Iris/Oculus: outline pipeline is more resilient to shader-pack buffer-source wrapping,
-  so per-slot stencil isolation keeps working when shader mods rewrap the render buffers.
+- Ice and Fire dragon armor (with a shader pack enabled): glints and glow outlines now stay
+  on the actual armor instead of bleeding across the entire dragon body.
+- Ice and Fire hippogryph and hippocampus armor (with a shader pack enabled): glow outlines
+  now render as a single clean ring matching vanilla horse armor behavior.
+- Ice and Fire troll weapons and death worm gauntlets: held-item glints now sit correctly
+  on the weapon instead of drifting off-position.
+- Iris/Oculus: glow outlines are now more consistent across armor, held items, sprites, and
+  entities — the same outline look everywhere instead of one item type rendering differently
+  from another with a shader pack on.
 
 [Dev]
 - Entity glint sync (server-to-client per-instance NBT) now ships in the api jar itself, so
