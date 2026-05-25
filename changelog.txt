@@ -35,8 +35,16 @@ Fixed:
 [Compat]
 - ElytraSlot: elytras placed in the dedicated elytra Curios slot (or routed back slot) now
   display their custom glint and glow outline, matching the vanilla chestplate elytra behavior.
+- Epic Knights (Medieval Weapons): chest armor glow outlines no longer wrap around the
+  invisible arm cuboids that EK chestplates carry, so the outline traces just the visible
+  armor silhouette.
+- Epic Knights Winged Hussar chestplate: the back wings now get a proper glow outline ring
+  instead of stenciling onto only one wing face.
 
 [Dev]
+- Entity glint sync (server-to-client per-instance NBT) now ships in the api jar itself, so
+  mods that bundle only custom-glint-api via jarJar get entity body glints working with no
+  extra wiring.
 - New entity-glint API on CustomGlint: registerEntityGlint(EntityType, Data) and the (type,
   design, colors) overload for auto-applying glints to entire entity types; ENTITY_GLINTS map
   exposed for inspection.
