@@ -13,6 +13,8 @@ Added:
   entity you're looking at. Glints animate across the entity's body and any cosmetic overlays.
 - Glow outlines also apply to entities, with the outline forming a single clean ring around the
   union of the entity's body and any clothing/armor layers instead of duplicating per layer.
+- Black Tear can now be right-clicked on a mob to instantly clear that mob's glint and glow
+  data (consumes one tear; does nothing if the mob has no glint applied).
 - Spanish translation added.
 
 Fixed:
@@ -38,8 +40,21 @@ Fixed:
 - Epic Knights (Medieval Weapons): chest armor glow outlines no longer wrap around the
   invisible arm cuboids that EK chestplates carry, so the outline traces just the visible
   armor silhouette.
-- Epic Knights Winged Hussar chestplate: the back wings now get a proper glow outline ring
-  instead of stenciling onto only one wing face.
+- Epic Knights Winged Hussar chestplate: the back wings no longer get a glow outline (they
+  were previously producing a broken half-outline that stenciled onto only one wing face).
+- Epic Knights armor decoration overlays (capes, tabards, trims) now receive the glint and
+  glow pass cleanly instead of being skipped or producing a doubled outline.
+- Ice and Fire dragon armor: glints and glow outlines now stay masked to the actual armor
+  texels instead of bleeding across the entire dragon body, and remain stable across
+  buffered render flushes.
+- Ice and Fire hippogryph and hippocampus armor: glow outlines now render cleanly with the
+  same single-ring behavior used for vanilla mounts.
+- Ice and Fire troll weapons and death worm gauntlets: held-item glints now align correctly
+  with the BEWLR's translation offsets.
+- First-Person Mod: held-item glow outlines no longer double up between the third-person
+  and 3.5D body views.
+- Iris/Oculus: outline pipeline is more resilient to shader-pack buffer-source wrapping,
+  so per-slot stencil isolation keeps working when shader mods rewrap the render buffers.
 
 [Dev]
 - Entity glint sync (server-to-client per-instance NBT) now ships in the api jar itself, so
