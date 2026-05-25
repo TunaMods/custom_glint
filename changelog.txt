@@ -8,9 +8,10 @@ Added:
   pre-loaded with those settings, so you can transfer or inspect a glint without a wand.
 - /glint export <name> — saves the current main-hand item's glint to
   config/customglint/trims/<name>.json so you can reload it later via the wand's Import picker.
-- Custom glints can now be applied directly to living entities (mobs, players, animals) — point
-  the wand at an entity to open the editor for it, or use /glint apply / /glint remove on the
-  entity you're looking at. Glints animate across the entity's body and any cosmetic overlays.
+- Custom glints can now be applied directly to living entities (mobs, players, animals) —
+  shift-right-click a mob with the wand to apply the wand's current glint to it, or use
+  /glint entity <targets> apply / remove / glow for selector-based application. Glints animate
+  across the entity's body and any cosmetic overlays.
 - Glow outlines also apply to entities, with the outline forming a single clean ring around the
   union of the entity's body and any clothing/armor layers instead of duplicating per layer.
 - Black Tear can now be right-clicked on a mob to instantly clear that mob's glint and glow
