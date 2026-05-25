@@ -30,7 +30,7 @@ public class ItemRendererMixin {
     private void cg_captureStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        CustomGlintRenderer.CURRENT_ITEM_STACK.set(pItemStack);
+        cg_onRenderHead(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay, pModel);
     }
 
     /** Named target: captures the stack before render begins (dev/deobf environments). */
@@ -41,7 +41,23 @@ public class ItemRendererMixin {
     private void cg_captureStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
             boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        CustomGlintRenderer.CURRENT_ITEM_STACK.set(pItemStack);
+        cg_onRenderHead(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay, pModel);
+    }
+
+    /** HEAD logic shared between SRG and named injects: capture the stack, and for glowing GUI
+     *  items inject the 4-direction halo BEFORE the actual item renders so the real item naturally
+     *  overdraws the overlap and only the +/- 1 GUI-pixel ring remains. The recursive renders run
+     *  through this mixin again and will clear CURRENT_ITEM_STACK on each inner RETURN; re-set it
+     *  after so the outer body's getFoilBuffer (for glint) still sees the stack. */
+    private static void cg_onRenderHead(ItemStack stack, ItemDisplayContext ctx, boolean lh,
+            PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
+        CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
+        if (ctx == ItemDisplayContext.GUI
+                && !CustomGlintRenderer.IN_OUTLINE.get()
+                && CustomGlint.isGlowing(stack)) {
+            CustomGlintRenderer.doGuiItemOutline(stack, ctx, lh, pose, buffer, light, overlay, model);
+            CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
+        }
     }
 
     // ── Stack clear + item outline (RETURN) ─────────────────────────────────

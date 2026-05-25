@@ -74,6 +74,6 @@ public class ArmorDecorationLayerMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return;
         EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint,
-                CustomGlint.isGlowing(stack));
+                CustomGlint.isGlowing(stack), stack);
     }
 }

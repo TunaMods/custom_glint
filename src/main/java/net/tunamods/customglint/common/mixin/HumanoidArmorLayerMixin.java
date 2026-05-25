@@ -35,7 +35,8 @@ public class HumanoidArmorLayerMixin {
     private void cg_armorGlint_srg(PoseStack pPoseStack, MultiBufferSource pBuffer,
             LivingEntity pLivingEntity, EquipmentSlot pSlot, int pPackedLight,
             HumanoidModel pModel, CallbackInfo ci) {
-        applyArmorGlint(pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
+        applyArmorGlint((HumanoidArmorLayer<?, ?, ?>) (Object) this,
+                pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
     }
 
     /** Named target: injects at RETURN of renderArmorPiece in dev/deobf environments. */
@@ -46,12 +47,14 @@ public class HumanoidArmorLayerMixin {
     private void cg_armorGlint_named(PoseStack pPoseStack, MultiBufferSource pBuffer,
             LivingEntity pLivingEntity, EquipmentSlot pSlot, int pPackedLight,
             HumanoidModel pModel, CallbackInfo ci) {
-        applyArmorGlint(pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
+        applyArmorGlint((HumanoidArmorLayer<?, ?, ?>) (Object) this,
+                pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static void applyArmorGlint(PoseStack poseStack, MultiBufferSource buffer,
+    private static void applyArmorGlint(HumanoidArmorLayer<?, ?, ?> layer,
+            PoseStack poseStack, MultiBufferSource buffer,
             LivingEntity entity, EquipmentSlot slot, int packedLight, HumanoidModel model) {
         ItemStack stack = entity.getItemBySlot(slot);
         if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) return;
@@ -95,16 +98,94 @@ public class HumanoidArmorLayerMixin {
             }
         }
         if (glowing) {
+            // Use Forge's HumanoidArmorLayer#getArmorResource: it splits the colon out of
+            // materials whose getName() returns "namespace:path" (e.g. EK's
+            // "magistuarmory:wingedhussarchestplate") and produces a valid
+            // "{namespace}:textures/models/armor/{name}_layer_X.png". Building the path
+            // ourselves and calling `new ResourceLocation` directly throws on the embedded
+            // colon and falls back to SOLID — alpha-discard then misses, and stencil-write
+            // stamps the full cuboid (visible as a giant-rectangle outline on EK
+            // WingedHussar wings, where the bounding plane dwarfs the visible feather).
             ResourceLocation armorTex = CustomGlint.SOLID;
-            if (stack.getItem() instanceof ArmorItem ai) {
-                String defaultPath = String.format("textures/models/armor/%s_layer_%d.png",
-                        ai.getMaterial().getName(), slot == EquipmentSlot.LEGS ? 2 : 1);
-                String resolved = ForgeHooksClient.getArmorTexture(entity, stack, defaultPath, slot, null);
-                try { armorTex = new ResourceLocation(resolved); }
-                catch (Exception ignored) { armorTex = CustomGlint.SOLID; }
+            if (stack.getItem() instanceof ArmorItem) {
+                try {
+                    armorTex = layer.getArmorResource(entity, stack, slot, null);
+                } catch (Exception ignored) { armorTex = CustomGlint.SOLID; }
             }
             EntityModel<?> outlineModel = rendererModel instanceof EntityModel<?> em ? em : model;
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, armorTex, stack, slot);
+
+            // EK halfarmor chestplate: arm cuboids in EK's model sample opaque pixels in the
+            // halfarmor chest texture even though no arm armor is visually intended, so the
+            // stencil outline pass forms a ring around the entire arm. EK compat installs
+            // chestArmorHidesArmsInOutline keyed on texture path; when true, hide arm parts
+            // for the outline call only. Other EK chests have legitimate sleeve coverage and
+            // fall through unchanged.
+            HumanoidModel<?> armHideModel = null;
+            boolean savedRightArm = false, savedLeftArm = false;
+            if (slot == EquipmentSlot.CHEST
+                    && outlineModel instanceof HumanoidModel<?> hm
+                    && CustomGlintRenderer.chestArmorHidesArmsInOutline.test(armorTex)) {
+                armHideModel = hm;
+                savedRightArm = hm.rightArm.visible;
+                savedLeftArm  = hm.leftArm.visible;
+                hm.rightArm.visible = false;
+                hm.leftArm.visible  = false;
+            }
+
+            // Parts that should be excluded from the outline entirely (EK WingedHussar wings:
+            // flat 0×32×14 planes too far from the chest pivot — the 1.04× dilation produces
+            // a ghost feather offset from the original, and the per-part pixel-translate
+            // approach can't honor depth between overlapping wings either. Compat installs the
+            // hook to nominate parts; mixin hides them for doModelOutline and restores after,
+            // so the broken dilation never draws on them and they simply have no outline).
+            net.minecraft.client.model.geom.ModelPart[] hiddenParts = null;
+            boolean[] savedHiddenVisible = null;
+            if (slot == EquipmentSlot.CHEST && outlineModel instanceof HumanoidModel<?> hmx) {
+                hiddenParts = CustomGlintRenderer.armorExtraOutlineParts.apply(hmx, armorTex);
+                if (hiddenParts != null && hiddenParts.length > 0) {
+                    savedHiddenVisible = new boolean[hiddenParts.length];
+                    for (int i = 0; i < hiddenParts.length; i++) {
+                        savedHiddenVisible[i] = hiddenParts[i].visible;
+                        hiddenParts[i].visible = false;
+                    }
+                }
+            }
+
+            // For dyeable armor (DyeableLeatherItem) the visible coverage is split across base
+            // + overlay textures — base is tinted, overlay is untinted detail. Some EK Knight
+            // chestplates (e.g. crusader) put the chest in base but the arm sleeves in overlay.
+            // If we only outline the base texture, arms get no outline. Derive the overlay path
+            // via Forge's getArmorResource(type="overlay") and run a second outline pass when
+            // it exists. Non-dyeable armors skip this entirely. Overlay path resolution can
+            // throw on weird material names → guarded the same way as the base path.
+            ResourceLocation overlayTex = null;
+            if (stack.getItem() instanceof net.minecraft.world.item.DyeableLeatherItem) {
+                try {
+                    ResourceLocation candidate = layer.getArmorResource(entity, stack, slot, "overlay");
+                    if (candidate != null
+                            && net.minecraft.client.Minecraft.getInstance().getResourceManager()
+                                    .getResource(candidate).isPresent()) {
+                        overlayTex = candidate;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            try {
+                CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, armorTex, stack, slot);
+                if (overlayTex != null) {
+                    CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, overlayTex, stack, slot);
+                }
+            } finally {
+                if (armHideModel != null) {
+                    armHideModel.rightArm.visible = savedRightArm;
+                    armHideModel.leftArm.visible  = savedLeftArm;
+                }
+                if (hiddenParts != null && savedHiddenVisible != null) {
+                    for (int i = 0; i < hiddenParts.length; i++) {
+                        hiddenParts[i].visible = savedHiddenVisible[i];
+                    }
+                }
+            }
         }
     }
 

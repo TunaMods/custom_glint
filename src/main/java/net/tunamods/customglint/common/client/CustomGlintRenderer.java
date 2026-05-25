@@ -32,6 +32,7 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TieredItem;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 import net.tunamods.customglint.common.CustomGlint;
 import org.joml.Matrix4f;
@@ -167,11 +168,30 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (cached != null) return cached;
         Minecraft mc = Minecraft.getInstance();
         NativeImage src;
+        boolean srcOwned;  // close src only if we read from a resource stream
         try {
             var res = mc.getResourceManager().getResource(original);
-            if (res.isEmpty()) return original;
-            try (InputStream stream = res.get().open()) {
-                src = NativeImage.read(stream);
+            if (res.isPresent()) {
+                try (InputStream stream = res.get().open()) {
+                    src = NativeImage.read(stream);
+                }
+                srcOwned = true;
+            } else {
+                // Resource not in the pack — might be a registered DynamicTexture (e.g. EK
+                // WingedHussar's symmetrized chest variant from armorOutlineTextureRemap).
+                // Falling back to `return original` here would bind the dynamic texture's
+                // actual armor pixels for the outline, so gbuffers_entities multiplies
+                // vertexColor × armor RGB and the outline picks up the armor's albedo
+                // (red WingedHussar → purple-outline-tinted-red). Read the DynamicTexture's
+                // backing NativeImage instead so the alpha mask is RGB=255 + binarized alpha.
+                net.minecraft.client.renderer.texture.AbstractTexture tex =
+                        mc.getTextureManager().getTexture(original);
+                if (tex instanceof DynamicTexture dt && dt.getPixels() != null) {
+                    src = dt.getPixels();
+                    srcOwned = false;
+                } else {
+                    return original;
+                }
             }
         } catch (Throwable t) {
             LOGGER.warn("[{}/CustomGlint] getArmorAlphaMask: read threw for {}", MOD_ID, original, t);
@@ -179,14 +199,24 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
         NativeImage mask = new NativeImage(src.getWidth(), src.getHeight(), false);
         try {
+            // Binarize alpha: any source alpha > 0 → 255 in the mask, else 0. ENTITY_CUTOUT_NO_CULL
+            // (used by shader-pack outline RTs) discards at alpha < 0.1 (~25/255), while the
+            // shaders-off OUTLINE_SHADER stencil path discards at alpha == 0. Textures with
+            // anti-aliased edges (chainmail, lace, fine detail) have sub-threshold alpha at the
+            // perimeter pixels — they outline correctly under stencil but vanish under shaders.
+            // Binarizing here equalizes the two paths so the shader-pack outline covers every
+            // pixel the stencil pipeline would have stamped. RGB stays 255 so the pack computes
+            // {@code white × vertexColor = vertexColor} (outline color is preserved, not tinted
+            // by the source albedo).
             for (int y = 0; y < src.getHeight(); y++) {
                 for (int x = 0; x < src.getWidth(); x++) {
-                    int pixel = src.getPixelRGBA(x, y);
-                    mask.setPixelRGBA(x, y, (pixel & 0xFF000000) | 0x00FFFFFF);
+                    int alpha = (src.getPixelRGBA(x, y) >> 24) & 0xFF;
+                    int outAlpha = alpha > 0 ? 0xFF : 0x00;
+                    mask.setPixelRGBA(x, y, (outAlpha << 24) | 0x00FFFFFF);
                 }
             }
         } finally {
-            src.close();
+            if (srcOwned) src.close();
         }
         String safePath = original.getNamespace() + "_" + original.getPath().replace('/', '_').replace('.', '_');
         ResourceLocation loc = new ResourceLocation(MOD_ID, "armor_alpha_mask/" + safePath);
@@ -214,10 +244,18 @@ public final class CustomGlintRenderer extends RenderStateShard {
             try { mc.getTextureManager().release(loc); } catch (Throwable ignored) {}
         }
         ARMOR_ALPHA_MASKS.clear();
+        for (Runnable r : additionalReloadCleanup) {
+            try { r.run(); } catch (Throwable t) {
+                LOGGER.warn("[{}/CustomGlint] additional reload cleanup threw", MOD_ID, t);
+            }
+        }
         if (fixedBufferRegistry != null) {
             for (RenderType rt : BY_GLINT.values())             fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_ARMOR_GLINT.values())       fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) fixedBufferRegistry.remove(rt);
+            for (RenderType rt : BY_MOUNT_ARMOR_GLINT.values()) fixedBufferRegistry.remove(rt);
+            for (RenderType rt : BY_MOUNT_ARMOR_MASK.values())  fixedBufferRegistry.remove(rt);
+            for (RenderType rt : BY_BODY_DEPTH_FILL.values())   fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_OUTLINE_WRITE.values())     fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_OUTLINE_WRITE_ITEM.values()) fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_OUTLINE_TEST.values())      fixedBufferRegistry.remove(rt);
@@ -231,6 +269,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         BY_GLINT.clear();
         BY_ARMOR_GLINT.clear();
         BY_HORSE_ARMOR_GLINT.clear();
+        BY_MOUNT_ARMOR_GLINT.clear();
+        BY_MOUNT_ARMOR_MASK.clear();
+        BY_BODY_DEPTH_FILL.clear();
         BY_OUTLINE_WRITE.clear();
         BY_OUTLINE_WRITE_ITEM.clear();
         BY_OUTLINE_TEST.clear();
@@ -313,6 +354,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final Map<String, RenderType> BY_GLINT              = new HashMap<>();
     private static final Map<String, RenderType> BY_ARMOR_GLINT        = new HashMap<>();
     private static final Map<String, RenderType> BY_HORSE_ARMOR_GLINT  = new HashMap<>();
+    private static final Map<String, RenderType> BY_MOUNT_ARMOR_GLINT  = new HashMap<>();
+    private static final Map<ResourceLocation, RenderType> BY_MOUNT_ARMOR_MASK = new HashMap<>();
+    private static final Map<ResourceLocation, RenderType> BY_BODY_DEPTH_FILL = new HashMap<>();
 
     public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
@@ -449,6 +493,196 @@ public final class CustomGlintRenderer extends RenderStateShard {
         SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
         if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
         return cached;
+    }
+
+    /**
+     * Stencil-mask write RT for IaF mount armor (dragon / hippogryph / hippocampus). The mount
+     * body shares the same EntityModel as the armor layer, so an EQUAL_DEPTH glint RT (the
+     * scheme {@link #forHorseArmorGlint} uses for vanilla horse armor) passes depth on every
+     * face of the mount, not just the armor — vanilla horse armor avoids this because its
+     * armor mesh is a separate model, but IaF reuses the parent mount model with an
+     * alpha-cutout armor texture.
+     *
+     * This RT renders the parent model with the armor texture through entity-cutout's
+     * alpha-discard shader and writes only stencil bit {@code 0x80} at opaque texels —
+     * the LayeringStateShard does the GL state in setup/clear so timing is deterministic
+     * across BufferSource flushes. Bit 0x80 is paired with {@link #forMountArmorGlint}'s
+     * stencil EQUAL 0x80 test, constraining the glint draw to the same armor pixels.
+     *
+     * Bit isolation: outline slots {@link #nextStencilSlot} use values 1..255 and may set
+     * bit 0x80 at silhouettes when their slot lands in 128..255. To stay independent, this
+     * mask layering clears bit 0x80 across the framebuffer at setup (mask=0x80, glClear),
+     * and writes/reads only that bit (stencilMask=0x80). Outline's lower bits stay intact.
+     */
+    public static RenderType forMountArmorStencilMask(ResourceLocation tex) {
+        RenderType cached = BY_MOUNT_ARMOR_MASK.computeIfAbsent(tex, t -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":mount_armor_mask|" + t.toString().hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    256, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER)
+                            .setTextureState(new TextureStateShard(t, false, false))
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(NO_WRITE)
+                            .setLayeringState(mountArmorMaskLayering())
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+            return rt;
+        });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
+    }
+
+    private static RenderStateShard.LayeringStateShard mountArmorMaskLayering() {
+        return new RenderStateShard.LayeringStateShard(
+                "custom_glint_mount_armor_mask",
+                () -> {
+                    Minecraft.getInstance().getMainRenderTarget().enableStencil();
+                    GL11.glEnable(GL11.GL_STENCIL_TEST);
+                    GL11.glClearStencil(0);
+                    if (pendingFrameStencilClear) {
+                        GL11.glStencilMask(0xFF);
+                        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
+                        pendingFrameStencilClear = false;
+                    } else {
+                        // Clear only our reserved bit so outline slot bits remain intact.
+                        GL11.glStencilMask(0x80);
+                        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
+                    }
+                    GL11.glStencilMask(0x80);
+                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0x80, 0x80);
+                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
+                },
+                () -> {
+                    GL11.glStencilMask(0xFF);
+                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
+                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+                    GL11.glDisable(GL11.GL_STENCIL_TEST);
+                });
+    }
+
+    /**
+     * Stencil-gated armor glint for IaF mounts. Same render state as
+     * {@link #forHorseArmorGlint} (EQUAL depth, no polygon offset, glint transparency,
+     * glint shader + scrolling matrix) but its layering shard tests stencil bit 0x80
+     * EQUAL 1 instead of NO_LAYERING — only the texels marked by
+     * {@link #forMountArmorStencilMask} draw.
+     */
+    public static RenderType forMountArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        if (getTexture(layer.design()) == null) return null;
+        String key = "mount|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
+        float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
+        System.arraycopy(frameColor, 0, holder, 0, 4);
+        RenderType cached = BY_MOUNT_ARMOR_GLINT.computeIfAbsent(key, k -> {
+            ResourceLocation tex = layer.design();
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":custom_mount_armor_glint|" + k.hashCode(),
+                    DefaultVertexFormat.POSITION_TEX,
+                    VertexFormat.Mode.QUADS,
+                    256,
+                    false,
+                    false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setTextureState(new TextureStateShard(tex, false, false) {
+                                @Override public void setupRenderState() {
+                                    RenderSystem.setShaderTexture(0, getTexture(tex));
+                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                }
+                                @Override public void clearRenderState() {
+                                    super.clearRenderState();
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                }
+                            })
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(EQUAL_DEPTH_TEST)
+                            .setLayeringState(mountArmorGlintTestLayering())
+                            .setTransparencyState(GLINT_TRANSPARENCY)
+                            .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_mount_armor_glint_texturing", () -> {
+                                float phase = (float)colorIdx / Math.max(1, layer.colors().length);
+                                long t = (long)(Util.getMillis() * 8.0 * layer.speed());
+                                float f  = (float)(t % 110000L) / 110000.0F + phase;
+                                float f1 = (float)(t % 30000L)  /  30000.0F;
+                                Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
+                                m.rotateZ((float)(Math.PI / 3.0));
+                                m.translate(f, -f1, 0.0F);
+                                m.rotateZ((float)(Math.PI / 3.0));
+                                m.translate(-f, f1, 0.0F);
+                                m.rotateZ((float)(Math.PI / 3.0));
+                                m.translate(f, f1, 0.0F);
+                                m.scale(layer.patternScale());
+                                RenderSystem.setTextureMatrix(m);
+                            }, RenderSystem::resetTextureMatrix))
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+            return rt;
+        });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
+    }
+
+    /**
+     * Depth-only fill of an entity model's full geometry silhouette, ignoring texture alpha.
+     * Companion to {@link #doModelOutline} for IaF mount armor: IaF dragon / hippogryph /
+     * hippocampus body textures have transparent regions (between scales, wing membranes,
+     * feather gaps); the normal {@code entityCutoutNoCull} body render discards those fragments
+     * so no depth is written for them. With nothing in the depth buffer at those pixels, the
+     * outline TEST pass's LEQUAL test passes for back-side armor's dilated mesh — the player
+     * sees the BACK armor outline through the FRONT of the mob. Running this RT against the
+     * parent body model BEFORE doModelOutline writes depth at every geometry fragment so the
+     * outline test is correctly occluded by the mob's full silhouette regardless of alpha.
+     *
+     * Uses RENDERTYPE_ENTITY_SOLID_SHADER (no alpha-discard) + DEPTH-only write mask + LEQUAL
+     * depth. Bound texture is irrelevant since color isn't written; the shader still needs a
+     * Sampler0 binding so pass any valid texture (callers pass the armor texture for simplicity).
+     */
+    public static RenderType forBodyDepthFill(ResourceLocation tex) {
+        RenderType cached = BY_BODY_DEPTH_FILL.computeIfAbsent(tex, t -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":body_depth_fill|" + t.toString().hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    256, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_ENTITY_SOLID_SHADER)
+                            .setTextureState(new TextureStateShard(t, false, false))
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(new RenderStateShard.WriteMaskStateShard(false, true))
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+            return rt;
+        });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
+    }
+
+    private static RenderStateShard.LayeringStateShard mountArmorGlintTestLayering() {
+        return new RenderStateShard.LayeringStateShard(
+                "custom_glint_mount_armor_glint_test",
+                () -> {
+                    Minecraft.getInstance().getMainRenderTarget().enableStencil();
+                    GL11.glEnable(GL11.GL_STENCIL_TEST);
+                    GL11.glStencilMask(0x00);
+                    GL11.glStencilFunc(GL11.GL_EQUAL, 0x80, 0x80);
+                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+                },
+                () -> {
+                    GL11.glStencilMask(0xFF);
+                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
+                    GL11.glDisable(GL11.GL_STENCIL_TEST);
+                });
     }
 
     public static RenderType forGlint(Data glint, int layerIdx, float[] frameColor, boolean isItem, int colorIdx) {
@@ -604,6 +838,62 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** True if FPM (First Person Mod by tr7zw) is loaded and wired. Set by {@code FirstPersonClientCompat}. */
     public static boolean fpmPresent = false;
+
+    /**
+     * Predicate consulted by {@code HumanoidArmorLayerMixin} for chest-slot outline calls.
+     * Keyed on the resolved armor TEXTURE (not the item) so the gate can target specific
+     * pieces by texture path without per-item class checks. When true for the given texture,
+     * the mixin hides {@code HumanoidModel.rightArm} and {@code leftArm} for the single
+     * {@link #doModelOutline} call, then restores them.
+     *
+     * Installed by {@code EpicKnightsClientCompat} when Epic Knights is loaded. Targets ONLY
+     * EK's "halfarmor" chestplate (a vanilla-layout HumanoidModel where the arm cuboids
+     * sample opaque pixels in the chest texture even though no arm armor is visually
+     * intended). Other EK chest pieces have full-sleeve coverage and still get arm outlines.
+     */
+    public static java.util.function.Predicate<net.minecraft.resources.ResourceLocation>
+            chestArmorHidesArmsInOutline = tex -> false;
+
+    /**
+     * Optional remap consulted by {@link #doModelOutline} for the WRITE/TEST stencil RTs
+     * and the shader-pack outline RT. When set, the input armor texture is replaced by a
+     * substitute texture (typically a pre-baked synthesized variant) for the outline pass
+     * only — normal armor render and glint pass keep using the original texture.
+     *
+     * Installed by {@code EpicKnightsClientCompat} for EK's WingedHussar chestplate: its
+     * wings are flat 0-width cuboids whose two visible faces sample two DIFFERENT UV
+     * regions (cols 36–49 entirely transparent vs cols 50–63 containing the feather
+     * shape). Without remap, the outline pass stamps stencil across the full cuboid
+     * rectangle (UV-wrap / edge-interpolation artifacts on the asymmetric layout) and
+     * the dilated test traces the rectangle instead of the feather. The remap returns
+     * a synthesized texture where cols 36–49 mirror cols 50–63, so BOTH faces sample
+     * the feather alpha and the stencil/outline correctly trace the feather shape.
+     */
+    public static java.util.function.Function<net.minecraft.resources.ResourceLocation,
+            net.minecraft.resources.ResourceLocation>
+            armorOutlineTextureRemap = tex -> tex;
+
+    /** Reload hooks appended by compat modules; invoked by {@link #clearTextures()} so each
+     *  compat can release its own {@code DynamicTexture}s without {@code CustomGlintRenderer}
+     *  needing to know about them. */
+    public static final java.util.List<Runnable> additionalReloadCleanup = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Resolves child ModelParts that should be HIDDEN during the standard chest outline pass
+     * (and not re-outlined by anything else — they simply get no outline). Intended for thin /
+     * flat / far-from-pivot decorations whose silhouette can't be cleanly outlined by either
+     * the dilation-based path (1.04× around the chest pivot ghosts vertices by many pixels for
+     * geometry far from the pivot) or a pixel-translate path (overlapping coplanar parts can't
+     * be properly depth-occluded against each other).
+     *
+     * Returns {@code null} when the model/texture has no parts needing special handling.
+     * Installed by {@code EpicKnightsClientCompat} for EK's WingedHussar wings.
+     */
+    public static java.util.function.BiFunction<
+            net.minecraft.client.model.HumanoidModel<?>,
+            net.minecraft.resources.ResourceLocation,
+            net.minecraft.client.model.geom.ModelPart[]>
+            armorExtraOutlineParts = (m, tex) -> null;
 
     /**
      * Frame-scoped identity set for shader-mode outline deduplication when FPM is active.
@@ -892,6 +1182,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         tagAsLateRenderForShaders(SLOT_TEST_CULLED[v]);
         return SLOT_TEST_CULLED[v];
     }
+
 
     // Per-RT flush that survives Iris's post-shader-toggle buffer-source wrapper. Vanilla
     // BufferSource and FullyBufferedMultiBufferSource both extend MultiBufferSource$BufferSource,
@@ -1388,6 +1679,41 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /**
+     * GUI flat-item outline RT. Uses {@code RENDERTYPE_OUTLINE_SHADER} which outputs
+     * {@code vertexColor.rgb} with {@code texture.alpha} (discards on {@code alpha == 0}) — the
+     * items atlas is sampled ONLY as an alpha mask, its RGB is ignored. Paired with the existing
+     * {@link ColorOverrideConsumer} (drops overlay/uv2/normal so the POSITION_COLOR_TEX-format
+     * BufferBuilder isn't asked to write fields it doesn't have), this produces a pure
+     * glow-color silhouette of the item sprite — no texture tinting. Same proven recipe used by
+     * {@link #forOutlineStencilTest} for the world-space stencil outline, minus the stencil
+     * layering and depth-bias state that don't apply in GUI rendering.
+     */
+    private static RenderType GUI_ITEM_OUTLINE_TYPE;
+    public static RenderType forGuiItemOutline() {
+        if (GUI_ITEM_OUTLINE_TYPE == null) {
+            GUI_ITEM_OUTLINE_TYPE = RenderType.create(
+                    MOD_ID + ":gui_item_outline",
+                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    VertexFormat.Mode.QUADS,
+                    1536, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
+                            .setTextureState(new TextureStateShard(TextureAtlas.LOCATION_BLOCKS, false, false))
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                            .setOutputState(MAIN_TARGET)
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(GUI_ITEM_OUTLINE_TYPE, new BufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
+        }
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(GUI_ITEM_OUTLINE_TYPE))
+            live.put(GUI_ITEM_OUTLINE_TYPE, new BufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
+        return GUI_ITEM_OUTLINE_TYPE;
+    }
+
+    /**
      * VertexConsumer wrapper for the shader-pack forward outline path. Underlying buffer is
      * POSITION_COLOR only; entity models call vertex().color().uv().overlayCoords().uv2().normal().endVertex().
      * We forward position + color + endVertex, override the color with a fixed RGBA (outline color),
@@ -1395,7 +1721,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
      */
     /** VertexConsumer that swallows every call. Used to drive geometry through AABBTrackingConsumer
      *  without actually rendering anything (shader-pack outline first pass: just capture bounds). */
-    private static final class NullConsumer implements VertexConsumer {
+    public static final class NullConsumer implements VertexConsumer {
+        public NullConsumer() {}
         @Override public VertexConsumer vertex(double x, double y, double z) { return this; }
         @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) { return this; }
         @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
@@ -1698,7 +2025,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // the dilated mesh inside the silhouette (visible as a filled plane). Capturing the previous
     // FBO and restoring it on clear keeps the shader pipeline state intact.
     private static final int[] SAVED_FBO = new int[1];
-    private static final RenderStateShard.OutputStateShard FORCE_MAIN_TARGET =
+    /** Exposed for compat code (EK decoration RTs) that needs the same Oculus-no-pack-safe
+     *  FBO binding. */
+    public static final RenderStateShard.OutputStateShard FORCE_MAIN_TARGET =
             new RenderStateShard.OutputStateShard("custom_glint_force_main_target",
                 () -> {
                     SAVED_FBO[0] = GlStateManager._getInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
@@ -2003,6 +2332,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // Don't run outline geometry during the shader mod's shadow pass — wrong buffer format → endVertex crash.
         if (isInShadowPass()) return;
         if (outlineSuppressor.getAsBoolean()) return;
+        // Compat-installed substitute texture used by WRITE/TEST and forward-pass outline RTs.
+        // Default identity; EK compat remaps WingedHussar chest texture to a synthesized variant
+        // where the wings' two asymmetric-UV faces both sample the feather alpha.
+        texture = armorOutlineTextureRemap.apply(texture);
         float oR = ((color >> 16) & 0xFF) / 255.0f;
         float oG = ((color >>  8) & 0xFF) / 255.0f;
         float oB = ( color        & 0xFF) / 255.0f;
@@ -2152,12 +2485,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 poseStack.scale(outlineScale, outlineScale, 1.0f);
             }
         } else if (slot == null) {
-            // Entity body (slot==null comes from EntityGlintRender, never from armor layers).
-            // The humanoid pivot below (y≈0.9 in entity-local) is chest-height on a player and
-            // sits well above short quadrupeds like pigs/spiders/cows — uniform scale around a
-            // pivot above the model shifts everything downward, clipping the top of the outline.
-            // Fix: scale around the model's own 3D AABB centroid (NullConsumer pre-pass), so the
-            // dilation stays concentric with whatever silhouette the entity actually has.
+            // Non-humanoid pivot: entity body outlines from EntityGlintRender AND IaF mount armor
+            // (dragon, hippogryph, hippocampus) — anything where the model is not a HumanoidModel
+            // and the chest-height humanoid pivot below would displace geometry incorrectly.
+            // The humanoid pivot (y≈0.9 in entity-local) is correct for a player but sits far from
+            // a 5m dragon's centroid; scaling 1.04× around that misplaced pivot shifts back-side
+            // geometry several units in Z, enough that the dilated outline mesh for back-side
+            // armor passes LEQUAL against the body depth and draws visibly on the front — symptom:
+            // looking at one side of the mob shows the outline from the opposite side through it.
+            // Scale around the model's own 3D AABB centroid (NullConsumer pre-pass) so dilation
+            // stays concentric with whatever silhouette the model actually has. IaF mount armor
+            // mixins explicitly pass slot=null to reach this branch.
             float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
@@ -2349,16 +2687,56 @@ public final class CustomGlintRenderer extends RenderStateShard {
             int gByte = (color >>  8) & 0xFF;
             int bByte =  color        & 0xFF;
             if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
-            RenderType outlineRT = forShaderOutline(); // not wrapped; see armor path comment
-            VertexConsumer outlineBuf = new PositionColorOnlyConsumer(
-                    buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
             IN_OUTLINE.set(true);
             try {
-                poseStack.pushPose();
-                poseStack.scale(1.06f, 1.06f, 1.06f);
-                model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
-                if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
-                poseStack.popPose();
+                // Textured outline path — alpha-discards against the variant's own texture so
+                // BEWLRs that pack multiple variants into a single shared Model (IaF troll weapon,
+                // death worm gauntlet) only outline the currently-active variant. The prior
+                // texture-less forShaderOutline() drew the dilated mesh on every cube in the
+                // shared model regardless of which variant's texture was bound — under a shader
+                // pack you'd see all troll weapon outlines mixed together. forShaderArmorOutlineTextured
+                // uses RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER which maps to gbuffers_entities and
+                // discards transparent texels; the parallel alpha-mask (RGB=255, alpha preserved)
+                // keeps the ring in the chosen outline color rather than tinting it with the texture
+                // albedo. Caller must pass FullColorOverrideConsumer so UV reaches the buffer.
+                //
+                // Scale around the model's own AABB centroid (NullConsumer pre-pass), not the pose
+                // origin — BEWLR models are typically offset from origin and a uniform pose-origin
+                // scale shifts the dilated shell off-center.
+                RenderType outlineRT = (texture != null)
+                        ? forShaderArmorOutlineTextured(getArmorAlphaMask(texture))
+                        : forShaderOutline();
+                if (texture != null) {
+                    float[] minMax = { Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY,
+                                       Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
+                    poseStack.pushPose();
+                    model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
+                            packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                    poseStack.popPose();
+                    if (!(minMax[3] > minMax[0])) return;
+                    float cx = (minMax[0] + minMax[3]) * 0.5f;
+                    float cy = (minMax[1] + minMax[4]) * 0.5f;
+                    float cz = (minMax[2] + minMax[5]) * 0.5f;
+                    VertexConsumer outlineBuf = new FullColorOverrideConsumer(
+                            buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
+                    poseStack.pushPose();
+                    poseStack.last().pose().mulLocal(new org.joml.Matrix4f()
+                            .translate(cx, cy, cz)
+                            .scale(1.06f, 1.06f, 1.06f)
+                            .translate(-cx, -cy, -cz));
+                    model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+                    if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
+                    poseStack.popPose();
+                } else {
+                    // Texture-less fallback (kept for callers that pass null) — original behavior.
+                    VertexConsumer outlineBuf = new PositionColorOnlyConsumer(
+                            buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
+                    poseStack.pushPose();
+                    poseStack.scale(1.06f, 1.06f, 1.06f);
+                    model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+                    if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
+                    poseStack.popPose();
+                }
             } finally {
                 IN_OUTLINE.set(false);
             }
@@ -2464,6 +2842,150 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * Cross-references: context2.md (prior session handoff), `FirstPersonCompat.shouldSuppress`
      * (FPM detection wired but commented out), `pendingFrameStencilClear` javadoc (line ~395).
      */
+    /**
+     * GUI icon glow outline (hotbar / inventory / chest / JEI / any 2D context). Fires from
+     * {@code ItemRendererMixin}'s HEAD inject BEFORE the actual item renders so the 4 translated
+     * copies land in the same RT buckets in submission order; the real item is appended last and
+     * naturally overdraws the overlap, leaving only the +/- 1 GUI-pixel halo visible.
+     *
+     * Mechanism: wrap the bufferSource so every {@code getBuffer(rt)} returns a
+     * {@link FullColorOverrideConsumer} clamped to the glow color. Recursively call
+     * {@link net.minecraft.client.renderer.entity.ItemRenderer#render} with the wrapped source 4
+     * times at offsets (-1, 0), (1, 0), (0, -1), (0, 1) GUI pixels. The pose stack at this point
+     * has been scaled by 16, so 1 GUI pixel == 1/16 model-space unit.
+     *
+     * {@link #IN_OUTLINE} is set so {@code ItemRendererMixin.applyGlint} short-circuits to the
+     * bare base buffer (no glint overlay during outline copies).
+     */
+    /**
+     * Reverted to the first-iteration working state: 4 translated render() copies through a
+     * FullColorOverrideConsumer that forwards to whatever RT vanilla's ItemRenderer chose for
+     * each draw (no RT redirect, no alpha-mask atlas, no scissor). Outline IS visible in GUI
+     * but its color BLEEDS the sprite's edge pixels — shader emits `texColor × vertexColor`,
+     * so a green sword sprite tints the red glow into a muddy green. Fixing the color is still
+     * an open problem; see "Attempted color fixes (all broke the draw entirely)" below.
+     *
+     * Attempted color fixes (all broke the draw entirely — outline disappeared):
+     *   1. Redirect every getBuffer(rt) to a single `RenderType.entityCutoutNoCull(getBlocksAlphaMask())`.
+     *      Idea: the alpha-mask atlas has RGB clamped to 255, so shader output =
+     *      `white × vertexColor = glowColor`. Same trick used successfully by world-outline
+     *      shader-pack path. RESULT: no outline rendered at all in GUI. Possibly the
+     *      alpha-mask texture isn't fully built / bound in GUI context, or the RT's
+     *      LIGHTMAP/OVERLAY state interacts badly with GUI's render state.
+     *   2. Redirect every getBuffer(rt) to a single `RenderType.entityCutoutNoCull(LOCATION_BLOCKS)`
+     *      (the real items atlas, not the mask). Same redirect mechanism, just different texture.
+     *      Idea: at least prove the redirect path works. RESULT: also no outline at all.
+     *      Suggests the issue isn't the texture but the RT redirect itself — possibly because
+     *      a single shared outlineRT can't satisfy whatever format/state ItemRenderer's chosen
+     *      per-quad RT needed (e.g. translucentCullBlockSheet uses BLOCK format, not NEW_ENTITY).
+     *   3. Added slot scissor (glScissor on a 16x16 slot-bounds box). Initially read pose stack's
+     *      m30/m31 (wrong — that PoseStack is identity in GUI; the GUI transform lives on
+     *      RenderSystem.getModelViewStack). Even after switching to modelView stack, scissor
+     *      was disabled and outlines still didn't render — so scissor wasn't the cause.
+     *   4. Added BEWLR skip via `IClientItemExtensions.of(stack).getCustomRenderer() != null`.
+     *      WRONG — Forge returns the default vanilla BlockEntityWithoutLevelRenderer for EVERY
+     *      item, so this filtered out every 2D item including swords/apples. Use
+     *      `model.isCustomRenderer()` instead if you need to gate on real BEWLR rendering.
+     *      But even with that fix, the redirect approach (attempts 1+2) still broke the draw.
+     *
+     * Things to try next:
+     *   - Keep the per-rt routing (don't redirect), but intercept `color()` on the
+     *     FullColorOverrideConsumer differently. E.g. force a white texture via a TextureStateShard
+     *     override at the consumer level — but BufferBuilder doesn't bind textures, the RT does.
+     *   - Bind BLOCKS_ALPHA_MASK_LOC as Sampler0 via `RenderSystem.setShaderTexture(0, …)` for
+     *     the duration of the outline copies, leaving the RT itself alone. The RT's
+     *     TextureStateShard.setupRenderState happens at flush time and will REBIND Sampler0 to
+     *     the RT's declared texture, undoing this — would need to either flush per copy or use
+     *     a custom RT whose TextureStateShard.setupRenderState() does the alpha-mask bind.
+     *   - Make a custom RT identical to translucentCullBlockSheet but with a setup-time
+     *     `setShaderTexture(0, BLOCKS_ALPHA_MASK_LOC)` override. Keeps BLOCK format, keeps
+     *     LIGHTMAP/OVERLAY state, only swaps the Sampler0 binding.
+     *   - Skip the texture entirely: render dilated POSITION_COLOR quads built from the
+     *     BakedModel's sprite UV bounds. Loses sprite-shape silhouette but guarantees pure
+     *     glow color. Would need to manually iterate quads / handleCameraTransforms etc.
+     */
+    public static void doGuiItemOutline(ItemStack stack, ItemDisplayContext displayContext,
+            boolean leftHand, PoseStack poseStack, MultiBufferSource buffer, int packedLight,
+            int packedOverlay, BakedModel model) {
+        if (displayContext != ItemDisplayContext.GUI) return;
+        int color = outlineColor(stack);
+        int rByte = (color >> 16) & 0xFF;
+        int gByte = (color >>  8) & 0xFF;
+        int bByte =  color        & 0xFF;
+        Minecraft mc = Minecraft.getInstance();
+        // New color approach: redirect every getBuffer call to a single outline RT that uses
+        // RENDERTYPE_OUTLINE_SHADER. The outline shader outputs `vertexColor.rgb` with
+        // `texture.alpha` — i.e. it samples the items atlas ONLY for the alpha mask and ignores
+        // texture RGB entirely. So the output is pure glow color in the sprite silhouette.
+        //
+        // ColorOverrideConsumer (NOT Full) drops overlayCoords / uv2 / normal so the
+        // POSITION_COLOR_TEX-format BufferBuilder isn't asked to write fields outside its format.
+        // Earlier attempts redirecting to entityCutoutNoCull (NEW_ENTITY) killed the draw — those
+        // failed because of a format/shader interaction we never pinpointed. This recipe matches
+        // the proven world-space outline RT (forOutlineStencilTest) which we know renders
+        // correctly, minus the stencil/depth-bias state that doesn't apply in GUI.
+        RenderType outlineRT = forGuiItemOutline();
+        MultiBufferSource wrapped = rt -> new ColorOverrideConsumer(
+                buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
+
+        // Slot scissor: in 1.20.1 the slot transform (translate(x+8,y+8,...) + scale(1,-1,1) +
+        // scale(16,16,16)) can live on EITHER:
+        //   - the PoseStack passed to render(), when called via GuiGraphics.renderItemInternal
+        //     (most modern GUI screens), OR
+        //   - RenderSystem.getModelViewStack(), when called via the legacy
+        //     ItemRenderer.tryRenderGuiItem path (some older calls).
+        // Reading only one matrix gives m30=0 for the other path → scissor lands far from the
+        // slot and clips out the outline. Compose `modelView * poseStack` so the translation row
+        // of the result is the slot center in GUI-scaled pixel space regardless of which path
+        // applied the transform. Then convert to framebuffer pixels via guiScale, flip Y for GL
+        // scissor (bottom-left origin), and clip to a 16x16 slot box. Drain vanilla's queued
+        // work BEFORE setting the scissor so we don't accidentally clip earlier draws.
+        if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
+        com.mojang.blaze3d.platform.Window window = mc.getWindow();
+        double guiScale = window.getGuiScale();
+        org.joml.Matrix4f combined = new org.joml.Matrix4f(RenderSystem.getModelViewStack().last().pose());
+        combined.mul(poseStack.last().pose());
+        float cxGui = combined.m30();
+        float cyGui = combined.m31();
+        int slotLeftPx = (int) Math.round((cxGui - 8) * guiScale);
+        int slotTopPx  = (int) Math.round((cyGui - 8) * guiScale);
+        int slotWPx    = (int) Math.round(16 * guiScale);
+        int slotHPx    = (int) Math.round(16 * guiScale);
+        int glX = slotLeftPx;
+        int glY = window.getHeight() - slotTopPx - slotHPx;
+        if (slotWPx <= 0 || slotHPx <= 0) return;
+        boolean prevScissorEnabled = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
+        int[] prevBox = new int[4];
+        GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, prevBox);
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(glX, glY, slotWPx, slotHPx);
+
+        final float step = 1.0f / 16.0f;
+        float[][] offsets = { {-step, 0}, {step, 0}, {0, -step}, {0, step} };
+        IN_OUTLINE.set(true);
+        try {
+            for (float[] off : offsets) {
+                poseStack.pushPose();
+                poseStack.translate(off[0], off[1], 0.0f);
+                mc.getItemRenderer().render(stack, displayContext, leftHand, poseStack, wrapped,
+                        packedLight, packedOverlay, model);
+                poseStack.popPose();
+            }
+            // Flush ONLY our outline RT while scissor is still active so the clip applies to the
+            // actual draw call. Other RTs accumulated by vanilla after our copies (the real item
+            // draw that follows when this HEAD inject returns) are not flushed here, so they
+            // render normally without our scissor.
+            if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
+        } finally {
+            IN_OUTLINE.set(false);
+            if (prevScissorEnabled) {
+                GL11.glScissor(prevBox[0], prevBox[1], prevBox[2], prevBox[3]);
+            } else {
+                GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            }
+        }
+    }
+
     public static void doItemOutline(ItemStack stack, ItemDisplayContext displayContext,
             PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
         if (displayContext == ItemDisplayContext.GUI) return;
@@ -3146,10 +3668,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  BufferBuilder with unfilled elements and crashes on endVertex. The original
      *  ColorOverrideConsumer drops them on purpose because its only wrapped target is
      *  the stencil-test RenderType which uses POSITION_COLOR_TEX. */
-    private static final class FullColorOverrideConsumer implements VertexConsumer {
+    public static final class FullColorOverrideConsumer implements VertexConsumer {
         private final VertexConsumer wrapped;
         private final int r, g, b, a;
-        FullColorOverrideConsumer(VertexConsumer wrapped, int r, int g, int b, int a) {
+        public FullColorOverrideConsumer(VertexConsumer wrapped, int r, int g, int b, int a) {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a;
         }
         @Override public VertexConsumer vertex(double x, double y, double z) { wrapped.vertex(x, y, z); return this; }
@@ -3168,10 +3690,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Wraps a VertexConsumer and records each vertex's eye-space position into a shared
      *  {minX,minY,minZ,maxX,maxY,maxZ} accumulator. Used during the outline stencil pass to
      *  derive an AABB-centered pivot for the dilation scale. */
-    private static final class AABBTrackingConsumer implements VertexConsumer {
+    public static final class AABBTrackingConsumer implements VertexConsumer {
         private final VertexConsumer wrapped;
         private final float[] minMax;
-        AABBTrackingConsumer(VertexConsumer wrapped, float[] minMax) {
+        public AABBTrackingConsumer(VertexConsumer wrapped, float[] minMax) {
             this.wrapped = wrapped; this.minMax = minMax;
         }
         private void track(float x, float y, float z) {

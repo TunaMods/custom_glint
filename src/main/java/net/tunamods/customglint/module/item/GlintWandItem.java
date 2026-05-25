@@ -13,7 +13,7 @@ import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.entity.EntityGlintEvents;
+import net.tunamods.customglint.common.entity.EntityGlintEvents;
 
 public class GlintWandItem extends Item {
 

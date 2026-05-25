@@ -9,11 +9,8 @@ import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
 import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
-import net.tunamods.customglint.module.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
 import net.tunamods.customglint.module.item.GlintTearItem;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
 import net.tunamods.customglint.module.item.GlintBlackTearItem;
@@ -184,9 +181,11 @@ public class CustomGlintMod {
         ModNetworking.register();
         IceAndFireCompat.register();
         FirstPersonCompat.register();
+        net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat.register();
 
-        MinecraftForge.EVENT_BUS.register(EntityGlintEvents.class);
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> net.tunamods.customglint.module.client.EntityGlintClientInit::run);
+        // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
+        // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so
+        // those registrations always happen exactly once regardless of which jar a player has.
 
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);

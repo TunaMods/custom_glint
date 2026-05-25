@@ -58,12 +58,28 @@ public class HorseArmorLayerMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
+        if (!(stack.getItem() instanceof HorseArmorItem ha)) return;
+        net.minecraft.resources.ResourceLocation tex = ha.getTexture();
 
         if (glint != null) {
+            // ── Stencil mask pass ───────────────────────────────────────────
+            // forHorseArmorGlint draws on every face of the armor model regardless of armor
+            // texture alpha (the glint shader samples a glint design, not the armor texture).
+            // For vanilla iron/gold/diamond barding this is fine — the texture is full-coverage
+            // opaque so visible glint == armor coverage. But Epic Knights barding (chainmail,
+            // mail variants, etc.) has transparent gaps where the horse body shows through, and
+            // the unmasked glint bleeds across those gaps onto the body silhouette. Stencil-mask
+            // bit 0x80 via the armor texture's alpha cutoff, then constrain the glint test to
+            // that bit. Same pattern as IaF mount armor.
+            RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
+            model.renderToBuffer(poseStack, buffer.getBuffer(maskType), packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
+
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
             List<VertexConsumer> list = new ArrayList<>();
+            List<RenderType> glintTypes = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
@@ -73,8 +89,8 @@ public class HorseArmorLayerMixin {
                         buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
                         buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                         buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
+                        RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, layerIdx, buf, i);
+                        if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -83,8 +99,8 @@ public class HorseArmorLayerMixin {
                     buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
                     buf[2] = ( color        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, 0);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
+                    RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, layerIdx, buf, 0);
+                    if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
                 }
             }
             if (!list.isEmpty()) {
@@ -92,9 +108,12 @@ public class HorseArmorLayerMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
                 model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
             }
+            if (buffer instanceof MultiBufferSource.BufferSource bs2) {
+                for (RenderType rt : glintTypes) bs2.endBatch(rt);
+            }
         }
-        if (glowing && stack.getItem() instanceof HorseArmorItem ha)
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, model, ha.getTexture(), stack, null);
+        if (glowing)
+            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, model, tex, stack, null);
     }
 
 }

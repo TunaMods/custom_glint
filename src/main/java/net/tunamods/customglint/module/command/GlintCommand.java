@@ -11,7 +11,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.entity.EntityGlintEvents;
+import net.tunamods.customglint.common.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;

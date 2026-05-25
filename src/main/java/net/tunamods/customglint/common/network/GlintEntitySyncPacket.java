@@ -1,4 +1,4 @@
-package net.tunamods.customglint.module.network;
+package net.tunamods.customglint.common.network;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
@@ -9,14 +9,14 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.client.EntityGlintCache;
+import net.tunamods.customglint.common.client.EntityGlintCache;
 
 import java.util.function.Supplier;
 
 /**
  * S→C: pushes a LivingEntity's per-instance glint NBT (the inner {@code customglint} compound)
  * to tracking players. Empty tag clears the cache entry. Broadcast on start-tracking and after
- * any server-side mutation (command apply/remove/glow).
+ * any server-side mutation.
  */
 public class GlintEntitySyncPacket {
 

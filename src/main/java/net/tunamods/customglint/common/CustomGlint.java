@@ -428,8 +428,8 @@ public final class CustomGlint {
     }
 
     /** Sets glowColors AND glowing=true on the entity. Call
-     *  {@code EntityGlintEvents.broadcast(entity)} afterwards (standalone full jar) to push
-     *  the change to tracking clients. */
+     *  {@code EntityGlintEvents.broadcast(entity)} afterwards to push the change to tracking
+     *  clients (the api jar registers the sync channel — no extra wiring needed). */
     public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
         CompoundTag pd = entity.getPersistentData();
         CompoundTag glintTag = pd.contains(TAG) ? pd.getCompound(TAG) : new CompoundTag();

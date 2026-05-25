@@ -1,4 +1,4 @@
-package net.tunamods.customglint.module.client;
+package net.tunamods.customglint.common.client;
 
 import net.minecraft.nbt.CompoundTag;
 import net.tunamods.customglint.common.CustomGlint;
@@ -10,11 +10,11 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Client-side UUID→glint-tag cache for LivingEntities. Populated by {@link
- * net.tunamods.customglint.module.network.GlintEntitySyncPacket} on start-tracking and after
+ * net.tunamods.customglint.common.network.GlintEntitySyncPacket} on start-tracking and after
  * server-side mutations. Cleared on level unload.
  *
  * Entries store both the raw inner glint CompoundTag and a pre-decoded {@link CustomGlint.Data}
- * so {@link EntityGlintRenderer} doesn't allocate a vehicle ItemStack every frame per entity.
+ * so the entity glint renderer doesn't allocate a vehicle ItemStack every frame per entity.
  */
 public final class EntityGlintCache {
     private EntityGlintCache() {}

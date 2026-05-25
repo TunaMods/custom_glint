@@ -3,7 +3,6 @@ package net.tunamods.customglint.module.compat.iceandfire.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -21,7 +20,6 @@ import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -31,21 +29,26 @@ import java.util.List;
  * Standalone-only compat: LayerDragonArmor is the single convergence point for fire/ice/lightning
  * dragon armor — it composes a per-(dragonType + 4 ordinals) layered texture and renders the dragon
  * model once via RenderType.entityTranslucent(layeredTex). We hook RETURN of render(), capture the
- * layered ResourceLocation via @Redirect on entityTranslucent, then re-render MODEL with our glint
- * render types and draw an outline using the layered texture.
+ * layered ResourceLocation via @Redirect on entityTranslucent, then re-render MODEL with our
+ * stencil-mask + glint RTs and draw an outline using the layered texture.
  *
- * Masking: entityTranslucent's fragment shader does `if (color.a < 0.1) discard;`, so depth is
- * written only at opaque armor texels. forHorseArmorGlint (EQUAL_DEPTH + NO_LAYERING, no polygon
- * offset) therefore masks the glint to the actual armor silhouette across all four slots —
- * identical depth-equality mechanism we already rely on for horse armor.
+ * Masking: the dragon body shares the same EntityModel as the armor layer (IaF reuses the parent
+ * model with the layered armor texture), so an EQUAL_DEPTH glint passes on every face of the
+ * dragon — not just the armor. The fix is a stencil pre-pass that writes bit 0x80 only where the
+ * armor texture's alpha cutoff passes, and a glint pass that tests EQUAL 0x80 to constrain to
+ * armor texels. Both passes use {@link CustomGlintRenderer}'s LayeringStateShard-based RTs
+ * ({@link CustomGlintRenderer#forMountArmorStencilMask}, {@link CustomGlintRenderer#forMountArmorGlint}),
+ * which set/restore stencil state inside setup/clear — making timing deterministic across
+ * BufferSource flushes (the prior manual GL11.glStencil* approach interacted unreliably with
+ * batched flushes).
  *
- * Source-of-glint resolution: HEAD > CHEST > LEGS > FEET — first stack with a custom glint wins
+ * Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET — first stack with a custom glint wins
  * and supplies both the animated glint and (if also glowing) the outline color. Mixed-glint
  * configurations across slots fall back to the highest-priority slot's glint.
  *
- * EntityModel<?> access: cannot @Shadow getParentEntityModel<?> because the mixin can't declare an extends clause
- * onto RenderLayer<EntityDragonBase, ...> without compile-time access to those types. Resolve via
- * reflection by return-type match on RenderLayer's no-arg method (works in SRG and named runtimes).
+ * EntityModel&lt;?&gt; access: cannot @Shadow getParentEntityModel&lt;?&gt; because the mixin can't declare
+ * an extends clause onto RenderLayer&lt;EntityDragonBase, ...&gt; without compile-time access to those
+ * types. Resolve via reflection by return-type match on RenderLayer's no-arg method.
  */
 @Pseudo
 @Mixin(targets = "com.github.alexthe666.iceandfire.client.render.entity.layer.LayerDragonArmor", remap = false)
@@ -99,7 +102,7 @@ public class LayerDragonArmorMixin {
         return RenderType.entityTranslucent(loc);
     }
 
-    // ── Apply glint + outline at RETURN ──────────────────────────────────────
+    // ── Apply mask + glint + outline at RETURN ───────────────────────────────
 
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityDragonBase;FFFFFF)V",
             at = @At("RETURN"), require = 0)
@@ -124,45 +127,22 @@ public class LayerDragonArmorMixin {
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
 
-        // ── Stencil mask pre-pass ────────────────────────────────────────────
-        // The dragon body geometry is rendered BEFORE this armor layer using a non-cutout base
-        // texture, so depth is already written for the entire dragon model — armor and body share
-        // identical geometry and depth values. Our EQUAL_DEPTH glint would therefore pass on the
-        // bare body too, painting glint over the whole dragon. Pre-pass with the armor texture
-        // under entityCutoutNoCull (hard alpha-discard) to write stencil=1 only at opaque armor
-        // texels, then constrain the glint draw with stencil EQUAL 1.
-        //
-        // Critical ordering: build the glint VertexConsumer list AFTER the mask-pass endBatch.
-        // BufferSource.endBatch(null) resets all started builders; if we obtained glint buffers
-        // before flushing, those cached BufferBuilder references would be unstarted by the time
-        // we tried to write through them ⇒ "BufferBuilder not started" crash inside the model.
-        Minecraft.getInstance().getMainRenderTarget().enableStencil();
-        if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch();
-        GL11.glEnable(GL11.GL_STENCIL_TEST);
-        GL11.glStencilMask(0xFF);
-        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-        GL11.glColorMask(false, false, false, false);
-        GL11.glDepthMask(false);
-        GL11.glStencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
-        // KEEP on dpfail (not REPLACE): the armor model has front- AND back-facing geometry that
-        // shares depth with the dragon body. Front faces pass LEQUAL → write stencil. Back faces
-        // sit behind body depth → would fail LEQUAL. If we REPLACE on dpfail too, those back
-        // texels also get stencil=1 and the glint becomes visible through the body. With KEEP on
-        // dpfail, only the depth-passing armor surface marks the stencil.
-        GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
-        RenderType maskType = RenderType.entityCutoutNoCull(tex);
+        // ── Stencil mask pass ───────────────────────────────────────────────
+        // Renders the parent model with the armor texture through entity-cutout's alpha-discard
+        // shader; stencil bit 0x80 is set only at opaque armor texels. The mask RT's
+        // LayeringStateShard handles GL state in setup/clear, so the stencil ops are bound to this
+        // specific draw inside the BufferSource flush. Flushing the mask immediately (endBatch
+        // on this RT) commits the stencil before the glint draws build, guaranteeing the glint
+        // sees the populated mask bit.
+        RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
         model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-        if (buffer instanceof MultiBufferSource.BufferSource bs1) bs1.endBatch(maskType);
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-        GL11.glStencilFunc(GL11.GL_EQUAL, 1, 0xFF);
-        GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+        if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
 
-        // ── Glint pass (stencil-gated) ───────────────────────────────────────
-        // Now safe to start glint builders — nothing will flush them until our endBatch below.
+        // ── Glint pass (stencil EQUAL 0x80) ─────────────────────────────────
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
+        List<RenderType> glintTypes = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
@@ -172,8 +152,8 @@ public class LayerDragonArmorMixin {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forHorseArmorGlint(glint, li, buf, i);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
+                    RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, li, buf, i);
+                    if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
@@ -182,8 +162,8 @@ public class LayerDragonArmorMixin {
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * aa;
                 buf[2] = ( color        & 0xFF) / 255.0f * aa;
                 buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forHorseArmorGlint(glint, li, buf, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
+                RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, li, buf, 0);
+                if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
             }
         }
         if (!list.isEmpty()) {
@@ -191,14 +171,31 @@ public class LayerDragonArmorMixin {
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
         }
-        // Flush glint render types while stencil is still active. doModelOutline below clears
-        // stencil and disables it before its own pass — we must not let our glint vertices
-        // linger in batched buffers until then or they'd flush unmasked.
-        if (buffer instanceof MultiBufferSource.BufferSource bs2) bs2.endBatch();
-        GL11.glDisable(GL11.GL_STENCIL_TEST);
+        // Flush only our glint RTs explicitly so the stencil test happens before doModelOutline's
+        // own stencil writes (which use the lower bits but glStencilMask=0xFF, potentially clobbering
+        // our bit 0x80 — by then we no longer need it).
+        if (buffer instanceof MultiBufferSource.BufferSource bs2) {
+            for (RenderType rt : glintTypes) bs2.endBatch(rt);
+        }
 
         if (CustomGlint.isGlowing(active)) {
-            CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, glint, EquipmentSlot.HEAD);
+            // Body depth pre-fill so the outline test is occluded by the mob's full silhouette.
+            // The dragon body texture has many transparent regions (between scales, wing
+            // membranes) where the normal entityCutoutNoCull body render discarded depth —
+            // without filling those, doModelOutline's LEQUAL test passes for back-side armor's
+            // dilated mesh wherever body depth is missing, and the player sees the BACK armor
+            // outline through the FRONT of the mob. Writing depth at every geometry fragment of
+            // the parent model first fixes the occlusion regardless of texture alpha.
+            RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
+            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            if (buffer instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
+
+            // slot=null routes through doModelOutline's AABB-centroid scale branch — non-humanoid
+            // mount models need symmetric centroid dilation, not the chest-height humanoid pivot.
+            // Pass the active stack (not just the Data) so the outline color resolution prefers
+            // glowColors NBT when set via Glow Trim or the wand editor — the Data overload only
+            // looks at glint layer 0, silently ignoring manual glow color choices.
+            CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, active, null);
         }
     }
 }

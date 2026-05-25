@@ -156,7 +156,8 @@ public class RenderTrollWeaponMixin {
         if (tex != null && !CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(stack)) {
             pose.pushPose();
             pose.translate(0.5f, -0.75f, 0.5f);
-            CustomGlintRenderer.doBewlrOutline(pose, buffer, light, model, tex, glint);
+            // Stack overload (not Data) so glowColors NBT drives the outline color when set.
+            CustomGlintRenderer.doBewlrOutline(pose, buffer, light, model, tex, stack);
             pose.popPose();
         }
     }

@@ -1,15 +1,13 @@
-package net.tunamods.customglint.module.client;
+package net.tunamods.customglint.common.client;
 
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.tunamods.customglint.common.client.EntityGlintRender;
 
 /**
- * Client-side init for entity glints in the standalone jar. Installs an instance-resolver hook
- * on {@link EntityGlintRender} that reads from the per-instance sync cache; the API jar's
- * default resolver returns null, so api-only embedders still get type-registry glints but no
- * per-instance ones (which would require their own sync packet).
+ * Client-side init for entity glints. Installs an instance-resolver hook on
+ * {@link EntityGlintRender} that reads from the per-instance sync cache, and clears the cache on
+ * logout. Invoked from {@code CustomGlintApiMod} on the client dist.
  */
 public final class EntityGlintClientInit {
     private EntityGlintClientInit() {}

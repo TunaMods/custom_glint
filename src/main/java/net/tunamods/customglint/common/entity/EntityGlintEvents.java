@@ -1,4 +1,4 @@
-package net.tunamods.customglint.module.entity;
+package net.tunamods.customglint.common.entity;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
@@ -8,15 +8,15 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.network.GlintEntitySyncPacket;
-import net.tunamods.customglint.module.network.ModNetworking;
+import net.tunamods.customglint.common.network.ApiNetworking;
+import net.tunamods.customglint.common.network.GlintEntitySyncPacket;
 
 /**
  * Server-side wiring for per-instance entity glints.
  *
  *  - On start-tracking: push the entity's current glint tag to the new viewer so the client
  *    cache is seeded before the next render.
- *  - {@link #broadcast(LivingEntity)}: invoked from the command after any mutation; sends to all
+ *  - {@link #broadcast(LivingEntity)}: invoked after any server-side mutation; sends to all
  *    players tracking the entity.
  *
  * Server-safe — no client classes referenced.
@@ -31,14 +31,14 @@ public final class EntityGlintEvents {
         if (!CustomGlint.hasEntity(le)) return;
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         CompoundTag tag = CustomGlint.entityGlintTag(le);
-        ModNetworking.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp),
+        ApiNetworking.CHANNEL.send(PacketDistributor.PLAYER.with(() -> sp),
                 new GlintEntitySyncPacket(le.getId(), tag));
     }
 
     public static void broadcast(LivingEntity entity) {
         if (entity.level().isClientSide) return;
         CompoundTag tag = CustomGlint.entityGlintTag(entity);
-        ModNetworking.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> entity),
+        ApiNetworking.CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> entity),
                 new GlintEntitySyncPacket(entity.getId(), tag));
     }
 }

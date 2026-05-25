@@ -8,6 +8,8 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
 import net.tunamods.customglint.common.client.CustomGlintClientInit;
+import net.tunamods.customglint.common.entity.EntityGlintEvents;
+import net.tunamods.customglint.common.network.ApiNetworking;
 
 @Mod(CustomGlintApiMod.MOD_ID)
 public class CustomGlintApiMod {
@@ -19,6 +21,14 @@ public class CustomGlintApiMod {
         // (CustomGlintClientInit) so the JVM never resolves CustomGlintRenderer on a dedicated
         // server — DistExecutor.safeRunWhenOn only invokes the supplier on the matching dist.
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> CustomGlintClientInit::run);
+
+        // API-owned network channel + per-instance entity glint sync. Lives here (not in the
+        // full jar's ModNetworking) so embedders that bundle only the api jar still get
+        // server↔client sync for entity glints with no extra wiring on their side.
+        ApiNetworking.register();
+        MinecraftForge.EVENT_BUS.register(EntityGlintEvents.class);
+        DistExecutor.safeRunWhenOn(Dist.CLIENT,
+                () -> net.tunamods.customglint.common.client.EntityGlintClientInit::run);
 
         // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
         MinecraftForge.EVENT_BUS.addListener(this::onCraft);
