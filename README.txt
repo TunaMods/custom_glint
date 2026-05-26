@@ -55,6 +55,18 @@ Pin both versions to the latest released api when you update. Build with
 
 If multiple mods bundle the api, Forge dedupes to a single shared copy.
 
+Required for any mod consuming mixin refmaps in dev (runClient / runServer).
+Without these, SRG-targeted hooks silently fail to resolve against the
+dev-mapped bytecode. Production builds are unaffected.
+
+    runs {
+        configureEach {
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile',
+                     "${projectDir}/build/createSrgToMcp/output.srg"
+        }
+    }
+
 Alternative: declare as a hard / soft dep instead of bundling.
 
     [[dependencies.yourmodid]]

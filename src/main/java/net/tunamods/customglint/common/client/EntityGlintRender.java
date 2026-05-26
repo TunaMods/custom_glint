@@ -59,6 +59,10 @@ public final class EntityGlintRender {
      * Called from {@link net.tunamods.customglint.common.mixin.LivingEntityRendererMixin} at HEAD.
      */
     public static MultiBufferSource wrapForEntity(LivingEntity entity, MultiBufferSource original) {
+        // Idempotent: in dev workspaces where mixin.env.remapRefMap=true, BOTH the SRG and
+        // named ModifyVariable hooks resolve and fire on the same arg, which would otherwise
+        // wrap twice and break body-builder vertex routing.
+        if (original instanceof GlintWrappingBufferSource) return original;
         CustomGlint.Data data = resolveData(entity);
         if (data == null) return original;
         return new GlintWrappingBufferSource(original, data);

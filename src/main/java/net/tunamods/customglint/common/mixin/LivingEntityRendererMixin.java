@@ -62,7 +62,7 @@ public class LivingEntityRendererMixin {
 
     @Inject(
         method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
-        at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V"),
+        at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V", remap = false),
         require = 0, remap = false
     )
     private void cg_outline_named(LivingEntity entity, float yaw, float partialTicks,
