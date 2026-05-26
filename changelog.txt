@@ -66,8 +66,15 @@ Fixed:
   isEntityGlowing / setEntityGlowing, getEntityGlowColors / hasEntityGlowColors /
   setEntityGlowColors / clearEntityGlowColors.
 - Tag-level helpers for bundling glint data across the wire or NBT files: itemGlintTag(stack),
-  entityGlintTag(entity), writeEntityTag(entity, tag), fromTag(tag), tagGlowing(tag),
-  tagGlowColors(tag), toTag(layers).
+  entityGlintTag(entity), writeEntityTag(entity, tag), writeItemTag(stack, tag),
+  fromTag(tag), tagGlowing(tag), tagGlowColors(tag), toTag(layers).
+- Client-side entity glint mutations (writeEntity, setEntityGlowing, setEntityGlowColors) now
+  render immediately without waiting for a server broadcast round-trip. Covers reconstructed
+  entities (capture/release mods, replay viewers) and preview UIs. Use
+  EntityGlintRender.refreshClientCache(entity) to force an explicit re-sync after a client-side
+  mutation when needed.
+- Applying a new Glint Trim to an item that already has a Glow Trim no longer erases the glow
+  colors — the two systems are independent as documented.
 
 [1.3.0]
 
