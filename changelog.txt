@@ -68,11 +68,6 @@ Fixed:
 - Tag-level helpers for bundling glint data across the wire or NBT files: itemGlintTag(stack),
   entityGlintTag(entity), writeEntityTag(entity, tag), fromTag(tag), tagGlowing(tag),
   tagGlowColors(tag), toTag(layers).
-- Entity outlines now render correctly in embedder dev workspaces. The named mixin variant
-  no longer leans on the consumer having mixin.env.remapRefMap set, and the buffer-wrap hook
-  is idempotent so dev workspaces that DO have it don't double-wrap and lose body glints.
-- README documents the mixin.env.remapRefMap + refMapRemappingFile dev-workspace
-  requirement (general mixin refmap requirement, not glints-specific).
 
 [1.3.0]
 
