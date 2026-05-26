@@ -27,7 +27,7 @@ import java.util.List;
  *
  * Resolution order: per-instance via the registered {@link InstanceResolver} (standalone module
  * installs one that reads from EntityGlintCache), then {@link CustomGlint#ENTITY_GLINTS} type
- * registry. API-jar-only embedders without a resolver still get type-registry-based glints.
+ * registry. Mods that bundle only the api jar without a resolver still get type-registry-based glints.
  */
 public final class EntityGlintRender {
     private EntityGlintRender() {}

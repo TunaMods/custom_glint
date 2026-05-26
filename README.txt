@@ -171,7 +171,7 @@ Sync:
     late joiners automatically.
   - State lives on the entity's PersistentData under the "customglint" key.
   - The networking channel (customglint_api:main) ships in the api jar, so
-    embedders get entity sync with no extra wiring.
+    mods that bundle the api get entity sync with no extra wiring.
 
 Tag-level helpers for packets, NBT files, and snapshot / restore:
 

@@ -10,7 +10,7 @@ import java.util.Optional;
 
 /**
  * API-owned network channel. Lives in {@code common/} so the channel and its packets ship in the
- * api jar — embedders who depend only on {@code customglint_api} (via jarJar) still get
+ * api jar — mods that depend only on {@code customglint_api} (via jarJar) still get
  * per-instance entity glint sync without needing the full standalone jar in the mods folder.
  *
  * Distinct from the full jar's {@code customglint:main} channel so the two protocols version

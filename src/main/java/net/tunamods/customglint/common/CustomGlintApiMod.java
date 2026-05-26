@@ -23,7 +23,7 @@ public class CustomGlintApiMod {
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> CustomGlintClientInit::run);
 
         // API-owned network channel + per-instance entity glint sync. Lives here (not in the
-        // full jar's ModNetworking) so embedders that bundle only the api jar still get
+        // full jar's ModNetworking) so mods that bundle only the api jar still get
         // server↔client sync for entity glints with no extra wiring on their side.
         ApiNetworking.register();
         MinecraftForge.EVENT_BUS.register(EntityGlintEvents.class);
