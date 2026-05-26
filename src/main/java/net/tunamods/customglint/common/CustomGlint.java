@@ -210,6 +210,8 @@ public final class CustomGlint {
         CompoundTag existing = stack.hasTag() ? stack.getTag().getCompound(TAG) : null;
         if (existing != null && existing.contains(GLOWING_KEY))
             tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
+        if (existing != null && existing.contains(GLOW_COLORS_KEY))
+            tag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
         ListTag list = new ListTag();
         for (Layer layer : layers) {
             CompoundTag lt = new CompoundTag();
@@ -461,6 +463,18 @@ public final class CustomGlint {
     public static void writeEntityTag(LivingEntity entity, CompoundTag glintTag) {
         if (glintTag == null || glintTag.isEmpty()) entity.getPersistentData().remove(TAG);
         else entity.getPersistentData().put(TAG, glintTag.copy());
+    }
+
+    /** Replaces the per-item glint tag in one shot. Symmetric with {@link #writeEntityTag} —
+     *  useful for transferring glint state between item and entity (e.g. capturing a mob's
+     *  glint onto an item via {@code writeItemTag(stack, entityGlintTag(entity))}) or
+     *  restoring from a stored tag in bulk. Empty/null tag clears the glint. */
+    public static void writeItemTag(ItemStack stack, CompoundTag glintTag) {
+        if (glintTag == null || glintTag.isEmpty()) {
+            if (stack.hasTag()) stack.getTag().remove(TAG);
+            return;
+        }
+        stack.getOrCreateTag().put(TAG, glintTag.copy());
     }
 
     // ── NBT serialization helpers (decoupled from ItemStack) ──────────────────

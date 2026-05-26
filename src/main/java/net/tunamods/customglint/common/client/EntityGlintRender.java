@@ -51,6 +51,22 @@ public final class EntityGlintRender {
     public static InstanceResolver instanceResolver = entity -> null;
 
     /**
+     * Force the client glint cache to re-read this entity's current persistent NBT. Call after
+     * a client-side mutation (e.g. {@link CustomGlint#writeEntity}, {@link CustomGlint#setEntityGlowing},
+     * {@link CustomGlint#setEntityGlowColors}) when you need the change visible immediately
+     * without waiting for a server broadcast — typically preview UIs, replay viewers, or mods
+     * that reconstruct entities from stored NBT on the client.
+     *
+     * Server-side callers should use {@link net.tunamods.customglint.common.entity.EntityGlintEvents#broadcast}
+     * instead; the broadcast packet handler refreshes the cache on every tracking client.
+     *
+     * No-op (clears the cache entry) if the entity has no glint NBT.
+     */
+    public static void refreshClientCache(LivingEntity entity) {
+        EntityGlintCache.put(entity.getUUID(), CustomGlint.entityGlintTag(entity));
+    }
+
+    /**
      * Wraps the renderer's MultiBufferSource so EVERY entity-* RenderType requested during
      * the entity render (base model + every RenderLayer like StrayClothingLayer, EyesLayer,
      * VillagerProfessionLayer, …) gets a glint overlay fan-out. The wrapper is a no-op if the
