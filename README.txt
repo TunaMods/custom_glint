@@ -177,10 +177,19 @@ Tag-level helpers for packets, NBT files, and snapshot / restore:
 
   CompoundTag tag = CustomGlint.entityGlintTag(living);   // or itemGlintTag(stack)
   CustomGlint.writeEntityTag(living, tag);
+  CustomGlint.writeItemTag(stack, tag);                   // symmetric for items
   CustomGlint.Data layers   = CustomGlint.fromTag(tag);
   boolean          glowing  = CustomGlint.tagGlowing(tag);
   int[]            glowCols = CustomGlint.tagGlowColors(tag);
   CompoundTag      fresh    = CustomGlint.toTag(layers);
+
+Client-side mutations (writeEntity / setEntityGlowing / setEntityGlowColors called
+on the client — preview UIs, replay viewers, entities reconstructed from stored
+NBT) render immediately without waiting for a server broadcast. If you need to
+force a re-sync after manually editing the entity's persistent NBT, call the
+client-only helper:
+
+  EntityGlintRender.refreshClientCache(living);     // client-only
 
 
 ================================================================================
