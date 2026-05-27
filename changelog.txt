@@ -43,7 +43,7 @@ Fixed:
   armor silhouette.
 - Epic Knights Winged Hussar chestplate: the back wings no longer get a glow outline (they
   were previously producing a broken half-outline that stenciled onto only one wing face).
-- Epic Knights armor decoration overlays (capes, tabards, trims) now receive the glint and
+- Epic Knights armor decoration overlays now receive the glint and
   glow pass cleanly instead of being skipped or producing a doubled outline.
 - Ice and Fire dragon armor (with a shader pack enabled): glints and glow outlines now stay
   on the actual armor instead of bleeding across the entire dragon body.
