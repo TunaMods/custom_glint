@@ -1,3 +1,11 @@
+[1.5.0]
+
+Added:
+- The wand now carries the glint you are editing. It updates live when you import a saved trim
+  or change the preview item, so the wand in your hand always matches what is in the editor.
+- Saved trim files now remember a custom display name and its color: /glint export writes them,
+  and the wand's Import picker restores them when you load the trim back.
+
 [1.4.0]
 
 Added:
