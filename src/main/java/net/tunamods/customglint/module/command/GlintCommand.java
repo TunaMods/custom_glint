@@ -17,6 +17,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -28,6 +29,7 @@ import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -193,7 +195,7 @@ public class GlintCommand {
                                 BoolArgumentType.getBool(ctx, "enabled"))))))));
     }
 
-    private static int applyEntity(CommandSourceStack source, java.util.Collection<? extends Entity> targets,
+    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
                                    String designName, String colorsArg,
                                    float speed, boolean smooth, float scale, boolean simultaneous,
                                    boolean glowing) {
@@ -246,7 +248,7 @@ public class GlintCommand {
         return count;
     }
 
-    private static int removeEntity(CommandSourceStack source, java.util.Collection<? extends Entity> targets) {
+    private static int removeEntity(CommandSourceStack source, Collection<? extends Entity> targets) {
         int count = 0;
         for (Entity e : targets) {
             if (!(e instanceof LivingEntity le)) continue;
@@ -264,7 +266,7 @@ public class GlintCommand {
         return count;
     }
 
-    private static int glowEntity(CommandSourceStack source, java.util.Collection<? extends Entity> targets, boolean enabled) {
+    private static int glowEntity(CommandSourceStack source, Collection<? extends Entity> targets, boolean enabled) {
         int count = 0;
         for (Entity e : targets) {
             if (!(e instanceof LivingEntity le)) continue;
@@ -456,6 +458,15 @@ public class GlintCommand {
             JsonObject root = new JsonObject();
             root.addProperty("name", name);
             root.addProperty("glowing", CustomGlint.isGlowing(held));
+
+            if (held.hasCustomHoverName()) {
+                Component hover = held.getHoverName();
+                root.addProperty("displayName", hover.getString());
+                TextColor color = hover.getStyle().getColor();
+                if (color != null) {
+                    root.addProperty("nameColor", String.format("0x%06X", color.getValue() & 0xFFFFFF));
+                }
+            }
 
             JsonArray layersArray = new JsonArray();
             for (CustomGlint.Layer layer : data.layers()) {
