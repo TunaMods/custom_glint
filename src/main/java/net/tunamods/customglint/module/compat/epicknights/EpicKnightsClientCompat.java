@@ -2,6 +2,8 @@ package net.tunamods.customglint.module.compat.epicknights;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.HumanoidModel;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
@@ -67,14 +69,14 @@ public final class EpicKnightsClientCompat {
     private static final ResourceLocation WH_CHEST_TEX =
             new ResourceLocation("magistuarmory", "textures/models/armor/wingedhussarchestplate_layer_1.png");
 
-    private static net.minecraft.client.model.geom.ModelPart[] resolveExtraOutlineParts(
-            net.minecraft.client.model.HumanoidModel<?> model,
+    private static ModelPart[] resolveExtraOutlineParts(
+            HumanoidModel<?> model,
             ResourceLocation tex) {
         if (!WH_CHEST_TEX.equals(tex)) return null;
         try {
-            net.minecraft.client.model.geom.ModelPart wr1 = model.body.getChild("wing_r1");
-            net.minecraft.client.model.geom.ModelPart wr2 = model.body.getChild("wing_r2");
-            return new net.minecraft.client.model.geom.ModelPart[]{wr1, wr2};
+            ModelPart wr1 = model.body.getChild("wing_r1");
+            ModelPart wr2 = model.body.getChild("wing_r2");
+            return new ModelPart[]{wr1, wr2};
         } catch (Exception ignored) {
             return null;
         }

@@ -18,6 +18,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import org.joml.Matrix4f;
@@ -474,7 +475,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      */
     public static void applyDecorationGlint(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, net.minecraft.world.item.ItemStack stack) {
+            boolean glowing, ItemStack stack) {
         if (CustomGlintRenderer.isShaderPackActive()) {
             applyDecorationGlint_shadersOn(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
         } else if (CustomGlintRenderer.isShaderModInstalled()) {
@@ -498,7 +499,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      */
     private static void applyDecorationGlint_shadersOff(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, net.minecraft.world.item.ItemStack stack) {
+            boolean glowing, ItemStack stack) {
         if (!(buffer instanceof MultiBufferSource.BufferSource bs)) return;
         if (CustomGlintRenderer.isInShadowPass()) return;
 
@@ -638,7 +639,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      */
     private static void applyDecorationGlint_shadersOn(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, net.minecraft.world.item.ItemStack stack) {
+            boolean glowing, ItemStack stack) {
         if (CustomGlintRenderer.isInShadowPass()) return;
 
         // Sibling overlay union — dyeable decorations have shape split across base+overlay
@@ -951,7 +952,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      */
     private static void applyDecorationGlint_noShaders(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, net.minecraft.world.item.ItemStack stack) {
+            boolean glowing, ItemStack stack) {
         applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
     }
 

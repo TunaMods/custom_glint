@@ -8,6 +8,7 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
 import net.tunamods.customglint.common.client.CustomGlintClientInit;
+import net.tunamods.customglint.common.client.EntityGlintClientInit;
 import net.tunamods.customglint.common.entity.EntityGlintEvents;
 import net.tunamods.customglint.common.network.ApiNetworking;
 
@@ -27,8 +28,7 @@ public class CustomGlintApiMod {
         // server↔client sync for entity glints with no extra wiring on their side.
         ApiNetworking.register();
         MinecraftForge.EVENT_BUS.register(EntityGlintEvents.class);
-        DistExecutor.safeRunWhenOn(Dist.CLIENT,
-                () -> net.tunamods.customglint.common.client.EntityGlintClientInit::run);
+        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> EntityGlintClientInit::run);
 
         // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
         MinecraftForge.EVENT_BUS.addListener(this::onCraft);

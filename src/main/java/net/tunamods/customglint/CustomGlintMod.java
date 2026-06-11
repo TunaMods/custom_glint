@@ -9,6 +9,7 @@ import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
 import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
+import net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.tunamods.customglint.module.item.GlintTearItem;
@@ -181,7 +182,7 @@ public class CustomGlintMod {
         ModNetworking.register();
         IceAndFireCompat.register();
         FirstPersonCompat.register();
-        net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat.register();
+        EpicKnightsCompat.register();
 
         // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
         // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so

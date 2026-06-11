@@ -13,12 +13,16 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.ElytraModel;
 import net.minecraft.client.model.HorseModel;
+import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.Model;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -37,19 +41,30 @@ import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 import net.tunamods.customglint.common.CustomGlint;
 import org.joml.Matrix4f;
 import com.mojang.blaze3d.platform.GlStateManager;
-import org.joml.Vector3f;
+import com.mojang.blaze3d.platform.Window;
+import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiFunction;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
@@ -147,8 +162,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         DynamicTexture dt = new DynamicTexture(mask);
         mc.getTextureManager().register(BLOCKS_ALPHA_MASK_LOC, dt);
         dt.bind();
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         blocksAlphaMaskBuilt = true;
@@ -160,7 +175,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  vertexColor} — outline ring renders in the chosen color instead of being tinted by the
      *  armor's albedo (worst case: white outline × red leather armor = red). Cleared on resource
      *  reload via {@link #clearTextures}. */
-    private static final java.util.Map<ResourceLocation, ResourceLocation> ARMOR_ALPHA_MASKS = new java.util.HashMap<>();
+    private static final Map<ResourceLocation, ResourceLocation> ARMOR_ALPHA_MASKS = new HashMap<>();
 
     public static ResourceLocation getArmorAlphaMask(ResourceLocation original) {
         if (original == null) return null;
@@ -184,7 +199,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 // vertexColor × armor RGB and the outline picks up the armor's albedo
                 // (red WingedHussar → purple-outline-tinted-red). Read the DynamicTexture's
                 // backing NativeImage instead so the alpha mask is RGB=255 + binarized alpha.
-                net.minecraft.client.renderer.texture.AbstractTexture tex =
+                AbstractTexture tex =
                         mc.getTextureManager().getTexture(original);
                 if (tex instanceof DynamicTexture dt && dt.getPixels() != null) {
                     src = dt.getPixels();
@@ -223,8 +238,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         DynamicTexture dt = new DynamicTexture(mask);
         mc.getTextureManager().register(loc, dt);
         dt.bind();
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         ARMOR_ALPHA_MASKS.put(original, loc);
@@ -819,7 +834,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * in ways the stencil pass can't track and the dilated outline geometry then renders unmasked)
      * install a supplier here to suppress outline passes for the current frame.
      */
-    public static java.util.function.BooleanSupplier outlineSuppressor = () -> false;
+    public static BooleanSupplier outlineSuppressor = () -> false;
 
     /**
      * FPM 3.5D detection gate for the shader-pack item outline path. Installed by
@@ -834,7 +849,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * the shift and relies on the RT's baked {@code PUSH_BACK_LAYERING} polygon offset for
      * depth separation, exactly as the 1P hand-render path does.
      */
-    public static java.util.function.BooleanSupplier fpmRenderingPlayerGate = () -> false;
+    public static BooleanSupplier fpmRenderingPlayerGate = () -> false;
 
     /** True if FPM (First Person Mod by tr7zw) is loaded and wired. Set by {@code FirstPersonClientCompat}. */
     public static boolean fpmPresent = false;
@@ -851,7 +866,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * sample opaque pixels in the chest texture even though no arm armor is visually
      * intended). Other EK chest pieces have full-sleeve coverage and still get arm outlines.
      */
-    public static java.util.function.Predicate<net.minecraft.resources.ResourceLocation>
+    public static Predicate<ResourceLocation>
             chestArmorHidesArmsInOutline = tex -> false;
 
     /**
@@ -869,14 +884,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * a synthesized texture where cols 36–49 mirror cols 50–63, so BOTH faces sample
      * the feather alpha and the stencil/outline correctly trace the feather shape.
      */
-    public static java.util.function.Function<net.minecraft.resources.ResourceLocation,
-            net.minecraft.resources.ResourceLocation>
+    public static Function<ResourceLocation, ResourceLocation>
             armorOutlineTextureRemap = tex -> tex;
 
     /** Reload hooks appended by compat modules; invoked by {@link #clearTextures()} so each
      *  compat can release its own {@code DynamicTexture}s without {@code CustomGlintRenderer}
      *  needing to know about them. */
-    public static final java.util.List<Runnable> additionalReloadCleanup = new java.util.concurrent.CopyOnWriteArrayList<>();
+    public static final List<Runnable> additionalReloadCleanup = new CopyOnWriteArrayList<>();
 
     /**
      * Resolves child ModelParts that should be HIDDEN during the standard chest outline pass
@@ -889,10 +903,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * Returns {@code null} when the model/texture has no parts needing special handling.
      * Installed by {@code EpicKnightsClientCompat} for EK's WingedHussar wings.
      */
-    public static java.util.function.BiFunction<
-            net.minecraft.client.model.HumanoidModel<?>,
-            net.minecraft.resources.ResourceLocation,
-            net.minecraft.client.model.geom.ModelPart[]>
+    public static BiFunction<HumanoidModel<?>, ResourceLocation, ModelPart[]>
             armorExtraOutlineParts = (m, tex) -> null;
 
     /**
@@ -904,8 +915,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * equality correctly identifies "same item, same frame, different path."
      * Reset at frame start by {@code CustomGlintClientInit}.
      */
-    public static final java.util.Set<Object> shaderOutlinedThisFrame =
-            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    public static final Set<Object> shaderOutlinedThisFrame =
+            Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** Separate from BY_GLINT: outline uses POSITION_COLOR_TEX + OUTLINE_SHADER, not POSITION_TEX + GLINT_SHADER. */
     private static final Map<ResourceLocation, RenderType> BY_SHADER_ARMOR_OUTLINE_TEX = new ConcurrentHashMap<>();
@@ -1781,7 +1792,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             vx = (float)x; vy = (float)y; vz = (float)z; return this;
         }
         @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
-            org.joml.Vector4f v = m.transform(new org.joml.Vector4f(x, y, z, 1.0f));
+            Vector4f v = m.transform(new Vector4f(x, y, z, 1.0f));
             vx = v.x; vy = v.y; vz = v.z; return this;
         }
         @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
@@ -1826,7 +1837,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             vx = (float)x; vy = (float)y; vz = (float)z; return this;
         }
         @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
-            org.joml.Vector4f t = m.transform(new org.joml.Vector4f(x, y, z, 1.0f));
+            Vector4f t = m.transform(new Vector4f(x, y, z, 1.0f));
             vx = t.x; vy = t.y; vz = t.z; return this;
         }
         @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
@@ -1919,7 +1930,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
         @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
             cMx = x; cMy = y; cMz = z;
-            org.joml.Vector4f t = m.transform(new org.joml.Vector4f(x, y, z, 1.0f));
+            Vector4f t = m.transform(new Vector4f(x, y, z, 1.0f));
             cTx = t.x; cTy = t.y; cTz = t.z;
             return this;
         }
@@ -1986,7 +1997,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             vx = (float)x; vy = (float)y; vz = (float)z; return this;
         }
         @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
-            org.joml.Vector4f t = m.transform(new org.joml.Vector4f(x, y, z, 1.0f));
+            Vector4f t = m.transform(new Vector4f(x, y, z, 1.0f));
             vx = t.x; vy = t.y; vz = t.z; return this;
         }
         @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
@@ -2536,7 +2547,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * overlays because the dilation depth ordering hides most of the conflict.
      */
     public static void doMultiModelOutline(PoseStack poseStack, MultiBufferSource buffer,
-            int color, java.util.List<net.tunamods.customglint.common.client.EntityGlintRender.PendingOutline> entries) {
+            int color, List<EntityGlintRender.PendingOutline> entries) {
         if (entries == null || entries.isEmpty()) return;
         if (isInShadowPass()) return;
         if (outlineSuppressor.getAsBoolean()) return;
@@ -2720,7 +2731,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     VertexConsumer outlineBuf = new FullColorOverrideConsumer(
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                     poseStack.pushPose();
-                    poseStack.last().pose().mulLocal(new org.joml.Matrix4f()
+                    poseStack.last().pose().mulLocal(new Matrix4f()
                             .translate(cx, cy, cz)
                             .scale(1.06f, 1.06f, 1.06f)
                             .translate(-cx, -cy, -cz));
@@ -2941,9 +2952,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // scissor (bottom-left origin), and clip to a 16x16 slot box. Drain vanilla's queued
         // work BEFORE setting the scissor so we don't accidentally clip earlier draws.
         if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
-        com.mojang.blaze3d.platform.Window window = mc.getWindow();
+        Window window = mc.getWindow();
         double guiScale = window.getGuiScale();
-        org.joml.Matrix4f combined = new org.joml.Matrix4f(RenderSystem.getModelViewStack().last().pose());
+        Matrix4f combined = new Matrix4f(RenderSystem.getModelViewStack().last().pose());
         combined.mul(poseStack.last().pose());
         float cxGui = combined.m30();
         float cyGui = combined.m31();
@@ -3023,7 +3034,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             //     atlas) which the shader mod maps to ENTITIES_CUTOUT (gbuffers_entities). The blocks atlas
             //     alpha-discard preserves the sprite silhouette; ColorOverrideConsumer forces the
             //     vertex color to the outline color so the shader emits ~ outlineColor × texColor.
-            net.minecraft.client.player.LocalPlayer rp = mc.player;
+            LocalPlayer rp = mc.player;
             // FPM 3.5D + shaders ON: the local player's held item can render through multiple paths
             // (normal entity-loop render at actual position and/or FPM's arm render). The forward-pass
             // outline is additive, so a second call stacks a visible second ring.
@@ -3460,7 +3471,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // rp = mc.player (declared above). Item-model overrides that depend on entity state (e.g.
         // trident's "throwing:1" predicate) resolve to the same model variant used in the original render.
         // With null, the throwing predicate always returns 0 → wrong display transforms → inverted outline.
-        net.minecraft.client.player.LocalPlayer renderPlayer = mc.player;
+        LocalPlayer renderPlayer = mc.player;
         // BEWLR items (trident, shield, crossbow in 3D) use entity textures whose UVs don't map
         // to the blocks atlas. white.png (no alpha-discard) fills the full 3D model geometry so
         // the stencil and scale-based outline work correctly. Flat sprite items use the blocks
@@ -3744,8 +3755,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // outline target + EntityOutlineShader post-process composite) is one the shader
     // mod explicitly preserves to keep vanilla glowing working under shaders.
     private static volatile boolean SHADER_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method SHADER_GET_INSTANCE = null;
-    private static volatile java.lang.reflect.Method SHADER_IS_IN_USE = null;
+    private static volatile Method SHADER_GET_INSTANCE = null;
+    private static volatile Method SHADER_IS_IN_USE = null;
 
     public static boolean isShaderPackActive() {
         if (!SHADER_LOOKUP_DONE) {
@@ -3794,10 +3805,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // LINES (last bucket) forces the shader mod to flush ALL item geometry first, then our outline — depth
     // ordering works in every camera context (1P / 3P / GROUND). Reflective to avoid compileOnly.
     private static volatile boolean SHADER_TT_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method SHADER_TT_SET = null;
+    private static volatile Method SHADER_TT_SET = null;
     private static volatile Object SHADER_TT_LINES = null;
-    private static final java.util.Set<RenderType> SHADER_TT_TAGGED =
-            java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final Set<RenderType> SHADER_TT_TAGGED =
+            Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public static void tagAsLateRenderForShaders(RenderType rt) {
         if (rt == null) return;
@@ -3841,7 +3852,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // bucket) ensure entity depth is committed before LEQUAL runs, preserving the ring silhouette.
     // Reflective lookup retained for potential future use; no compileOnly dep.
     private static volatile boolean SHADER_OUTLINE_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method SHADER_WRAP_OUTLINE_RT = null;
+    private static volatile Method SHADER_WRAP_OUTLINE_RT = null;
     private static volatile RenderStateShard SHADER_OUTLINE_SHARD = null;
     private static final Map<RenderType, RenderType> SHADER_OUTLINE_WRAP_CACHE = new ConcurrentHashMap<>();
 
@@ -3889,7 +3900,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // Skip the whole outline path when shadows are being rendered. Reflective lookup so we
     // don't need a compileOnly dep.
     private static volatile boolean SHADOW_LOOKUP_DONE = false;
-    private static volatile java.lang.reflect.Method SHADOW_IS_RENDERING = null;
+    private static volatile Method SHADOW_IS_RENDERING = null;
 
     public static boolean isInShadowPass() {
         if (!SHADOW_LOOKUP_DONE) {

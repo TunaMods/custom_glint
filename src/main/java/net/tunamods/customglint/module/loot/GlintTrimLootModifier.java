@@ -4,6 +4,7 @@ import com.google.common.base.Suppliers;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.biome.Biomes;
@@ -107,7 +108,7 @@ public class GlintTrimLootModifier extends LootModifier {
     private String selectPattern(LootContext context) {
         // Get biome category to weight pattern selection
         var origin = context.getParam(LootContextParams.ORIGIN);
-        var biome = context.getLevel().getBiome(new net.minecraft.core.BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
+        var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
         String biomeName = biome.unwrapKey()
             .map(key -> key.location().getPath())
             .orElse("plains");

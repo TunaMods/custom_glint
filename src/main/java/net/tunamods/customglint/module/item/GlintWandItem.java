@@ -14,6 +14,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.entity.EntityGlintEvents;
+import net.tunamods.customglint.module.client.GlintWandClientHandler;
 
 public class GlintWandItem extends Item {
 
@@ -25,7 +26,7 @@ public class GlintWandItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         if (level.isClientSide()) {
             DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-                    net.tunamods.customglint.module.client.GlintWandClientHandler.openEditor(hand));
+                    GlintWandClientHandler.openEditor(hand));
         }
         return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
     }
