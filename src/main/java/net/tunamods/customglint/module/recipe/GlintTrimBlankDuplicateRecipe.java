@@ -3,9 +3,9 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.NonNullList;
-import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
@@ -19,13 +19,13 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimBlankDuplicateRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimBlankDuplicateRecipe::new);
 
-    public GlintTrimBlankDuplicateRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlintTrimBlankDuplicateRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
-        if (pInv.getWidth() != 3 || pInv.getHeight() != 3) return false;
+    public boolean matches(CraftingInput pInv, Level pLevel) {
+        if (pInv.width() != 3 || pInv.height() != 3) return false;
         for (int i = 0; i < 9; i++) {
             ItemStack s = pInv.getItem(i);
             if (i == 4) {
@@ -42,8 +42,8 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.getItem() instanceof GlintTrimItem) {
                 ItemStack result = s.copy();
@@ -55,9 +55,9 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get(), 2);
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         return result;
     }
 
@@ -68,7 +68,7 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
         ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         for (int i = 0; i < 9; i++) {
             if (i == 4) list.set(i, Ingredient.of(trimExample));
             else if (i == 7) list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));

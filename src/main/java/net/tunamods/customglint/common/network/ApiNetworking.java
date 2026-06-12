@@ -1,12 +1,8 @@
 package net.tunamods.customglint.common.network;
 
-import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.network.NetworkDirection;
-import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.simple.SimpleChannel;
-import net.tunamods.customglint.common.CustomGlintApiMod;
-
-import java.util.Optional;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 /**
  * API-owned network channel. Lives in {@code common/} so the channel and its packets ship in the
@@ -21,17 +17,13 @@ public final class ApiNetworking {
 
     private static final String PROTOCOL = "1";
 
-    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-            new ResourceLocation(CustomGlintApiMod.MOD_ID, "main"),
-            () -> PROTOCOL,
-            PROTOCOL::equals,
-            PROTOCOL::equals
-    );
+    public static void register(IEventBus modEventBus) {
+        modEventBus.addListener(ApiNetworking::onRegisterPayloads);
+    }
 
-    public static void register() {
-        // 0 — GlintEntitySyncPacket  S→C  per-instance entity glint NBT for LivingEntities
-        CHANNEL.registerMessage(0, GlintEntitySyncPacket.class,
-                GlintEntitySyncPacket::encode, GlintEntitySyncPacket::decode, GlintEntitySyncPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+    private static void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
+        PayloadRegistrar registrar = event.registrar(PROTOCOL);
+        // GlintEntitySyncPacket  S→C  per-instance entity glint NBT for LivingEntities
+        registrar.playToClient(GlintEntitySyncPacket.TYPE, GlintEntitySyncPacket.STREAM_CODEC, GlintEntitySyncPacket::handle);
     }
 }

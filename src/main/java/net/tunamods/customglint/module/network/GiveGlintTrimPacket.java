@@ -3,17 +3,26 @@ package net.tunamods.customglint.module.network;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.function.Supplier;
+import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
-public class GiveGlintTrimPacket {
+public class GiveGlintTrimPacket implements CustomPacketPayload {
+
+    public static final Type<GiveGlintTrimPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "give_glint_trim"));
+
+    public static final StreamCodec<FriendlyByteBuf, GiveGlintTrimPacket> STREAM_CODEC =
+            StreamCodec.of(GiveGlintTrimPacket::encode, GiveGlintTrimPacket::decode);
 
     public final CustomGlint.Layer[] layers;
     public final boolean glowing;
@@ -29,7 +38,12 @@ public class GiveGlintTrimPacket {
         this.trimNameColor = trimNameColor;
     }
 
-    public static void encode(GiveGlintTrimPacket pkt, FriendlyByteBuf buf) {
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
+    }
+
+    public static void encode(FriendlyByteBuf buf, GiveGlintTrimPacket pkt) {
         buf.writeVarInt(pkt.layers.length);
         for (CustomGlint.Layer layer : pkt.layers) {
             buf.writeUtf(layer.design().toString());
@@ -60,7 +74,7 @@ public class GiveGlintTrimPacket {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous);
+            layers[i] = new CustomGlint.Layer(ResourceLocation.parse(design), colors, speed, interp, scale, simultaneous);
         }
         boolean glowing = buf.readBoolean();
         int gcLen = Math.min(buf.readVarInt(), 8);
@@ -71,26 +85,23 @@ public class GiveGlintTrimPacket {
         return new GiveGlintTrimPacket(layers, glowing, glowColors, trimName, trimNameColor);
     }
 
-    public static void handle(GiveGlintTrimPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(GiveGlintTrimPacket pkt, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            if (!(ctx.player() instanceof ServerPlayer player)) return;
 
             ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
 
             if (pkt.layers.length > 0) {
                 CustomGlint.Layer layer0 = pkt.layers[0];
                 for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
-                trim.getOrCreateTag().putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
-                trim.getOrCreateTag().putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
+                GlintTrimItem.setSpeed(trim, layer0.speed());
+                GlintTrimItem.setScale(trim, layer0.patternScale());
                 GlintTrimItem.setPattern(trim, layer0.design());
                 GlintTrimItem.setGlowing(trim, pkt.glowing);
                 CustomGlint.setGlowing(trim, pkt.glowing);
 
                 if (pkt.layers.length > 1) {
-                    if (trim.hasTag() && trim.getTag().contains(CustomGlintMod.MOD_ID)) {
-                        trim.getTag().remove(CustomGlintMod.MOD_ID);
-                    }
+                    CustomGlint.remove(trim);
                     CustomGlint.write(trim, pkt.layers);
                     CustomGlint.setGlowing(trim, pkt.glowing);
                 }
@@ -100,11 +111,10 @@ public class GiveGlintTrimPacket {
             if (!pkt.trimName.isEmpty()) {
                 Component displayName = Component.literal(pkt.trimName)
                     .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
-                trim.setHoverName(displayName);
+                trim.set(DataComponents.CUSTOM_NAME, displayName);
             }
 
             player.addItem(trim);
         });
-        ctx.get().setPacketHandled(true);
     }
 }

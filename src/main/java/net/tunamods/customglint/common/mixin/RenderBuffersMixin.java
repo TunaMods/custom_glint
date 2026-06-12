@@ -1,29 +1,27 @@
 package net.tunamods.customglint.common.mixin;
 
-import com.mojang.blaze3d.vertex.BufferBuilder;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
-import net.minecraft.client.renderer.RenderType;
 
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.SortedMap;
-
 /**
- * Captures the live fixedBuffers map from RenderBuffers so forGlint() can insert per-config RenderTypes into it.
- * Shadow must be SortedMap — vanilla declares it that way; Map causes a runtime field-lookup mismatch.
+ * Captures the live fixed-buffer map so forGlint() can insert per-config RenderTypes into it.
+ *
+ * In 1.21 the {@code fixedBuffers} map moved off {@code RenderBuffers} (where it used to be a
+ * field) onto the {@link MultiBufferSource.BufferSource} the constructor builds. We grab it from
+ * {@code bufferSource()} at construction; the field is publicized via the access transformer.
  */
 @Mixin(RenderBuffers.class)
 public class RenderBuffersMixin {
 
-    @Shadow public SortedMap<RenderType, BufferBuilder> fixedBuffers;
-
     @Inject(method = "<init>", at = @At("RETURN"))
     private void cg_registerGlintBuffer(CallbackInfo ci) {
-        CustomGlintRenderer.fixedBufferRegistry = this.fixedBuffers;
+        MultiBufferSource.BufferSource bs = ((RenderBuffers) (Object) this).bufferSource();
+        CustomGlintRenderer.fixedBufferRegistry = bs.fixedBuffers;
     }
 }

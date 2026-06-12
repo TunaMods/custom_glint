@@ -4,10 +4,11 @@ import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.common.CustomGlint;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.nbt.IntArrayTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.Items;
@@ -24,16 +25,16 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlowTrimDyeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlowTrimDyeRecipe::new);
 
-    public GlowTrimDyeRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlowTrimDyeRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
+    public boolean matches(CraftingInput pInv, Level pLevel) {
         ItemStack trim = ItemStack.EMPTY;
         ItemStack dye  = ItemStack.EMPTY;
         int filled = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
@@ -52,10 +53,10 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
         ItemStack trim = ItemStack.EMPTY;
         DyeItem dye = null;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlowTrimItem) trim = s;
@@ -68,13 +69,13 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
         int[] next = new int[current.length + 1];
         System.arraycopy(current, 0, next, 0, current.length);
         next[current.length] = GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()];
-        result.getOrCreateTag().put(GlowTrimItem.COLORS_TAG, new IntArrayTag(next));
+        CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlowTrimItem.COLORS_TAG, next));
         CustomGlint.setGlowColors(result, next);
         return result;
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
         GlowTrimItem.addColor(result, 0xFFFF0000);
         return result;

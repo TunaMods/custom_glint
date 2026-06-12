@@ -2,9 +2,9 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -18,14 +18,14 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimMergeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimMergeRecipe::new);
 
-    public GlintTrimMergeRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlintTrimMergeRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
+    public boolean matches(CraftingInput pInv, Level pLevel) {
         int trimCount = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (!(s.getItem() instanceof GlintTrimItem)) return false;
@@ -37,9 +37,9 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
         ItemStack result = ItemStack.EMPTY;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (result.isEmpty()) { result = s; continue; }
@@ -49,9 +49,9 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
         GlintTrimItem.addColor(result, 0xFF00AAFF);
         return result;
@@ -64,10 +64,10 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         ItemStack trim1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim1, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(trim1, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(trim1, 0xFFFF0000);
         ItemStack trim2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim2, new ResourceLocation("customglint", "textures/glint/sparkle.png"));
+        GlintTrimItem.setPattern(trim2, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/sparkle.png"));
         GlintTrimItem.addColor(trim2, 0xFF00AAFF);
         list.add(Ingredient.of(trim1));
         list.add(Ingredient.of(trim2));

@@ -34,19 +34,19 @@ import com.google.gson.JsonElement;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
-import net.minecraftforge.event.AddReloadListenerEvent;
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.server.ServerLifecycleHooks;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import com.mojang.serialization.Codec;
-import net.minecraftforge.common.loot.IGlobalLootModifier;
-import net.minecraftforge.registries.ForgeRegistries;
+import com.mojang.serialization.MapCodec;
+import net.neoforged.neoforge.common.loot.IGlobalLootModifier;
+import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
@@ -55,91 +55,91 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.RegistryObject;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 @Mod(CustomGlintMod.MOD_ID)
 public class CustomGlintMod {
     public static final String MOD_ID = "customglint";
 
-    public static final DeferredRegister<Item> ITEMS =
-            DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
+    public static final DeferredRegister.Items ITEMS =
+            DeferredRegister.createItems(MOD_ID);
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
-    public static final DeferredRegister<Codec<? extends IGlobalLootModifier>> LOOT_MODIFIER_SERIALIZERS =
-            DeferredRegister.create(ForgeRegistries.Keys.GLOBAL_LOOT_MODIFIER_SERIALIZERS, MOD_ID);
+    public static final DeferredRegister<MapCodec<? extends IGlobalLootModifier>> LOOT_MODIFIER_SERIALIZERS =
+            DeferredRegister.create(NeoForgeRegistries.Keys.GLOBAL_LOOT_MODIFIER_SERIALIZERS, MOD_ID);
     public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS =
-            DeferredRegister.create(ForgeRegistries.RECIPE_SERIALIZERS, MOD_ID);
+            DeferredRegister.create(Registries.RECIPE_SERIALIZER, MOD_ID);
 
-    public static final RegistryObject<Codec<GlintLootModifier>> GLINT_LOOT_MODIFIER =
+    public static final DeferredHolder<MapCodec<? extends IGlobalLootModifier>, MapCodec<GlintLootModifier>> GLINT_LOOT_MODIFIER =
             LOOT_MODIFIER_SERIALIZERS.register("glint_loot_modifier", GlintLootModifier.CODEC);
-    public static final RegistryObject<Codec<GlintTrimLootModifier>> GLINT_TRIM_LOOT_MODIFIER =
+    public static final DeferredHolder<MapCodec<? extends IGlobalLootModifier>, MapCodec<GlintTrimLootModifier>> GLINT_TRIM_LOOT_MODIFIER =
             LOOT_MODIFIER_SERIALIZERS.register("glint_trim_loot_modifier", GlintTrimLootModifier.CODEC);
 
-    public static final RegistryObject<GlintWandItem> GLINT_WAND = ITEMS.register("glint_wand",
+    public static final DeferredItem<GlintWandItem> GLINT_WAND = ITEMS.register("glint_wand",
             () -> new GlintWandItem(new Item.Properties().stacksTo(1)));
 
-    public static final RegistryObject<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
+    public static final DeferredItem<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
             () -> new GlintTrimItem(new Item.Properties().stacksTo(16)));
 
-    public static final RegistryObject<GlowTrimItem> GLOW_TRIM = ITEMS.register("glow_trim",
+    public static final DeferredItem<GlowTrimItem> GLOW_TRIM = ITEMS.register("glow_trim",
             () -> new GlowTrimItem(new Item.Properties().stacksTo(16)));
 
-    public static final RegistryObject<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.register("glint_tear_simultaneous",
+    public static final DeferredItem<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.register("glint_tear_simultaneous",
             () -> new GlintTearItem(new Item.Properties().stacksTo(16), true));
 
-    public static final RegistryObject<GlintTearItem> GLINT_TEAR_SEQUENTIAL = ITEMS.register("glint_tear_sequential",
+    public static final DeferredItem<GlintTearItem> GLINT_TEAR_SEQUENTIAL = ITEMS.register("glint_tear_sequential",
             () -> new GlintTearItem(new Item.Properties().stacksTo(16), false));
 
-    public static final RegistryObject<GlintLayerTearItem> GLINT_LAYER_TEAR = ITEMS.register("glint_layer_tear",
+    public static final DeferredItem<GlintLayerTearItem> GLINT_LAYER_TEAR = ITEMS.register("glint_layer_tear",
             () -> new GlintLayerTearItem(new Item.Properties().stacksTo(16)));
 
-    public static final RegistryObject<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.register("glint_black_tear",
+    public static final DeferredItem<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.register("glint_black_tear",
             () -> new GlintBlackTearItem(new Item.Properties().stacksTo(16)));
 
-    public static final RegistryObject<RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_tear_apply", () -> GlintTearApplyRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_dye", () -> GlintTrimDyeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimDuplicateRecipe>> GLINT_TRIM_DUPLICATE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimDuplicateRecipe>> GLINT_TRIM_DUPLICATE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_duplicate", () -> GlintTrimDuplicateRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimBlankDuplicateRecipe>> GLINT_TRIM_BLANK_DUPLICATE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimBlankDuplicateRecipe>> GLINT_TRIM_BLANK_DUPLICATE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_blank_duplicate", () -> GlintTrimBlankDuplicateRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimMergeRecipe>> GLINT_TRIM_MERGE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimMergeRecipe>> GLINT_TRIM_MERGE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_merge", () -> GlintTrimMergeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimSmithingRecipe>> GLINT_TRIM_SMITHING_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimSmithingRecipe>> GLINT_TRIM_SMITHING_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_smithing", () -> GlintTrimSmithingRecipe.SERIALIZER);
 
-    public static final RegistryObject<RecipeSerializer<GlintLayerTearRecipe>> GLINT_LAYER_TEAR_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintLayerTearRecipe>> GLINT_LAYER_TEAR_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_layer_tear", () -> GlintLayerTearRecipe.SERIALIZER);
 
-    public static final RegistryObject<RecipeSerializer<GlintBlackTearRecipe>> GLINT_BLACK_TEAR_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintBlackTearRecipe>> GLINT_BLACK_TEAR_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_black_tear", () -> GlintBlackTearRecipe.SERIALIZER);
 
-    public static final RegistryObject<RecipeSerializer<GlintTrimSpeedRecipe>> GLINT_TRIM_SPEED_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimSpeedRecipe>> GLINT_TRIM_SPEED_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_speed", () -> GlintTrimSpeedRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimScaleRecipe>> GLINT_TRIM_SCALE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTrimScaleRecipe>> GLINT_TRIM_SCALE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_trim_scale", () -> GlintTrimScaleRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintGlowTrimRecipe>> GLINT_GLOW_TRIM_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintGlowTrimRecipe>> GLINT_GLOW_TRIM_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_glow_trim", () -> GlintGlowTrimRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlowTrimDyeRecipe>> GLOW_TRIM_DYE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlowTrimDyeRecipe>> GLOW_TRIM_DYE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glow_trim_dye", () -> GlowTrimDyeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlowTrimMergeRecipe>> GLOW_TRIM_MERGE_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlowTrimMergeRecipe>> GLOW_TRIM_MERGE_SERIALIZER =
             RECIPE_SERIALIZERS.register("glow_trim_merge", () -> GlowTrimMergeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
             RECIPE_SERIALIZERS.register("glow_trim_smithing", () -> GlowTrimSmithingRecipe.SERIALIZER);
 
-    public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
+    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
             .icon(() -> {
                 ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
                 CustomGlint.write(icon,
-                        new ResourceLocation("customglint", "textures/glint/wave.png"),
+                        ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"),
                         new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
                         0.5f, true, 1.0f, true);
                 return icon;
@@ -158,9 +158,9 @@ public class CustomGlintMod {
                         loc = CustomGlint.VANILLA;
                     } else if (pattern.contains(":")) {
                         int c = pattern.indexOf(':');
-                        loc = new ResourceLocation(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
+                        loc = ResourceLocation.fromNamespaceAndPath(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
                     } else {
-                        loc = new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
+                        loc = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
                     }
                     GlintTrimItem.setPattern(trim, loc);
                     output.accept(trim);
@@ -170,16 +170,14 @@ public class CustomGlintMod {
 
     private final List<String> dataPackDesigns = new ArrayList<>();
 
-    public CustomGlintMod() {
-        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
-
+    public CustomGlintMod(IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
         ITEMS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         LOOT_MODIFIER_SERIALIZERS.register(modEventBus);
         RECIPE_SERIALIZERS.register(modEventBus);
 
-        ModNetworking.register();
+        ModNetworking.register(modEventBus);
         IceAndFireCompat.register();
         FirstPersonCompat.register();
         EpicKnightsCompat.register();
@@ -188,10 +186,9 @@ public class CustomGlintMod {
         // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so
         // those registrations always happen exactly once regardless of which jar a player has.
 
-        MinecraftForge.EVENT_BUS.register(this);
-        MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
-        MinecraftForge.EVENT_BUS.addListener(this::onAddReloadListeners);
-        MinecraftForge.EVENT_BUS.addListener(this::onPlayerJoin);
+        NeoForge.EVENT_BUS.addListener(this::registerCommands);
+        NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
+        NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -216,7 +213,7 @@ public class CustomGlintMod {
                 }
                 if (ServerLifecycleHooks.getCurrentServer() != null) {
                     GlintDesignSyncPacket packet = new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns));
-                    ModNetworking.CHANNEL.send(PacketDistributor.ALL.noArg(), packet);
+                    PacketDistributor.sendToAllPlayers(packet);
                 }
             }
         });
@@ -228,8 +225,7 @@ public class CustomGlintMod {
 
     private void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
         if (!dataPackDesigns.isEmpty() && event.getEntity() instanceof ServerPlayer player) {
-            ModNetworking.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
-                new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns)));
+            PacketDistributor.sendToPlayer(player, new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns)));
         }
     }
 

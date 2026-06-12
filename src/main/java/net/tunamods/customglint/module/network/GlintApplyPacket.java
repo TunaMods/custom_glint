@@ -2,20 +2,29 @@ package net.tunamods.customglint.module.network;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintWandItem;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.function.Supplier;
+import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
-public class GlintApplyPacket {
+public class GlintApplyPacket implements CustomPacketPayload {
+
+    public static final Type<GlintApplyPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "glint_apply"));
+
+    public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
+            StreamCodec.of(GlintApplyPacket::encode, GlintApplyPacket::decode);
 
     public final InteractionHand wandHand;
     public final boolean remove;
@@ -47,7 +56,12 @@ public class GlintApplyPacket {
         this.wandOnly = wandOnly;
     }
 
-    public static void encode(GlintApplyPacket pkt, FriendlyByteBuf buf) {
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
+    }
+
+    public static void encode(FriendlyByteBuf buf, GlintApplyPacket pkt) {
         buf.writeEnum(pkt.wandHand);
         buf.writeBoolean(pkt.remove);
         if (!pkt.remove) {
@@ -90,7 +104,7 @@ public class GlintApplyPacket {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous);
+            layers[i] = new CustomGlint.Layer(ResourceLocation.parse(design), colors, speed, interp, scale, simultaneous);
         }
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
@@ -103,10 +117,9 @@ public class GlintApplyPacket {
         return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
     }
 
-    public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+    public static void handle(GlintApplyPacket pkt, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            if (!(ctx.player() instanceof ServerPlayer player)) return;
             InteractionHand otherHand = pkt.wandHand == InteractionHand.MAIN_HAND
                     ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
             ItemStack wand = player.getItemInHand(pkt.wandHand);
@@ -132,7 +145,7 @@ public class GlintApplyPacket {
                     applyName(pkt, wand);
                 }
             } else {
-                Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(pkt.itemId));
+                Item item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(pkt.itemId)).orElse(null);
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, pkt.layers);
@@ -146,7 +159,6 @@ public class GlintApplyPacket {
                 }
             }
         });
-        ctx.get().setPacketHandled(true);
     }
 
     private static void applyGlow(GlintApplyPacket pkt, ItemStack stack) {
@@ -159,7 +171,7 @@ public class GlintApplyPacket {
         if (!pkt.trimName.isEmpty()) {
             Component displayName = Component.literal(pkt.trimName)
                 .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
-            stack.setHoverName(displayName);
+            stack.set(DataComponents.CUSTOM_NAME, displayName);
         }
     }
 }

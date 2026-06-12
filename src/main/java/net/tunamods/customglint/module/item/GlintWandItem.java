@@ -10,8 +10,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.client.GlintWandClientHandler;
@@ -24,9 +24,8 @@ public class GlintWandItem extends Item {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
-        if (level.isClientSide()) {
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-                    GlintWandClientHandler.openEditor(hand));
+        if (level.isClientSide() && FMLEnvironment.dist == Dist.CLIENT) {
+            GlintWandClientHandler.openEditor(hand);
         }
         return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
     }

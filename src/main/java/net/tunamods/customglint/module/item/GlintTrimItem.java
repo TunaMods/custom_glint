@@ -3,7 +3,8 @@ package net.tunamods.customglint.module.item;
 import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.nbt.IntArrayTag;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -13,12 +14,14 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.CustomModelData;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class GlintTrimItem extends Item {
     public static final String PATTERN_TAG  = "pattern";
@@ -49,24 +52,40 @@ public class GlintTrimItem extends Item {
         super(pProperties);
     }
 
+    // The Trim's own config (pattern/colors/speed/scale/glowing) lives at the root of the item's
+    // CUSTOM_DATA component — alongside, but independent of, the glint Data that CustomGlint stores
+    // under its own "customglint" sub-key. CustomModelData is now its own data component.
+
+    @Nullable
+    private static CompoundTag dataOrNull(ItemStack stack) {
+        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
+        return cd == null ? null : cd.copyTag();
+    }
+
+    private static void mutateData(ItemStack stack, Consumer<CompoundTag> mutator) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, mutator);
+    }
+
     @Nullable
     public static ResourceLocation getPattern(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(PATTERN_TAG)) return null;
-        return ResourceLocation.tryParse(stack.getTag().getString(PATTERN_TAG));
+        CompoundTag tag = dataOrNull(stack);
+        if (tag == null || !tag.contains(PATTERN_TAG)) return null;
+        return ResourceLocation.tryParse(tag.getString(PATTERN_TAG));
     }
 
     public static void setPattern(ItemStack stack, ResourceLocation pattern) {
-        stack.getOrCreateTag().putString(PATTERN_TAG, pattern.toString());
+        mutateData(stack, t -> t.putString(PATTERN_TAG, pattern.toString()));
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
-        if (idx >= 0) stack.getOrCreateTag().putInt("CustomModelData", (isGlowing(stack) ? 1000 : 0) + idx + 1);
+        if (idx >= 0) stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData((isGlowing(stack) ? 1000 : 0) + idx + 1));
         int[] colors = getColors(stack);
         CustomGlint.write(stack, pattern, colors.length > 0 ? colors : new int[]{0xFFFFFFFF}, getSpeed(stack), true, getScale(stack), false);
     }
 
     public static int[] getColors(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(COLORS_TAG)) return new int[0];
-        return stack.getTag().getIntArray(COLORS_TAG);
+        CompoundTag tag = dataOrNull(stack);
+        if (tag == null || !tag.contains(COLORS_TAG)) return new int[0];
+        return tag.getIntArray(COLORS_TAG);
     }
 
     public static boolean addColor(ItemStack stack, int color) {
@@ -74,7 +93,7 @@ public class GlintTrimItem extends Item {
         if (current.length >= 8) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
-        stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(next));
+        mutateData(stack, t -> t.putIntArray(COLORS_TAG, next));
         ResourceLocation pattern = getPattern(stack);
         if (pattern != null) CustomGlint.write(stack, pattern, next, getSpeed(stack), true, getScale(stack), false);
         return true;
@@ -90,19 +109,20 @@ public class GlintTrimItem extends Item {
         System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
         int bCount = total - a.length;
         if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
-        result.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(merged));
+        mutateData(result, t -> t.putIntArray(COLORS_TAG, merged));
         ResourceLocation pattern = getPattern(result);
         if (pattern != null) CustomGlint.write(result, pattern, merged, getSpeed(result), true, getScale(result), false);
         return result;
     }
 
     public static float getSpeed(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(SPEED_TAG)) return 1.0f;
-        return stack.getTag().getFloat(SPEED_TAG);
+        CompoundTag tag = dataOrNull(stack);
+        if (tag == null || !tag.contains(SPEED_TAG)) return 1.0f;
+        return tag.getFloat(SPEED_TAG);
     }
 
     public static void setSpeed(ItemStack stack, float speed) {
-        stack.getOrCreateTag().putFloat(SPEED_TAG, speed);
+        mutateData(stack, t -> t.putFloat(SPEED_TAG, speed));
         CustomGlint.Data preview = CustomGlint.read(stack);
         if (preview == null || preview.layers().length <= 1) {
             ResourceLocation pattern = getPattern(stack);
@@ -112,23 +132,24 @@ public class GlintTrimItem extends Item {
     }
 
     public static boolean isGlowing(ItemStack stack) {
-        if (!stack.hasTag()) return false;
-        return stack.getTag().getBoolean(GLOWING_TAG);
+        CompoundTag tag = dataOrNull(stack);
+        return tag != null && tag.getBoolean(GLOWING_TAG);
     }
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
-        stack.getOrCreateTag().putBoolean(GLOWING_TAG, glowing);
+        mutateData(stack, t -> t.putBoolean(GLOWING_TAG, glowing));
         ResourceLocation pattern = getPattern(stack);
         if (pattern != null) setPattern(stack, pattern);
     }
 
     public static float getScale(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(SCALE_TAG)) return 1.0f;
-        return stack.getTag().getFloat(SCALE_TAG);
+        CompoundTag tag = dataOrNull(stack);
+        if (tag == null || !tag.contains(SCALE_TAG)) return 1.0f;
+        return tag.getFloat(SCALE_TAG);
     }
 
     public static void setScale(ItemStack stack, float scale) {
-        stack.getOrCreateTag().putFloat(SCALE_TAG, scale);
+        mutateData(stack, t -> t.putFloat(SCALE_TAG, scale));
         CustomGlint.Data preview = CustomGlint.read(stack);
         if (preview == null || preview.layers().length <= 1) {
             ResourceLocation pattern = getPattern(stack);
@@ -147,7 +168,7 @@ public class GlintTrimItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (isGlowing(pStack)) {
             pTooltipComponents.add(Component.literal("Glowing — wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));

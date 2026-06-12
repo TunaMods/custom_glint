@@ -135,7 +135,7 @@ public class LayerDragonArmorMixin {
         // on this RT) commits the stencil before the glint draws build, guaranteeing the glint
         // sees the populated mask bit.
         RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
-        model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
 
         // ── Glint pass (stencil EQUAL 0x80) ─────────────────────────────────
@@ -169,7 +169,7 @@ public class LayerDragonArmorMixin {
         if (!list.isEmpty()) {
             VertexConsumer combined = list.size() == 1 ? list.get(0)
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-            model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
         // Flush only our glint RTs explicitly so the stencil test happens before doModelOutline's
         // own stencil writes (which use the lower bits but glStencilMask=0xFF, potentially clobbering
@@ -187,7 +187,7 @@ public class LayerDragonArmorMixin {
             // outline through the FRONT of the mob. Writing depth at every geometry fragment of
             // the parent model first fixes the occlusion regardless of texture alpha.
             RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
-            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             if (buffer instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
 
             // slot=null routes through doModelOutline's AABB-centroid scale branch — non-humanoid

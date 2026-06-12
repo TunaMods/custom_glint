@@ -24,14 +24,14 @@ public class GlintTearItem extends Item {
     public ItemStack getDefaultInstance() {
         ItemStack stack = new ItemStack(this);
         CustomGlint.write(stack,
-            new ResourceLocation("customglint", "textures/glint/wave.png"),
+            ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"),
             new int[]{ 0xFFFF0000, 0xFF00FF00, 0xFF0000FF },
             1.0f, true, 1.0f, simultaneous);
         return stack;
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         if (simultaneous) {
             pTooltipComponents.add(Component.literal("Craft with any glinted item to set all layers to").withStyle(ChatFormatting.GRAY));
             pTooltipComponents.add(Component.literal("Simultaneous").withStyle(ChatFormatting.AQUA).append(Component.literal(" mode — all colors shown at once").withStyle(ChatFormatting.GRAY)));

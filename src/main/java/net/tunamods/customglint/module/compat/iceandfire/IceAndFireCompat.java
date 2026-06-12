@@ -3,11 +3,11 @@ package net.tunamods.customglint.module.compat.iceandfire;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.fml.DistExecutor;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
 
 /**
  * Standalone-only Ice & Fire compat. Renderer-touching configuration (BEWLR outline offsets /
@@ -28,13 +28,13 @@ public final class IceAndFireCompat {
 
     public static void register() {
         // Renderer overrides — client-only.
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> IceAndFireClientCompat::run);
+        if (FMLEnvironment.dist == Dist.CLIENT) IceAndFireClientCompat.run();
 
         // Mount armor sync (hippogryph / hippocampus) — needed on the server to push armor stacks
         // to tracking clients via MountArmorSync. onEntityLeave's `isClientSide` guard makes it a
         // no-op on the server, so a single addListener works for both sides.
-        MinecraftForge.EVENT_BUS.addListener(IceAndFireCompat::onStartTracking);
-        MinecraftForge.EVENT_BUS.addListener(IceAndFireCompat::onEntityLeave);
+        NeoForge.EVENT_BUS.addListener(IceAndFireCompat::onStartTracking);
+        NeoForge.EVENT_BUS.addListener(IceAndFireCompat::onEntityLeave);
     }
 
     /** When a player begins tracking a hippogryph/hippocampus, send them the current armor stack. */

@@ -51,7 +51,7 @@ public class GlintBlackTearItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         pTooltipComponents.add(Component.literal("Craft with any glinted item to").withStyle(ChatFormatting.GRAY));
         pTooltipComponents.add(Component.literal("strip all glint data from it").withStyle(ChatFormatting.GRAY));
         pTooltipComponents.add(Component.literal("Right-click a mob to clear its glint and glow").withStyle(ChatFormatting.GRAY));

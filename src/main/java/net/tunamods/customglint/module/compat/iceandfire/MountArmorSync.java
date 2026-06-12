@@ -4,7 +4,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.module.network.GlintMountArmorSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 
@@ -40,15 +40,13 @@ public final class MountArmorSync {
     /** Broadcasts to all players tracking the entity. */
     public static void broadcast(Entity entity, ItemStack stack) {
         if (entity.level().isClientSide) return;
-        ModNetworking.CHANNEL.send(
-                PacketDistributor.TRACKING_ENTITY.with(() -> entity),
+        PacketDistributor.sendToPlayersTrackingEntity(entity,
                 new GlintMountArmorSyncPacket(entity.getId(), stack));
     }
 
     /** Sends current state to a single newly-tracking player. */
     public static void sendTo(ServerPlayer player, Entity entity, ItemStack stack) {
-        ModNetworking.CHANNEL.send(
-                PacketDistributor.PLAYER.with(() -> player),
+        PacketDistributor.sendToPlayer(player,
                 new GlintMountArmorSyncPacket(entity.getId(), stack));
     }
 }

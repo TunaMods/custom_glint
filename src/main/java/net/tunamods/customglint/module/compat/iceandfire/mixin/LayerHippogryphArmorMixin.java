@@ -50,11 +50,11 @@ import java.util.List;
 public class LayerHippogryphArmorMixin {
 
     private static final ResourceLocation CG_TEX_IRON =
-            new ResourceLocation("iceandfire", "textures/models/hippogryph/armor_iron.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippogryph/armor_iron.png");
     private static final ResourceLocation CG_TEX_GOLD =
-            new ResourceLocation("iceandfire", "textures/models/hippogryph/armor_gold.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippogryph/armor_gold.png");
     private static final ResourceLocation CG_TEX_DIAMOND =
-            new ResourceLocation("iceandfire", "textures/models/hippogryph/armor_diamond.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippogryph/armor_diamond.png");
 
     private static volatile Method CG_GET_PARENT_MODEL;
     private static volatile Method CG_GET_ARMOR;
@@ -119,7 +119,7 @@ public class LayerHippogryphArmorMixin {
 
         // ── Stencil mask pass (see LayerDragonArmorMixin for rationale) ─────
         RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
-        model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
 
         // ── Glint pass (stencil EQUAL 0x80) ─────────────────────────────────
@@ -153,7 +153,7 @@ public class LayerHippogryphArmorMixin {
         if (!list.isEmpty()) {
             VertexConsumer combined = list.size() == 1 ? list.get(0)
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-            model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
         if (buffer instanceof MultiBufferSource.BufferSource bs2) {
             for (RenderType rt : glintTypes) bs2.endBatch(rt);
@@ -165,7 +165,7 @@ public class LayerHippogryphArmorMixin {
             // outline shows through the front through transparent body regions (feathers, gaps).
             // See LayerDragonArmorMixin for the full rationale.
             RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
-            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             if (buffer instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
 
             // slot=null: AABB-centroid scale (see LayerDragonArmorMixin for rationale).

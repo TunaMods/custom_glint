@@ -8,7 +8,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.network.GlintApplyPacket;
 import net.tunamods.customglint.module.network.GiveGlintTrimPacket;
-import net.tunamods.customglint.module.network.ModNetworking;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -20,9 +20,9 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,9 +43,9 @@ public class GlintEditorScreen extends Screen {
         if ("vanilla".equals(name)) return CustomGlint.VANILLA;
         if (name.contains(":")) {
             int c = name.indexOf(':');
-            return new ResourceLocation(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
+            return ResourceLocation.fromNamespaceAndPath(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
         }
-        return new ResourceLocation("customglint", "textures/glint/" + name + ".png");
+        return ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + name + ".png");
     }
 
     private static String designShortName(ResourceLocation rl) {
@@ -430,8 +430,8 @@ public class GlintEditorScreen extends Screen {
 
         // Change preview item
         addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.change_item"), b -> {
-            if (allItems == null) allItems = ForgeRegistries.ITEMS.getValues().stream()
-                    .filter(item -> { ResourceLocation k = ForgeRegistries.ITEMS.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
+            if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
+                    .filter(item -> { ResourceLocation k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
             filterItems(searchBox != null ? searchBox.getValue() : "");
             pickerScroll = 0;
@@ -448,8 +448,8 @@ public class GlintEditorScreen extends Screen {
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-            String itemId = String.valueOf(ForgeRegistries.ITEMS.getKey(previewItem));
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId, glowEnabled, gc, trimName, trimNameColor));
+            String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(previewItem));
+            PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId, glowEnabled, gc, trimName, trimNameColor));
         }).bounds(px + 8, py + 132, 80, 14).build());
 
         // Give Glint Trim with current settings
@@ -461,7 +461,7 @@ public class GlintEditorScreen extends Screen {
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-            ModNetworking.CHANNEL.sendToServer(new GiveGlintTrimPacket(layers, glowEnabled, gc, trimName, trimNameColor));
+            PacketDistributor.sendToServer(new GiveGlintTrimPacket(layers, glowEnabled, gc, trimName, trimNameColor));
         }).bounds(px + 8, py + 148, 80, 14).build());
 
         // Apply glint to item already in the other hand
@@ -473,12 +473,12 @@ public class GlintEditorScreen extends Screen {
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor));
+            PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor));
         }).bounds(px + 8, py + 164, 80, 14).build());
 
         // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.remove"), b -> {
-            ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0]));
+            PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0]));
         }).bounds(px + 8, py + 180, 80, 14).build());
 
         // Glow ON/OFF toggle
@@ -594,7 +594,7 @@ public class GlintEditorScreen extends Screen {
         if (allItems == null) return;
         String lq = query.toLowerCase();
         filteredItems = lq.isEmpty() ? new ArrayList<>(allItems) : allItems.stream().filter(item -> {
-            ResourceLocation rl = ForgeRegistries.ITEMS.getKey(item);
+            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(item);
             return (rl != null && rl.toString().contains(lq))
                     || item.getDescription().getString().toLowerCase().contains(lq);
         }).collect(Collectors.toList());
@@ -609,7 +609,7 @@ public class GlintEditorScreen extends Screen {
                     layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
         }
         int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-        ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
+        PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
     }
 
     private void scanGlintConfigs() {
@@ -646,7 +646,7 @@ public class GlintEditorScreen extends Screen {
                 for (int i = 0; i < Math.min(layers.size(), 8); i++) {
                     JsonObject layer = layers.get(i).getAsJsonObject();
                     String design = layer.get("design").getAsString();
-                    layerDesigns.add(designShortName(new ResourceLocation(design)));
+                    layerDesigns.add(designShortName(ResourceLocation.parse(design)));
 
                     List<Integer> colors = new ArrayList<>();
                     for (JsonElement e : layer.getAsJsonArray("colors")) {
@@ -711,7 +711,7 @@ public class GlintEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float dt) {
-        renderBackground(g);
+        renderBackground(g, mx, my, dt);
 
         // Panel background
         g.fill(px - 1, py - 1, px + PANEL_W + 1, py + PANEL_H + 1, 0xFF555555);
@@ -1132,7 +1132,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double delta) {
+    public boolean mouseScrolled(double mx, double my, double scrollX, double delta) {
         if (showDesignPicker) {
             int ox = dpX(), oy = dpY();
             if (mx >= ox && mx < ox + DPW && my >= oy && my < oy + DPH) {
@@ -1157,7 +1157,7 @@ public class GlintEditorScreen extends Screen {
                 return true;
             }
         }
-        return super.mouseScrolled(mx, my, delta);
+        return super.mouseScrolled(mx, my, scrollX, delta);
     }
 
     @Override

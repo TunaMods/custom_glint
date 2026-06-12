@@ -117,9 +117,9 @@ public class ElytraSlotLayerMixin {
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
         if (combined != null)
-            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         if (glowing) {
-            ResourceLocation outlineTex = tex != null ? tex : new ResourceLocation("minecraft", "textures/entity/elytra.png");
+            ResourceLocation outlineTex = tex != null ? tex : ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/elytra.png");
             CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, elytraModel, outlineTex, stack, null);
         }
         poseStack.popPose();

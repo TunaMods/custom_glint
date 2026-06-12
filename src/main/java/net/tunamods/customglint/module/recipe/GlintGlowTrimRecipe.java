@@ -2,9 +2,9 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
@@ -18,13 +18,13 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintGlowTrimRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintGlowTrimRecipe::new);
 
-    public GlintGlowTrimRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlintGlowTrimRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
-        if (pInv.getWidth() != 3 || pInv.getHeight() != 3) return false;
+    public boolean matches(CraftingInput pInv, Level pLevel) {
+        if (pInv.width() != 3 || pInv.height() != 3) return false;
         for (int i = 0; i < 9; i++) {
             ItemStack s = pInv.getItem(i);
             if (i == 4) {
@@ -39,7 +39,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
         ItemStack trim = pInv.getItem(4);
         if (trim.isEmpty() || !(trim.getItem() instanceof GlintTrimItem)) return ItemStack.EMPTY;
         ItemStack result = trim.copy();

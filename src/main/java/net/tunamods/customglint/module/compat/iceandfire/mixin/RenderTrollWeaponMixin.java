@@ -148,7 +148,7 @@ public class RenderTrollWeaponMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
                 pose.pushPose();
                 pose.translate(0.5f, -0.75f, 0.5f);
-                model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
+                model.renderToBuffer(pose, combined, light, overlay, 0xFFFFFFFF);
                 pose.popPose();
             }
         }

@@ -2,9 +2,9 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -19,14 +19,14 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlowTrimMergeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlowTrimMergeRecipe::new);
 
-    public GlowTrimMergeRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlowTrimMergeRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
+    public boolean matches(CraftingInput pInv, Level pLevel) {
         int trimCount = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (!(s.getItem() instanceof GlowTrimItem)) return false;
@@ -37,9 +37,9 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
         ItemStack result = ItemStack.EMPTY;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (result.isEmpty()) { result = s; continue; }
@@ -49,7 +49,7 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
         GlowTrimItem.addColor(result, 0xFFFF0000);
         GlowTrimItem.addColor(result, 0xFF00AAFF);

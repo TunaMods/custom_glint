@@ -1,9 +1,9 @@
 package net.tunamods.customglint.common.client;
 
 import net.minecraft.nbt.CompoundTag;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import net.tunamods.customglint.common.CustomGlint;
 
 import java.util.UUID;
@@ -36,7 +36,7 @@ public final class EntityGlintClientInit {
             if (e == null) return null;
             return new EntityGlintRender.Resolution(e.data, e.glowing, e.glowColors);
         };
-        MinecraftForge.EVENT_BUS.register(EntityGlintClientInit.class);
+        NeoForge.EVENT_BUS.register(EntityGlintClientInit.class);
     }
 
     @SubscribeEvent

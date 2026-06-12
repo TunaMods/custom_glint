@@ -1,5 +1,6 @@
 package net.tunamods.customglint.common;
 
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -8,12 +9,13 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
@@ -63,61 +65,61 @@ public final class CustomGlint {
 
     // ── Designs ───────────────────────────────────────────────────────────────
 
-    public static final ResourceLocation VANILLA    = new ResourceLocation("minecraft", "textures/misc/enchanted_glint_item.png");
-    public static final ResourceLocation ARCS      = new ResourceLocation(MOD_ID, "textures/glint/arcs.png");
-    public static final ResourceLocation AURORA    = new ResourceLocation(MOD_ID, "textures/glint/aurora.png");
-    public static final ResourceLocation BLOBS     = new ResourceLocation(MOD_ID, "textures/glint/blobs.png");
-    public static final ResourceLocation CASCADE   = new ResourceLocation(MOD_ID, "textures/glint/cascade.png");
-    public static final ResourceLocation CHECKER   = new ResourceLocation(MOD_ID, "textures/glint/checker.png");
-    public static final ResourceLocation CHEVRON   = new ResourceLocation(MOD_ID, "textures/glint/chevron.png");
-    public static final ResourceLocation CORAL     = new ResourceLocation(MOD_ID, "textures/glint/coral.png");
-    public static final ResourceLocation CRACKS    = new ResourceLocation(MOD_ID, "textures/glint/cracks.png");
-    public static final ResourceLocation CROSSHATCH = new ResourceLocation(MOD_ID, "textures/glint/crosshatch.png");
-    public static final ResourceLocation CRYSTAL   = new ResourceLocation(MOD_ID, "textures/glint/crystal.png");
-    public static final ResourceLocation DEBRIS    = new ResourceLocation(MOD_ID, "textures/glint/debris.png");
-    public static final ResourceLocation DIAMONDS  = new ResourceLocation(MOD_ID, "textures/glint/diamonds.png");
-    public static final ResourceLocation DUNES     = new ResourceLocation(MOD_ID, "textures/glint/dunes.png");
-    public static final ResourceLocation EMBER     = new ResourceLocation(MOD_ID, "textures/glint/ember.png");
-    public static final ResourceLocation FEATHER   = new ResourceLocation(MOD_ID, "textures/glint/feather.png");
-    public static final ResourceLocation FIRE      = new ResourceLocation(MOD_ID, "textures/glint/fire.png");
-    public static final ResourceLocation FROST     = new ResourceLocation(MOD_ID, "textures/glint/frost.png");
-    public static final ResourceLocation GLITCH    = new ResourceLocation(MOD_ID, "textures/glint/glitch.png");
-    public static final ResourceLocation GLOW      = new ResourceLocation(MOD_ID, "textures/glint/glow.png");
-    public static final ResourceLocation GRID      = new ResourceLocation(MOD_ID, "textures/glint/grid.png");
-    public static final ResourceLocation HALO      = new ResourceLocation(MOD_ID, "textures/glint/halo.png");
-    public static final ResourceLocation HEXAGON   = new ResourceLocation(MOD_ID, "textures/glint/hexagon.png");
-    public static final ResourceLocation LIGHTNING = new ResourceLocation(MOD_ID, "textures/glint/lightning.png");
-    public static final ResourceLocation MARBLE    = new ResourceLocation(MOD_ID, "textures/glint/marble.png");
-    public static final ResourceLocation MATRIX    = new ResourceLocation(MOD_ID, "textures/glint/matrix.png");
-    public static final ResourceLocation MESH      = new ResourceLocation(MOD_ID, "textures/glint/mesh.png");
-    public static final ResourceLocation MOSAIC    = new ResourceLocation(MOD_ID, "textures/glint/mosaic.png");
-    public static final ResourceLocation NET       = new ResourceLocation(MOD_ID, "textures/glint/net.png");
-    public static final ResourceLocation OIL       = new ResourceLocation(MOD_ID, "textures/glint/oil.png");
-    public static final ResourceLocation PETAL     = new ResourceLocation(MOD_ID, "textures/glint/petal.png");
-    public static final ResourceLocation PLASMA    = new ResourceLocation(MOD_ID, "textures/glint/plasma.png");
-    public static final ResourceLocation PLATE     = new ResourceLocation(MOD_ID, "textures/glint/plate.png");
-    public static final ResourceLocation PRISM     = new ResourceLocation(MOD_ID, "textures/glint/prism.png");
-    public static final ResourceLocation PULSE     = new ResourceLocation(MOD_ID, "textures/glint/pulse.png");
-    public static final ResourceLocation RIPPLE    = new ResourceLocation(MOD_ID, "textures/glint/ripple.png");
-    public static final ResourceLocation SAND      = new ResourceLocation(MOD_ID, "textures/glint/sand.png");
-    public static final ResourceLocation SCALES    = new ResourceLocation(MOD_ID, "textures/glint/scales.png");
-    public static final ResourceLocation SHEEN     = new ResourceLocation(MOD_ID, "textures/glint/sheen.png");
-    public static final ResourceLocation SHIMMER   = new ResourceLocation(MOD_ID, "textures/glint/shimmer.png");
-    public static final ResourceLocation SILK      = new ResourceLocation(MOD_ID, "textures/glint/silk.png");
-    public static final ResourceLocation SLASH     = new ResourceLocation(MOD_ID, "textures/glint/slash.png");
-    public static final ResourceLocation SMOKE     = new ResourceLocation(MOD_ID, "textures/glint/smoke.png");
-    public static final ResourceLocation SOLID     = new ResourceLocation(MOD_ID, "textures/glint/solid.png");
-    public static final ResourceLocation SPARKLE   = new ResourceLocation(MOD_ID, "textures/glint/sparkle.png");
-    public static final ResourceLocation STARS     = new ResourceLocation(MOD_ID, "textures/glint/stars.png");
-    public static final ResourceLocation STATIC    = new ResourceLocation(MOD_ID, "textures/glint/static.png");
-    public static final ResourceLocation STRIPES   = new ResourceLocation(MOD_ID, "textures/glint/stripes.png");
-    public static final ResourceLocation SWIRL     = new ResourceLocation(MOD_ID, "textures/glint/swirl.png");
-    public static final ResourceLocation TIDE      = new ResourceLocation(MOD_ID, "textures/glint/tide.png");
-    public static final ResourceLocation TILE      = new ResourceLocation(MOD_ID, "textures/glint/tile.png");
-    public static final ResourceLocation VEIN      = new ResourceLocation(MOD_ID, "textures/glint/vein.png");
-    public static final ResourceLocation WAVE      = new ResourceLocation(MOD_ID, "textures/glint/wave.png");
-    public static final ResourceLocation WEAVE     = new ResourceLocation(MOD_ID, "textures/glint/weave.png");
-    public static final ResourceLocation ZIGZAG    = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
+    public static final ResourceLocation VANILLA    = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/misc/enchanted_glint_item.png");
+    public static final ResourceLocation ARCS      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/arcs.png");
+    public static final ResourceLocation AURORA    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/aurora.png");
+    public static final ResourceLocation BLOBS     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/blobs.png");
+    public static final ResourceLocation CASCADE   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/cascade.png");
+    public static final ResourceLocation CHECKER   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/checker.png");
+    public static final ResourceLocation CHEVRON   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/chevron.png");
+    public static final ResourceLocation CORAL     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/coral.png");
+    public static final ResourceLocation CRACKS    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/cracks.png");
+    public static final ResourceLocation CROSSHATCH = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/crosshatch.png");
+    public static final ResourceLocation CRYSTAL   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/crystal.png");
+    public static final ResourceLocation DEBRIS    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/debris.png");
+    public static final ResourceLocation DIAMONDS  = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/diamonds.png");
+    public static final ResourceLocation DUNES     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/dunes.png");
+    public static final ResourceLocation EMBER     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/ember.png");
+    public static final ResourceLocation FEATHER   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/feather.png");
+    public static final ResourceLocation FIRE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/fire.png");
+    public static final ResourceLocation FROST     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/frost.png");
+    public static final ResourceLocation GLITCH    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/glitch.png");
+    public static final ResourceLocation GLOW      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/glow.png");
+    public static final ResourceLocation GRID      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/grid.png");
+    public static final ResourceLocation HALO      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/halo.png");
+    public static final ResourceLocation HEXAGON   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/hexagon.png");
+    public static final ResourceLocation LIGHTNING = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/lightning.png");
+    public static final ResourceLocation MARBLE    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/marble.png");
+    public static final ResourceLocation MATRIX    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/matrix.png");
+    public static final ResourceLocation MESH      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/mesh.png");
+    public static final ResourceLocation MOSAIC    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/mosaic.png");
+    public static final ResourceLocation NET       = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/net.png");
+    public static final ResourceLocation OIL       = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/oil.png");
+    public static final ResourceLocation PETAL     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/petal.png");
+    public static final ResourceLocation PLASMA    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/plasma.png");
+    public static final ResourceLocation PLATE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/plate.png");
+    public static final ResourceLocation PRISM     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/prism.png");
+    public static final ResourceLocation PULSE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/pulse.png");
+    public static final ResourceLocation RIPPLE    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/ripple.png");
+    public static final ResourceLocation SAND      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/sand.png");
+    public static final ResourceLocation SCALES    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/scales.png");
+    public static final ResourceLocation SHEEN     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/sheen.png");
+    public static final ResourceLocation SHIMMER   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/shimmer.png");
+    public static final ResourceLocation SILK      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/silk.png");
+    public static final ResourceLocation SLASH     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/slash.png");
+    public static final ResourceLocation SMOKE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/smoke.png");
+    public static final ResourceLocation SOLID     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/solid.png");
+    public static final ResourceLocation SPARKLE   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/sparkle.png");
+    public static final ResourceLocation STARS     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/stars.png");
+    public static final ResourceLocation STATIC    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/static.png");
+    public static final ResourceLocation STRIPES   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/stripes.png");
+    public static final ResourceLocation SWIRL     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/swirl.png");
+    public static final ResourceLocation TIDE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/tide.png");
+    public static final ResourceLocation TILE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/tile.png");
+    public static final ResourceLocation VEIN      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/vein.png");
+    public static final ResourceLocation WAVE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/wave.png");
+    public static final ResourceLocation WEAVE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/weave.png");
+    public static final ResourceLocation ZIGZAG    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/zigzag.png");
 
     public static final ResourceLocation[] PATTERNS = {
             VANILLA,
@@ -154,13 +156,41 @@ public final class CustomGlint {
     private static final String SCALE_KEY         = "scale";
     private static final String SIMULTANEOUS_KEY  = "simultaneous";
 
+    // Item glint state lives in the CUSTOM_DATA component (the 1.20.5+ migration path for
+    // arbitrary item NBT). We keep the legacy schema — a CompoundTag stored under TAG inside the
+    // component's root — so the on-disk format and entity/item symmetry are unchanged.
+
+    /** The inner glint tag stored under TAG in the item's CUSTOM_DATA, or null if absent. */
+    @Nullable
+    private static CompoundTag glintTagOrNull(ItemStack stack) {
+        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
+        if (cd == null || !cd.contains(TAG)) return null;
+        return cd.copyTag().getCompound(TAG);
+    }
+
+    /** Overwrites the inner glint tag wholesale (other CUSTOM_DATA keys are preserved). */
+    private static void putGlintTag(ItemStack stack, CompoundTag glintTag) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.put(TAG, glintTag));
+    }
+
+    /** Mutates the inner glint tag in place, creating it if absent. */
+    private static void mutateGlintTag(ItemStack stack, Consumer<CompoundTag> mutator) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> {
+            CompoundTag glintTag = root.contains(TAG) ? root.getCompound(TAG) : new CompoundTag();
+            mutator.accept(glintTag);
+            root.put(TAG, glintTag);
+        });
+    }
+
     @Nullable
     public static Data read(ItemStack stack) {
-        if (!stack.hasTag()) return null;
-        CompoundTag root = stack.getTag();
-        if (!root.contains(TAG)) return null;
-        CompoundTag tag = root.getCompound(TAG);
+        CompoundTag tag = glintTagOrNull(stack);
+        return tag == null ? null : decode(tag);
+    }
 
+    /** Decodes an inner glint CompoundTag (the value stored under TAG) into Data, or null if invalid. */
+    @Nullable
+    private static Data decode(CompoundTag tag) {
         float globalSpeed = tag.contains(SPEED_KEY) ? tag.getFloat(SPEED_KEY) : 1.0f;
         if (globalSpeed <= 0) globalSpeed = 1.0f;
         boolean globalInterpolate = !tag.contains(INTERPOLATE_KEY) || tag.getBoolean(INTERPOLATE_KEY);
@@ -186,7 +216,7 @@ public final class CustomGlint {
                 float patternScale = lt.contains(SCALE_KEY) ? lt.getFloat(SCALE_KEY) : globalScale;
                 if (patternScale <= 0) patternScale = 1.0f;
                 boolean simultaneous = lt.contains(SIMULTANEOUS_KEY) ? lt.getBoolean(SIMULTANEOUS_KEY) : globalSimultaneous;
-                layers[i] = new Layer(new ResourceLocation(design), colors, speed, interpolate, patternScale, simultaneous);
+                layers[i] = new Layer(ResourceLocation.parse(design), colors, speed, interpolate, patternScale, simultaneous);
             }
         } else {
             // backward compat: old single-layer format
@@ -195,23 +225,15 @@ public final class CustomGlint {
             if (!tag.contains(COLORS_KEY)) return null;
             int[] colors = tag.getIntArray(COLORS_KEY);
             if (colors.length == 0) return null;
-            layers = new Layer[]{ new Layer(new ResourceLocation(design), colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
+            layers = new Layer[]{ new Layer(ResourceLocation.parse(design), colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
         }
 
         return new Data(layers);
     }
 
-    public static boolean has(ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains(TAG);
-    }
-
-    public static void write(ItemStack stack, Layer[] layers) {
+    /** Encodes a Layer[] into a fresh inner glint CompoundTag (the value placed under TAG). */
+    private static CompoundTag encodeLayers(Layer[] layers) {
         CompoundTag tag = new CompoundTag();
-        CompoundTag existing = stack.hasTag() ? stack.getTag().getCompound(TAG) : null;
-        if (existing != null && existing.contains(GLOWING_KEY))
-            tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
-        if (existing != null && existing.contains(GLOW_COLORS_KEY))
-            tag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
         ListTag list = new ListTag();
         for (Layer layer : layers) {
             CompoundTag lt = new CompoundTag();
@@ -224,7 +246,22 @@ public final class CustomGlint {
             list.add(lt);
         }
         tag.put(LAYERS_KEY, list);
-        stack.getOrCreateTag().put(TAG, tag);
+        return tag;
+    }
+
+    public static boolean has(ItemStack stack) {
+        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
+        return cd != null && cd.contains(TAG);
+    }
+
+    public static void write(ItemStack stack, Layer[] layers) {
+        CompoundTag existing = glintTagOrNull(stack);
+        CompoundTag tag = encodeLayers(layers);
+        if (existing != null && existing.contains(GLOWING_KEY))
+            tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
+        if (existing != null && existing.contains(GLOW_COLORS_KEY))
+            tag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
+        putGlintTag(stack, tag);
     }
 
     public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -232,30 +269,25 @@ public final class CustomGlint {
     }
 
     public static void remove(ItemStack stack) {
-        if (stack.hasTag()) stack.getTag().remove(TAG);
+        if (!has(stack)) return;
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.remove(TAG));
     }
 
     public static boolean isGlowing(ItemStack stack) {
-        if (stack.isEmpty() || !stack.hasTag()) return false;
-        CompoundTag root = stack.getTag();
-        if (!root.contains(TAG)) return false;
-        return root.getCompound(TAG).getBoolean(GLOWING_KEY);
+        if (stack.isEmpty()) return false;
+        CompoundTag tag = glintTagOrNull(stack);
+        return tag != null && tag.getBoolean(GLOWING_KEY);
     }
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
-        CompoundTag root = stack.getOrCreateTag();
-        CompoundTag glintTag = root.contains(TAG) ? root.getCompound(TAG) : new CompoundTag();
-        glintTag.putBoolean(GLOWING_KEY, glowing);
-        root.put(TAG, glintTag);
+        mutateGlintTag(stack, t -> t.putBoolean(GLOWING_KEY, glowing));
     }
 
     /** Glow Trim colors — drive the outline color animation independently of any glint Data. */
     public static int[] getGlowColors(ItemStack stack) {
-        if (stack.isEmpty() || !stack.hasTag()) return new int[0];
-        CompoundTag root = stack.getTag();
-        if (!root.contains(TAG)) return new int[0];
-        CompoundTag tag = root.getCompound(TAG);
-        if (!tag.contains(GLOW_COLORS_KEY)) return new int[0];
+        if (stack.isEmpty()) return new int[0];
+        CompoundTag tag = glintTagOrNull(stack);
+        if (tag == null || !tag.contains(GLOW_COLORS_KEY)) return new int[0];
         return tag.getIntArray(GLOW_COLORS_KEY);
     }
 
@@ -265,17 +297,16 @@ public final class CustomGlint {
 
     /** Sets glowColors AND glowing=true. Independent of any glint Data on the stack. */
     public static void setGlowColors(ItemStack stack, int[] colors) {
-        CompoundTag root = stack.getOrCreateTag();
-        CompoundTag glintTag = root.contains(TAG) ? root.getCompound(TAG) : new CompoundTag();
-        glintTag.putIntArray(GLOW_COLORS_KEY, colors);
-        glintTag.putBoolean(GLOWING_KEY, true);
-        root.put(TAG, glintTag);
+        mutateGlintTag(stack, t -> {
+            t.putIntArray(GLOW_COLORS_KEY, colors);
+            t.putBoolean(GLOWING_KEY, true);
+        });
     }
 
     public static void clearGlowColors(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(TAG)) return;
-        CompoundTag tag = stack.getTag().getCompound(TAG);
-        tag.remove(GLOW_COLORS_KEY);
+        CompoundTag tag = glintTagOrNull(stack);
+        if (tag == null || !tag.contains(GLOW_COLORS_KEY)) return;
+        mutateGlintTag(stack, t -> t.remove(GLOW_COLORS_KEY));
     }
 
     public static ItemStack glinted(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -449,8 +480,8 @@ public final class CustomGlint {
 
     /** Returns the raw inner glint tag stored on an ItemStack (or empty CompoundTag if none). */
     public static CompoundTag itemGlintTag(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(TAG)) return new CompoundTag();
-        return stack.getTag().getCompound(TAG).copy();
+        CompoundTag tag = glintTagOrNull(stack);
+        return tag == null ? new CompoundTag() : tag.copy();
     }
 
     /** Returns the raw inner glint tag for sync packets (or empty CompoundTag if none). */
@@ -471,10 +502,10 @@ public final class CustomGlint {
      *  restoring from a stored tag in bulk. Empty/null tag clears the glint. */
     public static void writeItemTag(ItemStack stack, CompoundTag glintTag) {
         if (glintTag == null || glintTag.isEmpty()) {
-            if (stack.hasTag()) stack.getTag().remove(TAG);
+            remove(stack);
             return;
         }
-        stack.getOrCreateTag().put(TAG, glintTag.copy());
+        putGlintTag(stack, glintTag.copy());
     }
 
     // ── NBT serialization helpers (decoupled from ItemStack) ──────────────────
@@ -483,11 +514,7 @@ public final class CustomGlint {
     @Nullable
     public static Data fromTag(@Nullable CompoundTag glintTag) {
         if (glintTag == null || glintTag.isEmpty()) return null;
-        ItemStack vehicle = new ItemStack(Items.STONE);
-        CompoundTag root = new CompoundTag();
-        root.put(TAG, glintTag.copy());
-        vehicle.setTag(root);
-        return read(vehicle);
+        return decode(glintTag);
     }
 
     /** Returns true if the inner glint tag has glowing=true. */
@@ -503,9 +530,7 @@ public final class CustomGlint {
 
     /** Encodes a Layer[] into a fresh inner glint CompoundTag (the value placed under TAG). */
     public static CompoundTag toTag(Layer[] layers) {
-        ItemStack vehicle = new ItemStack(Items.STONE);
-        write(vehicle, layers);
-        return vehicle.getTag().getCompound(TAG).copy();
+        return encodeLayers(layers);
     }
 
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();

@@ -10,7 +10,7 @@ import net.minecraft.client.renderer.entity.layers.HorseArmorLayer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.animal.horse.Horse;
-import net.minecraft.world.item.HorseArmorItem;
+import net.minecraft.world.item.AnimalArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
@@ -54,13 +54,14 @@ public class HorseArmorLayerMixin {
 
     private static void applyHorseArmorGlint(PoseStack poseStack, MultiBufferSource buffer,
             int packedLight, Horse entity, HorseModel<Horse> model) {
-        ItemStack stack = entity.getArmor();
+        ItemStack stack = entity.getBodyArmorItem();
         if (stack.isEmpty()) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
-        if (!(stack.getItem() instanceof HorseArmorItem ha)) return;
-        ResourceLocation tex = ha.getTexture();
+        if (!(stack.getItem() instanceof AnimalArmorItem aa)
+                || aa.getBodyType() != AnimalArmorItem.BodyType.EQUESTRIAN) return;
+        ResourceLocation tex = aa.getTexture();
 
         if (glint != null) {
             // ── Stencil mask pass ───────────────────────────────────────────
@@ -73,7 +74,7 @@ public class HorseArmorLayerMixin {
             // bit 0x80 via the armor texture's alpha cutoff, then constrain the glint test to
             // that bit. Same pattern as IaF mount armor.
             RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
-            model.renderToBuffer(poseStack, buffer.getBuffer(maskType), packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            model.renderToBuffer(poseStack, buffer.getBuffer(maskType), packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
 
             CustomGlint.Layer[] layers = glint.layers();
@@ -107,7 +108,7 @@ public class HorseArmorLayerMixin {
             if (!list.isEmpty()) {
                 VertexConsumer combined = list.size() == 1 ? list.get(0)
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-                model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+                model.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
             if (buffer instanceof MultiBufferSource.BufferSource bs2) {
                 for (RenderType rt : glintTypes) bs2.endBatch(rt);

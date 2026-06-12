@@ -1,7 +1,7 @@
 package net.tunamods.customglint.module.loot;
 
 import com.google.common.base.Suppliers;
-import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
@@ -11,8 +11,8 @@ import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
-import net.minecraftforge.common.loot.IGlobalLootModifier;
-import net.minecraftforge.common.loot.LootModifier;
+import net.neoforged.neoforge.common.loot.IGlobalLootModifier;
+import net.neoforged.neoforge.common.loot.LootModifier;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -24,8 +24,8 @@ import java.util.function.Supplier;
 
 public class GlintTrimLootModifier extends LootModifier {
 
-    public static final Supplier<Codec<GlintTrimLootModifier>> CODEC =
-        Suppliers.memoize(() -> RecordCodecBuilder.create(inst ->
+    public static final Supplier<MapCodec<GlintTrimLootModifier>> CODEC =
+        Suppliers.memoize(() -> RecordCodecBuilder.mapCodec(inst ->
             codecStart(inst).apply(inst, GlintTrimLootModifier::new)));
 
     protected GlintTrimLootModifier(LootItemCondition[] conditions) {
@@ -236,7 +236,7 @@ public class GlintTrimLootModifier extends LootModifier {
             ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
             ResourceLocation patternLoc = pattern.equals("vanilla")
                 ? CustomGlint.VANILLA
-                : new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
+                : ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
             GlintTrimItem.setPattern(trim, patternLoc);
             if (context.getRandom().nextFloat() < 0.25f) {
                 int colorCount = 1 + context.getRandom().nextInt(3);
@@ -307,7 +307,7 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     @Override
-    public Codec<? extends IGlobalLootModifier> codec() {
+    public MapCodec<? extends IGlobalLootModifier> codec() {
         return CODEC.get();
     }
 }

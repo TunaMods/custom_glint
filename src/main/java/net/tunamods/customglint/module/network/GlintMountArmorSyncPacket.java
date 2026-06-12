@@ -1,11 +1,15 @@
 package net.tunamods.customglint.module.network;
 
-import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
 
-import java.util.function.Supplier;
+import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
  * S→C: pushes an IaF mount's current armor ItemStack (slot 2 of its internal SimpleContainer)
@@ -13,27 +17,24 @@ import java.util.function.Supplier;
  * itself — only the armor-tier int — so we sync it here. Broadcast on inventory change
  * (refreshInventory mixins) and on player-start-tracking (IceAndFireCompat listener).
  */
-public class GlintMountArmorSyncPacket {
+public record GlintMountArmorSyncPacket(int entityId, ItemStack stack) implements CustomPacketPayload {
 
-    private final int entityId;
-    private final ItemStack stack;
+    public static final Type<GlintMountArmorSyncPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "mount_armor_sync"));
 
-    public GlintMountArmorSyncPacket(int entityId, ItemStack stack) {
-        this.entityId = entityId;
-        this.stack = stack;
+    public static final StreamCodec<RegistryFriendlyByteBuf, GlintMountArmorSyncPacket> STREAM_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.VAR_INT, GlintMountArmorSyncPacket::entityId,
+                    ItemStack.OPTIONAL_STREAM_CODEC, GlintMountArmorSyncPacket::stack,
+                    GlintMountArmorSyncPacket::new
+            );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeVarInt(entityId);
-        buf.writeItem(stack);
-    }
-
-    public static GlintMountArmorSyncPacket decode(FriendlyByteBuf buf) {
-        return new GlintMountArmorSyncPacket(buf.readVarInt(), buf.readItem());
-    }
-
-    public void handle(Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> MountArmorCache.put(entityId, stack));
-        ctx.get().setPacketHandled(true);
+    public static void handle(GlintMountArmorSyncPacket pkt, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> MountArmorCache.put(pkt.entityId(), pkt.stack()));
     }
 }

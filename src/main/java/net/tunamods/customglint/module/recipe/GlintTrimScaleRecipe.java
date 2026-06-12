@@ -2,9 +2,9 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -19,15 +19,15 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimScaleRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimScaleRecipe::new);
 
-    public GlintTrimScaleRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlintTrimScaleRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
+    public boolean matches(CraftingInput pInv, Level pLevel) {
         ItemStack trim = ItemStack.EMPTY;
         int count = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null) {
@@ -43,10 +43,10 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
         ItemStack trim = ItemStack.EMPTY;
         int count = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlintTrimItem) trim = s;
@@ -60,9 +60,9 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
         GlintTrimItem.setScale(result, 2.0f);
         return result;
@@ -75,7 +75,7 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.SLIME_BALL));

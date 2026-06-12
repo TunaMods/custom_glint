@@ -2,7 +2,8 @@ package net.tunamods.customglint.module.item;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.ChatFormatting;
-import net.minecraft.nbt.IntArrayTag;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -11,11 +12,12 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.item.component.CustomData;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Glow Trim — applies a colored outline glow only (no glint design).
@@ -30,9 +32,20 @@ public class GlowTrimItem extends Item {
         super(pProperties);
     }
 
+    @Nullable
+    private static CompoundTag dataOrNull(ItemStack stack) {
+        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
+        return cd == null ? null : cd.copyTag();
+    }
+
+    private static void mutateData(ItemStack stack, Consumer<CompoundTag> mutator) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, mutator);
+    }
+
     public static int[] getColors(ItemStack stack) {
-        if (!stack.hasTag() || !stack.getTag().contains(COLORS_TAG)) return new int[0];
-        return stack.getTag().getIntArray(COLORS_TAG);
+        CompoundTag tag = dataOrNull(stack);
+        if (tag == null || !tag.contains(COLORS_TAG)) return new int[0];
+        return tag.getIntArray(COLORS_TAG);
     }
 
     public static boolean addColor(ItemStack stack, int color) {
@@ -40,7 +53,7 @@ public class GlowTrimItem extends Item {
         if (current.length >= 8) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
-        stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(next));
+        mutateData(stack, t -> t.putIntArray(COLORS_TAG, next));
         applyPreview(stack, next);
         return true;
     }
@@ -55,7 +68,7 @@ public class GlowTrimItem extends Item {
         System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
         int bCount = total - a.length;
         if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
-        result.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(merged));
+        mutateData(result, t -> t.putIntArray(COLORS_TAG, merged));
         applyPreview(result, merged);
         return result;
     }
@@ -67,7 +80,7 @@ public class GlowTrimItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (colors.length == 0) {
             pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));

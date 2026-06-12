@@ -1,8 +1,8 @@
 package net.tunamods.customglint.module.compat.firstperson;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.ModList;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.fml.ModList;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -39,7 +39,7 @@ public final class FirstPersonCompat {
         }
         // Wire fpmRenderingPlayerGate on client side (CustomGlintRenderer is client-only —
         // kept out of this class's imports so dedicated servers never resolve it transitively).
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> FirstPersonClientCompat::wireRenderer);
+        if (FMLEnvironment.dist == Dist.CLIENT) FirstPersonClientCompat.wireRenderer();
         // Temporarily disabled to inspect current outline behavior under FPM 3.5D.
         // CustomGlintRenderer.outlineSuppressor = FirstPersonCompat::shouldSuppress;
     }

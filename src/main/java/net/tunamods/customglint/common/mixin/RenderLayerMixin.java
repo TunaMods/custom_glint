@@ -35,29 +35,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class RenderLayerMixin {
 
     @Inject(
-        method = "coloredCutoutModelCopyLayerRender(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFFFFF)V",
+        method = "coloredCutoutModelCopyLayerRender(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFFI)V",
         at = @At("RETURN"), require = 0
     )
     private static void cg_copyLayerOutline(EntityModel<?> baseModel, EntityModel<?> outerModel,
                                             ResourceLocation texture, PoseStack pose,
                                             MultiBufferSource buffer, int packedLight,
                                             LivingEntity entity,
-                                            float p7, float p8, float p9, float p10,
-                                            float p11, float p12,
-                                            float r, float g, float b,
+                                            float limbSwing, float limbSwingAmount, float ageInTicks,
+                                            float netHeadYaw, float headPitch, float partialTick,
+                                            int color,
                                             CallbackInfo ci) {
-        EntityGlintRender.queueLayerOutline(entity,outerModel, texture, pose, packedLight);
+        EntityGlintRender.queueLayerOutline(entity, outerModel, texture, pose, packedLight);
     }
 
     @Inject(
-        method = "renderColoredCutoutModel(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFF)V",
+        method = "renderColoredCutoutModel(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;I)V",
         at = @At("RETURN"), require = 0
     )
     private static void cg_singleLayerOutline(EntityModel<?> model, ResourceLocation texture,
                                               PoseStack pose, MultiBufferSource buffer,
                                               int packedLight, LivingEntity entity,
-                                              float r, float g, float b,
+                                              int color,
                                               CallbackInfo ci) {
-        EntityGlintRender.queueLayerOutline(entity,model, texture, pose, packedLight);
+        EntityGlintRender.queueLayerOutline(entity, model, texture, pose, packedLight);
     }
 }

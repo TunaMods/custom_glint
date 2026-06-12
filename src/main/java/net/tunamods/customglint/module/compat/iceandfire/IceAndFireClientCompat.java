@@ -29,6 +29,6 @@ public final class IceAndFireClientCompat {
         // sit over empty texture regions get filled as opaque colored squares.
         CustomGlintRenderer.BEWLR_OUTLINE_TEXTURES.put(
                 "com.github.alexthe666.iceandfire.item.ItemTideTrident",
-                new ResourceLocation("iceandfire", "textures/models/misc/tide_trident.png"));
+                ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/misc/tide_trident.png"));
     }
 }

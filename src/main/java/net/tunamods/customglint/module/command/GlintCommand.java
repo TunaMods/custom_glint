@@ -24,6 +24,9 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.CustomModelData;
 
 import java.io.BufferedWriter;
 import java.nio.file.Files;
@@ -210,9 +213,9 @@ public class GlintCommand {
             design = CustomGlint.VANILLA;
         } else if (key.contains(":")) {
             int c = key.indexOf(':');
-            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
+            design = ResourceLocation.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
         } else {
-            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
+            design = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
         }
 
         String[] parts = colorsArg.split(",");
@@ -305,9 +308,9 @@ public class GlintCommand {
             design = CustomGlint.VANILLA;
         } else if (key.contains(":")) {
             int c = key.indexOf(':');
-            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
+            design = ResourceLocation.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
         } else {
-            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
+            design = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
         }
 
         String[] parts = colorsArg.split(",");
@@ -405,26 +408,27 @@ public class GlintCommand {
         if (layers.length == 1) {
             CustomGlint.Layer layer = layers[0];
             for (int color : layer.colors()) GlintTrimItem.addColor(trim, color);
-            trim.getOrCreateTag().putFloat(GlintTrimItem.SPEED_TAG, layer.speed());
-            trim.getOrCreateTag().putFloat(GlintTrimItem.SCALE_TAG, layer.patternScale());
+            GlintTrimItem.setSpeed(trim, layer.speed());
+            GlintTrimItem.setScale(trim, layer.patternScale());
             GlintTrimItem.setPattern(trim, layer.design());
             GlintTrimItem.setGlowing(trim, CustomGlint.isGlowing(held));
         } else {
             // Multi-layer: set flat tags from layer 0 for display, then copy the full glint tag verbatim
             CustomGlint.Layer layer0 = layers[0];
             for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
-            trim.getOrCreateTag().putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
-            trim.getOrCreateTag().putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
-            trim.getOrCreateTag().putString(GlintTrimItem.PATTERN_TAG, layer0.design().toString());
-            if (held.hasTag() && held.getTag().contains(CustomGlintMod.MOD_ID)) {
-                trim.getOrCreateTag().put(CustomGlintMod.MOD_ID, held.getTag().get(CustomGlintMod.MOD_ID).copy());
-            }
-            // Set glowing and CustomModelData without calling setGlowing (which would clobber the multi-layer tag)
             boolean glowing = CustomGlint.isGlowing(held);
-            trim.getOrCreateTag().putBoolean(GlintTrimItem.GLOWING_TAG, glowing);
+            CustomData.update(DataComponents.CUSTOM_DATA, trim, t -> {
+                t.putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
+                t.putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
+                t.putString(GlintTrimItem.PATTERN_TAG, layer0.design().toString());
+                t.putBoolean(GlintTrimItem.GLOWING_TAG, glowing);
+            });
+            // Copy the full multi-layer glint tag verbatim from the held item.
+            CustomGlint.writeItemTag(trim, CustomGlint.itemGlintTag(held));
+            // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
-            if (idx >= 0) trim.getOrCreateTag().putInt("CustomModelData", (glowing ? 1000 : 0) + idx + 1);
+            if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData((glowing ? 1000 : 0) + idx + 1));
         }
 
         if (!player.getInventory().add(trim)) player.drop(trim, false);
@@ -459,7 +463,7 @@ public class GlintCommand {
             root.addProperty("name", name);
             root.addProperty("glowing", CustomGlint.isGlowing(held));
 
-            if (held.hasCustomHoverName()) {
+            if (held.has(DataComponents.CUSTOM_NAME)) {
                 Component hover = held.getHoverName();
                 root.addProperty("displayName", hover.getString());
                 TextColor color = hover.getStyle().getColor();

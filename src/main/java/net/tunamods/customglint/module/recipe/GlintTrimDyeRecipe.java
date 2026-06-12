@@ -3,10 +3,11 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.nbt.IntArrayTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.inventory.CraftingContainer;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.Items;
@@ -22,16 +23,16 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimDyeRecipe::new);
 
-    public GlintTrimDyeRecipe(ResourceLocation id, CraftingBookCategory category) {
-        super(id, category);
+    public GlintTrimDyeRecipe(CraftingBookCategory category) {
+        super(category);
     }
 
     @Override
-    public boolean matches(CraftingContainer pInv, Level pLevel) {
+    public boolean matches(CraftingInput pInv, Level pLevel) {
         ItemStack trim = ItemStack.EMPTY;
         ItemStack dye  = ItemStack.EMPTY;
         int filled = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
@@ -49,10 +50,10 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
         ItemStack trim = ItemStack.EMPTY;
         DyeItem dye = null;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlintTrimItem) trim = s;
@@ -62,16 +63,16 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         ItemStack result = trim.copy();
         result.setCount(1);
         int[] colors = new int[]{ GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()] };
-        result.getOrCreateTag().put(GlintTrimItem.COLORS_TAG, new IntArrayTag(colors));
+        CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlintTrimItem.COLORS_TAG, colors));
         ResourceLocation pattern = GlintTrimItem.getPattern(result);
         if (pattern != null) CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
         return result;
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
         ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
         return result;
     }
@@ -83,7 +84,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(

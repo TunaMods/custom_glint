@@ -19,9 +19,10 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ArmorItem;
-import net.minecraft.world.item.DyeableLeatherItem;
+import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.client.ForgeHooksClient;
+import net.neoforged.neoforge.client.ClientHooks;
+import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -66,7 +67,7 @@ public class HumanoidArmorLayerMixin {
         // Bail only if there is nothing to render — no glint AND no glow.
         if (glint == null && !glowing) return;
 
-        Model rendererModel = ForgeHooksClient.getArmorModel(entity, stack, slot, model);
+        Model rendererModel = IClientItemExtensions.of(stack).getGenericArmorModel(entity, stack, slot, model);
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
@@ -97,24 +98,30 @@ public class HumanoidArmorLayerMixin {
             }
             if (!list.isEmpty()) {
                 VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-                rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+                rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
         }
         if (glowing) {
-            // Use Forge's HumanoidArmorLayer#getArmorResource: it splits the colon out of
-            // materials whose getName() returns "namespace:path" (e.g. EK's
-            // "magistuarmory:wingedhussarchestplate") and produces a valid
-            // "{namespace}:textures/models/armor/{name}_layer_X.png". Building the path
-            // ourselves and calling `new ResourceLocation` directly throws on the embedded
-            // colon and falls back to SOLID — alpha-discard then misses, and stencil-write
-            // stamps the full cuboid (visible as a giant-rectangle outline on EK
-            // WingedHussar wings, where the bounding plane dwarfs the visible feather).
-            ResourceLocation armorTex = CustomGlint.SOLID;
-            if (stack.getItem() instanceof ArmorItem) {
-                try {
-                    armorTex = layer.getArmorResource(entity, stack, slot, null);
-                } catch (Exception ignored) { armorTex = CustomGlint.SOLID; }
-            }
+            // 1.21 armor textures come from the material's layer list (base plus any
+            // overlay/dyeable layers). ClientHooks.getArmorTexture resolves each, handling
+            // namespaced material names (e.g. EK's "magistuarmory:wingedhussarchestplate")
+            // that a raw ResourceLocation would choke on — building the path ourselves and
+            // calling fromNamespaceAndPath would throw on the embedded colon and fall back to
+            // SOLID, whose alpha-discard then misses and stamps the full cuboid (giant-rectangle
+            // outline on EK WingedHussar wings). We outline every layer texture so dyeable/overlay
+            // coverage (EK crusader sleeves living in the overlay layer) is included too,
+            // replacing the old base + getArmorResource("overlay") special-case.
+            java.util.List<ResourceLocation> outlineTextures = new ArrayList<>();
+            try {
+                ArmorMaterial mat = ((ArmorItem) stack.getItem()).getMaterial().value();
+                boolean innerModel = slot == EquipmentSlot.LEGS;
+                for (ArmorMaterial.Layer matLayer : mat.layers()) {
+                    ResourceLocation t = ClientHooks.getArmorTexture(entity, stack, matLayer, innerModel, slot);
+                    if (t != null) outlineTextures.add(t);
+                }
+            } catch (Exception ignored) {}
+            if (outlineTextures.isEmpty()) outlineTextures.add(CustomGlint.SOLID);
+            ResourceLocation armorTex = outlineTextures.get(0);
             EntityModel<?> outlineModel = rendererModel instanceof EntityModel<?> em ? em : model;
 
             // EK halfarmor chestplate: arm cuboids in EK's model sample opaque pixels in the
@@ -154,29 +161,9 @@ public class HumanoidArmorLayerMixin {
                 }
             }
 
-            // For dyeable armor (DyeableLeatherItem) the visible coverage is split across base
-            // + overlay textures — base is tinted, overlay is untinted detail. Some EK Knight
-            // chestplates (e.g. crusader) put the chest in base but the arm sleeves in overlay.
-            // If we only outline the base texture, arms get no outline. Derive the overlay path
-            // via Forge's getArmorResource(type="overlay") and run a second outline pass when
-            // it exists. Non-dyeable armors skip this entirely. Overlay path resolution can
-            // throw on weird material names → guarded the same way as the base path.
-            ResourceLocation overlayTex = null;
-            if (stack.getItem() instanceof DyeableLeatherItem) {
-                try {
-                    ResourceLocation candidate = layer.getArmorResource(entity, stack, slot, "overlay");
-                    if (candidate != null
-                            && Minecraft.getInstance().getResourceManager()
-                                    .getResource(candidate).isPresent()) {
-                        overlayTex = candidate;
-                    }
-                } catch (Exception ignored) {}
-            }
-
             try {
-                CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, armorTex, stack, slot);
-                if (overlayTex != null) {
-                    CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, overlayTex, stack, slot);
+                for (ResourceLocation tex : outlineTextures) {
+                    CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, tex, stack, slot);
                 }
             } finally {
                 if (armHideModel != null) {

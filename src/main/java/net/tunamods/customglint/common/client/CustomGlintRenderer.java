@@ -3,6 +3,7 @@ package net.tunamods.customglint.common.client;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -37,7 +38,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.client.resources.model.BakedModel;
-import net.minecraftforge.client.extensions.common.IClientItemExtensions;
+import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 import net.tunamods.customglint.common.CustomGlint;
 import org.joml.Matrix4f;
 import com.mojang.blaze3d.platform.GlStateManager;
@@ -59,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.SequencedMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
@@ -100,7 +102,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * {@link #clearTextures} so the next use rebuilds against the freshly stitched atlas.
      */
     public static final ResourceLocation BLOCKS_ALPHA_MASK_LOC =
-            new ResourceLocation(MOD_ID, "textures/atlas/blocks_alpha_mask");
+            ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/atlas/blocks_alpha_mask");
     private static boolean blocksAlphaMaskBuilt = false;
 
     /** Returns the alpha-mask atlas location, building it if needed. May return the location
@@ -234,7 +236,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (srcOwned) src.close();
         }
         String safePath = original.getNamespace() + "_" + original.getPath().replace('/', '_').replace('.', '_');
-        ResourceLocation loc = new ResourceLocation(MOD_ID, "armor_alpha_mask/" + safePath);
+        ResourceLocation loc = ResourceLocation.fromNamespaceAndPath(MOD_ID,"armor_alpha_mask/" + safePath);
         DynamicTexture dt = new DynamicTexture(mask);
         mc.getTextureManager().register(loc, dt);
         dt.bind();
@@ -346,7 +348,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
 
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
-        ResourceLocation loc = new ResourceLocation(MOD_ID, "glint/" + safePath);
+        ResourceLocation loc = ResourceLocation.fromNamespaceAndPath(MOD_ID,"glint/" + safePath);
         DynamicTexture dt = new DynamicTexture(gray);
         mc.getTextureManager().register(loc, dt);
         dt.bind();
@@ -360,7 +362,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // ── Render types ──────────────────────────────────────────────────────────
 
     /** Assigned by RenderBuffersMixin on RenderBuffers construction; null until then. */
-    public static SortedMap<RenderType, BufferBuilder> fixedBufferRegistry;
+    public static SequencedMap<RenderType, ByteBufferBuilder> fixedBufferRegistry;
     public static final ThreadLocal<ItemStack> CURRENT_ITEM_STACK = new ThreadLocal<>();
     public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
@@ -433,11 +435,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -502,11 +504,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -545,11 +547,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(mountArmorMaskLayering())
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -637,11 +639,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -675,11 +677,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setWriteMaskState(new RenderStateShard.WriteMaskStateShard(false, true))
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -756,11 +758,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -1050,13 +1052,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
             final int slot = v;
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_write_v" + v,
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
                             .setShaderState(RENDERTYPE_OUTLINE_SHADER)
                             .setTextureState(new TextureStateShard(
-                                    new ResourceLocation(MOD_ID, "stencil_slot_w_" + v), false, false) {
+                                    ResourceLocation.fromNamespaceAndPath(MOD_ID,"stencil_slot_w_" + v), false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, SLOT_WRITE_TEX[slot]);
                                 }
@@ -1070,11 +1072,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             SLOT_WRITE[v] = rt;
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SLOT_WRITE[v]))
-            live.put(SLOT_WRITE[v], new BufferBuilder(SLOT_WRITE[v].bufferSize()));
+            live.put(SLOT_WRITE[v], new ByteBufferBuilder(SLOT_WRITE[v].bufferSize()));
         return SLOT_WRITE[v];
     }
 
@@ -1085,13 +1087,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
             final int slot = v;
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_write_item_v" + v,
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
                             .setShaderState(RENDERTYPE_OUTLINE_SHADER)
                             .setTextureState(new TextureStateShard(
-                                    new ResourceLocation(MOD_ID, "stencil_slot_wi_" + v), false, false) {
+                                    ResourceLocation.fromNamespaceAndPath(MOD_ID,"stencil_slot_wi_" + v), false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, SLOT_WRITE_ITEM_TEX[slot]);
                                 }
@@ -1105,11 +1107,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             SLOT_WRITE_ITEM[v] = rt;
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SLOT_WRITE_ITEM[v]))
-            live.put(SLOT_WRITE_ITEM[v], new BufferBuilder(SLOT_WRITE_ITEM[v].bufferSize()));
+            live.put(SLOT_WRITE_ITEM[v], new ByteBufferBuilder(SLOT_WRITE_ITEM[v].bufferSize()));
         return SLOT_WRITE_ITEM[v];
     }
 
@@ -1130,13 +1132,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
             final int slot = v;
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_test_v" + v,
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
                             .setShaderState(RENDERTYPE_OUTLINE_SHADER)
                             .setTextureState(new TextureStateShard(
-                                    new ResourceLocation(MOD_ID, "stencil_slot_t_" + v), false, false) {
+                                    ResourceLocation.fromNamespaceAndPath(MOD_ID,"stencil_slot_t_" + v), false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, SLOT_TEST_TEX[slot]);
                                 }
@@ -1149,11 +1151,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             SLOT_TEST[v] = rt;
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SLOT_TEST[v]))
-            live.put(SLOT_TEST[v], new BufferBuilder(SLOT_TEST[v].bufferSize()));
+            live.put(SLOT_TEST[v], new ByteBufferBuilder(SLOT_TEST[v].bufferSize()));
         // LINES bucket → drains AFTER all GENERAL_TRANSPARENT writes under FullyBuffered.
         tagAsLateRenderForShaders(SLOT_TEST[v]);
         return SLOT_TEST[v];
@@ -1166,13 +1168,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
             final int slot = v;
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_test_culled_v" + v,
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
                             .setShaderState(RENDERTYPE_OUTLINE_SHADER)
                             .setTextureState(new TextureStateShard(
-                                    new ResourceLocation(MOD_ID, "stencil_slot_tc_" + v), false, false) {
+                                    ResourceLocation.fromNamespaceAndPath(MOD_ID,"stencil_slot_tc_" + v), false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, SLOT_TEST_CULLED_TEX[slot]);
                                 }
@@ -1185,11 +1187,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             SLOT_TEST_CULLED[v] = rt;
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SLOT_TEST_CULLED[v]))
-            live.put(SLOT_TEST_CULLED[v], new BufferBuilder(SLOT_TEST_CULLED[v].bufferSize()));
+            live.put(SLOT_TEST_CULLED[v], new ByteBufferBuilder(SLOT_TEST_CULLED[v].bufferSize()));
         tagAsLateRenderForShaders(SLOT_TEST_CULLED[v]);
         return SLOT_TEST_CULLED[v];
     }
@@ -1364,11 +1366,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(CULL_FRONT_PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(SHADER_OUTLINE_ARMOR_TYPE, new BufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
+                fixedBufferRegistry.put(SHADER_OUTLINE_ARMOR_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SHADER_OUTLINE_ARMOR_TYPE))
-            live.put(SHADER_OUTLINE_ARMOR_TYPE, new BufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
+            live.put(SHADER_OUTLINE_ARMOR_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
         tagAsLateRenderForShaders(SHADER_OUTLINE_ARMOR_TYPE);
         return SHADER_OUTLINE_ARMOR_TYPE;
     }
@@ -1410,11 +1412,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(CULL_FRONT_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(SHADER_OUTLINE_ITEM_NP_TYPE, new BufferBuilder(SHADER_OUTLINE_ITEM_NP_TYPE.bufferSize()));
+                fixedBufferRegistry.put(SHADER_OUTLINE_ITEM_NP_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_NP_TYPE.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SHADER_OUTLINE_ITEM_NP_TYPE))
-            live.put(SHADER_OUTLINE_ITEM_NP_TYPE, new BufferBuilder(SHADER_OUTLINE_ITEM_NP_TYPE.bufferSize()));
+            live.put(SHADER_OUTLINE_ITEM_NP_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_NP_TYPE.bufferSize()));
         tagAsLateRenderForShaders(SHADER_OUTLINE_ITEM_NP_TYPE);
         return SHADER_OUTLINE_ITEM_NP_TYPE;
     }
@@ -1453,9 +1455,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(CULL_FRONT_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1480,11 +1482,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(CULL_FRONT_DEPTH_RANGE_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(SHADER_OUTLINE_ITEM_FPM_TYPE, new BufferBuilder(SHADER_OUTLINE_ITEM_FPM_TYPE.bufferSize()));
+                fixedBufferRegistry.put(SHADER_OUTLINE_ITEM_FPM_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_FPM_TYPE.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SHADER_OUTLINE_ITEM_FPM_TYPE))
-            live.put(SHADER_OUTLINE_ITEM_FPM_TYPE, new BufferBuilder(SHADER_OUTLINE_ITEM_FPM_TYPE.bufferSize()));
+            live.put(SHADER_OUTLINE_ITEM_FPM_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_FPM_TYPE.bufferSize()));
         tagAsLateRenderForShaders(SHADER_OUTLINE_ITEM_FPM_TYPE);
         return SHADER_OUTLINE_ITEM_FPM_TYPE;
     }
@@ -1515,9 +1517,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(CULL_FRONT_PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1538,7 +1540,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return BY_SHADER_HELD_SPRITE_OUTLINE.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":shader_held_sprite_outline_" + tex.getNamespace() + "_" + tex.getPath().replace('/', '_'),
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -1551,9 +1553,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(CULL_FRONT_PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1571,7 +1573,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderType cached = BY_SHELL_OUTLINE_TEXTURED.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":shell_outline_textured",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -1585,11 +1587,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(VIEW_OFFSET_Z_LAYERING) // matches armorCutoutNoCull's polygon offset so EQUAL passes on cape pixels
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         tagAsLateRenderForShaders(cached);
         return cached;
     }
@@ -1610,11 +1612,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTransparencyState(LIGHTNING_TRANSPARENCY)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(SHADER_OUTLINE_TYPE, new BufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
+                fixedBufferRegistry.put(SHADER_OUTLINE_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SHADER_OUTLINE_TYPE))
-            live.put(SHADER_OUTLINE_TYPE, new BufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
+            live.put(SHADER_OUTLINE_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
         tagAsLateRenderForShaders(SHADER_OUTLINE_TYPE);
         return SHADER_OUTLINE_TYPE;
     }
@@ -1649,10 +1651,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(PUSH_BACK_DEPTH_RANGE_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
             if (live != null && !live.containsKey(rt))
-                live.put(rt, new BufferBuilder(rt.bufferSize()));
+                live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1680,11 +1682,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(SHADER_SPRITE_OUTLINE_FLAT_TYPE, new BufferBuilder(SHADER_SPRITE_OUTLINE_FLAT_TYPE.bufferSize()));
+                fixedBufferRegistry.put(SHADER_SPRITE_OUTLINE_FLAT_TYPE, new ByteBufferBuilder(SHADER_SPRITE_OUTLINE_FLAT_TYPE.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(SHADER_SPRITE_OUTLINE_FLAT_TYPE))
-            live.put(SHADER_SPRITE_OUTLINE_FLAT_TYPE, new BufferBuilder(SHADER_SPRITE_OUTLINE_FLAT_TYPE.bufferSize()));
+            live.put(SHADER_SPRITE_OUTLINE_FLAT_TYPE, new ByteBufferBuilder(SHADER_SPRITE_OUTLINE_FLAT_TYPE.bufferSize()));
         tagAsLateRenderForShaders(SHADER_SPRITE_OUTLINE_FLAT_TYPE);
         return SHADER_SPRITE_OUTLINE_FLAT_TYPE;
     }
@@ -1704,7 +1706,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (GUI_ITEM_OUTLINE_TYPE == null) {
             GUI_ITEM_OUTLINE_TYPE = RenderType.create(
                     MOD_ID + ":gui_item_outline",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -1716,11 +1718,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setOutputState(MAIN_TARGET)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(GUI_ITEM_OUTLINE_TYPE, new BufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
+                fixedBufferRegistry.put(GUI_ITEM_OUTLINE_TYPE, new ByteBufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
         }
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(GUI_ITEM_OUTLINE_TYPE))
-            live.put(GUI_ITEM_OUTLINE_TYPE, new BufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
+            live.put(GUI_ITEM_OUTLINE_TYPE, new ByteBufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
         return GUI_ITEM_OUTLINE_TYPE;
     }
 
@@ -1734,17 +1736,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  without actually rendering anything (shader-pack outline first pass: just capture bounds). */
     public static final class NullConsumer implements VertexConsumer {
         public NullConsumer() {}
-        @Override public VertexConsumer vertex(double x, double y, double z) { return this; }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) { return this; }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return this; }
-        @Override public VertexConsumer uv(float u, float v) { return this; }
-        @Override public VertexConsumer overlayCoords(int u, int v) { return this; }
-        @Override public VertexConsumer uv2(int u, int v) { return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) { return this; }
-        @Override public void endVertex() {}
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
+        @Override public VertexConsumer addVertex(float x, float y, float z) { return this; }
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) { return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return this; }
+        @Override public VertexConsumer setUv(float u, float v) { return this; }
+        @Override public VertexConsumer setUv1(int u, int v) { return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) { return this; }
     }
 
     private static final class PositionColorOnlyConsumer implements VertexConsumer {
@@ -1753,17 +1752,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         PositionColorOnlyConsumer(VertexConsumer wrapped, int r, int g, int b, int a) {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) { wrapped.vertex(x, y, z); return this; }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) { wrapped.vertex(m, x, y, z); return this; }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { wrapped.color(this.r, this.g, this.b, this.a); return this; }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { wrapped.color(this.r, this.g, this.b, this.a); return this; }
-        @Override public VertexConsumer uv(float u, float v) { return this; }
-        @Override public VertexConsumer overlayCoords(int u, int v) { return this; }
-        @Override public VertexConsumer uv2(int u, int v) { return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) { return this; }
-        @Override public void endVertex() { wrapped.endVertex(); }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
+        @Override public VertexConsumer addVertex(float x, float y, float z) { wrapped.addVertex(x, y, z); return this; }
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) { wrapped.addVertex(m, x, y, z); return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { wrapped.setColor(this.r, this.g, this.b, this.a); return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { wrapped.setColor(this.r, this.g, this.b, this.a); return this; }
+        @Override public VertexConsumer setUv(float u, float v) { return this; }
+        @Override public VertexConsumer setUv1(int u, int v) { return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) { return this; }
     }
 
     /**
@@ -1788,31 +1784,27 @@ public final class CustomGlintRenderer extends RenderStateShard {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a; this.push = push;
         }
 
-        @Override public VertexConsumer vertex(double x, double y, double z) {
+        @Override public VertexConsumer addVertex(float x, float y, float z) {
             vx = (float)x; vy = (float)y; vz = (float)z; return this;
         }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) {
             Vector4f v = m.transform(new Vector4f(x, y, z, 1.0f));
             vx = v.x; vy = v.y; vz = v.z; return this;
         }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return this; }
-        @Override public VertexConsumer uv(float u, float v) { return this; }
-        @Override public VertexConsumer overlayCoords(int u, int v) { return this; }
-        @Override public VertexConsumer uv2(int u, int v) { return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) {
-            nx = x; ny = y; nz = z; return this;
-        }
-        @Override public void endVertex() {
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return this; }
+        @Override public VertexConsumer setUv(float u, float v) { return this; }
+        @Override public VertexConsumer setUv1(int u, int v) { return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) {
+            nx = x; ny = y; nz = z;
             float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
             float inv = len > 1e-4f ? push / len : 0f;
-            wrapped.vertex(vx + nx*inv, vy + ny*inv, vz + nz*inv);
-            wrapped.color(r, g, b, a);
-            wrapped.endVertex();
+            wrapped.addVertex(vx + nx*inv, vy + ny*inv, vz + nz*inv);
+            wrapped.setColor(r, g, b, a);
             nx = ny = nz = 0f;
+            return this;
         }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
     }
 
     /**
@@ -1833,35 +1825,31 @@ public final class CustomGlintRenderer extends RenderStateShard {
         NormalPushTexturedConsumer(VertexConsumer wrapped, int r, int g, int b, int a, float push) {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a; this.push = push;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) {
+        @Override public VertexConsumer addVertex(float x, float y, float z) {
             vx = (float)x; vy = (float)y; vz = (float)z; return this;
         }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) {
             Vector4f t = m.transform(new Vector4f(x, y, z, 1.0f));
             vx = t.x; vy = t.y; vz = t.z; return this;
         }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return this; }
-        @Override public VertexConsumer uv(float uu, float vv) { this.u = uu; this.v = vv; return this; }
-        @Override public VertexConsumer overlayCoords(int x, int y) { this.ox = x; this.oy = y; return this; }
-        @Override public VertexConsumer uv2(int x, int y) { this.lu = x; this.lv = y; return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) {
-            nx = x; ny = y; nz = z; return this;
-        }
-        @Override public void endVertex() {
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return this; }
+        @Override public VertexConsumer setUv(float uu, float vv) { this.u = uu; this.v = vv; return this; }
+        @Override public VertexConsumer setUv1(int x, int y) { this.ox = x; this.oy = y; return this; }
+        @Override public VertexConsumer setUv2(int x, int y) { this.lu = x; this.lv = y; return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) {
+            nx = x; ny = y; nz = z;
             float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
             float inv = len > 1e-4f ? push / len : 0f;
-            wrapped.vertex(vx + nx*inv, vy + ny*inv, vz + nz*inv);
-            wrapped.color(r, g, b, a);
-            wrapped.uv(u, v);
-            wrapped.overlayCoords(ox, oy);
-            wrapped.uv2(lu, lv);
-            wrapped.normal(nx, ny, nz);
-            wrapped.endVertex();
+            wrapped.addVertex(vx + nx*inv, vy + ny*inv, vz + nz*inv);
+            wrapped.setColor(r, g, b, a);
+            wrapped.setUv(u, v);
+            wrapped.setUv1(ox, oy);
+            wrapped.setUv2(lu, lv);
+            wrapped.setNormal(nx, ny, nz);
             nx = ny = 0f; nz = 1f;
+            return this;
         }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
     }
 
     /**
@@ -1923,26 +1911,24 @@ public final class CustomGlintRenderer extends RenderStateShard {
             this.zExtentThreshold = zExtentThreshold;
             this.keepSides = keepSides;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) {
+        @Override public VertexConsumer addVertex(float x, float y, float z) {
             cMx = (float)x; cMy = (float)y; cMz = (float)z;
             cTx = cMx; cTy = cMy; cTz = cMz;
             return this;
         }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) {
             cMx = x; cMy = y; cMz = z;
             Vector4f t = m.transform(new Vector4f(x, y, z, 1.0f));
             cTx = t.x; cTy = t.y; cTz = t.z;
             return this;
         }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return this; }
-        @Override public VertexConsumer uv(float uu, float vv) { this.cU = uu; this.cV = vv; return this; }
-        @Override public VertexConsumer overlayCoords(int x, int y) { this.cOx = x; this.cOy = y; return this; }
-        @Override public VertexConsumer uv2(int x, int y) { this.cLu = x; this.cLv = y; return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) {
-            cNx = x; cNy = y; cNz = z; return this;
-        }
-        @Override public void endVertex() {
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return this; }
+        @Override public VertexConsumer setUv(float uu, float vv) { this.cU = uu; this.cV = vv; return this; }
+        @Override public VertexConsumer setUv1(int x, int y) { this.cOx = x; this.cOy = y; return this; }
+        @Override public VertexConsumer setUv2(int x, int y) { this.cLu = x; this.cLv = y; return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) {
+            cNx = x; cNy = y; cNz = z;
             mx[idx] = cMx; my[idx] = cMy; mz[idx] = cMz;
             tx[idx] = cTx; ty[idx] = cTy; tz[idx] = cTz;
             u[idx] = cU; v[idx] = cV;
@@ -1959,23 +1945,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 boolean keep = keepSides ? isSideFace : !isSideFace;
                 for (int i = 0; i < 4; i++) {
                     if (keep) {
-                        wrapped.vertex(tx[i], ty[i], tz[i]);
+                        wrapped.addVertex(tx[i], ty[i], tz[i]);
                     } else {
                         // Collapse to a single point → degenerate quad → zero fragments.
-                        wrapped.vertex(0f, 0f, 0f);
+                        wrapped.addVertex(0f, 0f, 0f);
                     }
-                    wrapped.color(r, g, b, a);
-                    wrapped.uv(u[i], v[i]);
-                    wrapped.overlayCoords(ox[i], oy[i]);
-                    wrapped.uv2(lu[i], lv[i]);
-                    wrapped.normal(nx[i], ny[i], nz[i]);
-                    wrapped.endVertex();
+                    wrapped.setColor(r, g, b, a);
+                    wrapped.setUv(u[i], v[i]);
+                    wrapped.setUv1(ox[i], oy[i]);
+                    wrapped.setUv2(lu[i], lv[i]);
+                    wrapped.setNormal(nx[i], ny[i], nz[i]);
                 }
                 idx = 0;
             }
+            return this;
         }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
     }
 
     private static class FrontFaceFilterConsumer implements VertexConsumer {
@@ -1993,39 +1977,35 @@ public final class CustomGlintRenderer extends RenderStateShard {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a;
             this.cx = cx; this.cy = cy; this.cz = cz; this.normalThreshold = normalThreshold;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) {
+        @Override public VertexConsumer addVertex(float x, float y, float z) {
             vx = (float)x; vy = (float)y; vz = (float)z; return this;
         }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) {
             Vector4f t = m.transform(new Vector4f(x, y, z, 1.0f));
             vx = t.x; vy = t.y; vz = t.z; return this;
         }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return this; }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return this; }
-        @Override public VertexConsumer uv(float uu, float vv) { this.u = uu; this.v = vv; return this; }
-        @Override public VertexConsumer overlayCoords(int x, int y) { this.ox = x; this.oy = y; return this; }
-        @Override public VertexConsumer uv2(int x, int y) { this.lu = x; this.lv = y; return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) {
-            nx = x; ny = y; nz = z; return this;
-        }
-        @Override public void endVertex() {
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return this; }
+        @Override public VertexConsumer setUv(float uu, float vv) { this.u = uu; this.v = vv; return this; }
+        @Override public VertexConsumer setUv1(int x, int y) { this.ox = x; this.oy = y; return this; }
+        @Override public VertexConsumer setUv2(int x, int y) { this.lu = x; this.lv = y; return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) {
+            nx = x; ny = y; nz = z;
             if (Math.abs(nz) >= normalThreshold) {
-                wrapped.vertex(vx, vy, vz);
+                wrapped.addVertex(vx, vy, vz);
             } else {
                 // All 4 vertices of a side-face quad share the same normal so all 4
                 // collapse to (cx,cy,cz) → degenerate quad, zero fragments.
-                wrapped.vertex(cx, cy, cz);
+                wrapped.addVertex(cx, cy, cz);
             }
-            wrapped.color(r, g, b, a);
-            wrapped.uv(u, v);
-            wrapped.overlayCoords(ox, oy);
-            wrapped.uv2(lu, lv);
-            wrapped.normal(nx, ny, nz);
-            wrapped.endVertex();
+            wrapped.setColor(r, g, b, a);
+            wrapped.setUv(u, v);
+            wrapped.setUv1(ox, oy);
+            wrapped.setUv2(lu, lv);
+            wrapped.setNormal(nx, ny, nz);
             nx = ny = 0f; nz = 1f;
+            return this;
         }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
     }
 
     // Force-binds the vanilla main render target (which has a stencil attachment via the shader
@@ -2164,7 +2144,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderType cached = BY_OUTLINE_WRITE.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_write",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -2178,11 +2158,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(STENCIL_WRITE_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -2197,7 +2177,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderType cached = BY_OUTLINE_WRITE_ITEM.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_write_item",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -2211,11 +2191,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(STENCIL_WRITE_LAYERING_ITEM)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -2224,7 +2204,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderType cached = BY_OUTLINE_TEST.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_test",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -2237,11 +2217,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(STENCIL_TEST_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         // Force test-bucket drain AFTER all writes under shader-mod FullyBuffered. Write RTs
         // stay in default GENERAL_TRANSPARENT; tagging test as LINES (last bucket) guarantees
         // every WRITE.setup/draw/clear in the batched group completes before any TEST runs —
@@ -2267,7 +2247,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderType cached = BY_OUTLINE_TEST_CULLED.computeIfAbsent(texture, tex -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":glint_outline_test_culled",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -2280,11 +2260,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(STENCIL_TEST_CULL_FRONT_LAYERING)
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         tagAsLateRenderForShaders(cached);
         return cached;
     }
@@ -2396,7 +2376,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
             model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
-                    packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                    packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             poseStack.popPose();
             if (!(minMax[3] > minMax[0])) return;
             float cx = (minMax[0] + minMax[3]) * 0.5f;
@@ -2412,7 +2392,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     .translate(cx, cy, cz)
                     .scale(outlineScale, outlineScale, outlineScale)
                     .translate(-cx, -cy, -cz));
-            model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+            model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
             if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
             poseStack.popPose();
             return;
@@ -2460,7 +2440,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // entity corrupts state (filled silhouette / Z artifacts / per-frame flicker). Hand
         // items rendered via HeldItemLayer (also inside an entity group) work fine with the
         // buffer.getBuffer path, so mirror that pattern for armor.
-        model.renderToBuffer(poseStack, buffer.getBuffer(writeType), packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+        model.renderToBuffer(poseStack, buffer.getBuffer(writeType), packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         flushRT(buffer, writeType);
 
         // Pass 2 (dilated outline). Stencil EQUAL 0 test baked into testType's shards.
@@ -2483,7 +2463,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
             model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
-                    packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                    packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             poseStack.popPose();
             if (minMax[3] > minMax[0]) {
                 float cx = (minMax[0] + minMax[3]) * 0.5f;
@@ -2511,7 +2491,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
             model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
-                    packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                    packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             poseStack.popPose();
             if (minMax[3] > minMax[0]) {
                 float cx = (minMax[0] + minMax[3]) * 0.5f;
@@ -2529,7 +2509,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             poseStack.scale(outlineScale, outlineScale, outlineScale);
             poseStack.translate(0.0f, 0.9f, 0.0f);
         }
-        model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+        model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
         flushRT(buffer, testType);
         poseStack.popPose();
     }
@@ -2586,7 +2566,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             poseStack.last().pose().set(e.pose);
             poseStack.last().normal().set(e.normal);
             e.model.renderToBuffer(poseStack, buffer.getBuffer(writeType), e.light,
-                    OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                    OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             flushRT(buffer, writeType);
             poseStack.popPose();
         }
@@ -2605,7 +2585,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
             poseStack.pushPose();
             e.model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
-                    e.light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                    e.light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             poseStack.popPose();
             if (minMax[3] > minMax[0]) {
                 float cx = (minMax[0] + minMax[3]) * 0.5f;
@@ -2619,7 +2599,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 poseStack.scale(outlineScale, outlineScale, outlineScale);
             }
             e.model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT,
-                    OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+                    OverlayTexture.NO_OVERLAY, net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
             flushRT(buffer, testType);
             poseStack.popPose();
         }
@@ -2722,7 +2702,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                        Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY };
                     poseStack.pushPose();
                     model.renderToBuffer(poseStack, new AABBTrackingConsumer(new NullConsumer(), minMax),
-                            packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                            packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
                     poseStack.popPose();
                     if (!(minMax[3] > minMax[0])) return;
                     float cx = (minMax[0] + minMax[3]) * 0.5f;
@@ -2735,7 +2715,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .translate(cx, cy, cz)
                             .scale(1.06f, 1.06f, 1.06f)
                             .translate(-cx, -cy, -cz));
-                    model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+                    model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
                     if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
                     poseStack.popPose();
                 } else {
@@ -2744,7 +2724,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                     poseStack.pushPose();
                     poseStack.scale(1.06f, 1.06f, 1.06f);
-                    model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+                    model.renderToBuffer(poseStack, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
                     if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
                     poseStack.popPose();
                 }
@@ -2764,14 +2744,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         IN_OUTLINE.set(true);
         try {
             // Pass 1 (stencil silhouette) — masks + stencil setup baked into writeType shards (shader-mod-safe).
-            model.renderToBuffer(poseStack, buffer.getBuffer(writeType), packedLight, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+            model.renderToBuffer(poseStack, buffer.getBuffer(writeType), packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             flushRT(buffer, writeType);
 
             // Pass 2 (dilated outline) — EQUAL,0 stencil test baked into testType shards.
             RenderSystem.setShaderColor(oR, oG, oB, 1.0f);
             poseStack.pushPose();
             poseStack.scale(1.06f, 1.06f, 1.06f);
-            model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, oR, oG, oB, 1.0f);
+            model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
             flushRT(buffer, testType);
             poseStack.popPose();
             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -2954,7 +2934,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (buffer instanceof MultiBufferSource.BufferSource preBs) preBs.endBatch();
         Window window = mc.getWindow();
         double guiScale = window.getGuiScale();
-        Matrix4f combined = new Matrix4f(RenderSystem.getModelViewStack().last().pose());
+        Matrix4f combined = new Matrix4f(RenderSystem.getModelViewStack());
         combined.mul(poseStack.last().pose());
         float cxGui = combined.m30();
         float cyGui = combined.m31();
@@ -3485,11 +3465,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 && !flatOnGround;
         ResourceLocation outlineTex;
         if (customRenderer) {
-            outlineTex = new ResourceLocation("textures/misc/white.png");
+            outlineTex = ResourceLocation.withDefaultNamespace("textures/misc/white.png");
             ResourceLocation override = BEWLR_OUTLINE_TEXTURES.get(stack.getItem().getClass().getName());
             if (override != null) outlineTex = override;
         } else {
-            outlineTex = new ResourceLocation("minecraft", "textures/atlas/blocks.png");
+            outlineTex = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
         }
         // Item-variant write: no polygon offset. Sprite/BEWLR base draws have no polygon offset,
         // and the armor-matching offset can push silhouette quads in front of the near plane in
@@ -3660,17 +3640,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         ColorOverrideConsumer(VertexConsumer wrapped, int r, int g, int b, int a) {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) { wrapped.vertex(x, y, z); return this; }
-        @Override public VertexConsumer vertex(Matrix4f matrix, float x, float y, float z) { wrapped.vertex(matrix, x, y, z); return this; }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return wrapped.color(this.r, this.g, this.b, this.a); }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return wrapped.color(this.r, this.g, this.b, this.a); }
-        @Override public VertexConsumer uv(float u, float v) { return wrapped.uv(u, v); }
-        @Override public VertexConsumer overlayCoords(int u, int v) { return this; }
-        @Override public VertexConsumer uv2(int u, int v) { return this; }
-        @Override public VertexConsumer normal(float x, float y, float z) { return this; }
-        @Override public void endVertex() { wrapped.endVertex(); }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
+        @Override public VertexConsumer addVertex(float x, float y, float z) { wrapped.addVertex(x, y, z); return this; }
+        @Override public VertexConsumer addVertex(Matrix4f matrix, float x, float y, float z) { wrapped.addVertex(matrix, x, y, z); return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return wrapped.setColor(this.r, this.g, this.b, this.a); }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return wrapped.setColor(this.r, this.g, this.b, this.a); }
+        @Override public VertexConsumer setUv(float u, float v) { return wrapped.setUv(u, v); }
+        @Override public VertexConsumer setUv1(int u, int v) { return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) { return this; }
     }
 
     /** Same as ColorOverrideConsumer but forwards overlay/uv2/normal to the wrapped buffer.
@@ -3685,17 +3662,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         public FullColorOverrideConsumer(VertexConsumer wrapped, int r, int g, int b, int a) {
             this.wrapped = wrapped; this.r = r; this.g = g; this.b = b; this.a = a;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) { wrapped.vertex(x, y, z); return this; }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) { wrapped.vertex(m, x, y, z); return this; }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return wrapped.color(this.r, this.g, this.b, this.a); }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return wrapped.color(this.r, this.g, this.b, this.a); }
-        @Override public VertexConsumer uv(float u, float v) { return wrapped.uv(u, v); }
-        @Override public VertexConsumer overlayCoords(int u, int v) { return wrapped.overlayCoords(u, v); }
-        @Override public VertexConsumer uv2(int u, int v) { return wrapped.uv2(u, v); }
-        @Override public VertexConsumer normal(float x, float y, float z) { return wrapped.normal(x, y, z); }
-        @Override public void endVertex() { wrapped.endVertex(); }
-        @Override public void defaultColor(int r, int g, int b, int a) {}
-        @Override public void unsetDefaultColor() {}
+        @Override public VertexConsumer addVertex(float x, float y, float z) { wrapped.addVertex(x, y, z); return this; }
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) { wrapped.addVertex(m, x, y, z); return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return wrapped.setColor(this.r, this.g, this.b, this.a); }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return wrapped.setColor(this.r, this.g, this.b, this.a); }
+        @Override public VertexConsumer setUv(float u, float v) { return wrapped.setUv(u, v); }
+        @Override public VertexConsumer setUv1(int u, int v) { return wrapped.setUv1(u, v); }
+        @Override public VertexConsumer setUv2(int u, int v) { return wrapped.setUv2(u, v); }
+        @Override public VertexConsumer setNormal(float x, float y, float z) { return wrapped.setNormal(x, y, z); }
     }
 
     /** Wraps a VertexConsumer and records each vertex's eye-space position into a shared
@@ -3715,28 +3689,25 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (y > minMax[4]) minMax[4] = y;
             if (z > minMax[5]) minMax[5] = z;
         }
-        @Override public VertexConsumer vertex(double x, double y, double z) {
+        @Override public VertexConsumer addVertex(float x, float y, float z) {
             track((float) x, (float) y, (float) z);
-            wrapped.vertex(x, y, z);
+            wrapped.addVertex(x, y, z);
             return this;
         }
-        @Override public VertexConsumer vertex(Matrix4f m, float x, float y, float z) {
+        @Override public VertexConsumer addVertex(Matrix4f m, float x, float y, float z) {
             float tx = m.m00() * x + m.m10() * y + m.m20() * z + m.m30();
             float ty = m.m01() * x + m.m11() * y + m.m21() * z + m.m31();
             float tz = m.m02() * x + m.m12() * y + m.m22() * z + m.m32();
             track(tx, ty, tz);
-            wrapped.vertex(m, x, y, z);
+            wrapped.addVertex(m, x, y, z);
             return this;
         }
-        @Override public VertexConsumer color(int r, int g, int b, int a) { return wrapped.color(r, g, b, a); }
-        @Override public VertexConsumer color(float r, float g, float b, float a) { return wrapped.color(r, g, b, a); }
-        @Override public VertexConsumer uv(float u, float v) { return wrapped.uv(u, v); }
-        @Override public VertexConsumer overlayCoords(int u, int v) { return wrapped.overlayCoords(u, v); }
-        @Override public VertexConsumer uv2(int u, int v) { return wrapped.uv2(u, v); }
-        @Override public VertexConsumer normal(float x, float y, float z) { return wrapped.normal(x, y, z); }
-        @Override public void endVertex() { wrapped.endVertex(); }
-        @Override public void defaultColor(int r, int g, int b, int a) { wrapped.defaultColor(r, g, b, a); }
-        @Override public void unsetDefaultColor() { wrapped.unsetDefaultColor(); }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return wrapped.setColor(r, g, b, a); }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return wrapped.setColor(r, g, b, a); }
+        @Override public VertexConsumer setUv(float u, float v) { return wrapped.setUv(u, v); }
+        @Override public VertexConsumer setUv1(int u, int v) { return wrapped.setUv1(u, v); }
+        @Override public VertexConsumer setUv2(int u, int v) { return wrapped.setUv2(u, v); }
+        @Override public VertexConsumer setNormal(float x, float y, float z) { return wrapped.setNormal(x, y, z); }
     }
 
     private CustomGlintRenderer() { super("", () -> {}, () -> {}); }

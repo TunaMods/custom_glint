@@ -3,53 +3,55 @@ package net.tunamods.customglint.common.network;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.network.NetworkEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.CustomGlintApiMod;
 import net.tunamods.customglint.common.client.EntityGlintCache;
-
-import java.util.function.Supplier;
 
 /**
  * S→C: pushes a LivingEntity's per-instance glint NBT (the inner {@code customglint} compound)
  * to tracking players. Empty tag clears the cache entry. Broadcast on start-tracking and after
  * any server-side mutation.
  */
-public class GlintEntitySyncPacket {
+public record GlintEntitySyncPacket(int entityId, CompoundTag glintTag) implements CustomPacketPayload {
 
-    private final int entityId;
-    private final CompoundTag glintTag;
-
-    public GlintEntitySyncPacket(int entityId, CompoundTag glintTag) {
-        this.entityId = entityId;
-        this.glintTag = glintTag == null ? new CompoundTag() : glintTag;
+    public GlintEntitySyncPacket {
+        if (glintTag == null) glintTag = new CompoundTag();
     }
 
-    public static void encode(GlintEntitySyncPacket pkt, FriendlyByteBuf buf) {
-        buf.writeVarInt(pkt.entityId);
-        buf.writeNbt(pkt.glintTag);
+    public static final Type<GlintEntitySyncPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(CustomGlintApiMod.MOD_ID, "entity_glint_sync"));
+
+    public static final StreamCodec<FriendlyByteBuf, GlintEntitySyncPacket> STREAM_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.VAR_INT, GlintEntitySyncPacket::entityId,
+                    ByteBufCodecs.COMPOUND_TAG, GlintEntitySyncPacket::glintTag,
+                    GlintEntitySyncPacket::new
+            );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public static GlintEntitySyncPacket decode(FriendlyByteBuf buf) {
-        int id = buf.readVarInt();
-        CompoundTag tag = buf.readNbt();
-        return new GlintEntitySyncPacket(id, tag == null ? new CompoundTag() : tag);
-    }
-
-    public static void handle(GlintEntitySyncPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> applyClient(pkt)));
-        ctx.get().setPacketHandled(true);
+    public static void handle(GlintEntitySyncPacket pkt, IPayloadContext ctx) {
+        // Registered playToClient only, so this runs client-side; Minecraft is referenced solely
+        // inside applyClient, which is never reached on a dedicated server.
+        ctx.enqueueWork(() -> applyClient(pkt));
     }
 
     private static void applyClient(GlintEntitySyncPacket pkt) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
-        Entity e = mc.level.getEntity(pkt.entityId);
+        Entity e = mc.level.getEntity(pkt.entityId());
         if (!(e instanceof LivingEntity le)) return;
-        CustomGlint.writeEntityTag(le, pkt.glintTag);
-        EntityGlintCache.put(le.getUUID(), pkt.glintTag);
+        CustomGlint.writeEntityTag(le, pkt.glintTag());
+        EntityGlintCache.put(le.getUUID(), pkt.glintTag());
     }
 }

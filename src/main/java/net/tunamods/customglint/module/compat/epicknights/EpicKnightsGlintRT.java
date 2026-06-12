@@ -2,6 +2,7 @@ package net.tunamods.customglint.module.compat.epicknights;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -30,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
+import java.util.SequencedMap;
 
 /**
  * Compat-local render pipeline for Epic Knights armor decorations.
@@ -106,11 +108,11 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         // Tag for shader-pack late-render bucket so under an active pack the glint flushes after
         // the main scene depth is committed (mirrors what every forShader* RT in CustomGlintRenderer
         // does). Without this, under an active pack the deferred FullyBuffered flush orders the
@@ -207,7 +209,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         RenderType rt = SLOT_WRITE_CACHE.computeIfAbsent(key, k -> {
             RenderType created = RenderType.create(
                     "customglint:ek_deco_stencil_write_slot|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -221,12 +223,12 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setLayeringState(ekStencilWriteLayeringSlot(v))
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(created, new BufferBuilder(created.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(created, new ByteBufferBuilder(created.bufferSize()));
             return created;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
         if (live != null && !live.containsKey(rt))
-            live.put(rt, new BufferBuilder(rt.bufferSize()));
+            live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         return rt;
     }
 
@@ -277,7 +279,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         return SLOT_OUTLINE_CACHE.computeIfAbsent(key, k -> {
             RenderType rt = RenderType.create(
                     "customglint:ek_deco_outline_slot|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -290,7 +292,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setLayeringState(ekOutlineStencilTestLayeringSlot(slot))
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
     }
@@ -348,11 +350,11 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 
@@ -361,7 +363,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         return EK_STENCIL_WRITE_CACHE.computeIfAbsent(tex, t -> {
             RenderType rt = RenderType.create(
                     "customglint:ek_deco_stencil_write",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -375,7 +377,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setLayeringState(EK_STENCIL_WRITE_LAYERING)
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
     }
@@ -399,10 +401,10 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         String path = tex.getPath();
         ResourceLocation sibling;
         if (path.endsWith("_overlay.png")) {
-            sibling = new ResourceLocation(tex.getNamespace(),
+            sibling = ResourceLocation.fromNamespaceAndPath(tex.getNamespace(),
                     path.substring(0, path.length() - "_overlay.png".length()) + ".png");
         } else if (path.endsWith(".png")) {
-            sibling = new ResourceLocation(tex.getNamespace(),
+            sibling = ResourceLocation.fromNamespaceAndPath(tex.getNamespace(),
                     path.substring(0, path.length() - ".png".length()) + "_overlay.png");
         } else {
             return null;
@@ -423,7 +425,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         return OUTLINE_CACHE.computeIfAbsent(tex, t -> {
             RenderType rt = RenderType.create(
                     "customglint:ek_deco_outline_culled",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -454,7 +456,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                                     }))
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
     }
@@ -525,7 +527,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             RenderType writeRT = forDecorationStencilWriteSlot(slot, tex);
             VertexConsumer writeVC = bs.getBuffer(writeRT);
             for (ModelPart part : parts) {
-                part.render(pose, writeVC, light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 0);
+                part.render(pose, writeVC, light, OverlayTexture.NO_OVERLAY, 0x00FFFFFF);
             }
             bs.endBatch(writeRT);
         }
@@ -563,7 +565,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             VertexConsumer combined = glintVCs.size() == 1 ? glintVCs.get(0)
                     : VertexMultiConsumer.create(glintVCs.toArray(new VertexConsumer[0]));
             for (ModelPart part : parts) {
-                part.render(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
+                part.render(pose, combined, light, overlay, 0xFFFFFFFF);
             }
             for (RenderType rt : glintRTs) bs.endBatch(rt);
         }
@@ -597,7 +599,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                     pose.translate(off[0], off[1], off[2]);
                     for (ModelPart part : parts) {
                         part.render(pose, outlineVC, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
-                                oR, oG, oB, 1.0f);
+                                net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
                     }
                     pose.popPose();
                 }
@@ -605,7 +607,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                 pose.scale(1.05f, 1.05f, 1.05f);
                 for (ModelPart part : parts) {
                     part.render(pose, outlineVC, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
-                            oR, oG, oB, 1.0f);
+                            net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
                 }
                 pose.popPose();
                 bs.endBatch(outlineRT);
@@ -662,7 +664,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             RenderType prewriteRT = forDecorationDepthPrewrite(tex);
             VertexConsumer prewriteVC = buffer.getBuffer(prewriteRT);
             for (ModelPart part : parts) {
-                part.render(pose, prewriteVC, light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                part.render(pose, prewriteVC, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
         }
 
@@ -696,7 +698,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             VertexConsumer combined = glintVCs.size() == 1 ? glintVCs.get(0)
                     : VertexMultiConsumer.create(glintVCs.toArray(new VertexConsumer[0]));
             for (ModelPart part : parts) {
-                part.render(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
+                part.render(pose, combined, light, overlay, 0xFFFFFFFF);
             }
         }
 
@@ -730,7 +732,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                     new CustomGlintRenderer.NullConsumer(), minMax);
             pose.pushPose();
             for (ModelPart part : parts) {
-                part.render(pose, aabbTracker, light, OverlayTexture.NO_OVERLAY, 1, 1, 1, 1);
+                part.render(pose, aabbTracker, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
             pose.popPose();
             if (!(minMax[3] > minMax[0])) return;
@@ -754,7 +756,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                         .translate(-cx, -cy, -cz));
                 for (ModelPart part : parts) {
                     part.render(pose, outlineBuf, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
-                            oR, oG, oB, 1.0f);
+                            net.minecraft.util.FastColor.ARGB32.colorFromFloat(1.0f, oR, oG, oB));
                 }
                 pose.popPose();
             }
@@ -805,9 +807,9 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setLayeringState(EK_OUTLINE_NOCULL_PUSH_BACK_LAYERING)
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -829,7 +831,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         return DEPTH_PREWRITE_CACHE.computeIfAbsent(decoTex, tex -> {
             RenderType rt = RenderType.create(
                     "customglint:ek_deco_depth_prewrite",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
                     VertexFormat.Mode.QUADS,
                     1536, false, false,
                     RenderType.CompositeState.builder()
@@ -843,9 +845,9 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -921,12 +923,12 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
         return cached;
     }
 

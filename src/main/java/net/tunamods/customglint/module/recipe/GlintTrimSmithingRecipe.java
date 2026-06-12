@@ -4,33 +4,24 @@ import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
-import com.google.gson.JsonObject;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.Container;
-import net.minecraft.world.item.ItemStack;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SmithingRecipe;
+import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.level.Level;
 
 public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();
 
-    private final ResourceLocation id;
-
-    public GlintTrimSmithingRecipe(ResourceLocation id) {
-        this.id = id;
-    }
-
-    @Override
-    public ResourceLocation getId() {
-        return id;
-    }
+    public GlintTrimSmithingRecipe() {}
 
     @Override
     public boolean isTemplateIngredient(ItemStack stack) {
@@ -52,16 +43,16 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     }
 
     @Override
-    public boolean matches(Container pContainer, Level pLevel) {
-        return isTemplateIngredient(pContainer.getItem(0))
-                && isBaseIngredient(pContainer.getItem(1))
-                && isAdditionIngredient(pContainer.getItem(2));
+    public boolean matches(SmithingRecipeInput pInput, Level pLevel) {
+        return isTemplateIngredient(pInput.getItem(0))
+                && isBaseIngredient(pInput.getItem(1))
+                && isAdditionIngredient(pInput.getItem(2));
     }
 
     @Override
-    public ItemStack assemble(Container pContainer, RegistryAccess pRegistryAccess) {
-        ItemStack template = pContainer.getItem(0);
-        ItemStack base     = pContainer.getItem(1);
+    public ItemStack assemble(SmithingRecipeInput pInput, HolderLookup.Provider pRegistryAccess) {
+        ItemStack template = pInput.getItem(0);
+        ItemStack base     = pInput.getItem(1);
         ResourceLocation pattern = GlintTrimItem.getPattern(template);
         int[] colors             = GlintTrimItem.getColors(template);
         if (pattern == null || colors.length == 0) return ItemStack.EMPTY;
@@ -84,7 +75,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
@@ -93,18 +84,13 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     }
 
     @Override
-    public NonNullList<ItemStack> getRemainingItems(Container pContainer) {
-        return NonNullList.withSize(pContainer.getContainerSize(), ItemStack.EMPTY);
+    public NonNullList<ItemStack> getRemainingItems(SmithingRecipeInput pInput) {
+        return NonNullList.withSize(pInput.size(), ItemStack.EMPTY);
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        return CustomGlint.glinted(Items.DIAMOND_SWORD, new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000});
-    }
-
-    @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return true;
+    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
+        return CustomGlint.glinted(Items.DIAMOND_SWORD, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000});
     }
 
     @Override
@@ -112,24 +98,20 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         return SERIALIZER;
     }
 
-    @Override
-    public RecipeType<?> getType() {
-        return RecipeType.SMITHING;
-    }
-
     public static class Serializer implements RecipeSerializer<GlintTrimSmithingRecipe> {
+        private static final MapCodec<GlintTrimSmithingRecipe> CODEC =
+                MapCodec.unit(GlintTrimSmithingRecipe::new);
+        private static final StreamCodec<RegistryFriendlyByteBuf, GlintTrimSmithingRecipe> STREAM_CODEC =
+                StreamCodec.unit(new GlintTrimSmithingRecipe());
+
         @Override
-        public GlintTrimSmithingRecipe fromJson(ResourceLocation pRecipeId, JsonObject pSerializedRecipe) {
-            return new GlintTrimSmithingRecipe(pRecipeId);
+        public MapCodec<GlintTrimSmithingRecipe> codec() {
+            return CODEC;
         }
 
         @Override
-        public GlintTrimSmithingRecipe fromNetwork(ResourceLocation pRecipeId, FriendlyByteBuf pBuffer) {
-            return new GlintTrimSmithingRecipe(pRecipeId);
-        }
-
-        @Override
-        public void toNetwork(FriendlyByteBuf pBuffer, GlintTrimSmithingRecipe pRecipe) {
+        public StreamCodec<RegistryFriendlyByteBuf, GlintTrimSmithingRecipe> streamCodec() {
+            return STREAM_CODEC;
         }
     }
 }

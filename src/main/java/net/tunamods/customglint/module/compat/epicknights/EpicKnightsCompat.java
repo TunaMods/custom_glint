@@ -1,8 +1,8 @@
 package net.tunamods.customglint.module.compat.epicknights;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.ModList;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.fml.ModList;
 
 /**
  * Standalone-only Epic Knights compat (init side). EK chest armor models include standard
@@ -25,6 +25,6 @@ public final class EpicKnightsCompat {
 
     public static void register() {
         if (!ModList.get().isLoaded(MOD_ID)) return;
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> EpicKnightsClientCompat::wire);
+        if (FMLEnvironment.dist == Dist.CLIENT) EpicKnightsClientCompat.wire();
     }
 }

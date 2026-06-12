@@ -29,7 +29,7 @@ public final class EpicKnightsClientCompat {
      */
     private record SymmetrizeOp(int srcU, int dstU, int v, int w, int h) {}
     private static final Map<ResourceLocation, SymmetrizeOp> SYMMETRIZE = Map.of(
-            new ResourceLocation("magistuarmory", "textures/models/armor/wingedhussarchestplate_layer_1.png"),
+            ResourceLocation.fromNamespaceAndPath("magistuarmory", "textures/models/armor/wingedhussarchestplate_layer_1.png"),
             new SymmetrizeOp(50, 36, 0, 14, 32)
     );
 
@@ -67,7 +67,7 @@ public final class EpicKnightsClientCompat {
     }
 
     private static final ResourceLocation WH_CHEST_TEX =
-            new ResourceLocation("magistuarmory", "textures/models/armor/wingedhussarchestplate_layer_1.png");
+            ResourceLocation.fromNamespaceAndPath("magistuarmory", "textures/models/armor/wingedhussarchestplate_layer_1.png");
 
     private static ModelPart[] resolveExtraOutlineParts(
             HumanoidModel<?> model,
@@ -115,7 +115,7 @@ public final class EpicKnightsClientCompat {
             }
         }
         String safe = src.getNamespace() + "_" + src.getPath().replace('/', '_').replace('.', '_');
-        ResourceLocation loc = new ResourceLocation("customglint", "ek_outline_mask/" + safe);
+        ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("customglint", "ek_outline_mask/" + safe);
         DynamicTexture dt = new DynamicTexture(img);
         mc.getTextureManager().register(loc, dt);
         return loc;
