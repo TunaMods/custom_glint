@@ -43,14 +43,21 @@ public class HumanoidArmorLayerMixin {
                 pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
     }
 
-    /** Named target: injects at RETURN of renderArmorPiece in dev/deobf environments. */
+    /**
+     * Named target: RETURN of renderArmorPiece. NeoForge 1.21.1 runs on Mojang mappings, so
+     * this (remap=false) is the inject that actually fires. Targets the 12-arg overload — the
+     * one HumanoidArmorLayer.render() invokes per slot. The 6-arg overload is a @Deprecated
+     * Neo back-compat shim that vanilla never calls; injecting there silently no-ops, which is
+     * why armor showed no glint or glow while items rendered fine.
+     */
     @Inject(
-        method = "renderArmorPiece(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/entity/EquipmentSlot;ILnet/minecraft/client/model/HumanoidModel;)V",
+        method = "renderArmorPiece(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/entity/EquipmentSlot;ILnet/minecraft/client/model/HumanoidModel;FFFFFF)V",
         at = @At("RETURN"), require = 0, remap = false
     )
     private void cg_armorGlint_named(PoseStack pPoseStack, MultiBufferSource pBuffer,
             LivingEntity pLivingEntity, EquipmentSlot pSlot, int pPackedLight,
-            HumanoidModel pModel, CallbackInfo ci) {
+            HumanoidModel pModel, float limbSwing, float limbSwingAmount, float partialTick,
+            float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
         applyArmorGlint((HumanoidArmorLayer<?, ?, ?>) (Object) this,
                 pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
     }

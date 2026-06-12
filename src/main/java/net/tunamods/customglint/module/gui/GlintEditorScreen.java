@@ -13,6 +13,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -762,7 +763,13 @@ public class GlintEditorScreen extends Screen {
             g.drawString(font, Component.translatable("screen.customglint.glint_editor.glow_auto"), px + 100, py + 222, glowEnabled ? 0x888888 : 0x444444);
         }
 
-        super.render(g, mx, my, dt);
+        // Render widgets only. Do NOT call super.render(): in 1.21 Screen.render()
+        // calls renderBackground() a second time, whose blur pass would smear the
+        // custom panel/labels/tabs drawn above. renderBackground() at the top of
+        // this method already handles the background once.
+        for (Renderable r : this.renderables) {
+            r.render(g, mx, my, dt);
+        }
 
         // Item preview
         if (!previewStack.isEmpty()) {

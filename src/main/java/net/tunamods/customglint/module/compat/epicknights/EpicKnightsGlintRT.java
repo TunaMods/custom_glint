@@ -111,8 +111,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                 CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        CustomGlintRenderer.registerLiveFixedBuffer(cached);
         // Tag for shader-pack late-render bucket so under an active pack the glint flushes after
         // the main scene depth is committed (mirrors what every forShader* RT in CustomGlintRenderer
         // does). Without this, under an active pack the deferred FullyBuffered flush orders the
@@ -226,9 +225,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                 CustomGlintRenderer.fixedBufferRegistry.put(created, new ByteBufferBuilder(created.bufferSize()));
             return created;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(rt))
-            live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+        CustomGlintRenderer.registerLiveFixedBuffer(rt);
         return rt;
     }
 
@@ -353,8 +350,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                 CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        CustomGlintRenderer.registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -808,8 +804,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
                 CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            CustomGlintRenderer.registerLiveFixedBuffer(rt);
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -846,8 +841,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .createCompositeState(false));
             if (CustomGlintRenderer.fixedBufferRegistry != null)
                 CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            CustomGlintRenderer.registerLiveFixedBuffer(rt);
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -927,8 +921,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        CustomGlintRenderer.registerLiveFixedBuffer(cached);
         return cached;
     }
 

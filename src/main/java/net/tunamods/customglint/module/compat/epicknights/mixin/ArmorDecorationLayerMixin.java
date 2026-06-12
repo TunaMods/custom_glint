@@ -39,10 +39,16 @@ public class ArmorDecorationLayerMixin {
 
     /**
      * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
-     * calls per iteration: base texture (FFFZ) + overlay texture (IIZ → delegates to FFFZ). Both
-     * fire our RETURN inject. The second call's stencil pre-pass clears the buffer and writes
-     * against the overlay texture, which is mostly transparent — clobbering the glint we just
-     * drew on the base. Skip when the same parts array fires twice back-to-back.
+     * calls per iteration: a colored base (the IIIZ int-color overload) + an overlay (the IIZ
+     * no-color overload, which delegates to IIIZ). Both bottom out in the IIIZ draw and fire our
+     * RETURN inject. The second call's stencil pre-pass clears the buffer and writes against the
+     * overlay texture, which is mostly transparent — clobbering the glint we just drew on the base.
+     * Skip when the same parts array fires twice back-to-back.
+     *
+     * 1.21 note: EK's renderDecoration lost its old (float r, g, b) tint overload — color is now a
+     * single packed int, matching the vanilla renderToBuffer change. Inject the IIIZ overload (the
+     * one that actually draws via getArmorFoilBuffer); the IIZ overload delegates into it. The old
+     * FFFZ descriptor matched nothing and silently no-opped, so decorations got no glint/glow.
      */
     private static final ThreadLocal<ModelPart[]> CG_LAST_PARTS = new ThreadLocal<>();
 
@@ -62,10 +68,10 @@ public class ArmorDecorationLayerMixin {
         CG_LAST_PARTS.remove();
     }
 
-    @Inject(method = "renderDecoration(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IIFFFZ[Lnet/minecraft/client/model/geom/ModelPart;Lnet/minecraft/resources/ResourceLocation;)V",
+    @Inject(method = "renderDecoration(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IIIZ[Lnet/minecraft/client/model/geom/ModelPart;Lnet/minecraft/resources/ResourceLocation;)V",
             at = @At("RETURN"), require = 0)
     private void cg_applyGlint(PoseStack pose, MultiBufferSource buffer, int light, int overlay,
-            float r, float g, float b, boolean hasFoil, ModelPart[] parts, ResourceLocation texture,
+            int color, boolean hasFoil, ModelPart[] parts, ResourceLocation texture,
             CallbackInfo ci) {
         if (CG_LAST_PARTS.get() == parts) return;
         CG_LAST_PARTS.set(parts);

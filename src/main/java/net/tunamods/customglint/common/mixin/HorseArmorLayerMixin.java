@@ -64,6 +64,16 @@ public class HorseArmorLayerMixin {
         ResourceLocation tex = aa.getTexture();
 
         if (glint != null) {
+            // Flush vanilla's base barding now so its depth is in the buffer before the glint's
+            // EQUAL_DEPTH_TEST pass. HorseArmorLayer.render() only *buffers* the base armor into
+            // entityCutoutNoCull(tex); it won't draw until the entity's global endBatch, which is
+            // AFTER our explicit glint endBatch below. Without this flush the glint tests EQUAL
+            // against absent armor depth and discards every fragment — the "glow shows, glint
+            // doesn't" symptom. Humanoid armor sidesteps this by never endBatching early (its
+            // glint flushes after the base at global endBatch). Glow is independent (own stencil).
+            if (buffer instanceof MultiBufferSource.BufferSource bsBase)
+                bsBase.endBatch(RenderType.entityCutoutNoCull(tex));
+
             // ── Stencil mask pass ───────────────────────────────────────────
             // forHorseArmorGlint draws on every face of the armor model regardless of armor
             // texture alpha (the glint shader samples a glint design, not the armor texture).

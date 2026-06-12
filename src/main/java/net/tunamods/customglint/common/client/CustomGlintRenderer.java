@@ -375,6 +375,29 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final Map<ResourceLocation, RenderType> BY_MOUNT_ARMOR_MASK = new HashMap<>();
     private static final Map<ResourceLocation, RenderType> BY_BODY_DEPTH_FILL = new HashMap<>();
 
+    /**
+     * Registers {@code rt}'s persistent buffer into the live BufferSource's {@code fixedBuffers}
+     * when absent. Iris and Sodium swap the vanilla BufferSource for one whose {@code fixedBuffers}
+     * is an IMMUTABLE fastutil map — its {@code put} throws {@link UnsupportedOperationException}
+     * (the inline {@code live.put(...)} this replaced crashed armor/entity/item/outline glint the
+     * instant Iris was installed: {@code Object2ObjectFunction.put} → UOE). Swallow that: under an
+     * active shader pack our RTs render through the forward/shader path, which never pulls from this
+     * BufferSource's fixed buffers, so the registration isn't needed there anyway. The vanilla
+     * {@code fixedBufferRegistry} (captured in RenderBuffersMixin) still holds the RT for the
+     * no-shader path.
+     */
+    public static void registerLiveFixedBuffer(RenderType rt) {
+        if (rt == null) return;
+        SequencedMap<RenderType, ByteBufferBuilder> live =
+                Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        if (live == null || live.containsKey(rt)) return;
+        try {
+            live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+        } catch (UnsupportedOperationException ignored) {
+            // immutable fixedBuffers (Iris/Sodium) — forward/shader path handles these RTs
+        }
+    }
+
     public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
@@ -438,8 +461,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -507,8 +529,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -550,8 +571,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -642,8 +662,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -680,8 +699,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -761,8 +779,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -1074,9 +1091,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SLOT_WRITE[v]))
-            live.put(SLOT_WRITE[v], new ByteBufferBuilder(SLOT_WRITE[v].bufferSize()));
+        registerLiveFixedBuffer(SLOT_WRITE[v]);
         return SLOT_WRITE[v];
     }
 
@@ -1109,9 +1124,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SLOT_WRITE_ITEM[v]))
-            live.put(SLOT_WRITE_ITEM[v], new ByteBufferBuilder(SLOT_WRITE_ITEM[v].bufferSize()));
+        registerLiveFixedBuffer(SLOT_WRITE_ITEM[v]);
         return SLOT_WRITE_ITEM[v];
     }
 
@@ -1153,9 +1166,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SLOT_TEST[v]))
-            live.put(SLOT_TEST[v], new ByteBufferBuilder(SLOT_TEST[v].bufferSize()));
+        registerLiveFixedBuffer(SLOT_TEST[v]);
         // LINES bucket → drains AFTER all GENERAL_TRANSPARENT writes under FullyBuffered.
         tagAsLateRenderForShaders(SLOT_TEST[v]);
         return SLOT_TEST[v];
@@ -1189,9 +1200,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SLOT_TEST_CULLED[v]))
-            live.put(SLOT_TEST_CULLED[v], new ByteBufferBuilder(SLOT_TEST_CULLED[v].bufferSize()));
+        registerLiveFixedBuffer(SLOT_TEST_CULLED[v]);
         tagAsLateRenderForShaders(SLOT_TEST_CULLED[v]);
         return SLOT_TEST_CULLED[v];
     }
@@ -1368,9 +1377,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(SHADER_OUTLINE_ARMOR_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SHADER_OUTLINE_ARMOR_TYPE))
-            live.put(SHADER_OUTLINE_ARMOR_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ARMOR_TYPE.bufferSize()));
+        registerLiveFixedBuffer(SHADER_OUTLINE_ARMOR_TYPE);
         tagAsLateRenderForShaders(SHADER_OUTLINE_ARMOR_TYPE);
         return SHADER_OUTLINE_ARMOR_TYPE;
     }
@@ -1414,9 +1421,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(SHADER_OUTLINE_ITEM_NP_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_NP_TYPE.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SHADER_OUTLINE_ITEM_NP_TYPE))
-            live.put(SHADER_OUTLINE_ITEM_NP_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_NP_TYPE.bufferSize()));
+        registerLiveFixedBuffer(SHADER_OUTLINE_ITEM_NP_TYPE);
         tagAsLateRenderForShaders(SHADER_OUTLINE_ITEM_NP_TYPE);
         return SHADER_OUTLINE_ITEM_NP_TYPE;
     }
@@ -1456,8 +1461,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            registerLiveFixedBuffer(rt);
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1484,9 +1488,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(SHADER_OUTLINE_ITEM_FPM_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_FPM_TYPE.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SHADER_OUTLINE_ITEM_FPM_TYPE))
-            live.put(SHADER_OUTLINE_ITEM_FPM_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_ITEM_FPM_TYPE.bufferSize()));
+        registerLiveFixedBuffer(SHADER_OUTLINE_ITEM_FPM_TYPE);
         tagAsLateRenderForShaders(SHADER_OUTLINE_ITEM_FPM_TYPE);
         return SHADER_OUTLINE_ITEM_FPM_TYPE;
     }
@@ -1518,8 +1520,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            registerLiveFixedBuffer(rt);
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1554,8 +1555,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            registerLiveFixedBuffer(rt);
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1590,8 +1590,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         tagAsLateRenderForShaders(cached);
         return cached;
     }
@@ -1614,9 +1613,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(SHADER_OUTLINE_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SHADER_OUTLINE_TYPE))
-            live.put(SHADER_OUTLINE_TYPE, new ByteBufferBuilder(SHADER_OUTLINE_TYPE.bufferSize()));
+        registerLiveFixedBuffer(SHADER_OUTLINE_TYPE);
         tagAsLateRenderForShaders(SHADER_OUTLINE_TYPE);
         return SHADER_OUTLINE_TYPE;
     }
@@ -1652,9 +1649,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .createCompositeState(false));
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-            if (live != null && !live.containsKey(rt))
-                live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            registerLiveFixedBuffer(rt);
             tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -1684,9 +1679,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(SHADER_SPRITE_OUTLINE_FLAT_TYPE, new ByteBufferBuilder(SHADER_SPRITE_OUTLINE_FLAT_TYPE.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(SHADER_SPRITE_OUTLINE_FLAT_TYPE))
-            live.put(SHADER_SPRITE_OUTLINE_FLAT_TYPE, new ByteBufferBuilder(SHADER_SPRITE_OUTLINE_FLAT_TYPE.bufferSize()));
+        registerLiveFixedBuffer(SHADER_SPRITE_OUTLINE_FLAT_TYPE);
         tagAsLateRenderForShaders(SHADER_SPRITE_OUTLINE_FLAT_TYPE);
         return SHADER_SPRITE_OUTLINE_FLAT_TYPE;
     }
@@ -1720,10 +1713,43 @@ public final class CustomGlintRenderer extends RenderStateShard {
             if (fixedBufferRegistry != null)
                 fixedBufferRegistry.put(GUI_ITEM_OUTLINE_TYPE, new ByteBufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
         }
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(GUI_ITEM_OUTLINE_TYPE))
-            live.put(GUI_ITEM_OUTLINE_TYPE, new ByteBufferBuilder(GUI_ITEM_OUTLINE_TYPE.bufferSize()));
+        registerLiveFixedBuffer(GUI_ITEM_OUTLINE_TYPE);
         return GUI_ITEM_OUTLINE_TYPE;
+    }
+
+    /**
+     * GUI outline RT for 3D BEWLR items (shields, backpacks, troll weapons, …). Unlike
+     * {@link #forGuiItemOutline} — which masks against the BLOCKS atlas alpha and only fits flat
+     * sprite icons — this binds white.png so {@code RENDERTYPE_OUTLINE_SHADER} sees {@code alpha == 1}
+     * across the whole 3D model and emits a SOLID glow-color silhouette. (A BEWLR's geometry samples
+     * its own model textures on other atlases, so the blocks-atlas alpha mask would read garbage and
+     * paint the whole model — the "glow covers the item" bug.) COLOR_WRITE (no depth write) so the
+     * enlarged silhouette never occludes the real item drawn on top; the halo is produced purely by
+     * draw order + the screen-space scale-from-center in {@link #doGuiItemOutline}.
+     */
+    private static RenderType GUI_BEWLR_OUTLINE_TYPE;
+    public static RenderType forGuiBewlrOutline() {
+        if (GUI_BEWLR_OUTLINE_TYPE == null) {
+            GUI_BEWLR_OUTLINE_TYPE = RenderType.create(
+                    MOD_ID + ":gui_bewlr_outline",
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
+                    VertexFormat.Mode.QUADS,
+                    1536, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
+                            .setTextureState(new TextureStateShard(
+                                    ResourceLocation.withDefaultNamespace("textures/misc/white.png"), false, false))
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                            .setOutputState(MAIN_TARGET)
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(GUI_BEWLR_OUTLINE_TYPE, new ByteBufferBuilder(GUI_BEWLR_OUTLINE_TYPE.bufferSize()));
+        }
+        registerLiveFixedBuffer(GUI_BEWLR_OUTLINE_TYPE);
+        return GUI_BEWLR_OUTLINE_TYPE;
     }
 
     /**
@@ -2161,8 +2187,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -2194,8 +2219,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         return cached;
     }
 
@@ -2220,8 +2244,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         // Force test-bucket drain AFTER all writes under shader-mod FullyBuffered. Write RTs
         // stay in default GENERAL_TRANSPARENT; tagging test as LINES (last bucket) guarantees
         // every WRITE.setup/draw/clear in the batched group completes before any TEST runs —
@@ -2263,8 +2286,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SequencedMap<RenderType, ByteBufferBuilder> live = Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new ByteBufferBuilder(cached.bufferSize()));
+        registerLiveFixedBuffer(cached);
         tagAsLateRenderForShaders(cached);
         return cached;
     }
@@ -2915,7 +2937,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // failed because of a format/shader interaction we never pinpointed. This recipe matches
         // the proven world-space outline RT (forOutlineStencilTest) which we know renders
         // correctly, minus the stencil/depth-bias state that doesn't apply in GUI.
-        RenderType outlineRT = forGuiItemOutline();
+        // 3D BEWLR items render a full 3D model as their icon, not a flat sprite. The flat
+        // 4-pixel-translate below just refills their whole silhouette (the "glow covers the item"
+        // bug), and forGuiItemOutline's BLOCKS-atlas alpha mask doesn't apply to their own textures.
+        // Route them through forGuiBewlrOutline (solid white.png glow fill) + one scale-from-center
+        // pass instead.
+        boolean isBewlr = model != null && model.isCustomRenderer();
+        RenderType outlineRT = isBewlr ? forGuiBewlrOutline() : forGuiItemOutline();
         MultiBufferSource wrapped = rt -> new ColorOverrideConsumer(
                 buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
 
@@ -2953,14 +2981,28 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
         final float step = 1.0f / 16.0f;
         float[][] offsets = { {-step, 0}, {step, 0}, {0, -step}, {0, step} };
+        // BEWLR halo thickness as a screen-space scale around the slot/model center. Z stays 1.0 so
+        // the enlarged model keeps the real item's depth (GUI is orthographic, so Z doesn't change
+        // the silhouette anyway). Tune this if the ring reads too thin/thick.
+        final float bewlrHalo = 1.07f;
         IN_OUTLINE.set(true);
         try {
-            for (float[] off : offsets) {
+            if (isBewlr) {
+                // One enlarged solid-glow pass; vanilla draws the real item on top right after this
+                // HEAD inject returns, covering the center and leaving only the enlarged ring = halo.
                 poseStack.pushPose();
-                poseStack.translate(off[0], off[1], 0.0f);
+                poseStack.scale(bewlrHalo, bewlrHalo, 1.0f);
                 mc.getItemRenderer().render(stack, displayContext, leftHand, poseStack, wrapped,
                         packedLight, packedOverlay, model);
                 poseStack.popPose();
+            } else {
+                for (float[] off : offsets) {
+                    poseStack.pushPose();
+                    poseStack.translate(off[0], off[1], 0.0f);
+                    mc.getItemRenderer().render(stack, displayContext, leftHand, poseStack, wrapped,
+                            packedLight, packedOverlay, model);
+                    poseStack.popPose();
+                }
             }
             // Flush ONLY our outline RT while scissor is still active so the clip applies to the
             // actual draw call. Other RTs accumulated by vanilla after our copies (the real item
