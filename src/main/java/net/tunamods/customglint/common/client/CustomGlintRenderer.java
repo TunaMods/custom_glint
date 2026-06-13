@@ -816,6 +816,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final ThreadLocal<Boolean> IN_OUTLINE = ThreadLocal.withInitial(() -> false);
 
     /**
+     * Opt-in for a full-silhouette stencil WRITE in {@link #doModelOutline}. When set true around an
+     * outline call, the stencil WRITE pass stamps the whole geometry silhouette (white.png, no
+     * alpha-discard) instead of the texture's opaque texels, so the dilated back-side ring is
+     * suppressed even across transparent body regions. Correct for mounts whose armor covers the
+     * WHOLE body (IaF dragon barding — the bare wing membranes are transparent and would otherwise
+     * leak the back-side ring). Leave false for partial-coverage armor so the ring hugs the armor
+     * rather than wrapping the entire creature. Default false. Callers must reset it (try/finally).
+     */
+    public static final ThreadLocal<Boolean> OUTLINE_FULL_SILHOUETTE = ThreadLocal.withInitial(() -> false);
+
+    /**
      * Once-per-frame stencil clear gate. Set true at frame start by a RenderTickEvent.START
      * listener in CustomGlintClientInit; the first STENCIL_WRITE_LAYERING.setup of the frame
      * sees it true, calls glClear(STENCIL_BUFFER_BIT), and unsets it so later WRITE setups
@@ -1725,6 +1736,76 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /**
+     * GUI outline RT for 3D BEWLR items (shields, backpacks, troll weapons, …). Unlike
+     * {@link #forGuiItemOutline} — which masks against the BLOCKS atlas alpha and only fits flat
+     * sprite icons — this binds white.png so {@code RENDERTYPE_OUTLINE_SHADER} sees {@code alpha == 1}
+     * across the whole 3D model and emits a SOLID glow-color silhouette. (A BEWLR's geometry samples
+     * its own model textures, so the blocks-atlas alpha mask reads garbage and paints the whole model
+     * — the "glow covers the item" bug.) COLOR_WRITE (no depth write) so the enlarged silhouette never
+     * occludes the real item drawn on top; the halo is produced purely by draw order + the
+     * screen-space scale-from-center in {@link #doGuiItemOutline}.
+     */
+    private static RenderType GUI_BEWLR_OUTLINE_TYPE;
+    public static RenderType forGuiBewlrOutline() {
+        if (GUI_BEWLR_OUTLINE_TYPE == null) {
+            GUI_BEWLR_OUTLINE_TYPE = RenderType.create(
+                    MOD_ID + ":gui_bewlr_outline",
+                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    VertexFormat.Mode.QUADS,
+                    1536, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
+                            .setTextureState(new TextureStateShard(
+                                    new ResourceLocation("textures/misc/white.png"), false, false))
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                            .setOutputState(MAIN_TARGET)
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(GUI_BEWLR_OUTLINE_TYPE, new BufferBuilder(GUI_BEWLR_OUTLINE_TYPE.bufferSize()));
+        }
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(GUI_BEWLR_OUTLINE_TYPE))
+            live.put(GUI_BEWLR_OUTLINE_TYPE, new BufferBuilder(GUI_BEWLR_OUTLINE_TYPE.bufferSize()));
+        return GUI_BEWLR_OUTLINE_TYPE;
+    }
+
+    /**
+     * Per-texture variant of {@link #forGuiBewlrOutline} for BEWLRs whose visual is a single shared
+     * model painted by per-variant alpha-discarded textures (Ice &amp; Fire troll weapons, death worm
+     * gauntlet). Binds the given texture instead of white.png so {@code RENDERTYPE_OUTLINE_SHADER}
+     * alpha-discards against its texels — the GUI halo then traces just that variant's silhouette
+     * instead of the full shared model. Cached per texture; same COLOR_WRITE / LEQUAL state.
+     */
+    private static final Map<ResourceLocation, RenderType> GUI_BEWLR_OUTLINE_TEXTURED = new ConcurrentHashMap<>();
+    public static RenderType forGuiBewlrOutlineTextured(ResourceLocation texture) {
+        RenderType cached = GUI_BEWLR_OUTLINE_TEXTURED.computeIfAbsent(texture, tex -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":gui_bewlr_outline_tex",
+                    DefaultVertexFormat.POSITION_COLOR_TEX,
+                    VertexFormat.Mode.QUADS,
+                    1536, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
+                            .setTextureState(new TextureStateShard(tex, false, false))
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                            .setOutputState(MAIN_TARGET)
+                            .createCompositeState(false));
+            if (fixedBufferRegistry != null)
+                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
+            return rt;
+        });
+        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        return cached;
+    }
+
+    /**
      * VertexConsumer wrapper for the shader-pack forward outline path. Underlying buffer is
      * POSITION_COLOR only; entity models call vertex().color().uv().overlayCoords().uv2().normal().endVertex().
      * We forward position + color + endVertex, override the color with a fixed RGBA (outline color),
@@ -2431,7 +2512,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // single stencil bit, so a sword overlapping armor no longer wipes/blocks the
         // armor's outline (and vice versa).
         int stencilSlot = nextStencilSlot();
-        RenderType writeType = forOutlineStencilWrite(stencilSlot, texture);
+        // When OUTLINE_FULL_SILHOUETTE is set (IaF dragon: full-body barding over transparent wings),
+        // stamp the FULL geometry silhouette via white.png so the dilated back-side ring is suppressed
+        // across the transparent gaps — without it the back armor outline leaks through the wing
+        // membranes. The WRITE pass writes only stencil (no depth/color), so nothing occludes the
+        // world. Default (false) stamps the armor texture so the ring hugs the armor coverage.
+        ResourceLocation writeTex = OUTLINE_FULL_SILHOUETTE.get()
+                ? new ResourceLocation("textures/misc/white.png")
+                : texture;
+        RenderType writeType = forOutlineStencilWrite(stencilSlot, writeTex);
         RenderType testType  = forOutlineStencilTest(stencilSlot, texture);
         Minecraft.getInstance().getMainRenderTarget().enableStencil();
 
@@ -2659,6 +2748,19 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * items (trident, shield, banner, skull, …) and needs per-item textures.
      */
     public static final Map<String, ResourceLocation> BEWLR_OUTLINE_TEXTURES = new ConcurrentHashMap<>();
+
+    /**
+     * Per-STACK BEWLR outline texture resolver. Key = item class FQN, value = a function from the
+     * stack to its outline texture (or null to fall through). Needed when one item class renders many
+     * visual variants from a single shared model with per-variant textures, so a static per-class
+     * entry can't tell them apart: Ice &amp; Fire troll weapons (one {@code ItemTrollWeapon}, one shared
+     * {@code ModelTrollWeapon}, a different {@code EnumTroll.Weapon.TEXTURE} per weapon) and death worm
+     * gauntlets (one {@code ItemDeathwormGauntlet}, three registry instances → red/white/yellow
+     * textures). Without it the outline traces the full shared model (white.png / untextured dilation)
+     * and the glow covers the whole item. Consulted by {@link #doItemOutline} (both stencil and
+     * shader-pack paths) after {@link #BEWLR_OUTLINE_TEXTURES}.
+     */
+    public static final Map<String, Function<ItemStack, ResourceLocation>> BEWLR_OUTLINE_TEXTURE_RESOLVERS = new ConcurrentHashMap<>();
 
     /**
      * Stencil-based colored outline for BEWLR (block-entity-without-level-renderer) items whose
@@ -2935,7 +3037,23 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // failed because of a format/shader interaction we never pinpointed. This recipe matches
         // the proven world-space outline RT (forOutlineStencilTest) which we know renders
         // correctly, minus the stencil/depth-bias state that doesn't apply in GUI.
-        RenderType outlineRT = forGuiItemOutline();
+        // 3D BEWLR items render a full 3D model as their icon, not a flat sprite. The flat
+        // 4-pixel-translate path below just refills their whole silhouette (the "glow covers the item"
+        // bug), and forGuiItemOutline's BLOCKS-atlas alpha mask doesn't fit their own textures. Route
+        // them through a white.png solid fill (or the per-variant texture from the resolver) plus one
+        // scale-from-center pass. Items that report isCustomRenderer() but swap to a FLAT GUI sprite
+        // (IaF tide trident, flagged FLAT_ON_GROUND_ITEMS) stay on the flat-sprite path.
+        boolean flatGuiSwap = FLAT_ON_GROUND_ITEMS.contains(stack.getItem().getClass().getName());
+        boolean isBewlr = model != null && model.isCustomRenderer() && !flatGuiSwap;
+        RenderType outlineRT;
+        if (isBewlr) {
+            Function<ItemStack, ResourceLocation> resolver =
+                    BEWLR_OUTLINE_TEXTURE_RESOLVERS.get(stack.getItem().getClass().getName());
+            ResourceLocation bewlrTex = resolver != null ? resolver.apply(stack) : null;
+            outlineRT = bewlrTex != null ? forGuiBewlrOutlineTextured(bewlrTex) : forGuiBewlrOutline();
+        } else {
+            outlineRT = forGuiItemOutline();
+        }
         MultiBufferSource wrapped = rt -> new ColorOverrideConsumer(
                 buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
 
@@ -2973,14 +3091,27 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
         final float step = 1.0f / 16.0f;
         float[][] offsets = { {-step, 0}, {step, 0}, {0, -step}, {0, step} };
+        // BEWLR halo thickness as a screen-space scale around the slot/model center. Z stays 1.0 so
+        // the enlarged model keeps the real item's depth (GUI is orthographic). Tune if too thin/thick.
+        final float bewlrHalo = 1.07f;
         IN_OUTLINE.set(true);
         try {
-            for (float[] off : offsets) {
+            if (isBewlr) {
+                // One enlarged solid-glow pass; vanilla draws the real item on top right after this
+                // HEAD inject returns, covering the center and leaving only the enlarged ring = halo.
                 poseStack.pushPose();
-                poseStack.translate(off[0], off[1], 0.0f);
+                poseStack.scale(bewlrHalo, bewlrHalo, 1.0f);
                 mc.getItemRenderer().render(stack, displayContext, leftHand, poseStack, wrapped,
                         packedLight, packedOverlay, model);
                 poseStack.popPose();
+            } else {
+                for (float[] off : offsets) {
+                    poseStack.pushPose();
+                    poseStack.translate(off[0], off[1], 0.0f);
+                    mc.getItemRenderer().render(stack, displayContext, leftHand, poseStack, wrapped,
+                            packedLight, packedOverlay, model);
+                    poseStack.popPose();
+                }
             }
             // Flush ONLY our outline RT while scissor is still active so the clip applies to the
             // actual draw call. Other RTs accumulated by vanilla after our copies (the real item
@@ -3204,9 +3335,26 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         // dilation at 1.06×. BEWLR geometry is convex enough that centroid-scale
                         // reliably pushes back faces behind front faces; the non-convex failure
                         // modes that forced NP for crossbow/bow don't apply.
-                        RenderType outlineRT = forShaderArmorOutline();
-                        MultiBufferSource outSrc = rt -> new PositionColorOnlyConsumer(
-                                buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
+                        //
+                        // Per-variant texture: the untextured POSITION_COLOR dilation traces the full
+                        // shared model, so multi-variant BEWLRs (troll weapon / death worm gauntlet)
+                        // get their whole model covered. When a resolver/override supplies the active
+                        // variant's texture, route through the textured shader RT (alpha-mask = RGB 255
+                        // + original alpha, so the ring stays the chosen color) so it alpha-discards to
+                        // just that variant's silhouette.
+                        String bewlrClass = stack.getItem().getClass().getName();
+                        ResourceLocation bewlrTex = BEWLR_OUTLINE_TEXTURES.get(bewlrClass);
+                        Function<ItemStack, ResourceLocation> bewlrResolver = BEWLR_OUTLINE_TEXTURE_RESOLVERS.get(bewlrClass);
+                        if (bewlrResolver != null) {
+                            ResourceLocation perStack = bewlrResolver.apply(stack);
+                            if (perStack != null) bewlrTex = perStack;
+                        }
+                        final RenderType outlineRT = bewlrTex != null
+                                ? forShaderArmorOutlineTextured(getArmorAlphaMask(bewlrTex))
+                                : forShaderArmorOutline();
+                        MultiBufferSource outSrc = bewlrTex != null
+                                ? rt -> new FullColorOverrideConsumer(buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255)
+                                : rt -> new PositionColorOnlyConsumer(buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                         poseStack.pushPose();
                         poseStack.last().pose().mulLocal(new Matrix4f()
                                 .translate(cx, cy, cz)
@@ -3486,8 +3634,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
         ResourceLocation outlineTex;
         if (customRenderer) {
             outlineTex = new ResourceLocation("textures/misc/white.png");
-            ResourceLocation override = BEWLR_OUTLINE_TEXTURES.get(stack.getItem().getClass().getName());
+            String itemClass = stack.getItem().getClass().getName();
+            ResourceLocation override = BEWLR_OUTLINE_TEXTURES.get(itemClass);
             if (override != null) outlineTex = override;
+            // Per-stack resolver wins (troll weapon / death worm gauntlet pack many variants into one
+            // shared model — white.png would mark every cube and the glow covers the whole item).
+            Function<ItemStack, ResourceLocation> resolver = BEWLR_OUTLINE_TEXTURE_RESOLVERS.get(itemClass);
+            if (resolver != null) {
+                ResourceLocation perStack = resolver.apply(stack);
+                if (perStack != null) outlineTex = perStack;
+            }
         } else {
             outlineTex = new ResourceLocation("minecraft", "textures/atlas/blocks.png");
         }

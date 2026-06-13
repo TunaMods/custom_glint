@@ -107,8 +107,11 @@ public class RenderTrollWeaponMixin {
 
     private static void cg_apply(ItemStack stack, PoseStack pose, MultiBufferSource buffer,
             int light, int overlay) {
-        cg_ensureRegistered();
-        ResourceLocation tex = CG_TEX.get();
+        // Outline is no longer drawn here. doItemOutline draws the BEWLR glow outline using this
+        // weapon's per-variant texture, resolved via BEWLR_OUTLINE_TEXTURE_RESOLVERS (registered in
+        // IceAndFireClientCompat). The old doBewlrOutline path used white.png / untextured dilation,
+        // which traced the full shared ModelTrollWeapon and covered the whole weapon in glow color.
+        // Not registering CUSTOM_OUTLINE_BEWLRS lets doItemOutline handle it instead of skipping.
         CG_TEX.remove();
         Model model = cg_getModel();
         if (model == null) return;
@@ -151,14 +154,6 @@ public class RenderTrollWeaponMixin {
                 model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
                 pose.popPose();
             }
-        }
-
-        if (tex != null && !CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(stack)) {
-            pose.pushPose();
-            pose.translate(0.5f, -0.75f, 0.5f);
-            // Stack overload (not Data) so glowColors NBT drives the outline color when set.
-            CustomGlintRenderer.doBewlrOutline(pose, buffer, light, model, tex, stack);
-            pose.popPose();
         }
     }
 }
