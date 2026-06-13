@@ -500,7 +500,15 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     private static void applyDecorationGlint_shadersOff(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
             boolean glowing, ItemStack stack) {
-        if (!(buffer instanceof MultiBufferSource.BufferSource bs)) return;
+        // After an Oculus/Iris pack toggle (activate then deactivate), the entity render dispatcher
+        // hands layers a synthetic lambda MultiBufferSource that does NOT extend BufferSource. The old
+        // `instanceof BufferSource` check then bailed here and the decoration glint silently vanished
+        // until a world reload rebuilt the dispatcher with a real BufferSource. Fall back to the global
+        // bufferSource (the canonical singleton that wrapper delegates to under the hood) so getBuffer
+        // and endBatch hit the same underlying builders — same fix as CustomGlintRenderer.flushRT.
+        MultiBufferSource.BufferSource bs = buffer instanceof MultiBufferSource.BufferSource direct
+                ? direct : Minecraft.getInstance().renderBuffers().bufferSource();
+        if (bs == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;
 
         // Full pre-flush — drains EK's pending decoration verts and any other queued state so
