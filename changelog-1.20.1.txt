@@ -1,0 +1,254 @@
+[1.5.0]
+
+Added:
+- The wand now carries the glint you are editing. It updates live when you import a saved trim
+  or change the preview item, so the wand in your hand always matches what is in the editor.
+- Saved trim files now remember a custom display name and its color: /glint export writes them,
+  and the wand's Import picker restores them when you load the trim back.
+
+[Compat]
+- Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
+  (they used to come back only after reloading the world).
+- Ice and Fire: glowing dragon, hippogryph and hippocampus armor no longer paints the mount's
+  body glint across the whole creature, and the glow outline stops bleeding through transparent
+  wings, feathers and fins onto far-away parts. Water, clouds and ice behind those gaps stay
+  visible.
+- Ice and Fire: the glow outline on troll weapons and death worm gauntlets now traces the weapon
+  instead of filling the entire item with glow color.
+
+Fixed:
+- Glowing modded shields and other 3D-model items now trace the item's actual shape instead of
+  covering the whole item with glow. This applies both held in hand and in the inventory slot.
+- Held item glow outlines no longer shift or change shape as you turn the camera around them.
+
+[1.4.0]
+
+Added:
+- Wand editor now has a Glow section: toggle glow on/off directly in the editor, pick glow
+  colors (auto-matches glint or custom color swatches with hex input), and set a trim display
+  name and name color — all without needing to open the crafting table.
+- /glint extract — pulls the glint from the item in your main hand and gives you a Glint Trim
+  pre-loaded with those settings, so you can transfer or inspect a glint without a wand.
+- /glint export <name> — saves the current main-hand item's glint to
+  config/customglint/trims/<name>.json so you can reload it later via the wand's Import picker.
+- Custom glints can now be applied directly to living entities (mobs, players, animals) —
+  shift-right-click a mob with the wand to apply the wand's current glint to it, or use
+  /glint entity <targets> apply / remove / glow for selector-based application. Glints animate
+  across the entity's body and any cosmetic overlays.
+- Glow outlines also apply to entities, with the outline forming a single clean ring around the
+  union of the entity's body and any clothing/armor layers instead of duplicating per layer.
+- Black Tear can now be right-clicked on a mob to instantly clear that mob's glint and glow
+  data (consumes one tear; does nothing if the mob has no glint applied).
+- Spanish translation added.
+
+Fixed:
+- With an active shader pack (Iris/Oculus), armor glow outlines now correctly cut out transparent
+  areas instead of filling the entire texture-space rectangle.
+- With an active shader pack, glow outlines now draw in front of clouds instead of behind them.
+- With an active shader pack, multiple glowing items (e.g. armor and a held sword) no longer
+  bleed into each other's outlines — each item now uses its own independent stencil channel.
+- With an active shader pack, sprite item outlines (tools, food, gems) now render in the chosen
+  glow color instead of being tinted by the item's texture.
+- With an active shader pack, armor glow outlines now also render in the chosen color instead of
+  being tinted by the armor's own texture (e.g. red leather no longer turned a white outline red).
+- With First-Person Mod and an active shader pack, held-item glow outlines no longer drift or
+  misalign as the camera rotates; non-convex models (crossbow, bow) use per-vertex normal
+  displacement and flat sprites use a separate filter pass for a clean ring at all angles.
+- Held outlines on oversized modded sprites (greatswords, 32-pixel and higher item textures) no
+  longer scale up proportionally — outline thickness now matches a vanilla sword regardless of
+  the underlying sprite size.
+
+[Compat]
+- ElytraSlot: elytras placed in the dedicated elytra Curios slot (or routed back slot) now
+  display their custom glint and glow outline, matching the vanilla chestplate elytra behavior.
+- Epic Knights (Medieval Weapons): chest armor glow outlines no longer wrap around the
+  invisible arm cuboids that EK chestplates carry, so the outline traces just the visible
+  armor silhouette.
+- Epic Knights Winged Hussar chestplate: the back wings no longer get a glow outline (they
+  were previously producing a broken half-outline that stenciled onto only one wing face).
+- Epic Knights armor decoration overlays now receive the glint and
+  glow pass cleanly instead of being skipped or producing a doubled outline.
+- Ice and Fire dragon armor (with a shader pack enabled): glints and glow outlines now stay
+  on the actual armor instead of bleeding across the entire dragon body.
+- Ice and Fire hippogryph and hippocampus armor (with a shader pack enabled): glow outlines
+  now render as a single clean ring matching vanilla horse armor behavior.
+- Ice and Fire troll weapons and death worm gauntlets: held-item glints now sit correctly
+  on the weapon instead of drifting off-position.
+- Iris/Oculus: glow outlines are now more consistent across armor, held items, sprites, and
+  entities — the same outline look everywhere instead of one item type rendering differently
+  from another with a shader pack on.
+
+[Dev]
+- Entity glint sync (server-to-client per-instance NBT) now ships in the api jar itself, so
+  mods that bundle only custom-glint-api via jarJar get entity body glints working with no
+  extra wiring.
+- New entity-glint API on CustomGlint: registerEntityGlint(EntityType, Data) and the (type,
+  design, colors) overload for auto-applying glints to entire entity types; ENTITY_GLINTS map
+  exposed for inspection.
+- Entity NBT API mirrors the item API: readEntity / hasEntity / writeEntity / removeEntity,
+  isEntityGlowing / setEntityGlowing, getEntityGlowColors / hasEntityGlowColors /
+  setEntityGlowColors / clearEntityGlowColors.
+- Tag-level helpers for bundling glint data across the wire or NBT files: itemGlintTag(stack),
+  entityGlintTag(entity), writeEntityTag(entity, tag), writeItemTag(stack, tag),
+  fromTag(tag), tagGlowing(tag), tagGlowColors(tag), toTag(layers).
+- Client-side entity glint mutations (writeEntity, setEntityGlowing, setEntityGlowColors) now
+  render immediately without waiting for a server broadcast round-trip. Covers reconstructed
+  entities (capture/release mods, replay viewers) and preview UIs. Use
+  EntityGlintRender.refreshClientCache(entity) to force an explicit re-sync after a client-side
+  mutation when needed.
+- Applying a new Glint Trim to an item that already has a Glow Trim no longer erases the glow
+  colors — the two systems are independent as documented.
+
+[1.3.0]
+
+Added:
+- Now works on dedicated servers. Previously the mod would crash on server startup; the client
+  and server code have been separated so you can install Custom Glints on any modded server.
+- Compatible out of the box with almost every other mod. Glints and glow outlines now apply
+  cleanly to modded armor, modded held items, and a growing list of specifically-supported
+  mods (see [Compat] below).
+- Glow Trim: a new craftable item that applies a colored outline glow to any item, with no
+  glint pattern required. Combine with dyes to add colors (up to 8), merge two Glow Trims to
+  combine their color lists, then smith onto any item with Glowstone Dust. The outline animates
+  through the trim's full color list independently of any glint already on the item.
+- Glowing Glint Trim: alternatively, surround any colored Glint Trim with 8 Glowstone Dust in a
+  3x3 crafting grid. Smith it onto any item to apply both the glint AND a matching outline glow.
+- Glowing items and armor display a colored outline that animates through your chosen colors.
+- Elytra now show custom glint when worn.
+- Horse armor now shows custom glint.
+- /glint glow <true|false> — toggles the glowing outline on the main-hand item.
+
+[Compat]
+- Glints now apply to modded armor sets that ship their own armor models (e.g. Ice and Fire
+  dragon armor, Iron's Spellbooks robes), not just vanilla-shaped armor.
+- Ice and Fire: troll weapons, death worm gauntlets, dragon armor, hippogryph armor, and
+  hippocampus armor now all display custom glints.
+- Epic Knights: armor decoration overlays now display custom glints alongside the base armor.
+- Sophisticated Backpacks: backpacks now display custom glints across all their render passes.
+- First-Person Model: glow outlines no longer render as flat planes in the 3.5D body view.
+
+Fixed:
+- Glint patterns now look correct on tridents and other held 3D models.
+- Glint patterns on armor no longer stretch into squares — designs hold their original aspect
+  ratio across all armor pieces.
+- Re-writing a glint onto an already-glowing item no longer clears the glowing flag — the
+  outline is preserved across edits in the wand UI, /glint apply, and CustomGlint.write().
+- Data-pack designs now appear in the editor picker and command suggestions for all players on a
+  server, not just the host.
+- Changing resource packs no longer leaves stale glint textures behind.
+- Black Glint Tear now fully resets a Glowing trim back to a plain blank trim.
+
+[Devs]
+- Mod is now distributed as two artifacts: custom-glint-api (common/client only — no wand,
+  tab, recipes, or command) and custom_glint (full standalone, includes the api nested via
+  jarJar). Devs depend on the api coord; players install the full jar.
+- GitHub raw maven hosts both coords for devs at
+  https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo. See README.txt for
+  the full devs build.gradle block.
+- Modded armor with custom ArmorModels (e.g. Ice and Fire, Iron's Spellbooks) now receives
+  glints automatically — HumanoidArmorLayerMixin resolves the model and texture through
+  ForgeHooksClient instead of assuming vanilla.
+- CustomGlint.forGlint() calibrates pattern scale per-axis against the actual block atlas
+  dimensions, so designs hold aspect ratio when other mods inflate the atlas to non-square.
+- CustomGlint.isGlowing() / setGlowing() — read/write the glowing flag on any ItemStack.
+- CustomGlint.setGlowColors() / getGlowColors() / hasGlowColors() / clearGlowColors() —
+  read/write an independent color array for the outline animation. When set, the outline
+  cycles through these colors instead of tracking glint layer 0's animated color.
+- The mod is now safe to load on dedicated servers: client-only rendering code lives in
+  net.tunamods.customglint.common.client.CustomGlintRenderer (and module.client.* for the
+  standalone). When bundling the api via jarJar, server-reachable code should only reference
+  common.CustomGlint — never common.client.*.
+- CustomGlint.PATTERNS[] — public ResourceLocation[] of all 55 built-in designs in order.
+- CustomGlint.ALL_COLORS[] — public int[] of all 16 dye-named colors.
+- CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid colors.
+- Advanced rendering hooks added for mods that draw items or models outside the normal
+  ItemRenderer / armor layer flow (outline render types, model/item outline helpers, public
+  ThreadLocals). Documented under "ADVANCED — RENDERING HOOKS" in README.txt.
+
+[Known Issues]
+- Shader Support is implemented but not finished. Glow Outlines while using shaders are improperly rendering the entire texture space rather than cutting out on the texture.
+- Some specially rendered modded armor/tools do not gain glint or outlines. Need specific targeted compatibility passes. (Mekanism 3d models etc etc)
+- Glint Wand GUI missing Glowing application button
+- Some item outlines are TOO THICK
+
+[1.2.0]
+
+Added:
+- JEI integration: all Glint Trim, Tear, and smithing recipes now display in JEI.
+- 35 new glint designs (55 total, up from 22). New: arcs, aurora, blobs, cascade, chevron,
+  coral, cracks, debris, dunes, feather, frost, glitch, glow, halo, lightning, marble, matrix,
+  mesh, mosaic, net, oil, petal, plasma, plate, prism, sand, sheen, shimmer, silk, slash, smoke,
+  static, tide, tile, weave.
+- Blank Glint Trim duplication: trims with no colors can now be duplicated with the same
+  3x3 diamond recipe (Trim + 7 Diamonds + Glowstone Dust → 2 copies). Previously only
+  trims with at least one color could be duplicated.
+- Trim speed recipe: combine a Glint Trim with 1–8 Redstone Dust to set its animation speed
+  (1 = 1x, 8 = 8x). Craft again with a different count to change it.
+- Trim scale recipe: combine a Glint Trim with 1–8 Slimeballs to set the pattern zoom
+  (1 ball = 0.5x zoom in, 8 balls = 4.0x zoom out). Craft again to change it. Scale carries
+  through to the item when smithing.
+- Data-pack design support: mods and data packs can register custom designs via
+  data/<namespace>/customglint/designs/*.json. Registered designs appear in the editor
+  picker, command suggestions, and the creative tab.
+- The Glint Editor design picker is now a searchable scrollable overlay showing all 55
+  built-in designs plus any data-pack designs, replacing the old fixed grid of 22 buttons.
+- /glint apply now accepts two additional optional arguments: scale (0.25–4.0) and
+  simultaneous (true/false). Tab completion now covers all 55 designs.
+
+Removed:
+- dots and skulls designs.
+
+[1.1.1]
+
+Fixed:
+- Glint Trims were dropping from incorrect loot tables.
+
+[1.1.0]
+
+Added:
+- Multi-layer glint system: items can now carry multiple independent glint layers, each with its own
+  design, colors, speed, interpolate, scale, and simultaneous settings. NBT format changed from a flat
+  tag to a `layers` list of compound tags. Old single-layer NBT is still read for backward compatibility.
+- Glint Trims: found randomly in world loot chests. Each trim carries a glint pattern and up to 8 color
+  slots. Combine with a dye in a crafting grid to add a color. Merge two trims to combine their color
+  lists. Apply at a smithing table with glowstone dust to stamp the glint onto any item.
+- Glint Tears: Simultaneous Tear and Sequential Tear. Craft either with any glinted item to toggle the
+  simultaneous mode on all of its glint layers without changing any other settings.
+- Glint Layer Tear: craft with two glinted Glint Trims to merge their layer arrays into one trim (up to
+  8 total layers). Each layer keeps its own design, colors, speed, and animation settings. Drops from
+  loot at the same 20% chance as the other tears.
+- Black Tear: craft with any glinted item to strip all glint data from it. The item is returned clean.
+  Drops from loot at the same 20% chance as the other tears.
+- Glint Trim duplication recipe: Trim (center) + 7 Diamonds + 1 Glowstone Dust in a full 3x3 grid
+  yields 2 copies.
+- /glint command for operators: /glint apply <design> <colors> [speed] [smooth] and /glint remove.
+  Applies and removes glints using named tokens without touching NBT directly.
+- GlintEditorScreen multi-layer editing via a layer selector.
+- Per-color brightness control: the A field in the editor (0-255) dims individual color slots.
+  255 = full intensity, 0 = invisible.
+- 5 new glint designs: crystal, ember, vein, solid, skulls (22 designs total including vanilla).
+- Vanilla enchantment texture as a selectable glint design.
+- Tooltips on all tear items describing what they do.
+- Improved armor glint render scale — patterns now tile much more densely on armor pieces instead
+  of appearing as large blobs.
+- Glint Trims with multiple layers now show a layer count in the tooltip. Hold Shift to expand and
+  see each layer's design and colors.
+- Renamed "Black Tear" to "Black Glint Tear".
+
+Fixed:
+- Smithing recipe now reads simultaneous, speed, and interpolate from the trim's preview glint instead
+  of hardcoding them. Apply a Simultaneous or Sequential Tear to a trim before smithing to set the
+  render mode on the result.
+- Glint Trims are no longer accepted as the base ingredient in the smithing recipe.
+- The Glint Wand now remembers your last settings when you re-open the editor.
+- Armor glint brightness now matches the A value set in the editor.
+- Two players wearing armor with the same design but different colors no longer bleed each other's colors.
+- Vanilla glint trim now displays "Vanilla Glint Trim" in its tooltip.
+- Smithing a multi-layer Glint Trim now correctly applies all layers to the result (previously only
+  the first layer was written).
+- Merging two Glint Trims (color merge or layer merge) now requires both trims to have at least one
+  dyed color. No-color base trims are rejected by both recipes.
+
+[1.0.0]
+
+- Release
