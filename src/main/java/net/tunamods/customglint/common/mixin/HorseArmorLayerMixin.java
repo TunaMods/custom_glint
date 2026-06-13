@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.layers.HorseArmorLayer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.item.HorseArmorItem;
 import net.minecraft.world.item.ItemStack;
@@ -59,7 +60,7 @@ public class HorseArmorLayerMixin {
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
         if (!(stack.getItem() instanceof HorseArmorItem ha)) return;
-        net.minecraft.resources.ResourceLocation tex = ha.getTexture();
+        ResourceLocation tex = ha.getTexture();
 
         if (glint != null) {
             // ── Stencil mask pass ───────────────────────────────────────────

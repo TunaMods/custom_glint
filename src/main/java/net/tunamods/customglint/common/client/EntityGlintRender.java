@@ -85,6 +85,18 @@ public final class EntityGlintRender {
     }
 
     /**
+     * Unwraps the entity-glint buffer wrapper to the real underlying {@code BufferSource}. The
+     * wrapper auto-fans every {@code entity_*} RenderType through the entity's body glint; a draw
+     * that must NOT pick up that body glint (e.g. IaF mount armor, which reuses the mount's own
+     * model so its {@code entityTranslucent}/{@code entityCutoutNoCull} base would otherwise be
+     * stamped with the body glint across the whole model) routes its base + glint through this.
+     * Returns the buffer unchanged when no wrapper is installed (non-glinted mount).
+     */
+    public static MultiBufferSource unwrap(MultiBufferSource buffer) {
+        return buffer instanceof GlintWrappingBufferSource w ? w.delegate : buffer;
+    }
+
+    /**
      * Captured (model, texture, pose snapshot, light) for one render-layer surface, queued by
      * {@link net.tunamods.customglint.common.mixin.RenderLayerMixin} during the entity render and
      * drained at popPose by {@link #renderOutline}. Pose snapshot is taken because each layer

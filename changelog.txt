@@ -1,3 +1,26 @@
+[1.5.0]
+
+Added:
+- The wand now carries the glint you are editing. It updates live when you import a saved trim
+  or change the preview item, so the wand in your hand always matches what is in the editor.
+- Saved trim files now remember a custom display name and its color: /glint export writes them,
+  and the wand's Import picker restores them when you load the trim back.
+
+[Compat]
+- Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
+  (they used to come back only after reloading the world).
+- Ice and Fire: glowing dragon, hippogryph and hippocampus armor no longer paints the mount's
+  body glint across the whole creature, and the glow outline stops bleeding through transparent
+  wings, feathers and fins onto far-away parts. Water, clouds and ice behind those gaps stay
+  visible.
+- Ice and Fire: the glow outline on troll weapons and death worm gauntlets now traces the weapon
+  instead of filling the entire item with glow color.
+
+Fixed:
+- Glowing modded shields and other 3D-model items now trace the item's actual shape instead of
+  covering the whole item with glow. This applies both held in hand and in the inventory slot.
+- Held item glow outlines no longer shift or change shape as you turn the camera around them.
+
 [1.4.0]
 
 Added:

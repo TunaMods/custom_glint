@@ -354,7 +354,7 @@ public final class CustomGlint {
     //
     // Per-instance: NBT lives in the LivingEntity's persistent data under TAG (same schema as
     // items). Server writes; a client-side sync packet (GlintEntitySyncPacket) pushes the tag to
-    // tracking players and the client renderer (EntityGlintRenderer) reads from the cache.
+    // tracking players and the client renderer (EntityGlintRender) reads from the cache.
     //
     // Type-wide: ENTITY_GLINTS is a server-safe registry; the client renderer falls back to it
     // when no per-instance NBT exists, so all entities of the type render with the same glint

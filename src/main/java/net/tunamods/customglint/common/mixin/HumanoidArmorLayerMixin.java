@@ -5,9 +5,11 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.renderer.RenderType;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.geom.ModelPart;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -17,6 +19,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.DyeableLeatherItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.tunamods.customglint.common.CustomGlint;
@@ -138,7 +141,7 @@ public class HumanoidArmorLayerMixin {
             // approach can't honor depth between overlapping wings either. Compat installs the
             // hook to nominate parts; mixin hides them for doModelOutline and restores after,
             // so the broken dilation never draws on them and they simply have no outline).
-            net.minecraft.client.model.geom.ModelPart[] hiddenParts = null;
+            ModelPart[] hiddenParts = null;
             boolean[] savedHiddenVisible = null;
             if (slot == EquipmentSlot.CHEST && outlineModel instanceof HumanoidModel<?> hmx) {
                 hiddenParts = CustomGlintRenderer.armorExtraOutlineParts.apply(hmx, armorTex);
@@ -159,11 +162,11 @@ public class HumanoidArmorLayerMixin {
             // it exists. Non-dyeable armors skip this entirely. Overlay path resolution can
             // throw on weird material names → guarded the same way as the base path.
             ResourceLocation overlayTex = null;
-            if (stack.getItem() instanceof net.minecraft.world.item.DyeableLeatherItem) {
+            if (stack.getItem() instanceof DyeableLeatherItem) {
                 try {
                     ResourceLocation candidate = layer.getArmorResource(entity, stack, slot, "overlay");
                     if (candidate != null
-                            && net.minecraft.client.Minecraft.getInstance().getResourceManager()
+                            && Minecraft.getInstance().getResourceManager()
                                     .getResource(candidate).isPresent()) {
                         overlayTex = candidate;
                     }

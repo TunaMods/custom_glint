@@ -24,6 +24,9 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -598,12 +601,23 @@ public class GlintEditorScreen extends Screen {
         pickerScroll = Math.max(0, Math.min(pickerScroll, Math.max(0, filteredItems.size() - VISIBLE_ROWS)));
     }
 
+    private void syncWandState() {
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
+        for (int i = 0; i < layers.length; i++) {
+            int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
+            layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
+                    layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
+        }
+        int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
+        ModNetworking.CHANNEL.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
+    }
+
     private void scanGlintConfigs() {
         availableGlints.clear();
         try {
-            java.nio.file.Path configDir = java.nio.file.Paths.get("config/customglint/trims").toAbsolutePath();
-            if (java.nio.file.Files.exists(configDir)) {
-                java.nio.file.Files.list(configDir)
+            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+            if (Files.exists(configDir)) {
+                Files.list(configDir)
                     .filter(p -> p.toString().endsWith(".json"))
                     .map(p -> p.getFileName().toString().replace(".json", ""))
                     .sorted()
@@ -616,9 +630,9 @@ public class GlintEditorScreen extends Screen {
 
     private void loadGlintFromConfig(String name) {
         try {
-            java.nio.file.Path file = java.nio.file.Paths.get("config/customglint/trims", name + ".json").toAbsolutePath();
-            String json = new String(java.nio.file.Files.readAllBytes(file));
-            com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+            Path file = Paths.get("config/customglint/trims", name + ".json").toAbsolutePath();
+            String json = new String(Files.readAllBytes(file));
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
 
             layerDesigns.clear();
             layerColors.clear();
@@ -628,14 +642,14 @@ public class GlintEditorScreen extends Screen {
             layerSimultaneous.clear();
 
             if (obj.has("layers")) {
-                com.google.gson.JsonArray layers = obj.getAsJsonArray("layers");
+                JsonArray layers = obj.getAsJsonArray("layers");
                 for (int i = 0; i < Math.min(layers.size(), 8); i++) {
-                    com.google.gson.JsonObject layer = layers.get(i).getAsJsonObject();
+                    JsonObject layer = layers.get(i).getAsJsonObject();
                     String design = layer.get("design").getAsString();
                     layerDesigns.add(designShortName(new ResourceLocation(design)));
 
                     List<Integer> colors = new ArrayList<>();
-                    for (com.google.gson.JsonElement e : layer.getAsJsonArray("colors")) {
+                    for (JsonElement e : layer.getAsJsonArray("colors")) {
                         String colorStr = e.getAsString();
                         colors.add((int) Long.parseLong(colorStr.replace("0x", ""), 16));
                     }
@@ -662,12 +676,32 @@ public class GlintEditorScreen extends Screen {
 
             if (obj.has("glowing")) glowEnabled = obj.get("glowing").getAsBoolean();
 
-            if (trimNameBox != null) trimNameBox.setValue(trimName);
+            if (obj.has("displayName")) {
+                trimName = obj.get("displayName").getAsString();
+            } else {
+                trimName = "";
+            }
+            if (obj.has("nameColor")) {
+                int rgb = (int) Long.parseLong(obj.get("nameColor").getAsString().replace("0x", ""), 16) & 0xFFFFFF;
+                trimNameColor = (rgb << 8) | 0xFF;
+            } else {
+                trimNameColor = 0xFFFFFFFF;
+            }
+
+            if (trimNameBox != null) {
+                trimNameBox.setValue(trimName);
+                trimNameBox.setVisible(!trimName.isEmpty());
+            }
+            if (nameHexBox != null) {
+                nameHexBox.setValue(String.format("%06X", (trimNameColor >>> 8) & 0xFFFFFF));
+                nameHexBox.setVisible(!trimName.isEmpty());
+            }
             loadEditRGB();
             syncChannelBoxes();
             syncHexFromRGB();
             refreshPreview();
             showImportPicker = false;
+            syncWandState();
         } catch (Exception e) {
             // Silently fail
         }
@@ -988,6 +1022,7 @@ public class GlintEditorScreen extends Screen {
                     previewItem = filteredItems.get(idx);
                     showPicker = false;
                     refreshPreview();
+                    syncWandState();
                 }
             }
             return true;

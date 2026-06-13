@@ -2,6 +2,7 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.google.gson.JsonObject;
 import net.minecraft.core.RegistryAccess;
@@ -46,7 +47,7 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
     public boolean isBaseIngredient(ItemStack stack) {
         return !stack.isEmpty()
                 && !(stack.getItem() instanceof GlowTrimItem)
-                && !(stack.getItem() instanceof net.tunamods.customglint.module.item.GlintTrimItem);
+                && !(stack.getItem() instanceof GlintTrimItem);
     }
 
     @Override
