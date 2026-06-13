@@ -156,14 +156,12 @@ public class LayerHippocampusArmorMixin {
         }
 
         if (CustomGlint.isGlowing(stack)) {
-            // Body depth pre-fill so doModelOutline's LEQUAL test is occluded by the mob's full
-            // silhouette regardless of body texture alpha (see LayerDragonArmorMixin).
-            RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
-            model.renderToBuffer(pose, flush.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-            if (flush instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
-
-            // slot=null: AABB-centroid scale (see LayerDragonArmorMixin for rationale).
-            // Stack overload (not Data) so glowColors NBT drives the outline color when set.
+            // Full-silhouette stencil WRITE (default slot==null path): stamp the whole body
+            // silhouette so the back-side armor ring is suppressed across the hippocampus's
+            // transparent gaps (tail / fins) — otherwise that far-side ring leaks through the front.
+            // Trade-off: the ring then follows the body outline rather than hugging the armor.
+            // No depth pre-fill, so nothing occludes the world or the mount's own far-side glint.
+            // Stack overload so glowColors NBT drives the outline color.
             CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, stack, null);
         }
     }

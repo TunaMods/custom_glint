@@ -680,6 +680,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * Uses RENDERTYPE_ENTITY_SOLID_SHADER (no alpha-discard) + DEPTH-only write mask + LEQUAL
      * depth. Bound texture is irrelevant since color isn't written; the shader still needs a
      * Sampler0 binding so pass any valid texture (callers pass the armor texture for simplicity).
+     *
+     * NOTE: no longer used by the mount-armor mixins. Writing depth across the full silhouette
+     * (gaps included) leaves "invisible planes" — the gap pixels get the body's surface depth with
+     * no colour, so world translucents (water, clouds, ice) and the mount's own far-side glint
+     * drawn afterwards get depth-rejected there. The back-side-outline-through-gap leak it was meant
+     * to fix is now handled in {@link #doModelOutline} by stamping the FULL geometry silhouette into
+     * the stencil slot (stencil-only, no depth) for the {@code slot == null} mount/body path.
      */
     public static RenderType forBodyDepthFill(ResourceLocation tex) {
         RenderType cached = BY_BODY_DEPTH_FILL.computeIfAbsent(tex, t -> {
@@ -833,6 +840,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Guards re-entrance: set true during outline stencil passes so applyGlint skips the item. */
     public static final ThreadLocal<Boolean> IN_OUTLINE = ThreadLocal.withInitial(() -> false);
+
+    /**
+     * Opt-out for the {@code slot == null} full-silhouette stencil WRITE in {@link #doModelOutline}.
+     * That path stamps the whole body silhouette (white.png) so the outline ring wraps the entire
+     * creature — correct for the IaF dragon (full-body barding, transparent wings). The hippocampus
+     * armor only covers part of the body, so the full silhouette makes the glow wrap the whole
+     * creature; it sets this true around its outline call to stamp the armor texture instead, so the
+     * ring hugs the armor. Default false: dragon and hippogryph keep the full-silhouette behavior.
+     * Callers must reset it (try/finally).
+     */
+    public static final ThreadLocal<Boolean> OUTLINE_HUG_TEXTURE = ThreadLocal.withInitial(() -> false);
 
     /**
      * Once-per-frame stencil clear gate. Set true at frame start by a RenderTickEvent.START
@@ -2460,7 +2478,23 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // single stencil bit, so a sword overlapping armor no longer wipes/blocks the
         // armor's outline (and vice versa).
         int stencilSlot = nextStencilSlot();
-        RenderType writeType = forOutlineStencilWrite(stencilSlot, texture);
+        // WRITE texture selection. For humanoid armor pieces (slot != null) we stamp only the
+        // armor's opaque texels so the ring traces the armored coverage (a SOLID stamp would
+        // follow the full bone hull — arms past pauldrons; see the TRIED note above).
+        //
+        // For the slot == null path (IaF mounts: dragon / hippogryph / hippocampus, whose armor
+        // reuses the mount's OWN body model), stamp the FULL geometry silhouette via white.png
+        // instead. These body textures have large transparent regions (wing membranes, scale
+        // gaps); stamping only opaque texels leaves those gaps unmarked, so the dilated back-side
+        // ring passes NOTEQUAL there and the player sees the BACK armor outline through the FRONT
+        // of the mob. white.png defeats the outline shader's alpha-discard so every geometry
+        // fragment marks the slot, closing the gaps. This replaces the old forBodyDepthFill hack,
+        // which closed the gaps in the DEPTH buffer and thereby left invisible world-occluding
+        // planes; the WRITE pass uses NO_WRITE (stencil only), so nothing leaks into world depth.
+        ResourceLocation writeTex = (slot == null && !OUTLINE_HUG_TEXTURE.get())
+                ? ResourceLocation.withDefaultNamespace("textures/misc/white.png")
+                : texture;
+        RenderType writeType = forOutlineStencilWrite(stencilSlot, writeTex);
         RenderType testType  = forOutlineStencilTest(stencilSlot, texture);
         Minecraft.getInstance().getMainRenderTarget().enableStencil();
 
@@ -3282,9 +3316,26 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         // dilation at 1.06×. BEWLR geometry is convex enough that centroid-scale
                         // reliably pushes back faces behind front faces; the non-convex failure
                         // modes that forced NP for crossbow/bow don't apply.
-                        RenderType outlineRT = forShaderArmorOutline();
-                        MultiBufferSource outSrc = rt -> new PositionColorOnlyConsumer(
-                                buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
+                        // The untextured POSITION_COLOR dilation traces the full model, so any face
+                        // whose texels are transparent (troll-weapon variants sharing one model, the
+                        // tide trident's prong gaps) fills solid instead of cutting out. When a texture
+                        // is registered — troll weapons via the per-stack resolver, the tide trident via
+                        // BEWLR_OUTLINE_TEXTURES — route through the textured entity-cutout outline
+                        // (alpha-mask parallel so the ring keeps the outline color, not the item's
+                        // albedo) with a UV-forwarding consumer. Other BEWLRs keep the solid path.
+                        String bewlrClass = stack.getItem().getClass().getName();
+                        ResourceLocation bewlrTex = BEWLR_OUTLINE_TEXTURES.get(bewlrClass);
+                        Function<ItemStack, ResourceLocation> bewlrResolver = BEWLR_OUTLINE_TEXTURE_RESOLVERS.get(bewlrClass);
+                        if (bewlrResolver != null) {
+                            ResourceLocation perStack = bewlrResolver.apply(stack);
+                            if (perStack != null) bewlrTex = perStack;
+                        }
+                        RenderType outlineRT = bewlrTex != null
+                                ? forShaderArmorOutlineTextured(getArmorAlphaMask(bewlrTex))
+                                : forShaderArmorOutline();
+                        MultiBufferSource outSrc = bewlrTex != null
+                                ? rt -> new FullColorOverrideConsumer(buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255)
+                                : rt -> new PositionColorOnlyConsumer(buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                         poseStack.pushPose();
                         poseStack.last().pose().mulLocal(new Matrix4f()
                                 .translate(cx, cy, cz)

@@ -171,13 +171,12 @@ public class LayerDragonArmorMixin {
         }
 
         if (CustomGlint.isGlowing(active)) {
-            // Body depth pre-fill so the outline's LEQUAL test is occluded by the full silhouette
-            // (dragon textures have many transparent gaps that would otherwise leak the back-side
-            // outline through the front). Then trace this part's armor outline via its texture.
-            RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
-            model.renderToBuffer(pose, flush.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-            if (flush instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
-
+            // doModelOutline (slot==null) stamps the FULL body silhouette into its stencil slot, so
+            // the back-side armor ring is suppressed even across the dragon's transparent gaps (wing
+            // membranes, scale gaps). No depth pre-fill is used, so nothing is written into the world
+            // depth buffer at those gaps — water/clouds/ice behind the wings and the dragon's own
+            // far-side glint stay visible (the depth pre-fill used to leave invisible occluder planes
+            // there). Trace this part's armor outline via its texture.
             CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, active, null);
         }
     }

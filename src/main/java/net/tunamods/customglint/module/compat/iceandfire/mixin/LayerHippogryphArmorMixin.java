@@ -13,6 +13,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -49,12 +50,16 @@ import java.util.List;
 @Mixin(targets = "com.iafenvoy.iceandfire.render.entity.HippogryphEntityRenderer$LayerHippogriffSaddle", remap = false)
 public class LayerHippogryphArmorMixin {
 
+    // CE armor textures live under textures/entity/hippogryph/, NOT textures/models/. A wrong path
+    // resolves to the missing-texture placeholder, which is fully opaque — the stencil mask then
+    // stamps the entire model and the glint covers the whole hippogryph instead of just the armor.
+    // Confirmed via unzip -l on iceandfire-2.0-beta.17.jar.
     private static final ResourceLocation CG_TEX_IRON =
-            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippogryph/armor_iron.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippogryph/armor_iron.png");
     private static final ResourceLocation CG_TEX_GOLD =
-            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippogryph/armor_gold.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippogryph/armor_gold.png");
     private static final ResourceLocation CG_TEX_DIAMOND =
-            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippogryph/armor_diamond.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippogryph/armor_diamond.png");
 
     private static volatile Method CG_GET_PARENT_MODEL;
     private static volatile Method CG_GET_ARMOR;
@@ -117,16 +122,22 @@ public class LayerHippogryphArmorMixin {
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
 
-        // ── Stencil mask pass (see LayerDragonArmorMixin for rationale) ─────
-        RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
-        model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-        if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
+        // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
+        // forArmorGlint — the same fix LayerDragonArmorMixin / LayerHippocampusArmorMixin use.
+        // Hippogryph armor reuses the body model at the SAME depth, so EntityGlintRender's wrapper
+        // fanned the mount's body glint onto the armor (entity glint over armor glint) and the
+        // EQUAL-depth body glint drew over the armor, leaving the bare body silhouette showing
+        // through. armorCutoutNoCull's polygon offset nudges the armor in front of the body so the
+        // body glint is depth-occluded there, and forArmorGlint (EQUAL + the matching offset, masked
+        // by the armor texture's own alpha cutout) lands only on the armor's opaque texels. Routed
+        // through the unwrapped buffer so the wrapper can't re-fan the body glint onto the armor.
+        MultiBufferSource flush = EntityGlintRender.unwrap(buffer);
+        model.renderToBuffer(pose, flush.getBuffer(RenderType.armorCutoutNoCull(tex)),
+                light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
 
-        // ── Glint pass (stencil EQUAL 0x80) ─────────────────────────────────
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
-        List<RenderType> glintTypes = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
@@ -136,8 +147,8 @@ public class LayerHippogryphArmorMixin {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, li, buf, i);
-                    if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
+                    if (rt != null) list.add(flush.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
@@ -146,8 +157,8 @@ public class LayerHippogryphArmorMixin {
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * aa;
                 buf[2] = ( color        & 0xFF) / 255.0f * aa;
                 buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, li, buf, 0);
-                if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
+                RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
+                if (rt != null) list.add(flush.getBuffer(rt));
             }
         }
         if (!list.isEmpty()) {
@@ -155,20 +166,12 @@ public class LayerHippogryphArmorMixin {
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
-        if (buffer instanceof MultiBufferSource.BufferSource bs2) {
-            for (RenderType rt : glintTypes) bs2.endBatch(rt);
-        }
 
         if (CustomGlint.isGlowing(stack)) {
-            // Body depth pre-fill so doModelOutline's LEQUAL test is occluded by the mob's full
-            // silhouette regardless of body texture alpha — without this, back-side armor's
-            // outline shows through the front through transparent body regions (feathers, gaps).
-            // See LayerDragonArmorMixin for the full rationale.
-            RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
-            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-            if (buffer instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
-
-            // slot=null: AABB-centroid scale (see LayerDragonArmorMixin for rationale).
+            // doModelOutline (slot==null) stamps the FULL body silhouette into its stencil slot, so
+            // the back-side armor ring is suppressed across transparent body regions (feathers,
+            // gaps) — no depth pre-fill, so nothing occludes the world or the mount's own far-side
+            // glint behind the gaps. See LayerDragonArmorMixin for the full rationale.
             // Stack overload (not Data) so glowColors NBT drives the outline color when set.
             CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, stack, null);
         }
