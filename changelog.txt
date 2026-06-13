@@ -24,3 +24,8 @@ Added:
   itself, both in hand and in the inventory slot, instead of filling a square.
 - Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
   (they used to come back only after reloading the world).
+
+Fixed:
+- Glowing modded shields and other 3D-model items now trace the item's actual shape instead of
+  covering the whole item with glow. This applies both held in hand and in the inventory slot.
+- Held item glow outlines no longer shift or change shape as you turn the camera around them.
