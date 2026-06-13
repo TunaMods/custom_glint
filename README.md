@@ -1,61 +1,48 @@
 # Custom Glints
 
-Per-item animated enchantment glints for Minecraft, with full control over color, design, timing, and scale. NBT-driven, so no registry changes or item subclasses are needed. 55 built-in design textures.
+NBT-driven per-item animated enchantment glints. Source lives on a branch per game version.
 
-Download from [Modrinth](https://modrinth.com/mod/custom-glints).
+| MC | Loader | Branch | Maven (`mcmodsrepo`) | Changelog |
+|---|---|---|---|---|
+| 1.20.1 | Forge 47.x | [`1.20.1`](https://github.com/TunaMods/custom_glint/tree/1.20.1) | `.../custom_glint/1.20.1/mcmodsrepo` | [changelog-1.20.1.txt](changelog-1.20.1.txt) |
+| 1.21.1 | NeoForge 21.x | [`1.21.1`](https://github.com/TunaMods/custom_glint/tree/1.21.1) | `.../custom_glint/1.21.1/mcmodsrepo` | [changelog-1.21.1.txt](changelog-1.21.1.txt) |
 
-## Pick your version
+Maven base: `https://raw.githubusercontent.com/TunaMods/custom_glint/<branch>/mcmodsrepo`
 
-The code lives on a branch per game version. Pick the one that matches your pack:
+## Artifacts
 
-| Minecraft | Loader | Branch |
-|---|---|---|
-| 1.20.1 | Forge 47.x | [`1.20.1`](https://github.com/TunaMods/custom_glint/tree/1.20.1) |
-| 1.21.1 | NeoForge | [`1.21.1`](https://github.com/TunaMods/custom_glint/tree/1.21.1) |
+- `custom-glint-api-<ver>.jar` (`customglint_api`) — rendering pipeline + Java API. Bundle this via jarJar.
+- `custom_glint-<ver>.jar` (`customglint` + `customglint_api`) — full standalone, api nested in `META-INF/jarjar/`.
 
-Each version branch has its own `README.txt` with the developer docs (jarJar bundling, the API surface, render hooks) and its own `changelog.txt`.
+## Bundling (jarJar)
 
-## Quick look — latest changes
+Forge (1.20.1):
 
-Highlights from the current release on each branch. Full history is in the linked changelog.
+```gradle
+repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo" } }
+dependencies {
+    compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.5.0")
+    runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.5.0")
+    jarJar(group: 'net.tunamods.customglint', name: 'custom-glint-api', version: '[1.5.0,2.0)')
+}
+```
 
-### 1.20.1 (Forge) — 1.5.0
+NeoForge (1.21.1):
 
-Full changelog: [changelog-1.20.1.txt](changelog-1.20.1.txt)
+```gradle
+repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.21.1/mcmodsrepo" } }
+dependencies {
+    jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
+        version {
+            strictly "[1.5.0,2.0)"
+            prefer "1.5.0"
+        }
+    }
+}
+```
 
-**Added**
-- The wand now carries the glint you are editing. It updates live when you import a saved trim or change the preview item.
-- Saved trim files remember a custom display name and its color. `/glint export` writes them; the wand's Import picker restores them.
+Pin embedders to the latest version. Per-mod compat mixins (Ice and Fire, Epic Knights, Sophisticated Backpacks, ElytraSlot, FPM) ship only in the full jar, not the api.
 
-**Compat**
-- Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off.
-- Ice and Fire: glowing dragon, hippogryph, and hippocampus armor no longer paints the mount's body glint across the whole creature, and the glow outline stops bleeding through transparent wings, feathers, and fins.
-- Ice and Fire: the glow outline on troll weapons and death worm gauntlets traces the weapon instead of filling the whole item.
+Full dev docs (API surface, render hooks, auto-apply registries) are in each branch's `README.txt`.
 
-**Fixed**
-- Glowing modded shields and other 3D-model items trace the item's real shape instead of covering the whole item, both in hand and in the inventory slot.
-- Held item glow outlines no longer shift or change shape as you turn the camera.
-
-### 1.21.1 (NeoForge) — 1.5.0
-
-Full changelog: [changelog-1.21.1.txt](changelog-1.21.1.txt)
-
-Ported to NeoForge 1.21.1.
-
-**Added**
-- The wand carries the glint you are editing, updating live on import or preview-item change.
-- Saved trim files remember a custom display name and its color.
-
-**Compat**
-- Ice and Fire (Community Edition): player armor (copper, deathworm, dragonscale, sea serpent, troll, and the rest) now shows glints and glow outlines. CE routes this armor through its own renderer that bypassed the usual armor path.
-- Ice and Fire (Community Edition): dragon, hippocampus, and hippogryph armor glints stay on the armor instead of bleeding across the creature's body, and glowing mount armor no longer leaks the back-side glow ring through transparent wings, feathers, and fins.
-- Ice and Fire (Community Edition): troll weapons and the tide trident each get an outline matching their own shape, in hand and in the inventory, instead of a shared block-shaped glow.
-- Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off.
-
-**Fixed**
-- Glowing modded shields and other 3D-model items trace the item's real shape instead of covering the whole item.
-- Held item glow outlines no longer shift or change shape as you turn the camera.
-
-## License
-
-MIT, attribution required. See the `LICENSE.txt` on either version branch.
+MIT, attribution required.
