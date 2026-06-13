@@ -1,0 +1,21 @@
+[1.5.0]
+
+Ported to NeoForge 1.21.1.
+
+Added:
+- The wand now carries the glint you are editing. It updates live when you import a saved trim
+  or change the preview item, so the wand in your hand always matches what is in the editor.
+- Saved trim files now remember a custom display name and its color: /glint export writes them,
+  and the wand's Import picker restores them when you load the trim back.
+
+[Compat]
+- Ice and Fire (Community Edition): player armor (copper, deathworm, dragonscale, sea serpent,
+  troll, and the rest) now shows glints and glow outlines. CE routes this armor through its own
+  renderer that bypassed the usual armor path, so it previously showed nothing.
+- Ice and Fire (Community Edition): dragon, hippocampus, and hippogryph armor glints and glow
+  outlines now stay on the armor instead of bleeding across the creature's body.
+- Ice and Fire (Community Edition): troll weapons now each get an outline that matches that
+  weapon's shape, in hand and in the inventory, instead of every variant sharing one
+  block-shaped glow.
+- Ice and Fire (Community Edition): the tide trident's glow outline now traces the trident
+  itself, both in hand and in the inventory slot, instead of filling a square.
