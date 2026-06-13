@@ -16,6 +16,11 @@ Added:
 - Ice and Fire: the glow outline on troll weapons and death worm gauntlets now traces the weapon
   instead of filling the entire item with glow color.
 
+Fixed:
+- Glowing modded shields and other 3D-model items now trace the item's actual shape instead of
+  covering the whole item with glow. This applies both held in hand and in the inventory slot.
+- Held item glow outlines no longer shift or change shape as you turn the camera around them.
+
 [1.4.0]
 
 Added:
