@@ -23,8 +23,8 @@ import net.neoforged.fml.loading.FMLEnvironment;
 public final class IceAndFireCompat {
     private IceAndFireCompat() {}
 
-    static final String HIPPOGRYPH_CLASS  = "com.github.alexthe666.iceandfire.entity.EntityHippogryph";
-    static final String HIPPOCAMPUS_CLASS = "com.github.alexthe666.iceandfire.entity.EntityHippocampus";
+    static final String HIPPOGRYPH_CLASS  = "com.iafenvoy.iceandfire.entity.HippogryphEntity";
+    static final String HIPPOCAMPUS_CLASS = "com.iafenvoy.iceandfire.entity.HippocampusEntity";
 
     public static void register() {
         // Renderer overrides — client-only.

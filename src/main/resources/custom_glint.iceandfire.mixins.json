@@ -9,7 +9,8 @@
     "RenderDeathWormGauntletMixin",
     "LayerDragonArmorMixin",
     "LayerHippogryphArmorMixin",
-    "LayerHippocampusArmorMixin"
+    "LayerHippocampusArmorMixin",
+    "UranusArmorRendererMixin"
   ],
   "mixins": [
     "EntityHippogryphArmorSyncMixin",

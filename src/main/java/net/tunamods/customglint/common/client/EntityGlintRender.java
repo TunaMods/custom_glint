@@ -85,6 +85,20 @@ public final class EntityGlintRender {
     }
 
     /**
+     * Unwraps the entity-glint buffer wrapper to the real underlying {@code BufferSource}. Mixins
+     * that must {@code endBatch} a specific RenderType to order passes (the stencil-mask-before-glint
+     * sequence on mount/dragon armor) need the real BufferSource: during entity rendering the layer
+     * receives {@link GlintWrappingBufferSource}, which is NOT a BufferSource, so a raw
+     * {@code instanceof BufferSource} check silently skips the flush and the mask never commits
+     * before the glint. That only bites when the entity ALSO carries its own glint (so the wrapper
+     * is installed) — e.g. a glinted dragon wearing glinted armor; the body part's glint then bled
+     * across the whole dragon.
+     */
+    public static MultiBufferSource unwrap(MultiBufferSource buffer) {
+        return buffer instanceof GlintWrappingBufferSource w ? w.delegate : buffer;
+    }
+
+    /**
      * Captured (model, texture, pose snapshot, light) for one render-layer surface, queued by
      * {@link net.tunamods.customglint.common.mixin.RenderLayerMixin} during the entity render and
      * drained at popPose by {@link #renderOutline}. Pose snapshot is taken because each layer

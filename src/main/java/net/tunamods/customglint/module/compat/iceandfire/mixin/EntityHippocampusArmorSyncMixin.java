@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * even though the class itself is remap=false.
  */
 @Pseudo
-@Mixin(targets = "com.github.alexthe666.iceandfire.entity.EntityHippocampus", remap = false)
+@Mixin(targets = "com.iafenvoy.iceandfire.entity.HippocampusEntity", remap = false)
 public class EntityHippocampusArmorSyncMixin {
 
     @Inject(method = "m_5757_(Lnet/minecraft/world/Container;)V", at = @At("RETURN"), require = 0)

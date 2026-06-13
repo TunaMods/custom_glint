@@ -46,7 +46,7 @@ import java.util.List;
  * + StartTracking listener in IceAndFireCompat).
  */
 @Pseudo
-@Mixin(targets = "com.github.alexthe666.iceandfire.client.render.entity.RenderHippogryph$LayerHippogriffSaddle", remap = false)
+@Mixin(targets = "com.iafenvoy.iceandfire.render.entity.HippogryphEntityRenderer$LayerHippogriffSaddle", remap = false)
 public class LayerHippogryphArmorMixin {
 
     private static final ResourceLocation CG_TEX_IRON =
@@ -84,7 +84,7 @@ public class LayerHippogryphArmorMixin {
         try {
             Method m = CG_GET_ARMOR;
             if (m == null) {
-                m = entity.getClass().getMethod("getArmor");
+                m = entity.getClass().getMethod("getArmorValue");
                 CG_GET_ARMOR = m;
             }
             return (int) m.invoke(entity);
@@ -93,7 +93,7 @@ public class LayerHippogryphArmorMixin {
         }
     }
 
-    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityHippogryph;FFFFFF)V",
+    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/HippogryphEntity;FFFFFF)V",
             at = @At("RETURN"), require = 0)
     private void cg_apply(PoseStack pose, MultiBufferSource buffer, int light,
             @Coerce LivingEntity entity, float a, float b, float c, float d, float e, float f,

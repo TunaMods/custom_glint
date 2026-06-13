@@ -1753,6 +1753,33 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /**
+     * Per-texture variant of {@link #forGuiBewlrOutline} for BEWLRs whose visual is a single shared
+     * model painted by per-variant alpha-discarded textures (Ice &amp; Fire troll weapons). Binds the
+     * given texture instead of white.png so {@code RENDERTYPE_OUTLINE_SHADER} alpha-discards against
+     * its texels — the GUI halo then traces just that variant's silhouette instead of the full shared
+     * model geometry. Cached per texture; same COLOR_WRITE / LEQUAL state as the white.png variant.
+     */
+    private static final Map<ResourceLocation, RenderType> GUI_BEWLR_OUTLINE_TEXTURED = new ConcurrentHashMap<>();
+    public static RenderType forGuiBewlrOutlineTextured(ResourceLocation texture) {
+        RenderType rt = GUI_BEWLR_OUTLINE_TEXTURED.computeIfAbsent(texture, tex -> RenderType.create(
+                MOD_ID + ":gui_bewlr_outline_tex",
+                DefaultVertexFormat.POSITION_TEX_COLOR,
+                VertexFormat.Mode.QUADS,
+                1536, false, false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(RENDERTYPE_OUTLINE_SHADER)
+                        .setTextureState(new TextureStateShard(tex, false, false))
+                        .setCullState(NO_CULL)
+                        .setDepthTestState(LEQUAL_DEPTH_TEST)
+                        .setWriteMaskState(COLOR_WRITE)
+                        .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                        .setOutputState(MAIN_TARGET)
+                        .createCompositeState(false)));
+        registerLiveFixedBuffer(rt);
+        return rt;
+    }
+
+    /**
      * VertexConsumer wrapper for the shader-pack forward outline path. Underlying buffer is
      * POSITION_COLOR only; entity models call vertex().color().uv().overlayCoords().uv2().normal().endVertex().
      * We forward position + color + endVertex, override the color with a fixed RGBA (outline color),
@@ -2663,6 +2690,18 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final Map<String, ResourceLocation> BEWLR_OUTLINE_TEXTURES = new ConcurrentHashMap<>();
 
     /**
+     * Per-stack override resolver for the BEWLR outline texture. Key = item class FQN, value = a
+     * function from the stack to its outline texture (or null to fall through). Takes priority over
+     * the static {@link #BEWLR_OUTLINE_TEXTURES} map. Needed when one item class renders many visual
+     * variants from a single shared model with per-variant textures (Ice &amp; Fire troll weapons:
+     * one {@code TrollWeaponItem} class, one {@code TrollWeaponModel}, a different texture per weapon).
+     * The static map can't tell those apart, so without per-stack resolution every variant's outline
+     * traces the full shared model geometry and looks identical. Returning the variant's own texture
+     * makes the outline shader alpha-discard against its texels, tracing just that weapon's silhouette.
+     */
+    public static final Map<String, Function<ItemStack, ResourceLocation>> BEWLR_OUTLINE_TEXTURE_RESOLVERS = new ConcurrentHashMap<>();
+
+    /**
      * Stencil-based colored outline for BEWLR (block-entity-without-level-renderer) items whose
      * geometry is a single combined model with per-variant texture (e.g. Ice & Fire troll weapons,
      * death worm gauntlet). Unlike doModelOutline, scales around the pose origin without any
@@ -2942,8 +2981,25 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // bug), and forGuiItemOutline's BLOCKS-atlas alpha mask doesn't apply to their own textures.
         // Route them through forGuiBewlrOutline (solid white.png glow fill) + one scale-from-center
         // pass instead.
-        boolean isBewlr = model != null && model.isCustomRenderer();
-        RenderType outlineRT = isBewlr ? forGuiBewlrOutline() : forGuiItemOutline();
+        // Some BEWLRs (IaF tide trident) report isCustomRenderer()==true yet render a FLAT
+        // inventory sprite in GUI (their renderByItem swaps to a separate flat item for
+        // GUI/FIXED/GROUND/NONE). The white-fill BEWLR halo would fill the whole slot; route them
+        // through the flat sprite path so the blocks-atlas alpha mask traces the icon silhouette.
+        // Same items already flagged FLAT_ON_GROUND_ITEMS for the world path's GROUND/FIXED swap.
+        boolean flatGuiSwap = FLAT_ON_GROUND_ITEMS.contains(stack.getItem().getClass().getName());
+        boolean isBewlr = model != null && model.isCustomRenderer() && !flatGuiSwap;
+        RenderType outlineRT;
+        if (isBewlr) {
+            // Per-variant BEWLRs (IaF troll weapons: one model, per-weapon texture) supply a texture
+            // via the resolver so the halo alpha-discards to that weapon's silhouette instead of the
+            // full shared geometry. Others keep the solid white.png fill.
+            Function<ItemStack, ResourceLocation> resolver =
+                    BEWLR_OUTLINE_TEXTURE_RESOLVERS.get(stack.getItem().getClass().getName());
+            ResourceLocation bewlrTex = resolver != null ? resolver.apply(stack) : null;
+            outlineRT = bewlrTex != null ? forGuiBewlrOutlineTextured(bewlrTex) : forGuiBewlrOutline();
+        } else {
+            outlineRT = forGuiItemOutline();
+        }
         MultiBufferSource wrapped = rt -> new ColorOverrideConsumer(
                 buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
 
@@ -3508,8 +3564,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         ResourceLocation outlineTex;
         if (customRenderer) {
             outlineTex = ResourceLocation.withDefaultNamespace("textures/misc/white.png");
-            ResourceLocation override = BEWLR_OUTLINE_TEXTURES.get(stack.getItem().getClass().getName());
+            String itemClass = stack.getItem().getClass().getName();
+            ResourceLocation override = BEWLR_OUTLINE_TEXTURES.get(itemClass);
             if (override != null) outlineTex = override;
+            Function<ItemStack, ResourceLocation> resolver = BEWLR_OUTLINE_TEXTURE_RESOLVERS.get(itemClass);
+            if (resolver != null) {
+                ResourceLocation perStack = resolver.apply(stack);
+                if (perStack != null) outlineTex = perStack;
+            }
         } else {
             outlineTex = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
         }

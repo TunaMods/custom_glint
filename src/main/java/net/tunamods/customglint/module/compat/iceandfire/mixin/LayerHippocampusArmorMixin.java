@@ -13,6 +13,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -39,15 +40,15 @@ import java.util.List;
  * StartTracking listener — IaF's SimpleContainer doesn't sync to clients on its own).
  */
 @Pseudo
-@Mixin(targets = "com.github.alexthe666.iceandfire.client.render.entity.RenderHippocampus$LayerHippocampusSaddle", remap = false)
+@Mixin(targets = "com.iafenvoy.iceandfire.render.entity.HippocampusEntityRenderer$LayerHippocampusSaddle", remap = false)
 public class LayerHippocampusArmorMixin {
 
     private static final ResourceLocation CG_TEX_IRON =
-            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippocampus/armor_iron.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippocampus/armor_iron.png");
     private static final ResourceLocation CG_TEX_GOLD =
-            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippocampus/armor_gold.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippocampus/armor_gold.png");
     private static final ResourceLocation CG_TEX_DIAMOND =
-            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/models/hippocampus/armor_diamond.png");
+            ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippocampus/armor_diamond.png");
 
     private static volatile Method CG_GET_PARENT_MODEL;
     private static volatile Method CG_GET_ARMOR;
@@ -77,7 +78,7 @@ public class LayerHippocampusArmorMixin {
         try {
             Method m = CG_GET_ARMOR;
             if (m == null) {
-                m = entity.getClass().getMethod("getArmor");
+                m = entity.getClass().getMethod("getArmorValue");
                 CG_GET_ARMOR = m;
             }
             return (int) m.invoke(entity);
@@ -86,7 +87,7 @@ public class LayerHippocampusArmorMixin {
         }
     }
 
-    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityHippocampus;FFFFFF)V",
+    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/HippocampusEntity;FFFFFF)V",
             at = @At("RETURN"), require = 0)
     private void cg_apply(PoseStack pose, MultiBufferSource buffer, int light,
             @Coerce LivingEntity entity, float a, float b, float c, float d, float e, float f,
@@ -110,16 +111,21 @@ public class LayerHippocampusArmorMixin {
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
 
-        // ── Stencil mask pass (see LayerDragonArmorMixin for rationale) ─────
-        RenderType maskType = CustomGlintRenderer.forMountArmorStencilMask(tex);
-        model.renderToBuffer(pose, buffer.getBuffer(maskType), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-        if (buffer instanceof MultiBufferSource.BufferSource bs0) bs0.endBatch(maskType);
+        // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
+        // forArmorGlint — the same fix that LayerDragonArmorMixin uses. Hippocampus armor reuses the
+        // body model at the SAME depth, so the EQUAL-depth body glint drew over the armor and the
+        // stencil mask never pushed it off (the armor glint then read as covering the whole entity).
+        // armorCutoutNoCull's polygon offset nudges the armor in front of the body so the body glint
+        // is depth-occluded there, and forArmorGlint (EQUAL + the matching offset, masked by the
+        // armor texture's own alpha cutout) lands only on this armor's opaque texels. Routed through
+        // the unwrapped buffer so the wrapper can't re-fan the body glint onto the armor.
+        MultiBufferSource flush = EntityGlintRender.unwrap(buffer);
+        model.renderToBuffer(pose, flush.getBuffer(RenderType.armorCutoutNoCull(tex)),
+                light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
 
-        // ── Glint pass (stencil EQUAL 0x80) ─────────────────────────────────
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
-        List<RenderType> glintTypes = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
@@ -129,8 +135,8 @@ public class LayerHippocampusArmorMixin {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, li, buf, i);
-                    if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
+                    if (rt != null) list.add(flush.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
@@ -139,8 +145,8 @@ public class LayerHippocampusArmorMixin {
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * aa;
                 buf[2] = ( color        & 0xFF) / 255.0f * aa;
                 buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, li, buf, 0);
-                if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
+                RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
+                if (rt != null) list.add(flush.getBuffer(rt));
             }
         }
         if (!list.isEmpty()) {
@@ -148,16 +154,13 @@ public class LayerHippocampusArmorMixin {
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
-        if (buffer instanceof MultiBufferSource.BufferSource bs2) {
-            for (RenderType rt : glintTypes) bs2.endBatch(rt);
-        }
 
         if (CustomGlint.isGlowing(stack)) {
             // Body depth pre-fill so doModelOutline's LEQUAL test is occluded by the mob's full
             // silhouette regardless of body texture alpha (see LayerDragonArmorMixin).
             RenderType depthFill = CustomGlintRenderer.forBodyDepthFill(tex);
-            model.renderToBuffer(pose, buffer.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-            if (buffer instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
+            model.renderToBuffer(pose, flush.getBuffer(depthFill), light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+            if (flush instanceof MultiBufferSource.BufferSource bs3) bs3.endBatch(depthFill);
 
             // slot=null: AABB-centroid scale (see LayerDragonArmorMixin for rationale).
             // Stack overload (not Data) so glowColors NBT drives the outline color when set.
