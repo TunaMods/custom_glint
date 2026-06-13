@@ -156,16 +156,125 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
-// Example configuration to allow publishing using the maven-publish plugin
+// --------------------------------------------------------------------------------------------
+// Two-jar split: api jar (consumed via jarJar) + full jar (Modrinth standalone download).
+//
+// apiJar packages only common/** + the core mixin config + AT + glint textures + an api-only
+// neoforge.mods.toml. This is what downstream mods bundle via jarJar — no wand, no tab, no
+// recipes, no compat mixins.
+//
+// jar (the full standalone) excludes the api content (so api classes only ever exist in one
+// place at runtime — inside the nested api jar), swaps in a full-only neoforge.mods.toml, and
+// self-bundles the api jar under META-INF/jarjar/ with a generated metadata.json. A player who
+// installs only the full jar still gets the api loaded.
+//
+// No reobf: NeoForge 1.21.1 runs on official Mojang mappings, so there is no SRG step and no
+// refmap to stage (Mixin treats the absent refmap as identity, which is correct under Mojmap).
+// --------------------------------------------------------------------------------------------
+
+def apiJarName = "custom-glint-api-${mod_version}.jar"
+def modMetadataDir = layout.buildDirectory.dir("generated/sources/modMetadata/META-INF")
+
+def apiJarTask = tasks.register('apiJar', Jar) {
+    archiveBaseName = 'custom-glint-api'
+    archiveClassifier = ''
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn 'classes', 'processResources', generateModMetadata
+
+    from(sourceSets.main.output) {
+        include 'net/tunamods/customglint/common/**'
+        include 'META-INF/accesstransformer.cfg'
+        include 'custom_glint.mixins.json'
+        include 'assets/customglint/textures/glint/**'
+        include 'customglint.png'
+        include 'pack.mcmeta'
+    }
+
+    // api-only metadata, renamed into place
+    from(modMetadataDir) {
+        include 'neoforge.api.mods.toml'
+        into 'META-INF'
+        rename '.+', 'neoforge.mods.toml'
+    }
+}
+
+// Generate the jarjar metadata.json that FML reads to register the nested api jar.
+// Config-cache safe: doLast touches only captured locals + the output file, never `project`.
+def generateApiJarJarMetadata = tasks.register('generateApiJarJarMetadata') {
+    def outFile = layout.buildDirectory.file('jarjar-meta/metadata.json')
+    outputs.file outFile
+    def versionStr = mod_version.toString()
+    def groupStr = mod_group_id.toString()
+    def nestedName = apiJarName
+    doLast {
+        def f = outFile.get().asFile
+        f.parentFile.mkdirs()
+        f.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([
+                jars: [[
+                        identifier  : [group: groupStr, artifact: 'custom-glint-api'],
+                        version     : [range: "[${versionStr},2.0)".toString(), artifactVersion: versionStr],
+                        path        : "META-INF/jarjar/${nestedName}".toString(),
+                        isObfuscated: false
+                ]]
+        ]))
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    dependsOn generateModMetadata
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // Api content lives inside the nested api jar only — drop it from the full jar so classes
+    // aren't loaded twice when a downstream mod's bundled jarJar copy also resolves.
+    exclude 'net/tunamods/customglint/common/**'
+    exclude 'META-INF/accesstransformer.cfg'
+    exclude 'custom_glint.mixins.json'
+    exclude 'assets/customglint/textures/glint/**'
+    // The dev neoforge.mods.toml declares both mods + all mixins; the full jar uses its own.
+    exclude 'META-INF/neoforge.mods.toml'
+    exclude 'META-INF/neoforge.api.mods.toml'
+    exclude 'META-INF/neoforge.full.mods.toml'
+    // Stale Forge-format metadata that NeoForge ignores — keep it out of the shipped jar.
+    exclude 'META-INF/mods.toml'
+    exclude 'META-INF/mods.api.toml'
+    exclude 'META-INF/mods.full.toml'
+    exclude 'META-INF/MANIFEST.MF'
+
+    // full-only metadata, renamed into place
+    from(modMetadataDir) {
+        include 'neoforge.full.mods.toml'
+        into 'META-INF'
+        rename '.+', 'neoforge.mods.toml'
+    }
+
+    // nest the api jar + its jarjar metadata
+    from(apiJarTask.flatMap { it.archiveFile }) {
+        into 'META-INF/jarjar'
+        rename '.+', apiJarName
+    }
+    from(generateApiJarJarMetadata) {
+        into 'META-INF/jarjar'
+    }
+}
+
+// Publishing: the full standalone jar plus the api jar embedders bundle via jarJar.
+// The api jar goes to the in-repo raw maven (mcmodsrepo) that downstream mods point jarJar at.
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
-            from components.java
+            artifactId = 'custom_glint'
+            artifact jar
+        }
+        register('mavenJavaApi', MavenPublication) {
+            artifactId = 'custom-glint-api'
+            artifact apiJar
         }
     }
     repositories {
         maven {
-            url "file://${project.projectDir}/repo"
+            // file().toURI() yields a valid file:/// URI on Windows; the bare "file://${projectDir}"
+            // form mixes back/forward slashes and fails under Gradle's configuration cache.
+            url = file("mcmodsrepo").toURI()
         }
     }
 }

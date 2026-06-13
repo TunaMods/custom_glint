@@ -1,0 +1,30 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
+
+# --- Core rendering-pipeline mixins (shipped in the api jar) ---
+[[mixins]]
+config="custom_glint.mixins.json"
+
+# --- API mod ---
+[[mods]]
+modId="customglint_api"
+version="${mod_version}"
+displayName="Custom Glints API"
+logoFile="customglint.png"
+authors="${mod_authors}"
+description='''The rendering pipeline and API for Custom Glints. Other mods bundle this jar to give their own items animated, color-customizable enchantment glints.'''
+
+[[dependencies.customglint_api]]
+    modId="neoforge"
+    type="required"
+    versionRange="${neo_version_range}"
+    ordering="NONE"
+    side="BOTH"
+[[dependencies.customglint_api]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
