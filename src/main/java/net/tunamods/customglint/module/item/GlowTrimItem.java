@@ -13,6 +13,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.TooltipDisplay;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
@@ -80,7 +81,7 @@ public class GlowTrimItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, TooltipDisplay pDisplay, Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (colors.length == 0) {
             pTooltipComponents.accept(Component.literal("No color — craft with a dye to add one"));

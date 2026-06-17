@@ -18,6 +18,7 @@ import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.TextureTransform;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Util;
 import net.neoforged.neoforge.client.stencil.StencilOperation;
 import net.neoforged.neoforge.client.stencil.StencilPerFaceTest;
 import net.neoforged.neoforge.client.stencil.StencilTest;
@@ -32,8 +33,7 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
  * {@link CustomGlintRenderer} (which is mid-port) so the building blocks compile and can be reused
  * by every {@code forXxx} RenderType factory once the body rewrite lands.
  *
- * <p>The whole approach is documented and source-verified in {@code .claude/context/26/09-
- * renderer-api-verified.md}. In short, the 1.21.1 {@code RenderStateShard}/{@code CompositeState}
+ * <p>The 1.21.1 {@code RenderStateShard}/{@code CompositeState}
  * model is gone; GPU state is now an immutable {@link RenderPipeline} wrapped by a {@link RenderSetup}
  * and finalized with {@link RenderType#create(String, RenderSetup)}. Per-RenderType setup runnables
  * (the old {@code setShaderColor}/{@code setTextureMatrix} hooks) no longer exist — color rides the
@@ -52,7 +52,7 @@ public final class GlintPipelines {
 
     /** Custom outline shader (vanilla core/rendertype_outline minus the ColorModulator dependency, so
      *  the glow ring draws opaque in the per-vertex colour on the MAIN target). Files at
-     *  {@code assets/customglint/shaders/core/outline_color.{vsh,fsh}}. See 26/13-outlines.md. */
+     *  {@code assets/customglint/shaders/core/outline_color.{vsh,fsh}}. */
     public static final Identifier OUTLINE_COLOR_SHADER =
             Identifier.fromNamespaceAndPath(MOD_ID, "core/outline_color");
 
@@ -151,7 +151,7 @@ public final class GlintPipelines {
      */
     public static Matrix4f animationMatrix(double speed, float patternScale, int colorIdx, int colorCount) {
         float phase = (float) colorIdx / Math.max(1, colorCount);
-        long t = (long) (net.minecraft.util.Util.getMillis() * 8.0 * speed);
+        long t = (long) (Util.getMillis() * 8.0 * speed);
         float f  = (float) (t % 110000L) / 110000.0F + phase;
         float f1 = (float) (t % 30000L)  /  30000.0F;
         Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
@@ -219,7 +219,7 @@ public final class GlintPipelines {
     public static Matrix4f itemAnimationMatrix(double speed, float scaleU, float scaleV,
                                                float patternScale, int colorIdx, int colorCount) {
         float phase = (float) colorIdx / Math.max(1, colorCount);
-        long t = (long) (net.minecraft.util.Util.getMillis() * 8.0 * speed);
+        long t = (long) (Util.getMillis() * 8.0 * speed);
         float f  = (float) (t % 110000L) / 110000.0F + phase;
         float f1 = (float) (t % 30000L)  /  30000.0F;
         Matrix4f m = new Matrix4f().translation(-f, 0.0F, 0.0F);
@@ -308,7 +308,7 @@ public final class GlintPipelines {
                 .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/outline_test_" + slot))
                 .withVertexShader(OUTLINE_COLOR_SHADER)
                 .withFragmentShader(OUTLINE_COLOR_SHADER)
-                // TEST depth variants TRIED (occlusion vs the dilated ring band — see 26/13-outlines.md):
+                // TEST depth variants TRIED (occlusion vs the dilated ring band):
                 //   - ALWAYS_PASS            → never drops, but glows THROUGH walls (no occlusion). [bad]
                 //   - LEQUAL, no bias        → occludes, but band z-fights nearby background (ground at
                 //                              the feet, terrain behind) and drops at certain angles. [bad]
@@ -354,7 +354,7 @@ public final class GlintPipelines {
                 //     corrupting the render. So the RenderFrameEvent.Pre clear was already working and stale
                 //     stencil is RULED OUT. This config is kept (faithful 1.21.1). With depth bias, depth-
                 //     write, entry-point timing, and stencil-clear all ruled out, the band-depth stencil ring
-                //     is the confirmed dead end → parallel framegraph outline target (see 26/13-outlines.md).
+                //     is the confirmed dead end → parallel framegraph outline target.
                 .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, 0.0f))
                 .withStencilTest(new StencilTest(
                         new StencilPerFaceTest(StencilOperation.KEEP, StencilOperation.KEEP,
@@ -405,7 +405,7 @@ public final class GlintPipelines {
     // ── Isolated glow-outline pipeline (parallel framegraph outline target) ──────────────────────
     //
     // Replaces the dead-end per-pixel-depth stencil band ring for the entity body glow (see the
-    // outlineTestPipe TRIED block + 26/13-outlines.md). Two stages:
+    // outlineTestPipe TRIED block). Two stages:
     //  1. GLOW_MASK_PIPE — ONE render of each glowing model into our own isolated half-res mask target,
     //     depth test ALWAYS_PASS (marks the whole outer shape). core/glow_silhouette decides occlusion
     //     per-fragment by sampling the full-res scene depth (DepthSampler) and encodes shape + visibility
@@ -483,7 +483,7 @@ public final class GlintPipelines {
     // (POSITION_COLOR) → gbuffers_basic mapping, pushed behind the item by a positive depth bias.
     // The old raw-GL front-face cull / glDepthRange / normal-push nuances have no declarative
     // equivalent and are collapsed here — this path is shader-pack-only and needs in-game tuning
-    // (Iris/Sodium interplay). See 26/09-renderer-api-verified.md.
+    // (Iris/Sodium interplay).
 
     /** Flat-colored forward outline (POSITION_COLOR), additive, pushed back, back-face culled. */
     public static final RenderPipeline FORWARD_OUTLINE = RenderPipelines.DEBUG_QUADS.toBuilder()

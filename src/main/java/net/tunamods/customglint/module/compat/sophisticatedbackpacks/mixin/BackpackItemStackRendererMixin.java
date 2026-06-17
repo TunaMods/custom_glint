@@ -16,8 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@code ItemRenderer.getModel}/{@code renderModelLists}. Items now render through
  * {@code ItemStackRenderState}/{@code ItemModel}/special model renderers, and SB's renderer for 26.1
  * (whatever its new shape) must be re-hooked against that system — the old
- * {@code getModel(...)} + {@code renderModelLists(...)} re-render path is gone. See
- * {@code .claude/context/26/06-status.md}; 1.21.1 logic is in git history (working-1.21.1 branch).
+ * {@code getModel(...)} + {@code renderModelLists(...)} re-render path is gone. The 1.21.1 logic is in
+ * git history (working-1.21.1 branch).
  */
 @Pseudo
 @Mixin(targets = "net.p3pp3rf1y.sophisticatedbackpacks.client.render.BackpackItemStackRenderer", remap = false)

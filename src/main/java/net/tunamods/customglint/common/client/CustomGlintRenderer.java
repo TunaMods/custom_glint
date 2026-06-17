@@ -13,7 +13,10 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import com.mojang.logging.LogUtils;
+import net.minecraft.util.ARGB;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
@@ -85,7 +88,7 @@ import net.tunamods.customglint.common.CustomGlint.Layer;
  * RenderSetup / StencilTest) instead of the deleted {@code RenderStateShard}/{@code CompositeState}
  * model. Per-RenderType color rides the vertex color (callers inject it via a color-overriding
  * VertexConsumer); animation rides a {@link net.minecraft.client.renderer.rendertype.TextureTransform}
- * supplier. See {@code .claude/context/26/09-renderer-api-verified.md}.
+ * supplier.
  */
 public final class CustomGlintRenderer {
 
@@ -118,8 +121,7 @@ public final class CustomGlintRenderer {
      *  stitched block atlas) is gone — readback now goes through the {@code GpuTexture}/command-encoder
      *  model with no drop-in. This is a shader-pack-only enhancement (colored outline tinting under
      *  Iris); the core stencil outline path does not depend on it. Degraded to return the plain block
-     *  atlas until the GpuTexture readback is ported and tested in-game. See
-     *  {@code .claude/context/26/09-renderer-api-verified.md}. */
+     *  atlas until the GpuTexture readback is ported and tested in-game. */
     public static Identifier getBlocksAlphaMask() {
         return TextureAtlas.LOCATION_BLOCKS;
     }
@@ -255,7 +257,7 @@ public final class CustomGlintRenderer {
 
     // ── Isolated glow-outline (silhouette target + composite) ────────────────────────────────────
     // The 26.1 replacement for the entity-body stencil ring (confirmed dead end — see
-    // GlintPipelines.outlineTestPipe TRIED block + 26/13-outlines.md). Orchestrated by
+    // GlintPipelines.outlineTestPipe TRIED block). Orchestrated by
     // EntityGlintRender.drainBodyOutlines at RenderLevelStageEvent.AfterOpaqueFeatures.
 
     private static final Map<Identifier, RenderType> BY_GLOW_MASK = new HashMap<>();
@@ -407,7 +409,7 @@ public final class CustomGlintRenderer {
             bgMinZ = Math.min(bgMinZ, z - rad); bgMaxZ = Math.max(bgMaxZ, z + rad);
         }
         bgBoxes.add(new float[]{x - rad, y - rad, z - rad, x + rad, y + rad, z + rad});
-        return com.mojang.blaze3d.vertex.VertexMultiConsumer.create(bodyBuffer, mask);
+        return VertexMultiConsumer.create(bodyBuffer, mask);
     }
 
     public static boolean hasBodyGlow() { return bodyGlowPresent; }
@@ -467,7 +469,7 @@ public final class CustomGlintRenderer {
      *  forced-colour silhouette into the combined glow mask; the caller passes the white.png mask RT for a
      *  full-shape ring (the 1.21.1 BEWLR approach). All parts of one item submit share {@code glowKey} (one
      *  id per submit token) so they compose as ONE outline instead of ringing each other into boxes. */
-    public static void accumulatePartGlowMask(PoseStack pose, net.minecraft.client.model.geom.ModelPart part,
+    public static void accumulatePartGlowMask(PoseStack pose, ModelPart part,
             RenderType maskRT, int packedLight, int color, int glowKey) {
         if (part == null || maskRT == null) return;
         int r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
@@ -609,7 +611,7 @@ public final class CustomGlintRenderer {
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
         Identifier loc = Identifier.fromNamespaceAndPath(MOD_ID,"glint/" + safePath);
         // 26.1: DynamicTexture needs a label supplier; wrap/filter (REPEAT + NEAREST) is no longer set
-        // on the texture — GlintPipelines.glintSampler() supplies it per binding. See 26/09.
+        // on the texture — GlintPipelines.glintSampler() supplies it per binding.
         DynamicTexture dt = new DynamicTexture(() -> MOD_ID + ":glint/" + safePath, gray);
         mc.getTextureManager().register(loc, dt);
         return loc;
@@ -659,8 +661,7 @@ public final class CustomGlintRenderer {
     }
 
     // Armor glint matches armor_cutout_no_cull's VIEW_OFFSET_Z layering (EQUAL depth, D-ε) so the
-    // glint depth-test lands exactly on the armor depth. See the long depth-test history in 26/09
-    // and the project_armor_glint_bleed_fix memory.
+    // glint depth-test lands exactly on the armor depth. See the project_armor_glint_bleed_fix memory.
     public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
         Identifier gray = getTexture(layer.design());
@@ -978,7 +979,7 @@ public final class CustomGlintRenderer {
 
     /** Slot-based TEST RT, elytra-cape variant. NOTE: the old front-face cull (raw glCullFace(FRONT))
      *  has no declarative equivalent in the immutable pipeline; using the standard TEST pipe for now —
-     *  revisit the cape inner-face look in-game (26/09). */
+     *  revisit the cape inner-face look in-game. */
     public static RenderType forOutlineStencilTestCulled(int v, Identifier texture) {
         return outlineSlotRT("glint_outline_test_culled_v" + v + "_" + texture.toString().hashCode(),
                 GlintPipelines.outlineTestPipe(v), texture, true);
@@ -1033,7 +1034,7 @@ public final class CustomGlintRenderer {
      * from {@link #clearStencilIfPending} there silently failed (caught below) → the main stencil was
      * never cleared → stale slot values accumulated frame-to-frame and the {@code != slot} TEST read
      * garbage → the outline "appeared only from certain angles". Fix: call this from
-     * {@code RenderFrameEvent.Pre} (outside any pass) once per frame instead. See 26/13-outlines.md.
+     * {@code RenderFrameEvent.Pre} (outside any pass) once per frame instead.
      * {@code clearStencilTexture} touches only the stencil aspect, and vanilla's per-frame depth clear
      * leaves stencil alone, so a 0 written here survives until our WRITE pass.
      */
@@ -1632,7 +1633,7 @@ public final class CustomGlintRenderer {
                     .translate(cx, cy, cz)
                     .scale(outlineScale, outlineScale, outlineScale)
                     .translate(-cx, -cy, -cz));
-            model.renderToBuffer(poseStack, outlineBuf, net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.ARGB.colorFromFloat(1.0f, oR, oG, oB));
+            model.renderToBuffer(poseStack, outlineBuf, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, ARGB.colorFromFloat(1.0f, oR, oG, oB));
             if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
             poseStack.popPose();
             return;
@@ -1779,7 +1780,7 @@ public final class CustomGlintRenderer {
             poseStack.scale(outlineScale, outlineScale, outlineScale);
             poseStack.translate(0.0f, 0.9f, 0.0f);
         }
-        model.renderToBuffer(poseStack, buffer.getBuffer(testType), net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.ARGB.colorFromFloat(1.0f, oR, oG, oB));
+        model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, ARGB.colorFromFloat(1.0f, oR, oG, oB));
         flushRT(buffer, testType);
         poseStack.popPose();
     }
@@ -1869,8 +1870,8 @@ public final class CustomGlintRenderer {
             } else {
                 poseStack.scale(outlineScale, outlineScale, outlineScale);
             }
-            e.model.renderToBuffer(poseStack, buffer.getBuffer(testType), net.minecraft.util.LightCoordsUtil.FULL_BRIGHT,
-                    OverlayTexture.NO_OVERLAY, net.minecraft.util.ARGB.colorFromFloat(1.0f, oR, oG, oB));
+            e.model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightCoordsUtil.FULL_BRIGHT,
+                    OverlayTexture.NO_OVERLAY, ARGB.colorFromFloat(1.0f, oR, oG, oB));
             flushRT(buffer, testType);
             poseStack.popPose();
         }
@@ -1998,7 +1999,7 @@ public final class CustomGlintRenderer {
                             .translate(cx, cy, cz)
                             .scale(1.06f, 1.06f, 1.06f)
                             .translate(-cx, -cy, -cz));
-                    model.renderToBuffer(poseStack, outlineBuf, net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.ARGB.colorFromFloat(1.0f, oR, oG, oB));
+                    model.renderToBuffer(poseStack, outlineBuf, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, ARGB.colorFromFloat(1.0f, oR, oG, oB));
                     if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
                     poseStack.popPose();
                 } else {
@@ -2007,7 +2008,7 @@ public final class CustomGlintRenderer {
                             buffer.getBuffer(outlineRT), rByte, gByte, bByte, 255);
                     poseStack.pushPose();
                     poseStack.scale(1.06f, 1.06f, 1.06f);
-                    model.renderToBuffer(poseStack, outlineBuf, net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.ARGB.colorFromFloat(1.0f, oR, oG, oB));
+                    model.renderToBuffer(poseStack, outlineBuf, LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, ARGB.colorFromFloat(1.0f, oR, oG, oB));
                     if (buffer instanceof MultiBufferSource.BufferSource bs) bs.endBatch(outlineRT);
                     poseStack.popPose();
                 }
@@ -2035,7 +2036,7 @@ public final class CustomGlintRenderer {
             // the old RenderSystem.setShaderColor global is gone.
             poseStack.pushPose();
             poseStack.scale(1.06f, 1.06f, 1.06f);
-            model.renderToBuffer(poseStack, buffer.getBuffer(testType), net.minecraft.util.LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, net.minecraft.util.ARGB.colorFromFloat(1.0f, oR, oG, oB));
+            model.renderToBuffer(poseStack, buffer.getBuffer(testType), LightCoordsUtil.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, ARGB.colorFromFloat(1.0f, oR, oG, oB));
             flushRT(buffer, testType);
             poseStack.popPose();
             // Trailing full drain — see doItemOutline for the rationale (atomic per-item stencil
@@ -2187,8 +2188,7 @@ public final class CustomGlintRenderer {
     // ItemStack.isCustomRenderer()/isGui3d(), Minecraft.getItemRenderer(), and the
     // CompositeState/TextureStateShard accessors that backed textureOf). The 1.21.5 item-model rework
     // replaced all of that with ItemModel / ItemStackRenderState. Re-tracing the item silhouette has
-    // to move onto that system — a focused pass that needs in-game iteration (see
-    // .claude/context/26/06-status.md bucket 3, plus 02/09). The full original implementation is
+    // to move onto that system — a focused pass that needs in-game iteration. The full original implementation is
     // preserved in git history (working-1.21.1 branch). The detailed design notes above are kept as
     // reference for that redesign.
     // ──────────────────────────────────────────────────────────────────────────────────────────

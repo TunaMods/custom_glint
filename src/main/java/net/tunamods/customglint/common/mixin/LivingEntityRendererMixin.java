@@ -59,7 +59,7 @@ public class LivingEntityRendererMixin {
         // getTextureLocation is in hand). ModelFeatureRendererMixin reads it back at the body draw and
         // tees the silhouette IN-PHASE on the already-posed model — exactly how vanilla's own glowing-
         // entity outline works (ModelFeatureRenderer.renderModel re-renders into OutlineBufferSource).
-        // The mask + occluded composite still runs once in drainBodyOutlines. See 26/13-outlines.md.
+        // The mask + occluded composite still runs once in drainBodyOutlines.
         if (r.glowing || r.glowColors.length > 0) {
             Identifier texture = ((LivingEntityRenderer) (Object) this).getTextureLocation(state);
             if (texture != null) {

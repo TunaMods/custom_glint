@@ -19,6 +19,7 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -106,14 +107,13 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private String selectPattern(LootContext context) {
-        // Get biome category to weight pattern selection
+        // Weight pattern selection by the biome the chest sits in.
         var origin = context.getParameter(LootContextParams.ORIGIN);
         var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
         String biomeName = biome.unwrapKey()
             .map(key -> key.identifier().getPath())
             .orElse("plains");
 
-        // Category-based selection bonus
         float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
         float endBonus = isEndBiome(biomeName) ? 3.0f : 1.0f;
         float oceanBonus = isOceanBiome(biomeName) ? 3.0f : 1.0f;
@@ -124,61 +124,41 @@ public class GlintTrimLootModifier extends LootModifier {
         float swampBonus = isSwampBiome(biomeName) ? 3.0f : 1.0f;
         float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? 3.0f : 1.0f;
 
+        // Pre-compute each pattern's biome-adjusted weight, then do a single weighted pick over them.
+        List<String> patterns = GlintTrimItem.PATTERNS;
+        float[] weights = new float[patterns.size()];
         float totalWeight = 0.0f;
-        for (String pattern : GlintTrimItem.PATTERNS) {
-            String cleanName = pattern.equals("vanilla") ? "vanilla" : pattern;
-            float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
-
-            // Apply category bonuses
-            if (netherBonus > 1.0f && (cleanName.equals("fire") || cleanName.equals("ember") || cleanName.equals("plasma") || cleanName.equals("oil") || cleanName.equals("smoke")))
+        for (int i = 0; i < patterns.size(); i++) {
+            String name = patterns.get(i);
+            float weight = PATTERN_WEIGHTS.getOrDefault(name, 1.0f);
+            if (netherBonus > 1.0f && (name.equals("fire") || name.equals("ember") || name.equals("plasma") || name.equals("oil") || name.equals("smoke")))
                 weight *= netherBonus;
-            else if (endBonus > 1.0f && (cleanName.equals("glitch") || cleanName.equals("matrix") || cleanName.equals("static") || cleanName.equals("vanilla") || cleanName.equals("arcs") || cleanName.equals("pulse")))
+            else if (endBonus > 1.0f && (name.equals("glitch") || name.equals("matrix") || name.equals("static") || name.equals("vanilla") || name.equals("arcs") || name.equals("pulse")))
                 weight *= endBonus;
-            else if (oceanBonus > 1.0f && (cleanName.equals("tide") || cleanName.equals("wave") || cleanName.equals("ripple") || cleanName.equals("coral") || cleanName.equals("scales") || cleanName.equals("silk") || cleanName.equals("net")))
+            else if (oceanBonus > 1.0f && (name.equals("tide") || name.equals("wave") || name.equals("ripple") || name.equals("coral") || name.equals("scales") || name.equals("silk") || name.equals("net")))
                 weight *= oceanBonus;
-            else if (desertBonus > 1.0f && (cleanName.equals("dunes") || cleanName.equals("sand") || cleanName.equals("solid") || cleanName.equals("swirl")))
+            else if (desertBonus > 1.0f && (name.equals("dunes") || name.equals("sand") || name.equals("solid") || name.equals("swirl")))
                 weight *= desertBonus;
-            else if (forestBonus > 1.0f && (cleanName.equals("petal") || cleanName.equals("feather") || cleanName.equals("blobs") || cleanName.equals("cascade") || cleanName.equals("debris") || cleanName.equals("mosaic")))
+            else if (forestBonus > 1.0f && (name.equals("petal") || name.equals("feather") || name.equals("blobs") || name.equals("cascade") || name.equals("debris") || name.equals("mosaic")))
                 weight *= forestBonus;
-            else if (mountainBonus > 1.0f && (cleanName.equals("crystal") || cleanName.equals("diamonds") || cleanName.equals("vein") || cleanName.equals("cracks") || cleanName.equals("plate") || cleanName.equals("mesh") || cleanName.equals("grid") || cleanName.equals("tile")))
+            else if (mountainBonus > 1.0f && (name.equals("crystal") || name.equals("diamonds") || name.equals("vein") || name.equals("cracks") || name.equals("plate") || name.equals("mesh") || name.equals("grid") || name.equals("tile")))
                 weight *= mountainBonus;
-            else if (snowBonus > 1.0f && (cleanName.equals("frost") || cleanName.equals("aurora") || cleanName.equals("shimmer")))
+            else if (snowBonus > 1.0f && (name.equals("frost") || name.equals("aurora") || name.equals("shimmer")))
                 weight *= snowBonus;
-            else if (swampBonus > 1.0f && cleanName.equals("weave"))
+            else if (swampBonus > 1.0f && name.equals("weave"))
                 weight *= swampBonus;
-            else if (plainsBonus > 1.0f && (cleanName.equals("stars") || cleanName.equals("lightning") || cleanName.equals("halo") || cleanName.equals("prism") || cleanName.equals("glow") || cleanName.equals("sheen") || cleanName.equals("sparkle")))
+            else if (plainsBonus > 1.0f && (name.equals("stars") || name.equals("lightning") || name.equals("halo") || name.equals("prism") || name.equals("glow") || name.equals("sheen") || name.equals("sparkle")))
                 weight *= plainsBonus;
-
+            weights[i] = weight;
             totalWeight += weight;
         }
 
         float pick = context.getRandom().nextFloat() * totalWeight;
-        for (String pattern : GlintTrimItem.PATTERNS) {
-            String cleanName = pattern.equals("vanilla") ? "vanilla" : pattern;
-            float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
-            if (netherBonus > 1.0f && (cleanName.equals("fire") || cleanName.equals("ember") || cleanName.equals("plasma") || cleanName.equals("oil") || cleanName.equals("smoke")))
-                weight *= netherBonus;
-            else if (endBonus > 1.0f && (cleanName.equals("glitch") || cleanName.equals("matrix") || cleanName.equals("static") || cleanName.equals("vanilla") || cleanName.equals("arcs") || cleanName.equals("pulse")))
-                weight *= endBonus;
-            else if (oceanBonus > 1.0f && (cleanName.equals("tide") || cleanName.equals("wave") || cleanName.equals("ripple") || cleanName.equals("coral") || cleanName.equals("scales") || cleanName.equals("silk") || cleanName.equals("net")))
-                weight *= oceanBonus;
-            else if (desertBonus > 1.0f && (cleanName.equals("dunes") || cleanName.equals("sand") || cleanName.equals("solid") || cleanName.equals("swirl")))
-                weight *= desertBonus;
-            else if (forestBonus > 1.0f && (cleanName.equals("petal") || cleanName.equals("feather") || cleanName.equals("blobs") || cleanName.equals("cascade") || cleanName.equals("debris") || cleanName.equals("mosaic")))
-                weight *= forestBonus;
-            else if (mountainBonus > 1.0f && (cleanName.equals("crystal") || cleanName.equals("diamonds") || cleanName.equals("vein") || cleanName.equals("cracks") || cleanName.equals("plate") || cleanName.equals("mesh") || cleanName.equals("grid") || cleanName.equals("tile")))
-                weight *= mountainBonus;
-            else if (snowBonus > 1.0f && (cleanName.equals("frost") || cleanName.equals("aurora") || cleanName.equals("shimmer")))
-                weight *= snowBonus;
-            else if (swampBonus > 1.0f && cleanName.equals("weave"))
-                weight *= swampBonus;
-            else if (plainsBonus > 1.0f && (cleanName.equals("stars") || cleanName.equals("lightning") || cleanName.equals("halo") || cleanName.equals("prism") || cleanName.equals("glow") || cleanName.equals("sheen") || cleanName.equals("sparkle")))
-                weight *= plainsBonus;
-
-            pick -= weight;
-            if (pick <= 0) return pattern;
+        for (int i = 0; i < patterns.size(); i++) {
+            pick -= weights[i];
+            if (pick <= 0) return patterns.get(i);
         }
-        return GlintTrimItem.PATTERNS.get(context.getRandom().nextInt(GlintTrimItem.PATTERNS.size()));
+        return patterns.get(context.getRandom().nextInt(patterns.size()));
     }
 
     private static boolean isNetherBiome(String biome) {

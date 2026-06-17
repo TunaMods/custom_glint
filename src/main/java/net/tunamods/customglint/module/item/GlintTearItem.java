@@ -7,10 +7,12 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.level.Level;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class GlintTearItem extends Item {
     private final boolean simultaneous;
@@ -31,7 +33,7 @@ public class GlintTearItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, TooltipDisplay pDisplay, Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         if (simultaneous) {
             pTooltipComponents.accept(Component.literal("Craft with any glinted item to set all layers to").withStyle(ChatFormatting.GRAY));
             pTooltipComponents.accept(Component.literal("Simultaneous").withStyle(ChatFormatting.AQUA).append(Component.literal(" mode — all colors shown at once").withStyle(ChatFormatting.GRAY)));

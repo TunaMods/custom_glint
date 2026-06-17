@@ -27,8 +27,8 @@ import java.util.List;
  * displays no longer compile, and JEI 29's display API differs (RecipeHolder/IDisplay changes). The mod's
  * real crafting/smithing recipes still auto-appear in JEI from datapack registration; only the curated
  * paired-example previews are gone. The ingredient-info tooltips below are kept (still valid). Re-adding
- * the example displays needs the JEI 29 display API + {@code Recipe.display()}. See
- * {@code .claude/context/26/04-recipes.md}; the 1.21.1 plugin is in git history (working-1.21.1 branch).
+ * the example displays needs the JEI 29 display API + {@code Recipe.display()}. The 1.21.1 plugin is in
+ * git history (working-1.21.1 branch).
  */
 @JeiPlugin
 public class CustomGlintJeiPlugin implements IModPlugin {

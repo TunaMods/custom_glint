@@ -2,6 +2,7 @@ package net.tunamods.customglint.module.item;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -36,7 +37,7 @@ public class GlintWandItem extends Item {
 
         CompoundTag glintTag = CustomGlint.itemGlintTag(wand);
         if (glintTag.isEmpty()) {
-            if (player instanceof net.minecraft.server.level.ServerPlayer sp)
+            if (player instanceof ServerPlayer sp)
                 sp.sendSystemMessage(Component.literal("Wand has no glint to apply"), true);
             return InteractionResult.FAIL;
         }

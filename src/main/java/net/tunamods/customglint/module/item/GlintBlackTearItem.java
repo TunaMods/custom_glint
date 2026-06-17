@@ -10,11 +10,13 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.level.Level;
 import net.tunamods.customglint.common.entity.EntityGlintEvents;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class GlintBlackTearItem extends Item {
 
@@ -51,7 +53,7 @@ public class GlintBlackTearItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, TooltipDisplay pDisplay, Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         pTooltipComponents.accept(Component.literal("Craft with any glinted item to").withStyle(ChatFormatting.GRAY));
         pTooltipComponents.accept(Component.literal("strip all glint data from it").withStyle(ChatFormatting.GRAY));
         pTooltipComponents.accept(Component.literal("Right-click a mob to clear its glint and glow").withStyle(ChatFormatting.GRAY));

@@ -1,8 +1,9 @@
 package net.tunamods.customglint.module.item;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -16,6 +17,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.CustomModelData;
+import net.minecraft.world.item.component.TooltipDisplay;
+import org.lwjgl.glfw.GLFW;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -69,9 +72,9 @@ public class GlintTrimItem extends Item {
     /** 26.1.2 removed the static {@code Screen.hasShiftDown()}; query the window directly.
      *  Only invoked from {@code appendHoverText} (client-side tooltip rendering). */
     private static boolean cgHasShiftDown() {
-        var window = net.minecraft.client.Minecraft.getInstance().getWindow();
-        return com.mojang.blaze3d.platform.InputConstants.isKeyDown(window, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_SHIFT)
-            || com.mojang.blaze3d.platform.InputConstants.isKeyDown(window, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT);
+        var window = Minecraft.getInstance().getWindow();
+        return InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT)
+            || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     @Nullable
@@ -178,7 +181,7 @@ public class GlintTrimItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, TooltipDisplay pDisplay, Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (isGlowing(pStack)) {
             pTooltipComponents.accept(Component.literal("Glowing — wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));

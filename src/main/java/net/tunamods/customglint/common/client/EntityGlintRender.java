@@ -8,12 +8,15 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.Model;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.entity.LivingEntity;
@@ -153,7 +156,7 @@ public final class EntityGlintRender {
      * {@code tintedColor} (read by {@code customglint:core/glint_color}).
      */
     public static void submitSpecialPartGlint(SubmitNodeCollector collector,
-            net.minecraft.client.model.geom.ModelPart part, PoseStack pose, int light, CustomGlint.Data glint) {
+            ModelPart part, PoseStack pose, int light, CustomGlint.Data glint) {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         CustomGlint.Layer[] gl = glint.layers();
         for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
@@ -181,7 +184,7 @@ public final class EntityGlintRender {
      */
     @SuppressWarnings({"rawtypes", "unchecked"})
     public static void submitSpecialModelGlint(SubmitNodeCollector collector,
-            net.minecraft.client.model.Model model, Object state, PoseStack pose, int light, CustomGlint.Data glint) {
+            Model model, Object state, PoseStack pose, int light, CustomGlint.Data glint) {
         // A shield (and other submitModel special items) fills far more screen than a slim trident, so the
         // default 3D pattern scale (forGlint isItem=false → 1.0) tiles the design too large to cover the
         // model. Multiply the user's patternScale so the design reads — the 26.1 analog of the 1.21.1 shield
@@ -291,11 +294,11 @@ public final class EntityGlintRender {
      * {@link EntityModel}, so there's no setupAnim to re-apply — the quads are self-contained.
      */
     private static final class ItemOutlineJob {
-        final List<net.minecraft.client.resources.model.geometry.BakedQuad> quads;
+        final List<BakedQuad> quads;
         final PoseStack.Pose pose;
         final int light;
         final int color;
-        ItemOutlineJob(List<net.minecraft.client.resources.model.geometry.BakedQuad> quads,
+        ItemOutlineJob(List<BakedQuad> quads,
                        PoseStack.Pose pose, int light, int color) {
             this.quads = quads; this.pose = pose; this.light = light; this.color = color;
         }
@@ -323,7 +326,7 @@ public final class EntityGlintRender {
      */
     @SuppressWarnings("rawtypes")
     private static final class ModelOutlineJob {
-        final net.minecraft.client.model.Model model;
+        final Model model;
         final Object state;
         final Identifier texture;
         final PoseStack.Pose pose;
@@ -332,7 +335,7 @@ public final class EntityGlintRender {
         final Object group;
         final boolean entityBound; // worn equipment on an entity (→ merges into the shared entity ring)
                                    // vs a special-renderer item (→ stays its own ring like dropped items)
-        ModelOutlineJob(net.minecraft.client.model.Model model, Object state, Identifier texture,
+        ModelOutlineJob(Model model, Object state, Identifier texture,
                         PoseStack.Pose pose, int light, int color, Object group, boolean entityBound) {
             this.model = model; this.state = state; this.texture = texture;
             this.pose = pose; this.light = light; this.color = color; this.group = group;
@@ -343,12 +346,12 @@ public final class EntityGlintRender {
     /** One queued model-part glow outline for special-renderer 3D items that submit a single
      *  {@link net.minecraft.client.model.geom.ModelPart} (e.g. trident). White.png silhouette. */
     private static final class PartOutlineJob {
-        final net.minecraft.client.model.geom.ModelPart part;
+        final ModelPart part;
         final PoseStack.Pose pose;
         final int light;
         final int color;
         final Object group;
-        PartOutlineJob(net.minecraft.client.model.geom.ModelPart part, PoseStack.Pose pose, int light,
+        PartOutlineJob(ModelPart part, PoseStack.Pose pose, int light,
                        int color, Object group) {
             this.part = part; this.pose = pose; this.light = light; this.color = color; this.group = group;
         }
@@ -374,7 +377,7 @@ public final class EntityGlintRender {
      * mask alpha-discard follows the real armor shape. No-op when the item neither glows nor has colours.
      */
     @SuppressWarnings("rawtypes")
-    public static void queueArmorOutline(net.minecraft.client.model.Model model, Object state,
+    public static void queueArmorOutline(Model model, Object state,
             PoseStack.Pose pose, Identifier texture, int light, @Nullable CustomGlint.Data glint,
             boolean glowing, int[] glowColors) {
         if (model == null || state == null || texture == null || pose == null) return;
@@ -396,7 +399,7 @@ public final class EntityGlintRender {
      * against — the 1.21.1 BEWLR approach. See {@code SubmitNodeStorageMixin}.
      */
     @SuppressWarnings("rawtypes")
-    public static void queueSpecialModelOutline(net.minecraft.client.model.Model model, Object state,
+    public static void queueSpecialModelOutline(Model model, Object state,
             PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
         if (model == null || state == null || pose == null) return;
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
@@ -408,7 +411,7 @@ public final class EntityGlintRender {
 
     /** {@link net.minecraft.client.model.geom.ModelPart} variant of {@link #queueSpecialModelOutline}
      *  for special items that submit a single part (e.g. trident). White.png silhouette. */
-    public static void queueSpecialPartOutline(net.minecraft.client.model.geom.ModelPart part,
+    public static void queueSpecialPartOutline(ModelPart part,
             PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
         if (part == null || pose == null) return;
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
@@ -432,7 +435,7 @@ public final class EntityGlintRender {
      * in the framegraph main pass). The glow colour resolves like the entity ring: glowColors first,
      * then glint layer 0, else white. No-op when the item neither glows nor has glow colours.
      */
-    public static void queueItemOutline(List<net.minecraft.client.resources.model.geometry.BakedQuad> quads,
+    public static void queueItemOutline(List<BakedQuad> quads,
             PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
         if (quads == null || quads.isEmpty() || pose == null) return;
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
@@ -454,7 +457,7 @@ public final class EntityGlintRender {
      * committed EVERY solid body to the main-target depth — the same fully-committed immediate context
      * 1.21.1's popPose-time {@code renderOutline} had. The pose captured here is a self-contained
      * camera-relative snapshot (like the submit nodes), so the drain rebuilds it into a fresh PoseStack
-     * exactly as {@code ModelFeatureRenderer} does. See 26/13-outlines.md.
+     * exactly as {@code ModelFeatureRenderer} does.
      *
      * The render {@code state} is captured too: the {@link EntityModel} instance is SHARED across every
      * entity of its type, so by drain time its bone angles hold whatever the last body draw left on it.
@@ -494,7 +497,7 @@ public final class EntityGlintRender {
     /**
      * Drains the per-frame body-outline queue using the isolated silhouette-target pipeline (the 26.1
      * replacement for the dead-end per-pixel-depth stencil band ring — see GlintPipelines.outlineTestPipe
-     * TRIED block + 26/13-outlines.md). Called from {@code RenderLevelStageEvent.AfterOpaqueFeatures}
+     * TRIED block). Called from {@code RenderLevelStageEvent.AfterOpaqueFeatures}
      * (inside the framegraph main pass, all solid bodies committed to depth, no open render pass).
      *
      * Per entity, ONE un-dilated silhouette render into {@code maskTarget} (always-pass depth → whole
@@ -966,7 +969,7 @@ public final class EntityGlintRender {
      *  (armor/special-item models carry an {@code Object} state captured at submit). Mirrors what
      *  {@code ModelFeatureRenderer.renderModel} does before each deferred model draw. */
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private static void cg_setupAnim(net.minecraft.client.model.Model model, Object state) {
+    private static void cg_setupAnim(Model model, Object state) {
         if (state != null) model.setupAnim(state);
     }
 

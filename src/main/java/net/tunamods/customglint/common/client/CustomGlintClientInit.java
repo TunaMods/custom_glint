@@ -57,14 +57,14 @@ public final class CustomGlintClientInit {
         // Stencil is the basis of the whole colored-outline system. The old
         // enableStencilBufferForFramebuffer call is gone in 26.1; the main render target only gets
         // a stencil attachment if a mod requests one via this mod-bus event. Without it every
-        // StencilTest pipeline silently no-ops. See 26/09-renderer-api-verified.md.
+        // StencilTest pipeline silently no-ops.
         modEventBus.addListener((ConfigureMainRenderTargetEvent event) -> event.enableStencil());
 
         // Entity glint attachment. The 26.1 entity render is decoupled from the entity by draw time
         // (LivingEntityRenderer.submit only sees a LivingEntityRenderState), so the glint must ride
         // the render state. This modifier runs after vanilla extraction for EVERY living renderer
         // (subclasses included) and stashes the resolved glint under EntityGlintRender.RENDER_DATA;
-        // LivingEntityRendererMixin reads it back to submit the glint nodes. See 26/12-entity-glint.md.
+        // LivingEntityRendererMixin reads it back to submit the glint nodes.
         modEventBus.addListener((RegisterRenderStateModifiersEvent event) ->
                 event.registerEntityModifier(
                         new TypeToken<LivingEntityRenderer<LivingEntity, LivingEntityRenderState, ?>>() {},
@@ -90,14 +90,19 @@ public final class CustomGlintClientInit {
         });
 
         // Entity-body glow rings are queued during the entity submit(...) extraction (where the
-        // entity-local pose is in hand) and drained HERE — at AfterTranslucentFeatures, so the ring
-        // composites ON TOP of the translucent glint. (At AfterOpaqueFeatures the glint, a translucent
-        // feature, drew AFTER the ring → the ring showed through the glint as a faded line.) Occlusion is
-        // unaffected: the mask samples the OPAQUE scene depth, committed back in the opaque phase and never
-        // overwritten by translucent draws, so the ring still hides behind solid world geometry. The
-        // per-mob LEQUAL depth is the mask target's own (cleared each drain), also unaffected by the stage.
-        // See 26/13-outlines.md.
-        NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterTranslucentFeatures event) ->
+        // entity-local pose is in hand) and drained HERE — at AfterWeather, the last level stage. The
+        // composite writes straight to the main target's colour texture (raw GL, frame-graph pass aside),
+        // and under Fancy graphics the clouds and weather passes ALSO write to main, executing AFTER the
+        // "main" pass where the earlier stages fire. Draining at AfterTranslucentFeatures (inside the main
+        // pass) let clouds and rain paint over the ring; AfterWeather runs after both, so the ring stays on
+        // top of them. It's still later than the translucent glint (the reason the drain moved off
+        // AfterOpaqueFeatures: there the glint drew after the ring → the ring showed through it as a faded
+        // line). Occlusion is unaffected: the mask samples the OPAQUE scene depth, committed in the opaque
+        // phase and never overwritten by translucent draws, so the ring still hides behind solid world
+        // geometry. Under Fabulous graphics clouds/weather render to their own targets (combined later by
+        // the transparency post-chain), so our direct-to-main composite lands before that chain at either
+        // stage — no change there.
+        NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterWeather event) ->
                 EntityGlintRender.drainBodyOutlines());
     }
 

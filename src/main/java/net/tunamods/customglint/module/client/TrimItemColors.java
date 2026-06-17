@@ -12,8 +12,7 @@ package net.tunamods.customglint.module.client;
  * animated trim-color tint must move to a custom {@code ItemTintSource} (and the trim item models must
  * be migrated to the new {@code minecraft:custom_model_data} / tint-source format). Also note
  * {@code @EventBusSubscriber} lost its {@code bus}/{@code Bus} element in NeoForge 26.1 (single unified
- * bus). See {@code .claude/context/26/05-events-dist-client.md} and {@code 07-nbt-components-loot.md};
- * the 1.21.1 implementation is preserved in git history (working-1.21.1 branch).
+ * bus). The 1.21.1 implementation is preserved in git history (working-1.21.1 branch).
  */
 public final class TrimItemColors {
     private TrimItemColors() {}

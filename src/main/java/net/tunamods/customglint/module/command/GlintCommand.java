@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class GlintCommand {
@@ -198,26 +199,25 @@ public class GlintCommand {
                                 BoolArgumentType.getBool(ctx, "enabled"))))))));
     }
 
-    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
-                                   String designName, String colorsArg,
-                                   float speed, boolean smooth, float scale, boolean simultaneous,
-                                   boolean glowing) {
+    /** Resolves a design name to its texture Identifier, or null (after sending a failure) if unknown. */
+    private static Identifier resolveDesign(CommandSourceStack source, String designName) {
         String key = designName.toLowerCase();
         if (!GlintTrimItem.PATTERNS.contains(key)) {
             source.sendFailure(Component.literal(
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
+            return null;
         }
-        Identifier design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
+        if ("vanilla".equals(key)) return CustomGlint.VANILLA;
+        if (key.contains(":")) {
             int c = key.indexOf(':');
-            design = Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
+            return Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
         }
+        return Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
+    }
 
+    /** Parses a comma-separated color-name list into ARGB ints, or null (after sending a failure) on
+     *  the first unknown color. */
+    private static int[] parseColors(CommandSourceStack source, String colorsArg) {
         String[] parts = colorsArg.split(",");
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
@@ -226,10 +226,21 @@ public class GlintCommand {
             if (c == null) {
                 source.sendFailure(Component.literal(
                     "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
+                return null;
             }
             colors[i] = c;
         }
+        return colors;
+    }
+
+    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
+                                   String designName, String colorsArg,
+                                   float speed, boolean smooth, float scale, boolean simultaneous,
+                                   boolean glowing) {
+        Identifier design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
         CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
@@ -297,34 +308,10 @@ public class GlintCommand {
             return 0;
         }
 
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
-        }
-        Identifier design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
-        }
-
-        String[] parts = colorsArg.split(",");
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
-            }
-            colors[i] = c;
-        }
+        Identifier design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
 
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty()) {
@@ -429,8 +416,8 @@ public class GlintCommand {
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
             if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(
-                    java.util.List.of((float) ((glowing ? 1000 : 0) + idx + 1)),
-                    java.util.List.of(), java.util.List.of(), java.util.List.of()));
+                    List.of((float) ((glowing ? 1000 : 0) + idx + 1)),
+                    List.of(), List.of(), List.of()));
         }
 
         if (!player.getInventory().add(trim)) player.drop(trim, false);
