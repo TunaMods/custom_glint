@@ -1,6 +1,11 @@
 [1.5.0]
 
-Ported to NeoForge 1.21.1.
+Ported to NeoForge 26.1.2 (Minecraft 26.1.2).
+
+Note for this version:
+- Ice and Fire and Epic Knights compatibility is not in the 26.1.2 build yet, since those mods
+  have not updated to 26.1. JEI, ElytraSlot, Sophisticated Backpacks, and First-Person Model
+  support carry over.
 
 Added:
 - The wand now carries the glint you are editing. It updates live when you import a saved trim
