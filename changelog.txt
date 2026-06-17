@@ -34,3 +34,5 @@ Fixed:
 - Glowing modded shields and other 3D-model items now trace the item's actual shape instead of
   covering the whole item with glow. This applies both held in hand and in the inventory slot.
 - Held item glow outlines no longer shift or change shape as you turn the camera around them.
+- Glow outlines on entities standing close together no longer bleed their colors onto each other:
+  the outline of an entity in front now correctly hides the outline of one behind it.
