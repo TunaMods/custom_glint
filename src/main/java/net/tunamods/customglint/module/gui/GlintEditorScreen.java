@@ -8,15 +8,17 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.network.GlintApplyPacket;
 import net.tunamods.customglint.module.network.GiveGlintTrimPacket;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.Renderable;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -40,21 +42,25 @@ public class GlintEditorScreen extends Screen {
     private static final int PANEL_H    = 270;
     private static final int PREVIEW_SZ = 80;
 
-    private static ResourceLocation designRL(String name) {
+    private static Identifier designRL(String name) {
         if ("vanilla".equals(name)) return CustomGlint.VANILLA;
         if (name.contains(":")) {
             int c = name.indexOf(':');
-            return ResourceLocation.fromNamespaceAndPath(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
+            return Identifier.fromNamespaceAndPath(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
         }
-        return ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + name + ".png");
+        return Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + name + ".png");
     }
 
-    private static String designShortName(ResourceLocation rl) {
+    private static String designShortName(Identifier rl) {
         if (rl.equals(CustomGlint.VANILLA)) return "vanilla";
         String p = rl.getPath();
         String base = p.startsWith("textures/glint/") ? p.substring("textures/glint/".length()) : p;
         String name = base.endsWith(".png") ? base.substring(0, base.length() - 4) : base;
         return rl.getNamespace().equals("customglint") ? name : rl.getNamespace() + ":" + name;
+    }
+
+    private static String itemName(Item item) {
+        return new ItemStack(item).getHoverName().getString();
     }
 
     // ── State ───────────────────────────────────────────────────────────────
@@ -80,7 +86,6 @@ public class GlintEditorScreen extends Screen {
     // trim name and color
     private String trimName = "";
     private int trimNameColor = 0xFFFFFFFF;
-    private int nameEditR = 0xFF, nameEditG = 0xFF, nameEditB = 0xFF;
 
     private int editR = 0x88, editG = 0x44, editB = 0xEE, editA = 0xFF;
 
@@ -432,7 +437,7 @@ public class GlintEditorScreen extends Screen {
         // Change preview item
         addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.change_item"), b -> {
             if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
-                    .filter(item -> { ResourceLocation k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
+                    .filter(item -> { Identifier k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
             filterItems(searchBox != null ? searchBox.getValue() : "");
             pickerScroll = 0;
@@ -450,7 +455,7 @@ public class GlintEditorScreen extends Screen {
             }
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
             String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(previewItem));
-            PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId, glowEnabled, gc, trimName, trimNameColor));
+            ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId, glowEnabled, gc, trimName, trimNameColor));
         }).bounds(px + 8, py + 132, 80, 14).build());
 
         // Give Glint Trim with current settings
@@ -462,7 +467,7 @@ public class GlintEditorScreen extends Screen {
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-            PacketDistributor.sendToServer(new GiveGlintTrimPacket(layers, glowEnabled, gc, trimName, trimNameColor));
+            ClientPacketDistributor.sendToServer(new GiveGlintTrimPacket(layers, glowEnabled, gc, trimName, trimNameColor));
         }).bounds(px + 8, py + 148, 80, 14).build());
 
         // Apply glint to item already in the other hand
@@ -474,12 +479,12 @@ public class GlintEditorScreen extends Screen {
                         layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
             }
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-            PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor));
+            ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor));
         }).bounds(px + 8, py + 164, 80, 14).build());
 
         // Remove glint from item in the other hand
         addRenderableWidget(Button.builder(Component.translatable("screen.customglint.glint_editor.remove"), b -> {
-            PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0]));
+            ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0]));
         }).bounds(px + 8, py + 180, 80, 14).build());
 
         // Glow ON/OFF toggle
@@ -595,9 +600,9 @@ public class GlintEditorScreen extends Screen {
         if (allItems == null) return;
         String lq = query.toLowerCase();
         filteredItems = lq.isEmpty() ? new ArrayList<>(allItems) : allItems.stream().filter(item -> {
-            ResourceLocation rl = BuiltInRegistries.ITEM.getKey(item);
+            Identifier rl = BuiltInRegistries.ITEM.getKey(item);
             return (rl != null && rl.toString().contains(lq))
-                    || item.getDescription().getString().toLowerCase().contains(lq);
+                    || itemName(item).toLowerCase().contains(lq);
         }).collect(Collectors.toList());
         pickerScroll = Math.max(0, Math.min(pickerScroll, Math.max(0, filteredItems.size() - VISIBLE_ROWS)));
     }
@@ -610,7 +615,7 @@ public class GlintEditorScreen extends Screen {
                     layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i));
         }
         int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
-        PacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
+        ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
     }
 
     private void scanGlintConfigs() {
@@ -647,7 +652,7 @@ public class GlintEditorScreen extends Screen {
                 for (int i = 0; i < Math.min(layers.size(), 8); i++) {
                     JsonObject layer = layers.get(i).getAsJsonObject();
                     String design = layer.get("design").getAsString();
-                    layerDesigns.add(designShortName(ResourceLocation.parse(design)));
+                    layerDesigns.add(designShortName(Identifier.parse(design)));
 
                     List<Integer> colors = new ArrayList<>();
                     for (JsonElement e : layer.getAsJsonArray("colors")) {
@@ -708,12 +713,24 @@ public class GlintEditorScreen extends Screen {
         }
     }
 
+    // ── Text helpers (26.1 GuiGraphicsExtractor.text skips alpha==0 colors) ────
+
+    private void label(GuiGraphicsExtractor g, Component c, int x, int y, int color) {
+        g.text(this.font, c, x, y, 0xFF000000 | color);
+    }
+
+    private void label(GuiGraphicsExtractor g, String s, int x, int y, int color) {
+        g.text(this.font, s, x, y, 0xFF000000 | color);
+    }
+
+    private void centered(GuiGraphicsExtractor g, String s, int x, int y, int color) {
+        g.centeredText(this.font, s, x, y, 0xFF000000 | color);
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
-    public void render(GuiGraphics g, int mx, int my, float dt) {
-        renderBackground(g, mx, my, dt);
-
+    public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float dt) {
         // Panel background
         g.fill(px - 1, py - 1, px + PANEL_W + 1, py + PANEL_H + 1, 0xFF555555);
         g.fill(px, py, px + PANEL_W, py + PANEL_H, 0xEE1A1A1A);
@@ -722,13 +739,12 @@ public class GlintEditorScreen extends Screen {
         g.fill(px + 97, py + 4, px + 98, py + PANEL_H - 4, 0xFF333333);
 
         // Left labels
-        g.drawString(font, Component.translatable("screen.customglint.glint_editor.preview"), px + 8, py + 8, 0xFFFFAA);
+        label(g, Component.translatable("screen.customglint.glint_editor.preview"), px + 8, py + 8, 0xFFFFAA);
 
         // Preview box
         int bx = px + 8, by = py + 18;
         g.fill(bx - 1, by - 1, bx + PREVIEW_SZ + 1, by + PREVIEW_SZ + 1, 0xFF444444);
         g.fill(bx, by, bx + PREVIEW_SZ, by + PREVIEW_SZ, 0xFF222222);
-
 
         // Layer tabs
         int tabRowY = py + 6;
@@ -737,48 +753,44 @@ public class GlintEditorScreen extends Screen {
             boolean sel = (i == selectedLayer);
             g.fill(tx - 1, tabRowY - 1, tx + 21, tabRowY + 15, sel ? 0xFF88CC88 : 0xFF444444);
             g.fill(tx, tabRowY, tx + 20, tabRowY + 14, sel ? 0xFF44AA44 : 0xFF2A2A2A);
-            g.drawCenteredString(font, String.valueOf(i + 1), tx + 10, tabRowY + 3, 0xFFFFFF);
+            centered(g, String.valueOf(i + 1), tx + 10, tabRowY + 3, 0xFFFFFF);
             if (sel && layerDesigns.size() > 1) {
                 g.fill(tx + 13, tabRowY, tx + 20, tabRowY + 8, 0xFFCC2222);
-                g.drawString(font, "x", tx + 14, tabRowY + 1, 0xFFFFFF);
+                label(g, "x", tx + 14, tabRowY + 1, 0xFFFFFF);
             }
         }
         if (layerDesigns.size() < 8) {
             int plusX = px + 100 + layerDesigns.size() * 22;
             g.fill(plusX - 1, tabRowY - 1, plusX + 21, tabRowY + 15, 0xFF444444);
             g.fill(plusX, tabRowY, plusX + 20, tabRowY + 14, 0xFF1A2A1A);
-            g.drawCenteredString(font, "+", plusX + 10, tabRowY + 3, 0xFF88FF88);
+            centered(g, "+", plusX + 10, tabRowY + 3, 0x88FF88);
         }
 
-        g.drawString(font, Component.translatable("screen.customglint.glint_editor.colors"), px + 100, py + 40, 0xFFFFAA);
-        g.drawString(font, Component.translatable("screen.customglint.glint_editor.hex"), px + 100, py + 70, 0xAAAAAA);
-        g.drawString(font, "R:", px + 100, py + 86, 0xFF6666);
-        g.drawString(font, "G:", px + 100, py + 102, 0x66FF66);
-        g.drawString(font, "B:", px + 100, py + 118, 0x6666FF);
-        g.drawString(font, "A:", px + 100, py + 134, 0xAAAAAA);
-        g.drawString(font, Component.translatable("screen.customglint.glint_editor.speed"), px + 100, py + 154, 0xAAAAAA);
-        g.drawString(font, Component.translatable("screen.customglint.glint_editor.scale"), px + 100, py + 170, 0xAAAAAA);
-        g.drawString(font, Component.translatable("screen.customglint.glint_editor.glow_color"), px + 100, py + 204, glowEnabled ? 0xFFFFAA : 0x666666);
+        label(g, Component.translatable("screen.customglint.glint_editor.colors"), px + 100, py + 40, 0xFFFFAA);
+        label(g, Component.translatable("screen.customglint.glint_editor.hex"), px + 100, py + 70, 0xAAAAAA);
+        label(g, "R:", px + 100, py + 86, 0xFF6666);
+        label(g, "G:", px + 100, py + 102, 0x66FF66);
+        label(g, "B:", px + 100, py + 118, 0x6666FF);
+        label(g, "A:", px + 100, py + 134, 0xAAAAAA);
+        label(g, Component.translatable("screen.customglint.glint_editor.speed"), px + 100, py + 154, 0xAAAAAA);
+        label(g, Component.translatable("screen.customglint.glint_editor.scale"), px + 100, py + 170, 0xAAAAAA);
+        label(g, Component.translatable("screen.customglint.glint_editor.glow_color"), px + 100, py + 204, glowEnabled ? 0xFFFFAA : 0x666666);
         if (glowOverrideColors.isEmpty()) {
-            g.drawString(font, Component.translatable("screen.customglint.glint_editor.glow_auto"), px + 100, py + 222, glowEnabled ? 0x888888 : 0x444444);
+            label(g, Component.translatable("screen.customglint.glint_editor.glow_auto"), px + 100, py + 222, glowEnabled ? 0x888888 : 0x444444);
         }
 
-        // Render widgets only. Do NOT call super.render(): in 1.21 Screen.render()
-        // calls renderBackground() a second time, whose blur pass would smear the
-        // custom panel/labels/tabs drawn above. renderBackground() at the top of
-        // this method already handles the background once.
-        for (Renderable r : this.renderables) {
-            r.render(g, mx, my, dt);
-        }
+        // Widgets (buttons + added edit boxes). Background is drawn by the framework
+        // before extractRenderState, so no renderBackground call here.
+        super.extractRenderState(g, mx, my, dt);
 
         // Item preview
         if (!previewStack.isEmpty()) {
             var pose = g.pose();
-            pose.pushPose();
-            pose.translate(bx + PREVIEW_SZ / 2f, by + PREVIEW_SZ / 2f, 200);
-            pose.scale(5.0f, 5.0f, 1.0f);
-            g.renderItem(previewStack, -8, -8);
-            pose.popPose();
+            pose.pushMatrix();
+            pose.translate(bx + PREVIEW_SZ / 2f, by + PREVIEW_SZ / 2f);
+            pose.scale(5.0f, 5.0f);
+            g.item(previewStack, -8, -8);
+            pose.popMatrix();
         }
 
         // Color swatches
@@ -807,37 +819,31 @@ public class GlintEditorScreen extends Screen {
             }
         }
 
-        g.drawCenteredString(font, String.format("%.2f×", layerSpeeds.get(selectedLayer)),  px + 175, py + 154, 0xFFFFFF);
-        g.drawCenteredString(font, String.format("%.2f×", layerScales.get(selectedLayer)), px + 175, py + 170, 0xFFFFFF);
+        centered(g, String.format("%.2f×", layerSpeeds.get(selectedLayer)),  px + 175, py + 154, 0xFFFFFF);
+        centered(g, String.format("%.2f×", layerScales.get(selectedLayer)), px + 175, py + 170, 0xFFFFFF);
 
         // Design picker overlay
         if (showDesignPicker) {
-            g.pose().pushPose();
-            g.pose().translate(0, 0, 400);
-            renderDesignPicker(g, mx, my);
-            g.pose().popPose();
+            g.nextStratum();
+            renderDesignPicker(g, mx, my, dt);
         }
 
         // Import picker overlay
         if (showImportPicker) {
-            g.pose().pushPose();
-            g.pose().translate(0, 0, 400);
-            renderImportPicker(g, mx, my);
-            g.pose().popPose();
+            g.nextStratum();
+            renderImportPicker(g, mx, my, dt);
         }
 
         // Item picker overlay
         if (showPicker) {
-            g.pose().pushPose();
-            g.pose().translate(0, 0, 400);
-            renderPicker(g, mx, my);
-            g.pose().popPose();
+            g.nextStratum();
+            renderPicker(g, mx, my, dt);
         }
     }
 
     // ── Design picker rendering ───────────────────────────────────────────────
 
-    private void renderDesignPicker(GuiGraphics g, int mx, int my) {
+    private void renderDesignPicker(GuiGraphicsExtractor g, int mx, int my, float dt) {
         int ox = dpX(), oy = dpY();
 
         g.fill(ox - 1, oy - 1, ox + DPW + 1, oy + DPH + 1, 0xFF666666);
@@ -846,7 +852,7 @@ public class GlintEditorScreen extends Screen {
         designSearchBox.setX(ox + 2);
         designSearchBox.setY(oy + 3);
         designSearchBox.setWidth(DPW - 4);
-        designSearchBox.render(g, mx, my, 0);
+        designSearchBox.extractRenderState(g, mx, my, dt);
 
         int listY = oy + 20;
         int sbX   = ox + DPW - 5;
@@ -858,7 +864,7 @@ public class GlintEditorScreen extends Screen {
             boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + DESIGN_ROW_H;
             if (d.equals(active)) g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, 0x6044AA44);
             if (hovered)          g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, 0x40FFFFFF);
-            g.drawString(font, d, ox + 4, ry + 3, 0xDDDDDD);
+            label(g, d, ox + 4, ry + 3, 0xDDDDDD);
         }
 
         if (filteredDesigns.size() > DESIGN_ROWS) {
@@ -871,7 +877,7 @@ public class GlintEditorScreen extends Screen {
         }
     }
 
-    private void renderImportPicker(GuiGraphics g, int mx, int my) {
+    private void renderImportPicker(GuiGraphicsExtractor g, int mx, int my, float dt) {
         int ox = ipX(), oy = ipY();
 
         g.fill(ox - 1, oy - 1, ox + IPW + 1, oy + IPH + 1, 0xFF666666);
@@ -885,7 +891,7 @@ public class GlintEditorScreen extends Screen {
         importSearchBox.setX(ox + 2);
         importSearchBox.setY(oy + 3);
         importSearchBox.setWidth(IPW - 4);
-        importSearchBox.render(g, mx, my, 0);
+        importSearchBox.extractRenderState(g, mx, my, dt);
 
         int listY = oy + 20;
         int sbX   = ox + IPW - 5;
@@ -895,7 +901,7 @@ public class GlintEditorScreen extends Screen {
             int ry = listY + i * IMPORT_ROW_H;
             boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
             if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, 0x40FFFFFF);
-            g.drawString(font, glint, ox + 4, ry + 2, 0xDDDDDD);
+            label(g, glint, ox + 4, ry + 2, 0xDDDDDD);
         }
 
         if (availableGlints.size() > IMPORT_ROWS) {
@@ -921,7 +927,7 @@ public class GlintEditorScreen extends Screen {
     private int pickerOX() { return Math.max(2, Math.min(width - OW - 2, px + 8)); }
     private int pickerOY() { return Math.max(2, Math.min(height - OH - 2, py + 159)); }
 
-    private void renderPicker(GuiGraphics g, int mx, int my) {
+    private void renderPicker(GuiGraphicsExtractor g, int mx, int my, float dt) {
         int ox = pickerOX(), oy = pickerOY();
 
         g.fill(ox - 1, oy - 1, ox + OW + 1, oy + OH + 1, 0xFF666666);
@@ -930,7 +936,7 @@ public class GlintEditorScreen extends Screen {
         searchBox.setX(ox + 2);
         searchBox.setY(oy + 3);
         searchBox.setWidth(OW - 4);
-        searchBox.render(g, mx, my, 0);
+        searchBox.extractRenderState(g, mx, my, dt);
 
         int listY = oy + 20;
         int sbX   = ox + OW - 6;
@@ -940,9 +946,8 @@ public class GlintEditorScreen extends Screen {
             int ry = listY + i * ROW_H;
             boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + ROW_H;
             if (hovered) g.fill(ox, ry, sbX, ry + ROW_H, 0x40FFFFFF);
-            g.renderItem(new ItemStack(item), ox + 2, ry + 1);
-            g.drawString(font, font.plainSubstrByWidth(item.getDescription().getString(), OW - 30),
-                    ox + 20, ry + 5, 0xDDDDDD);
+            g.item(new ItemStack(item), ox + 2, ry + 1);
+            label(g, font.plainSubstrByWidth(itemName(item), OW - 30), ox + 20, ry + 5, 0xDDDDDD);
         }
 
         if (filteredItems.size() > VISIBLE_ROWS) {
@@ -958,13 +963,15 @@ public class GlintEditorScreen extends Screen {
     // ── Input ─────────────────────────────────────────────────────────────────
 
     @Override
-    public boolean mouseClicked(double mx, double my, int btn) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        double mx = event.x(), my = event.y();
+
         // Design picker
         if (showDesignPicker) {
             int ox = dpX(), oy = dpY();
 
             if (mx >= ox + 2 && mx < ox + DPW - 2 && my >= oy + 3 && my < oy + 17)
-                designSearchBox.mouseClicked(mx, my, btn);
+                designSearchBox.mouseClicked(event, doubleClick);
 
             if (mx < ox || mx >= ox + DPW || my < oy || my >= oy + DPH) {
                 showDesignPicker = false;
@@ -979,7 +986,7 @@ public class GlintEditorScreen extends Screen {
                     layerDesigns.set(selectedLayer, filteredDesigns.get(idx));
                     showDesignPicker = false;
                     refreshPreview();
-                    Minecraft.getInstance().tell(this::rebuildWidgets);
+                    Minecraft.getInstance().schedule(this::rebuildWidgets);
                 }
             }
             return true;
@@ -989,7 +996,7 @@ public class GlintEditorScreen extends Screen {
             int ox = ipX(), oy = ipY();
 
             if (mx >= ox + 2 && mx < ox + DPW - 2 && my >= oy + 3 && my < oy + 17) {
-                if (importSearchBox != null) importSearchBox.mouseClicked(mx, my, btn);
+                if (importSearchBox != null) importSearchBox.mouseClicked(event, doubleClick);
             }
 
             if (mx < ox || mx >= ox + DPW || my < oy || my >= oy + DPH) {
@@ -1014,7 +1021,7 @@ public class GlintEditorScreen extends Screen {
             int ox = pickerOX(), oy = pickerOY();
 
             if (mx >= ox + 2 && mx < ox + OW - 2 && my >= oy + 3 && my < oy + 17)
-                searchBox.mouseClicked(mx, my, btn);
+                searchBox.mouseClicked(event, doubleClick);
 
             if (mx < ox || mx >= ox + OW || my < oy || my >= oy + OH) {
                 showPicker = false;
@@ -1051,12 +1058,12 @@ public class GlintEditorScreen extends Screen {
                         if (selectedLayer >= layerDesigns.size()) selectedLayer = layerDesigns.size() - 1;
                         editingColorIdx = 0;
                         loadEditRGB();
-                        Minecraft.getInstance().tell(this::rebuildWidgets);
+                        Minecraft.getInstance().schedule(this::rebuildWidgets);
                     } else if (i != selectedLayer) {
                         selectedLayer = i;
                         editingColorIdx = 0;
                         loadEditRGB();
-                        Minecraft.getInstance().tell(this::rebuildWidgets);
+                        Minecraft.getInstance().schedule(this::rebuildWidgets);
                     }
                     return true;
                 }
@@ -1075,7 +1082,7 @@ public class GlintEditorScreen extends Screen {
                     selectedLayer = layerDesigns.size() - 1;
                     editingColorIdx = 0;
                     loadEditRGB();
-                    Minecraft.getInstance().tell(this::rebuildWidgets);
+                    Minecraft.getInstance().schedule(this::rebuildWidgets);
                     return true;
                 }
             }
@@ -1113,29 +1120,29 @@ public class GlintEditorScreen extends Screen {
             }
         }
 
-        return super.mouseClicked(mx, my, btn);
+        return super.mouseClicked(event, doubleClick);
     }
 
     @Override
-    public boolean keyPressed(int key, int scancode, int mods) {
+    public boolean keyPressed(KeyEvent event) {
         if (showDesignPicker) {
-            if (designSearchBox.keyPressed(key, scancode, mods)) return true;
-            if (key == 256) { showDesignPicker = false; return true; }
+            if (designSearchBox.keyPressed(event)) return true;
+            if (event.key() == 256) { showDesignPicker = false; return true; }
             return true;
         }
         if (showPicker) {
-            if (searchBox.keyPressed(key, scancode, mods)) return true;
-            if (key == 256) { showPicker = false; return true; }
+            if (searchBox.keyPressed(event)) return true;
+            if (event.key() == 256) { showPicker = false; return true; }
             return true;
         }
-        return super.keyPressed(key, scancode, mods);
+        return super.keyPressed(event);
     }
 
     @Override
-    public boolean charTyped(char c, int mods) {
-        if (showDesignPicker) return designSearchBox.charTyped(c, mods);
-        if (showPicker) return searchBox.charTyped(c, mods);
-        return super.charTyped(c, mods);
+    public boolean charTyped(CharacterEvent event) {
+        if (showDesignPicker) return designSearchBox.charTyped(event);
+        if (showPicker) return searchBox.charTyped(event);
+        return super.charTyped(event);
     }
 
     @Override

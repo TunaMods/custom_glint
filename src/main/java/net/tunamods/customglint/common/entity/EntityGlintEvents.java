@@ -34,7 +34,7 @@ public final class EntityGlintEvents {
     }
 
     public static void broadcast(LivingEntity entity) {
-        if (entity.level().isClientSide) return;
+        if (entity.level().isClientSide()) return;
         CompoundTag tag = CustomGlint.entityGlintTag(entity);
         PacketDistributor.sendToPlayersTrackingEntity(entity, new GlintEntitySyncPacket(entity.getId(), tag));
     }

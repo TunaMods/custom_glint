@@ -7,27 +7,30 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.Level;
 
 /** Glow Trim + Dye → Glow Trim with one more color appended (cap 8). Mirrors GlintTrimDyeRecipe. */
 public class GlowTrimDyeRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlowTrimDyeRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlowTrimDyeRecipe::new);
+    private static final GlowTrimDyeRecipe INSTANCE = new GlowTrimDyeRecipe();
+    public static final MapCodec<GlowTrimDyeRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
+    public static final StreamCodec<RegistryFriendlyByteBuf, GlowTrimDyeRecipe> STREAM_CODEC = StreamCodec.unit(INSTANCE);
+    public static final RecipeSerializer<GlowTrimDyeRecipe> SERIALIZER = new RecipeSerializer<>(MAP_CODEC, STREAM_CODEC);
 
-    public GlowTrimDyeRecipe(CraftingBookCategory category) {
-        super(category);
-    }
+    public GlowTrimDyeRecipe() {}
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
@@ -53,57 +56,36 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv) {
         ItemStack trim = ItemStack.EMPTY;
-        DyeItem dye = null;
+        ItemStack dyeStack = ItemStack.EMPTY;
         for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlowTrimItem) trim = s;
-            else if (s.getItem() instanceof DyeItem d) dye = d;
+            else if (s.getItem() instanceof DyeItem) dyeStack = s;
         }
-        if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
+        DyeColor dyeColor = dyeStack.isEmpty() ? null : dyeStack.get(DataComponents.DYE);
+        if (trim.isEmpty() || dyeColor == null) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
         int[] current = GlowTrimItem.getColors(result);
         int[] next = new int[current.length + 1];
         System.arraycopy(current, 0, next, 0, current.length);
-        next[current.length] = GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()];
+        next[current.length] = GlintTrimItem.DYE_COLORS[dyeColor.ordinal()];
         CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlowTrimItem.COLORS_TAG, next));
         CustomGlint.setGlowColors(result, next);
         return result;
     }
 
-    @Override
-    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
-        GlowTrimItem.addColor(result, 0xFFFF0000);
-        return result;
-    }
-
+    
     @Override
     public boolean isSpecial() { return true; }
 
+    
+    
     @Override
-    public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(new ItemStack(CustomGlintMod.GLOW_TRIM.get())));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
-        return list;
-    }
-
-    @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth * pHeight >= 2;
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
+    public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;
     }
 }

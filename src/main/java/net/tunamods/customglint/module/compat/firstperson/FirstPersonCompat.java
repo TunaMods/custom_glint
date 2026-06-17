@@ -39,7 +39,7 @@ public final class FirstPersonCompat {
         }
         // Wire fpmRenderingPlayerGate on client side (CustomGlintRenderer is client-only —
         // kept out of this class's imports so dedicated servers never resolve it transitively).
-        if (FMLEnvironment.dist == Dist.CLIENT) FirstPersonClientCompat.wireRenderer();
+        if (FMLEnvironment.getDist() == Dist.CLIENT) FirstPersonClientCompat.wireRenderer();
         // Temporarily disabled to inspect current outline behavior under FPM 3.5D.
         // CustomGlintRenderer.outlineSuppressor = FirstPersonCompat::shouldSuppress;
     }

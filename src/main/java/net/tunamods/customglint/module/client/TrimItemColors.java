@@ -1,33 +1,24 @@
 package net.tunamods.customglint.module.client;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.client.CustomGlintRenderer;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
-
-@EventBusSubscriber(modid = CustomGlintMod.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+/**
+ * Animated per-color tint for the Glint Trim / Glow Trim inventory icons.
+ *
+ * <p><b>TODO(26.1) — neutralized to a green-compile stub.</b> 26.1.x replaced the
+ * {@code RegisterColorHandlersEvent.Item} {@code ItemColor} lambda system with a data-driven tint
+ * pipeline: {@code RegisterColorHandlersEvent.ItemTintSources} registers
+ * {@code ItemTintSource} implementations via a {@code LateBoundIdMapper}, and the item-model JSON
+ * (under {@code assets/customglint/items/*.json}) references the tint source. The old
+ * {@code event.register((stack, tintIndex) -> animatedGlowColor, item)} does not port 1:1 — the
+ * animated trim-color tint must move to a custom {@code ItemTintSource} (and the trim item models must
+ * be migrated to the new {@code minecraft:custom_model_data} / tint-source format). Also note
+ * {@code @EventBusSubscriber} lost its {@code bus}/{@code Bus} element in NeoForge 26.1 (single unified
+ * bus). See {@code .claude/context/26/05-events-dist-client.md} and {@code 07-nbt-components-loot.md};
+ * the 1.21.1 implementation is preserved in git history (working-1.21.1 branch).
+ */
 public final class TrimItemColors {
     private TrimItemColors() {}
 
-    @SubscribeEvent
-    public static void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
-        event.register((stack, tintIndex) -> {
-            if (tintIndex != 0) return 0xFFFFFFFF;
-            int[] colors = GlowTrimItem.getColors(stack);
-            if (colors.length == 0) return 0xFFFFFFFF;
-            return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
-        }, CustomGlintMod.GLOW_TRIM.get());
-
-        event.register((stack, tintIndex) -> {
-            if (tintIndex != 0) return 0xFFFFFFFF;
-            if (!GlintTrimItem.isGlowing(stack)) return 0xFFFFFFFF;
-            int[] colors = GlintTrimItem.getColors(stack);
-            if (colors.length == 0) return 0xFFFFFFFF;
-            return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
-        }, CustomGlintMod.GLINT_TRIM.get());
-    }
+    // TODO(26.1): register a custom ItemTintSource for GLOW_TRIM and the glowing GLINT_TRIM that
+    // returns 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF) for
+    // tintIndex 0, via RegisterColorHandlersEvent.ItemTintSources + the item-model JSON.
 }

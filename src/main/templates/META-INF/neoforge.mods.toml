@@ -7,10 +7,6 @@ issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
 [[mixins]]
 config="custom_glint.mixins.json"
 [[mixins]]
-config="custom_glint.iceandfire.mixins.json"
-[[mixins]]
-config="custom_glint.epicknights.mixins.json"
-[[mixins]]
 config="custom_glint.sophisticatedbackpacks.mixins.json"
 [[mixins]]
 config="custom_glint.elytraslot.mixins.json"

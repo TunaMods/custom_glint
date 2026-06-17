@@ -1,153 +1,85 @@
 package net.tunamods.customglint.common.mixin;
 
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
-import java.util.ArrayList;
-import java.util.List;
-import net.minecraft.client.renderer.entity.ItemRenderer;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.world.item.ItemDisplayContext;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.client.renderer.OutlineBufferSource;
+import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.feature.ItemFeatureRenderer;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CgGlintHolder;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlintCarrier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Intercepts render() to capture item stack + trigger glowing outline; intercepts getFoilBuffer/getFoilBufferDirect to inject custom per-item glint. Dual SRG/named targets, require=0 on all. */
-@Mixin(ItemRenderer.class)
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Draws the custom per-item glint in the 26.1 deferred item pipeline.
+ *
+ * <p>The 1.21.5 item-model rework deleted {@code ItemRenderer}; item quads are now queued as
+ * {@code ItemSubmit} nodes and drawn later in {@link ItemFeatureRenderer#renderItem}, which routes the
+ * foil overlay through the private {@code getFoilBuffer(MultiBufferSource, RenderType, PoseStack.Pose)}.
+ * The original stack is gone by draw time, so the glint rides the node (see {@link CgGlintHolder} /
+ * {@link GlintCarrier}). At HEAD of {@code renderItem} we publish the node's glint into
+ * {@link GlintCarrier#DRAW_GLINT}; the foil-buffer call then returns a {@link VertexMultiConsumer} of
+ * our animated glint layers in place of vanilla's single glint sheet. The base item texture is drawn
+ * separately by {@code renderItem}, so the replacement carries only the glint layers.
+ */
+@Mixin(ItemFeatureRenderer.class)
 public class ItemRendererMixin {
 
-    // ── Stack capture (HEAD) ──────────────────────────────────────────────────
-
-    /** SRG target: captures the stack before render begins (obfuscated environments). */
-    @Inject(method = "m_115143_", at = @At("HEAD"), require = 0)
-    private void cg_captureStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
-            boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
-            int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        cg_onRenderHead(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay, pModel);
-    }
-
-    /** Named target: captures the stack before render begins (dev/deobf environments). */
-    @Inject(
-        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
-        at = @At("HEAD"), require = 0, remap = false
-    )
-    private void cg_captureStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
-            boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
-            int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        cg_onRenderHead(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay, pModel);
-    }
-
-    /** HEAD logic shared between SRG and named injects: capture the stack, and for glowing GUI
-     *  items inject the 4-direction halo BEFORE the actual item renders so the real item naturally
-     *  overdraws the overlap and only the +/- 1 GUI-pixel ring remains. The recursive renders run
-     *  through this mixin again and will clear CURRENT_ITEM_STACK on each inner RETURN; re-set it
-     *  after so the outer body's getFoilBuffer (for glint) still sees the stack. */
-    private static void cg_onRenderHead(ItemStack stack, ItemDisplayContext ctx, boolean lh,
-            PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
-        CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
-        if (ctx == ItemDisplayContext.GUI
-                && !CustomGlintRenderer.IN_OUTLINE.get()
-                && CustomGlint.isGlowing(stack)) {
-            CustomGlintRenderer.doGuiItemOutline(stack, ctx, lh, pose, buffer, light, overlay, model);
-            CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
+    @Inject(method = "renderItem", at = @At("HEAD"), require = 0)
+    private void cg_renderItemHead(MultiBufferSource.BufferSource bufferSource,
+            OutlineBufferSource outlineBufferSource, SubmitNodeStorage.ItemSubmit submit, CallbackInfo ci) {
+        CgGlintHolder holder = (CgGlintHolder) (Object) submit;
+        GlintCarrier.DRAW_GLINT.set(holder.customglint$getGlint());
+        // Queue the item's glow outline for the AfterOpaqueFeatures drain (the same isolated
+        // silhouette-mask + composite pass that draws entity rings — see EntityGlintRender). The item's
+        // base quads have just been (or are about to be) drawn to the main target, so by drain time the
+        // scene depth the mask shader samples for occlusion is committed.
+        boolean glowing = holder.customglint$isGlowing();
+        int[] glowColors = holder.customglint$getGlowColors();
+        if (glowing || (glowColors != null && glowColors.length > 0)) {
+            EntityGlintRender.queueItemOutline(submit.quads(), submit.pose(), submit.lightCoords(),
+                    holder.customglint$getGlint(), glowing, glowColors);
         }
     }
 
-    // ── Stack clear + item outline (RETURN) ─────────────────────────────────
-
-    /** SRG target: applies item outline for glowing items, then clears the captured stack. */
-    @Inject(method = "m_115143_", at = @At("RETURN"), require = 0)
-    private void cg_clearStack_srg(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
-            boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
-            int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        if (!CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
-            CustomGlintRenderer.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
-        CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
+    @Inject(method = "renderItem", at = @At("RETURN"), require = 0)
+    private void cg_renderItemReturn(MultiBufferSource.BufferSource bufferSource,
+            OutlineBufferSource outlineBufferSource, SubmitNodeStorage.ItemSubmit submit, CallbackInfo ci) {
+        GlintCarrier.DRAW_GLINT.remove();
     }
 
-    /** Named target: applies item outline for glowing items, then clears the captured stack. */
     @Inject(
-        method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
-        at = @At("RETURN"), require = 0, remap = false
+        method = "getFoilBuffer(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/rendertype/RenderType;Lcom/mojang/blaze3d/vertex/PoseStack$Pose;)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
+        at = @At("HEAD"), cancellable = true, require = 0
     )
-    private void cg_clearStack_named(ItemStack pItemStack, ItemDisplayContext pDisplayContext,
-            boolean pLeftHand, PoseStack pPoseStack, MultiBufferSource pBuffer,
-            int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
-        if (!CustomGlintRenderer.IN_OUTLINE.get() && CustomGlint.isGlowing(pItemStack))
-            CustomGlintRenderer.doItemOutline(pItemStack, pDisplayContext, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay);
-        CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
-    }
-
-    // ── getFoilBuffer intercepts ─────────────────────────────────────────────
-    // getFoilBuffer = batched rendering (world items, item frames). @Inject stacks; isCancelled() yields.
-
-    /** SRG target: intercepts getFoilBuffer in obfuscated environments. */
-    @Inject(method = "m_115211_", at = @At("HEAD"), cancellable = true, require = 0)
-    private static void cg_onFoilBuffer_srg(MultiBufferSource buffer, RenderType renderType,
-            boolean isItem, boolean hasFoil, CallbackInfoReturnable<VertexConsumer> cir) {
-        if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType, isItem);
+    private static void cg_onFoilBuffer(MultiBufferSource bufferSource, RenderType renderType,
+            PoseStack.Pose foilDecalPose, CallbackInfoReturnable<VertexConsumer> cir) {
+        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
+        VertexConsumer consumer = applyGlint(bufferSource, GlintCarrier.DRAW_GLINT.get());
         if (consumer != null) cir.setReturnValue(consumer);
     }
 
-    /** Named target: intercepts getFoilBuffer in dev/deobf environments. */
-    @Inject(
-        method = "getFoilBuffer(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
-        at = @At("HEAD"), cancellable = true, require = 0, remap = false
-    )
-    private static void cg_onFoilBuffer_named(MultiBufferSource buffer, RenderType renderType,
-            boolean isItem, boolean hasFoil, CallbackInfoReturnable<VertexConsumer> cir) {
-        if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType, isItem);
-        if (consumer != null) cir.setReturnValue(consumer);
-    }
-
-    // ── getFoilBufferDirect intercepts ───────────────────────────────────────
-    // getFoilBufferDirect = direct/GUI (immediate-mode) rendering.
-
-    /** SRG target: intercepts getFoilBufferDirect in obfuscated environments. */
-    @Inject(method = "m_115222_", at = @At("HEAD"), cancellable = true, require = 0)
-    private static void cg_onFoilBufferDirect_srg(MultiBufferSource buffer, RenderType renderType,
-            boolean noEntity, boolean withGlint, CallbackInfoReturnable<VertexConsumer> cir) {
-        if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType, noEntity);
-        if (consumer != null) cir.setReturnValue(consumer);
-    }
-
-    /** Named target: intercepts getFoilBufferDirect in dev/deobf environments. */
-    @Inject(
-        method = "getFoilBufferDirect(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
-        at = @At("HEAD"), cancellable = true, require = 0, remap = false
-    )
-    private static void cg_onFoilBufferDirect_named(MultiBufferSource buffer, RenderType renderType,
-            boolean noEntity, boolean withGlint, CallbackInfoReturnable<VertexConsumer> cir) {
-        if (cir.isCancelled()) return;
-        VertexConsumer consumer = applyGlint(buffer, renderType, noEntity);
-        if (consumer != null) cir.setReturnValue(consumer);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /** Returns a VertexMultiConsumer combining all glint layers + base renderType, or null if no glint. */
-    private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
-        // During our stencil/translate outline passes, route all foil requests to the bare base
-        // buffer. Otherwise vanilla's getFoilBuffer returns a VertexMultiConsumer of (glint, base)
-        // — and because our outline MultiBufferSource lambdas redirect every RenderType to the
-        // same underlying builder, the two delegates would share one builder and tear its vertex
-        // state (vertex,vertex,color,color,...,endVertex,endVertex). Items that hardcode
-        // isFoil()=true (e.g. Ice & Fire's ItemAlchemySword — dragonbone_sword_fire/ice/lightning)
-        // tripped this whenever a custom glint+outline was applied: glint worked, outline didn't.
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return buffer.getBuffer(renderType);
-        ItemStack stack = CustomGlintRenderer.CURRENT_ITEM_STACK.get();
-        if (stack == null) return null;
-        CustomGlint.Data glint = CustomGlint.read(stack);
+    /**
+     * Builds a VertexMultiConsumer of every glint layer, or null if there is no renderable glint.
+     * The 26.1 glint shader ({@code customglint:core/glint_color}) tints the grayscale design by the
+     * per-vertex {@code Color} attribute (there is no per-RenderType ColorModulator hook anymore), so
+     * each layer buffer is wrapped in a {@link CustomGlintRenderer.FullColorOverrideConsumer} that
+     * forces the vertices to the layer's animated colour. Without this the design is drawn tinted white.
+     */
+    private static VertexConsumer applyGlint(MultiBufferSource buffer, CustomGlint.Data glint) {
         if (glint == null) return null;
 
         CustomGlint.Layer[] layers = glint.layers();
@@ -158,28 +90,47 @@ public class ItemRendererMixin {
             int[] colors = layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, i);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
+                    RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, true, i);
+                    if (rt != null) list.add(cg_colored(cg_buffer(buffer, rt), colors[i]));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
+                RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, true, 0);
+                if (rt != null) list.add(cg_colored(cg_buffer(buffer, rt), color));
             }
         }
         if (list.isEmpty()) return null;
-        list.add(buffer.getBuffer(renderType));
         return VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
     }
 
+    /**
+     * Returns the buffer for a glint layer, first ensuring the layer's RenderType has its own
+     * {@code ByteBufferBuilder} in the <em>actual</em> buffer source being drawn through. An immediate
+     * {@code BufferSource} routes any RenderType not in {@code fixedBuffers} through one shared builder,
+     * and requesting a second such type flushes the first — which silently dropped every glint layer
+     * past the first (and differs between the world source and the GUI source). Giving each layer a
+     * dedicated buffer lets them all accumulate and draw together.
+     */
+    private static VertexConsumer cg_buffer(MultiBufferSource buffer, RenderType rt) {
+        if (buffer instanceof MultiBufferSource.BufferSource src && !src.fixedBuffers.containsKey(rt)) {
+            try {
+                src.fixedBuffers.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            } catch (UnsupportedOperationException ignored) {
+                // Immutable fixedBuffers (Iris/Sodium) — falls back to the shared builder.
+            }
+        }
+        return buffer.getBuffer(rt);
+    }
+
+    /** Wraps a glint layer buffer so every quad is drawn with the given ARGB colour on its vertices. The
+     *  alpha is honoured verbatim (A=0 → fully transparent): every colour source carries full alpha by
+     *  default (CustomGlint.color()/the named constants/the dye table all OR in 0xFF), so a 0 alpha byte
+     *  only ever comes from the editor's A slider and must NOT be forced opaque. */
+    private static VertexConsumer cg_colored(VertexConsumer wrapped, int argb) {
+        int a = (argb >> 24) & 0xFF;
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >>  8) & 0xFF;
+        int b =  argb        & 0xFF;
+        return new CustomGlintRenderer.FullColorOverrideConsumer(wrapped, r, g, b, a);
+    }
 }

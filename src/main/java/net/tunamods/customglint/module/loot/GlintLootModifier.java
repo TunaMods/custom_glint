@@ -4,7 +4,7 @@ import com.google.common.base.Suppliers;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootContext;
@@ -22,13 +22,13 @@ public class GlintLootModifier extends LootModifier {
         Suppliers.memoize(() -> RecordCodecBuilder.mapCodec(inst ->
             codecStart(inst).apply(inst, GlintLootModifier::new)));
 
-    protected GlintLootModifier(LootItemCondition[] conditions) {
-        super(conditions);
+    protected GlintLootModifier(LootItemCondition[] conditions, int priority) {
+        super(conditions, priority);
     }
 
     @Override
     protected ObjectArrayList<ItemStack> doApply(ObjectArrayList<ItemStack> generatedLoot, LootContext context) {
-        ResourceLocation tableId = context.getQueriedLootTableId();
+        Identifier tableId = context.getQueriedLootTableId();
         Map<Item, CustomGlint.Data> glints = CustomGlint.LOOT_GLINTS.get(tableId);
         if (glints == null) return generatedLoot;
         for (ItemStack stack : generatedLoot) {

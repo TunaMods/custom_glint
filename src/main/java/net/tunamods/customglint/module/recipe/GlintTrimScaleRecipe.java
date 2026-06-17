@@ -3,7 +3,7 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
@@ -12,16 +12,18 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.Level;
 
 public class GlintTrimScaleRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlintTrimScaleRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintTrimScaleRecipe::new);
+    private static final GlintTrimScaleRecipe INSTANCE = new GlintTrimScaleRecipe();
+    public static final MapCodec<GlintTrimScaleRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
+    public static final StreamCodec<RegistryFriendlyByteBuf, GlintTrimScaleRecipe> STREAM_CODEC = StreamCodec.unit(INSTANCE);
+    public static final RecipeSerializer<GlintTrimScaleRecipe> SERIALIZER = new RecipeSerializer<>(MAP_CODEC, STREAM_CODEC);
 
-    public GlintTrimScaleRecipe(CraftingBookCategory category) {
-        super(category);
-    }
+    public GlintTrimScaleRecipe() {}
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
@@ -43,7 +45,7 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv) {
         ItemStack trim = ItemStack.EMPTY;
         int count = 0;
         for (int i = 0; i < pInv.size(); i++) {
@@ -59,36 +61,14 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
         return result;
     }
 
-    @Override
-    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        GlintTrimItem.setScale(result, 2.0f);
-        return result;
-    }
-
+    
     @Override
     public boolean isSpecial() { return true; }
 
+    
+    
     @Override
-    public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
-        list.add(Ingredient.of(Items.SLIME_BALL));
-        return list;
-    }
-
-    @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth * pHeight >= 2;
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
+    public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;
     }
 }

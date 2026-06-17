@@ -6,13 +6,15 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -20,12 +22,12 @@ import net.minecraft.world.level.Level;
 
 public class GlintBlackTearRecipe extends CustomRecipe {
 
-    public static final SimpleCraftingRecipeSerializer<GlintBlackTearRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintBlackTearRecipe::new);
+    private static final GlintBlackTearRecipe INSTANCE = new GlintBlackTearRecipe();
+    public static final MapCodec<GlintBlackTearRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
+    public static final StreamCodec<RegistryFriendlyByteBuf, GlintBlackTearRecipe> STREAM_CODEC = StreamCodec.unit(INSTANCE);
+    public static final RecipeSerializer<GlintBlackTearRecipe> SERIALIZER = new RecipeSerializer<>(MAP_CODEC, STREAM_CODEC);
 
-    public GlintBlackTearRecipe(CraftingBookCategory category) {
-        super(category);
-    }
+    public GlintBlackTearRecipe() {}
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
@@ -50,7 +52,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv) {
         ItemStack glinted = ItemStack.EMPTY;
         for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
@@ -63,7 +65,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
         ItemStack result = glinted.copy();
         result.setCount(1);
         if (result.getItem() instanceof GlintTrimItem) {
-            ResourceLocation pattern = GlintTrimItem.getPattern(result);
+            Identifier pattern = GlintTrimItem.getPattern(result);
             if (pattern == null) {
                 CustomGlint.Data data = CustomGlint.read(result);
                 if (data != null && data.layers().length > 0) pattern = data.layers()[0].design();
@@ -82,34 +84,14 @@ public class GlintBlackTearRecipe extends CustomRecipe {
         return result;
     }
 
-    @Override
-    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        return new ItemStack(Items.DIAMOND_SWORD);
-    }
-
+    
     @Override
     public boolean isSpecial() { return true; }
 
+    
+    
     @Override
-    public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance()));
-        list.add(Ingredient.of(
-            CustomGlint.glinted(Items.DIAMOND_SWORD, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000}),
-            CustomGlint.glinted(Items.GOLDEN_CHESTPLATE, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/sparkle.png"), new int[]{0xFF00AAFF}),
-            CustomGlint.glinted(Items.BOW, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/stars.png"), new int[]{0xFFFFFF00}),
-            CustomGlint.glinted(Items.BOOK, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/pulse.png"), new int[]{0xFF8800CC})
-        ));
-        return list;
-    }
-
-    @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth * pHeight >= 2;
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
+    public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;
     }
 }

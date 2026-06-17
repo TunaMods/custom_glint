@@ -2,19 +2,25 @@
   "required": true,
   "minVersion": "0.8",
   "package": "net.tunamods.customglint.common.mixin",
-  "compatibilityLevel": "JAVA_17",
+  "compatibilityLevel": "JAVA_25",
   "refmap": "custom_glint.mixins.refmap.json",
   "client": [
-    "CompositeRenderTypeAccessor",
-    "CompositeStateAccessor",
-    "ElytraLayerMixin",
-    "HorseArmorLayerMixin",
-    "HumanoidArmorLayerMixin",
+    "CuboidItemModelWrapperMixin",
+    "EntityRendererMixin",
+    "EquipmentLayerRendererMixin",
+    "GameRendererMixin",
+    "GuiRendererMixin",
+    "ItemInHandRendererMixin",
+    "ItemModelResolverMixin",
     "ItemRendererMixin",
+    "ItemStackRenderStateMixin",
+    "ItemSubmitMixin",
     "LivingEntityRendererMixin",
+    "ModelFeatureRendererMixin",
     "RenderBuffersMixin",
     "RenderLayerMixin",
-    "TextureStateShardAccessor"
+    "SpecialModelWrapperMixin",
+    "SubmitNodeStorageMixin"
   ],
   "injectors": {
     "defaultRequire": 1

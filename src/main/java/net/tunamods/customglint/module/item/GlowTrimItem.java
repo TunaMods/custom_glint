@@ -45,7 +45,7 @@ public class GlowTrimItem extends Item {
     public static int[] getColors(ItemStack stack) {
         CompoundTag tag = dataOrNull(stack);
         if (tag == null || !tag.contains(COLORS_TAG)) return new int[0];
-        return tag.getIntArray(COLORS_TAG);
+        return tag.getIntArray(COLORS_TAG).orElse(new int[0]);
     }
 
     public static boolean addColor(ItemStack stack, int color) {
@@ -80,13 +80,13 @@ public class GlowTrimItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (colors.length == 0) {
-            pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
+            pTooltipComponents.accept(Component.literal("No color — craft with a dye to add one"));
             return;
         }
-        pTooltipComponents.add(Component.literal("Applies a colored outline glow — apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
+        pTooltipComponents.accept(Component.literal("Applies a colored outline glow — apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
         MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
         for (int i = 0; i < colors.length; i++) {
             int rgb = colors[i] & 0xFFFFFF;
@@ -97,7 +97,7 @@ public class GlowTrimItem extends Item {
             if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
             line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
         }
-        pTooltipComponents.add(line);
+        pTooltipComponents.accept(line);
     }
 
     private static String capitalize(String s) {

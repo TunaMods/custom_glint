@@ -2,6 +2,7 @@ package net.tunamods.customglint.common;
 
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
@@ -17,13 +18,14 @@ import net.tunamods.customglint.common.network.ApiNetworking;
 public class CustomGlintApiMod {
     public static final String MOD_ID = "customglint_api";
 
-    public CustomGlintApiMod(IEventBus modEventBus) {
+    public CustomGlintApiMod(IEventBus modEventBus, ModContainer modContainer) {
         // Renderer-touching init (BEWLR outline textures, resource reload listener for the texture
-        // cache) happens only on the client. The client classes are referenced solely inside the
-        // dist guard, so the JVM never resolves CustomGlintRenderer on a dedicated server — the
-        // guarded branch (and therefore the class load) only runs on the matching dist.
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            CustomGlintClientInit.run(modEventBus);
+        // cache, the CLIENT rendering config + screen) happens only on the client. The client classes
+        // are referenced solely inside the dist guard, so the JVM never resolves CustomGlintRenderer
+        // or the config screen on a dedicated server — the guarded branch (and therefore the class
+        // load) only runs on the matching dist.
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+            CustomGlintClientInit.run(modEventBus, modContainer);
             EntityGlintClientInit.run();
         }
 

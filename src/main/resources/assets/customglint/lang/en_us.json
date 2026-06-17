@@ -36,5 +36,16 @@
   "screen.customglint.glint_editor.name_color": "Color",
   "screen.customglint.glint_editor.search_designs": "Search designs...",
   "screen.customglint.glint_editor.search_items": "Search items...",
-  "screen.customglint.glint_editor.search_glints": "Search glints..."
+  "screen.customglint.glint_editor.search_glints": "Search glints...",
+
+  "customglint.configuration.outlineRenderScale": "Outline render scale",
+  "customglint.configuration.outlineRenderScale.tooltip": "How sharp the glow outlines are drawn. 1 = full quality. Set to 2 or 3 for a softer outline that runs much faster on low-end machines. Changes apply right away.",
+  "customglint.configuration.outlineMaxDistance": "Outline draw distance",
+  "customglint.configuration.outlineMaxDistance.tooltip": "Farthest distance (in blocks) that glow outlines are drawn. 0 = no limit. Lowering this skips outlines on far-away mobs and items, which means fewer shapes to draw and less GPU work in crowded scenes.",
+  "customglint.configuration.outlineMaxEntities": "Max outlined entities",
+  "customglint.configuration.outlineMaxEntities.tooltip": "Most entities that can be outlined at the same time. 0 = no limit. Caps the worst case when huge numbers of glowing mobs are packed on screen.",
+  "customglint.configuration.entityGlowOutlines": "Entity glow outlines",
+  "customglint.configuration.entityGlowOutlines.tooltip": "Show the glowing outline on mobs and players. Turn off for extra FPS on weak hardware. Glints and glow colors are unaffected.",
+  "customglint.configuration.itemGlowOutlines": "Item glow outlines",
+  "customglint.configuration.itemGlowOutlines.tooltip": "Show the glowing outline on dropped and held items."
 }

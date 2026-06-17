@@ -5,10 +5,6 @@ issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
 
 # --- Compat mixins (standalone full jar only; not in the api jar) ---
 [[mixins]]
-config="custom_glint.iceandfire.mixins.json"
-[[mixins]]
-config="custom_glint.epicknights.mixins.json"
-[[mixins]]
 config="custom_glint.sophisticatedbackpacks.mixins.json"
 [[mixins]]
 config="custom_glint.elytraslot.mixins.json"

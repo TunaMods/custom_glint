@@ -23,10 +23,12 @@ public final class EntityGlintCache {
         @Nullable public final CustomGlint.Data data;
         public final boolean glowing;
         public final int[] glowColors;
-        public Entry(@Nullable CustomGlint.Data data, boolean glowing, int[] glowColors) {
+        public final boolean seeThrough;
+        public Entry(@Nullable CustomGlint.Data data, boolean glowing, int[] glowColors, boolean seeThrough) {
             this.data = data;
             this.glowing = glowing;
             this.glowColors = glowColors;
+            this.seeThrough = seeThrough;
         }
     }
 
@@ -40,11 +42,12 @@ public final class EntityGlintCache {
         CustomGlint.Data data = CustomGlint.fromTag(glintTag);
         boolean glowing = CustomGlint.tagGlowing(glintTag);
         int[] glow = CustomGlint.tagGlowColors(glintTag);
+        boolean seeThrough = CustomGlint.tagGlowSeeThrough(glintTag);
         if (data == null && !glowing && glow.length == 0) {
             CACHE.remove(id);
             return;
         }
-        CACHE.put(id, new Entry(data, glowing, glow));
+        CACHE.put(id, new Entry(data, glowing, glow, seeThrough));
     }
 
     @Nullable

@@ -8,8 +8,6 @@ import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
-import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
-import net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.tunamods.customglint.module.item.GlintTearItem;
@@ -29,12 +27,12 @@ import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import net.tunamods.customglint.module.recipe.GlowTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlowTrimMergeRecipe;
 import net.tunamods.customglint.module.recipe.GlowTrimSmithingRecipe;
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
+import com.mojang.serialization.Codec;
+import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
-import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -48,7 +46,7 @@ import com.mojang.serialization.MapCodec;
 import net.neoforged.neoforge.common.loot.IGlobalLootModifier;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
@@ -81,26 +79,26 @@ public class CustomGlintMod {
     public static final DeferredHolder<MapCodec<? extends IGlobalLootModifier>, MapCodec<GlintTrimLootModifier>> GLINT_TRIM_LOOT_MODIFIER =
             LOOT_MODIFIER_SERIALIZERS.register("glint_trim_loot_modifier", GlintTrimLootModifier.CODEC);
 
-    public static final DeferredItem<GlintWandItem> GLINT_WAND = ITEMS.register("glint_wand",
-            () -> new GlintWandItem(new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<GlintWandItem> GLINT_WAND = ITEMS.registerItem("glint_wand",
+            props -> new GlintWandItem(props.stacksTo(1)));
 
-    public static final DeferredItem<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
-            () -> new GlintTrimItem(new Item.Properties().stacksTo(16)));
+    public static final DeferredItem<GlintTrimItem> GLINT_TRIM = ITEMS.registerItem("glint_trim",
+            props -> new GlintTrimItem(props.stacksTo(16)));
 
-    public static final DeferredItem<GlowTrimItem> GLOW_TRIM = ITEMS.register("glow_trim",
-            () -> new GlowTrimItem(new Item.Properties().stacksTo(16)));
+    public static final DeferredItem<GlowTrimItem> GLOW_TRIM = ITEMS.registerItem("glow_trim",
+            props -> new GlowTrimItem(props.stacksTo(16)));
 
-    public static final DeferredItem<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.register("glint_tear_simultaneous",
-            () -> new GlintTearItem(new Item.Properties().stacksTo(16), true));
+    public static final DeferredItem<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.registerItem("glint_tear_simultaneous",
+            props -> new GlintTearItem(props.stacksTo(16), true));
 
-    public static final DeferredItem<GlintTearItem> GLINT_TEAR_SEQUENTIAL = ITEMS.register("glint_tear_sequential",
-            () -> new GlintTearItem(new Item.Properties().stacksTo(16), false));
+    public static final DeferredItem<GlintTearItem> GLINT_TEAR_SEQUENTIAL = ITEMS.registerItem("glint_tear_sequential",
+            props -> new GlintTearItem(props.stacksTo(16), false));
 
-    public static final DeferredItem<GlintLayerTearItem> GLINT_LAYER_TEAR = ITEMS.register("glint_layer_tear",
-            () -> new GlintLayerTearItem(new Item.Properties().stacksTo(16)));
+    public static final DeferredItem<GlintLayerTearItem> GLINT_LAYER_TEAR = ITEMS.registerItem("glint_layer_tear",
+            props -> new GlintLayerTearItem(props.stacksTo(16)));
 
-    public static final DeferredItem<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.register("glint_black_tear",
-            () -> new GlintBlackTearItem(new Item.Properties().stacksTo(16)));
+    public static final DeferredItem<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.registerItem("glint_black_tear",
+            props -> new GlintBlackTearItem(props.stacksTo(16)));
 
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_tear_apply", () -> GlintTearApplyRecipe.SERIALIZER);
@@ -139,7 +137,7 @@ public class CustomGlintMod {
             .icon(() -> {
                 ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
                 CustomGlint.write(icon,
-                        ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"),
+                        Identifier.fromNamespaceAndPath("customglint", "textures/glint/wave.png"),
                         new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
                         0.5f, true, 1.0f, true);
                 return icon;
@@ -153,14 +151,14 @@ public class CustomGlintMod {
                 output.accept(new ItemStack(GLOW_TRIM.get()));
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(GLINT_TRIM.get());
-                    ResourceLocation loc;
+                    Identifier loc;
                     if (pattern.equals("vanilla")) {
                         loc = CustomGlint.VANILLA;
                     } else if (pattern.contains(":")) {
                         int c = pattern.indexOf(':');
-                        loc = ResourceLocation.fromNamespaceAndPath(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
+                        loc = Identifier.fromNamespaceAndPath(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
                     } else {
-                        loc = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
+                        loc = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
                     }
                     GlintTrimItem.setPattern(trim, loc);
                     output.accept(trim);
@@ -178,9 +176,7 @@ public class CustomGlintMod {
         RECIPE_SERIALIZERS.register(modEventBus);
 
         ModNetworking.register(modEventBus);
-        IceAndFireCompat.register();
         FirstPersonCompat.register();
-        EpicKnightsCompat.register();
 
         // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
         // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so
@@ -194,17 +190,15 @@ public class CustomGlintMod {
     private void commonSetup(final FMLCommonSetupEvent event) {
     }
 
-    private void onAddReloadListeners(AddReloadListenerEvent event) {
-        event.addListener(new SimpleJsonResourceReloadListener(new Gson(), "customglint/designs") {
+    private void onAddReloadListeners(AddServerReloadListenersEvent event) {
+        event.addListener(Identifier.fromNamespaceAndPath(MOD_ID, "designs"),
+                new SimpleJsonResourceReloadListener<List<String>>(Codec.STRING.listOf(), FileToIdConverter.json("customglint/designs")) {
             @Override
-            protected void apply(Map<ResourceLocation, JsonElement> object, ResourceManager manager, ProfilerFiller profiler) {
+            protected void apply(Map<Identifier, List<String>> object, ResourceManager manager, ProfilerFiller profiler) {
                 GlintTrimItem.PATTERNS.removeAll(dataPackDesigns);
                 dataPackDesigns.clear();
-                for (JsonElement file : object.values()) {
-                    if (!file.isJsonArray()) continue;
-                    for (JsonElement entry : file.getAsJsonArray()) {
-                        if (!entry.isJsonPrimitive()) continue;
-                        String name = entry.getAsString();
+                for (List<String> names : object.values()) {
+                    for (String name : names) {
                         if (!GlintTrimItem.PATTERNS.contains(name)) {
                             GlintTrimItem.PATTERNS.add(name);
                             dataPackDesigns.add(name);

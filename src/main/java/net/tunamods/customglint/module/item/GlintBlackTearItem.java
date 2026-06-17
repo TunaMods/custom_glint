@@ -40,7 +40,7 @@ public class GlintBlackTearItem extends Item {
      */
     @Override
     public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity entity, InteractionHand hand) {
-        if (player.level().isClientSide) {
+        if (player.level().isClientSide()) {
             return CustomGlint.hasEntity(entity) ? InteractionResult.SUCCESS : InteractionResult.PASS;
         }
         if (!CustomGlint.hasEntity(entity)) return InteractionResult.PASS;
@@ -51,9 +51,9 @@ public class GlintBlackTearItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
-        pTooltipComponents.add(Component.literal("Craft with any glinted item to").withStyle(ChatFormatting.GRAY));
-        pTooltipComponents.add(Component.literal("strip all glint data from it").withStyle(ChatFormatting.GRAY));
-        pTooltipComponents.add(Component.literal("Right-click a mob to clear its glint and glow").withStyle(ChatFormatting.GRAY));
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+        pTooltipComponents.accept(Component.literal("Craft with any glinted item to").withStyle(ChatFormatting.GRAY));
+        pTooltipComponents.accept(Component.literal("strip all glint data from it").withStyle(ChatFormatting.GRAY));
+        pTooltipComponents.accept(Component.literal("Right-click a mob to clear its glint and glow").withStyle(ChatFormatting.GRAY));
     }
 }

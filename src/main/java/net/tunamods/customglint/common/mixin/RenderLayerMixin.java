@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.layers.RenderLayer;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import org.spongepowered.asm.mixin.Mixin;
@@ -25,21 +25,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * model + texture. Each call reserves a unique stencil slot inside doModelOutline so the base
  * and overlays don't cross-contaminate.
  *
- * Uses named descriptors with the default {@code remap=true} so MixinGradle's refmap remaps
- * to SRG at compile time for production while dev resolves directly. No dual SRG pair here —
- * the SRG IDs for these two static helpers collided with unrelated non-static methods on a
- * previous attempt and produced a {@code 'static' modifier of handler method does not match
- * target} error during mixin apply.
+ * Targets the static RenderLayer helpers by their Mojang names — NeoForge runs official
+ * mappings, so a single named descriptor binds in both dev and production.
  */
 @Mixin(RenderLayer.class)
 public class RenderLayerMixin {
 
     @Inject(
-        method = "coloredCutoutModelCopyLayerRender(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFFI)V",
+        method = "coloredCutoutModelCopyLayerRender(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/Identifier;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFFI)V",
         at = @At("RETURN"), require = 0
     )
     private static void cg_copyLayerOutline(EntityModel<?> baseModel, EntityModel<?> outerModel,
-                                            ResourceLocation texture, PoseStack pose,
+                                            Identifier texture, PoseStack pose,
                                             MultiBufferSource buffer, int packedLight,
                                             LivingEntity entity,
                                             float limbSwing, float limbSwingAmount, float ageInTicks,
@@ -50,10 +47,10 @@ public class RenderLayerMixin {
     }
 
     @Inject(
-        method = "renderColoredCutoutModel(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;I)V",
+        method = "renderColoredCutoutModel(Lnet/minecraft/client/model/EntityModel;Lnet/minecraft/resources/Identifier;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;I)V",
         at = @At("RETURN"), require = 0
     )
-    private static void cg_singleLayerOutline(EntityModel<?> model, ResourceLocation texture,
+    private static void cg_singleLayerOutline(EntityModel<?> model, Identifier texture,
                                               PoseStack pose, MultiBufferSource buffer,
                                               int packedLight, LivingEntity entity,
                                               int color,

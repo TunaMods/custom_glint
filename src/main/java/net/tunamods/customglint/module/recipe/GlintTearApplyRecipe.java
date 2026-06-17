@@ -3,26 +3,23 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.resources.ResourceLocation;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
-import net.minecraft.core.NonNullList;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.Level;
 
 public class GlintTearApplyRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlintTearApplyRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintTearApplyRecipe::new);
+    private static final GlintTearApplyRecipe INSTANCE = new GlintTearApplyRecipe();
+    public static final MapCodec<GlintTearApplyRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
+    public static final StreamCodec<RegistryFriendlyByteBuf, GlintTearApplyRecipe> STREAM_CODEC = StreamCodec.unit(INSTANCE);
+    public static final RecipeSerializer<GlintTearApplyRecipe> SERIALIZER = new RecipeSerializer<>(MAP_CODEC, STREAM_CODEC);
 
-    public GlintTearApplyRecipe(CraftingBookCategory category) {
-        super(category);
-    }
+    public GlintTearApplyRecipe() {}
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
@@ -48,7 +45,7 @@ public class GlintTearApplyRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv) {
         ItemStack glinted = ItemStack.EMPTY;
         Boolean simultaneous = null;
         for (int i = 0; i < pInv.size(); i++) {
@@ -72,49 +69,10 @@ public class GlintTearApplyRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        GlintTrimItem.addColor(result, 0xFF0000FF);
-        CustomGlint.write(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000, 0xFF0000FF}, 1.0f, true, 1.0f, true);
-        return result;
-    }
-
-    @Override
     public boolean isSpecial() { return true; }
 
     @Override
-    public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(
-            CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance(),
-            CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance()
-        ));
-        ItemStack trimRed = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimRed, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimRed, 0xFFFF0000);
-        ItemStack trimBlue = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimBlue, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/sparkle.png"));
-        GlintTrimItem.addColor(trimBlue, 0xFF0000FF);
-        ItemStack trimRedBlue = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimRedBlue, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimRedBlue, 0xFFFF0000);
-        GlintTrimItem.addColor(trimRedBlue, 0xFF0000FF);
-        ItemStack trimGold = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimGold, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/stars.png"));
-        GlintTrimItem.addColor(trimGold, 0xFFFFAA00);
-        list.add(Ingredient.of(trimRed, trimBlue, trimRedBlue, trimGold));
-        return list;
-    }
-
-    @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth * pHeight >= 2;
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
+    public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;
     }
 }

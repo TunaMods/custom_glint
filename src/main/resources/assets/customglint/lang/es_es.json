@@ -36,5 +36,16 @@
   "screen.customglint.glint_editor.name_color": "Color",
   "screen.customglint.glint_editor.search_designs": "Buscar diseños...",
   "screen.customglint.glint_editor.search_items": "Buscar objetos...",
-  "screen.customglint.glint_editor.search_glints": "Buscar brillos..."
+  "screen.customglint.glint_editor.search_glints": "Buscar brillos...",
+
+  "customglint.configuration.outlineRenderScale": "Resolución del contorno",
+  "customglint.configuration.outlineRenderScale.tooltip": "Qué tan nítidos se dibujan los contornos. 1 = calidad máxima. Pon 2 o 3 para un contorno más suave que rinde mucho mejor en equipos modestos. Los cambios se aplican al instante.",
+  "customglint.configuration.outlineMaxDistance": "Distancia de contornos",
+  "customglint.configuration.outlineMaxDistance.tooltip": "Distancia máxima (en bloques) a la que se dibujan los contornos brillantes. 0 = sin límite. Bajarla omite los contornos en criaturas y objetos lejanos, lo que significa menos formas que dibujar y menos GPU en escenas concurridas.",
+  "customglint.configuration.outlineMaxEntities": "Máx. entidades con contorno",
+  "customglint.configuration.outlineMaxEntities.tooltip": "Número máximo de entidades con contorno a la vez. 0 = sin límite. Limita el peor caso cuando hay muchísimas criaturas brillantes amontonadas en pantalla.",
+  "customglint.configuration.entityGlowOutlines": "Contornos en entidades",
+  "customglint.configuration.entityGlowOutlines.tooltip": "Muestra el contorno brillante en criaturas y jugadores. Desactívalo para ganar FPS en equipos lentos. No afecta a los brillos ni a sus colores.",
+  "customglint.configuration.itemGlowOutlines": "Contornos en objetos",
+  "customglint.configuration.itemGlowOutlines.tooltip": "Muestra el contorno brillante en objetos soltados y en mano."
 }

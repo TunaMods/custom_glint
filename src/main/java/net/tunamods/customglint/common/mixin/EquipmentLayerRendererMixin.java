@@ -1,0 +1,121 @@
+package net.tunamods.customglint.common.mixin;
+
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.sugar.Local;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.model.Model;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.entity.layers.EquipmentLayerRenderer;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.EquipmentClientInfo;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.client.ClientHooks;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.List;
+
+/**
+ * Custom per-equipment glint, drawn in the 26.1 deferred submit-node pipeline.
+ *
+ * <p><b>26.1 unified all equipment rendering through {@link EquipmentLayerRenderer#renderLayers}.</b>
+ * The old dedicated layers ({@code HumanoidArmorLayer}, {@code ElytraLayer}, {@code HorseArmorLayer})
+ * no longer draw directly — humanoid armor ({@code HumanoidArmorLayer}), elytra/capes
+ * ({@code WingsLayer}, {@code LayerType.WINGS}), and barding/animal armor
+ * ({@code SimpleEquipmentLayer}, {@code LayerType.HORSE_BODY}/{@code WOLF_BODY}/…) all funnel into this
+ * one method, and every layer is submitted with {@code RenderTypes.armorCutoutNoCull} (EQUAL depth +
+ * {@code VIEW_OFFSET_Z_LAYERING}). So a single mixin here replaces the three old layer mixins, and the
+ * horse-armor {@code NO_LAYERING} special case from 1.21.1 is obsolete — {@link CustomGlintRenderer#forArmorGlint}
+ * (VIEW_OFFSET_Z) is correct for all of them. The {@code WingsLayer} {@code (0,0,0.125)} elytra offset
+ * is already on the {@code PoseStack} by the time {@code renderLayers} runs, so our glint inherits it.
+ *
+ * <p>Each glint layer/colour is queued as its own {@code submitModel} node reusing the equipment
+ * {@code model} that drew the armor. The node's {@code tintedColor} becomes the model's per-vertex
+ * colour (read by {@code customglint:core/glint_color}); the deferred {@code ModelFeatureRenderer}
+ * draws each RenderType in its own serialized batch, so the per-layer shared-buffer flush that bit the
+ * item path does not apply here. Outline/glow is a separate later pass; these nodes pass outlineColor 0.
+ */
+@Mixin(EquipmentLayerRenderer.class)
+public class EquipmentLayerRendererMixin {
+
+    private static final String RENDER_LAYERS =
+        "renderLayers(Lnet/minecraft/client/resources/model/EquipmentClientInfo$LayerType;"
+            + "Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/client/model/Model;"
+            + "Ljava/lang/Object;Lnet/minecraft/world/item/ItemStack;"
+            + "Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;"
+            + "ILnet/minecraft/resources/Identifier;II)V";
+
+    /**
+     * Suppresses vanilla's enchantment foil ({@code armorEntityGlint}) on a piece that carries our own
+     * glint, so the two don't stack — our glint replaces the look, matching the item path.
+     */
+    @ModifyExpressionValue(
+        method = RENDER_LAYERS,
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ItemStack;hasFoil()Z"),
+        require = 0
+    )
+    private boolean cg_suppressVanillaFoil(boolean original, @Local(argsOnly = true) ItemStack itemStack) {
+        return original && CustomGlint.read(itemStack) == null;
+    }
+
+    @Inject(method = RENDER_LAYERS, at = @At("RETURN"), require = 0)
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void cg_equipmentGlint(EquipmentClientInfo.LayerType layerType, ResourceKey assetId, Model model,
+            Object state, ItemStack itemStack, PoseStack poseStack, SubmitNodeCollector collector,
+            int lightCoords, Identifier playerTextureOverride, int outlineColor, int order,
+            CallbackInfo ci, @Local List<?> layers) {
+        if (layers.isEmpty()) return;
+        CustomGlint.Data glint = CustomGlint.read(itemStack);
+
+        if (glint != null) {
+            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+            CustomGlint.Layer[] gl = glint.layers();
+            for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
+                int[] colors = gl[layerIdx].colors();
+                if (gl[layerIdx].simultaneous()) {
+                    for (int i = 0; i < colors.length; i++) {
+                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
+                        if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);
+                    }
+                } else {
+                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                    if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, color);
+                }
+            }
+        }
+
+        // Glow outline — independent of the glint (a Glow-Trimmed armor piece with no glint still
+        // outlines). Queued for the AfterOpaqueFeatures drain (the same mask + composite as entities).
+        // The first layer's texture drives the silhouette alpha-discard so the ring follows the real
+        // armor shape; the model + state are re-posed via setupAnim at drain (matching the armor body
+        // draw), so multi-wearer scenes don't share a stale pose. Covers humanoid armor, elytra/capes
+        // (WINGS), and barding (HORSE_BODY/WOLF_BODY) — all funnel through renderLayers.
+        boolean glowing = CustomGlint.isGlowing(itemStack);
+        int[] glowColors = CustomGlint.getGlowColors(itemStack);
+        if (glowing || glowColors.length > 0) {
+            EquipmentClientInfo.Layer first = (EquipmentClientInfo.Layer) layers.get(0);
+            Identifier tex = first.usePlayerTexture() && playerTextureOverride != null
+                    ? playerTextureOverride : first.getTextureLocation(layerType);
+            tex = ClientHooks.getArmorTexture(itemStack, layerType, first, tex);
+            EntityGlintRender.queueArmorOutline(model, state, poseStack.last(), tex, lightCoords,
+                    glint, glowing, glowColors);
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static void cg_submit(SubmitNodeCollector collector, Model model, Object state, PoseStack poseStack,
+            RenderType rt, int lightCoords, int argb) {
+        int color = (argb >>> 24) == 0 ? (argb | 0xFF000000) : argb;
+        collector.submitModel(model, state, poseStack, rt, lightCoords, OverlayTexture.NO_OVERLAY,
+                color, null, 0, null);
+    }
+}

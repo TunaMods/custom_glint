@@ -18,7 +18,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -87,7 +87,7 @@ public class GlintCommand {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("glint")
-            .requires(s -> s.hasPermission(2))
+            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
             .then(Commands.literal("apply")
                 .then(Commands.argument("design", StringArgumentType.word())
                     .suggests(SUGGEST_DESIGNS)
@@ -208,14 +208,14 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
+        Identifier design;
         if ("vanilla".equals(key)) {
             design = CustomGlint.VANILLA;
         } else if (key.contains(":")) {
             int c = key.indexOf(':');
-            design = ResourceLocation.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
+            design = Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
         } else {
-            design = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
+            design = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
         }
 
         String[] parts = colorsArg.split(",");
@@ -303,14 +303,14 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
+        Identifier design;
         if ("vanilla".equals(key)) {
             design = CustomGlint.VANILLA;
         } else if (key.contains(":")) {
             int c = key.indexOf(':');
-            design = ResourceLocation.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
+            design = Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
         } else {
-            design = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
+            design = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
         }
 
         String[] parts = colorsArg.split(",");
@@ -428,7 +428,9 @@ public class GlintCommand {
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
-            if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData((glowing ? 1000 : 0) + idx + 1));
+            if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(
+                    java.util.List.of((float) ((glowing ? 1000 : 0) + idx + 1)),
+                    java.util.List.of(), java.util.List.of(), java.util.List.of()));
         }
 
         if (!player.getInventory().add(trim)) player.drop(trim, false);

@@ -3,11 +3,11 @@ package net.tunamods.customglint.module.compat.elytraslot.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import net.minecraft.client.model.ElytraModel;
+import net.minecraft.client.model.object.equipment.ElytraModel;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
@@ -47,7 +47,7 @@ import java.util.List;
 @Mixin(targets = "com.illusivesoulworks.elytraslot.client.ElytraSlotLayer", remap = false)
 public class ElytraSlotLayerMixin {
 
-    @Shadow private ElytraModel<?> elytraModel;
+    @Shadow private ElytraModel elytraModel;
 
     private static volatile Method CG_STACK_M;
     private static volatile Method CG_TEXTURE_M;
@@ -60,14 +60,14 @@ public class ElytraSlotLayerMixin {
             @Coerce Object result, CallbackInfo ci) {
         if (result == null) return;
         ItemStack stack;
-        ResourceLocation tex;
+        Identifier tex;
         try {
             Method sm = CG_STACK_M;
             if (sm == null) { sm = result.getClass().getMethod("stack"); CG_STACK_M = sm; }
             stack = (ItemStack) sm.invoke(result);
             Method tm = CG_TEXTURE_M;
             if (tm == null) { tm = result.getClass().getMethod("texture"); CG_TEXTURE_M = tm; }
-            tex = (ResourceLocation) tm.invoke(result);
+            tex = (Identifier) tm.invoke(result);
         } catch (Throwable t) {
             return;
         }
@@ -119,7 +119,7 @@ public class ElytraSlotLayerMixin {
         if (combined != null)
             elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         if (glowing) {
-            ResourceLocation outlineTex = tex != null ? tex : ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/elytra.png");
+            Identifier outlineTex = tex != null ? tex : Identifier.fromNamespaceAndPath("minecraft", "textures/entity/elytra.png");
             CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, elytraModel, outlineTex, stack, null);
         }
         poseStack.popPose();

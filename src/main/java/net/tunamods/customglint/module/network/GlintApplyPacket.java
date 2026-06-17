@@ -9,7 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
@@ -21,7 +21,7 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 public class GlintApplyPacket implements CustomPacketPayload {
 
     public static final Type<GlintApplyPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "glint_apply"));
+            new Type<>(Identifier.fromNamespaceAndPath(MOD_ID, "glint_apply"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
             StreamCodec.of(GlintApplyPacket::encode, GlintApplyPacket::decode);
@@ -104,7 +104,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(ResourceLocation.parse(design), colors, speed, interp, scale, simultaneous);
+            layers[i] = new CustomGlint.Layer(Identifier.parse(design), colors, speed, interp, scale, simultaneous);
         }
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
@@ -145,7 +145,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
                     applyName(pkt, wand);
                 }
             } else {
-                Item item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(pkt.itemId)).orElse(null);
+                Item item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(pkt.itemId)).orElse(null);
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, pkt.layers);

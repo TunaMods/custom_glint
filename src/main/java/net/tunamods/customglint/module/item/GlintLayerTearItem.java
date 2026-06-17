@@ -26,8 +26,8 @@ public class GlintLayerTearItem extends Item {
     }
 
     @Override
-    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
-        pTooltipComponents.add(Component.literal("Craft with two Glint Trims to merge their").withStyle(ChatFormatting.GRAY));
-        pTooltipComponents.add(Component.literal("layer arrays into one multi-layer trim").withStyle(ChatFormatting.GRAY));
+    public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, net.minecraft.world.item.component.TooltipDisplay pDisplay, java.util.function.Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+        pTooltipComponents.accept(Component.literal("Craft with two Glint Trims to merge their").withStyle(ChatFormatting.GRAY));
+        pTooltipComponents.accept(Component.literal("layer arrays into one multi-layer trim").withStyle(ChatFormatting.GRAY));
     }
 }

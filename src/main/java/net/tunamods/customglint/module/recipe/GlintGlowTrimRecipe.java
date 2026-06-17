@@ -3,24 +3,26 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.Level;
 
 /** Crafting: GlintTrimItem (center, with pattern + ≥1 color) + 8 Glowstone Dust → same trim with glowing=true. */
 public class GlintGlowTrimRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlintGlowTrimRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintGlowTrimRecipe::new);
+    private static final GlintGlowTrimRecipe INSTANCE = new GlintGlowTrimRecipe();
+    public static final MapCodec<GlintGlowTrimRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
+    public static final StreamCodec<RegistryFriendlyByteBuf, GlintGlowTrimRecipe> STREAM_CODEC = StreamCodec.unit(INSTANCE);
+    public static final RecipeSerializer<GlintGlowTrimRecipe> SERIALIZER = new RecipeSerializer<>(MAP_CODEC, STREAM_CODEC);
 
-    public GlintGlowTrimRecipe(CraftingBookCategory category) {
-        super(category);
-    }
+    public GlintGlowTrimRecipe() {}
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
@@ -39,7 +41,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
+    public ItemStack assemble(CraftingInput pInv) {
         ItemStack trim = pInv.getItem(4);
         if (trim.isEmpty() || !(trim.getItem() instanceof GlintTrimItem)) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
@@ -49,13 +51,9 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
         return result;
     }
 
+    
     @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth >= 3 && pHeight >= 3;
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
+    public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;
     }
 }

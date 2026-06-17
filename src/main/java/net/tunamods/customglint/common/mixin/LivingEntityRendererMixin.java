@@ -1,72 +1,71 @@
 package net.tunamods.customglint.common.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.resources.Identifier;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Two hooks on LivingEntityRenderer.render:
+ * Draws the custom entity-body glint in the 26.1 deferred submit-node pipeline.
  *
- *  1. {@link ModifyVariable} at HEAD on the MultiBufferSource arg — wraps it with a
- *     GlintWrappingBufferSource so every {@code entity_*} RenderType the renderer or any
- *     RenderLayer (StrayClothingLayer, EyesLayer, VillagerProfessionLayer, …) requests gets
- *     a glint pass automatically. No-op when the entity has no glint data.
+ * <p>26.1 decoupled the entity render from the entity: {@code LivingEntityRenderer.submit(state, pose,
+ * collector, camera)} submits the body as a single deferred {@code submitModel} node and only ever
+ * sees a {@link LivingEntityRenderState} (no entity, no {@code MultiBufferSource}). So the glint rides
+ * the render state — a {@code RegisterRenderStateModifiersEvent} modifier (installed in
+ * {@code CustomGlintClientInit}) stashes the resolved glint under {@link EntityGlintRender#RENDER_DATA}
+ * during extraction, and this mixin reads it back at draw time.
  *
- *  2. {@link Inject} before the outer popPose — calls EntityGlintRender.renderOutline with
- *     the pose stack still in entity-local space (Y-flipped from upstream scale(-1,-1,1)).
- *     RenderLivingEvent.Post would be too late: that fires after popPose, when pose is back
- *     in world/camera space → model would draw at world origin, mirrored/upside-down.
- *
- * Dual SRG/named, require=0 on every hook — same pattern as the armor-layer mixins.
+ * <p>We inject just <b>before the outer {@code popPose()}</b>, after the body and all layers have been
+ * submitted, while the pose is still in entity-local space (the same vantage the body model drew at).
+ * There we submit one glint model node per layer/colour reusing the renderer's body {@code model}, so
+ * the glint follows the entity silhouette exactly — the 26.1 replacement for the 1.21.1
+ * {@code GlintWrappingBufferSource} buffer fan-out. Invisible entities are skipped so glint doesn't
+ * reveal them.
  */
 @Mixin(LivingEntityRenderer.class)
 public class LivingEntityRendererMixin {
 
-    // ── HEAD: wrap buffer source so every entity_* RT picks up the glint fan-out ──────
-
-    @ModifyVariable(method = "m_7392_", at = @At("HEAD"), argsOnly = true, require = 0)
-    private MultiBufferSource cg_wrapBuf_srg(MultiBufferSource original,
-                                             LivingEntity entity, float yaw, float partialTicks,
-                                             PoseStack pose, MultiBufferSource buffer, int light) {
-        return EntityGlintRender.wrapForEntity(entity, original);
-    }
-
-    @ModifyVariable(
-        method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
-        at = @At("HEAD"), argsOnly = true, require = 0, remap = false
-    )
-    private MultiBufferSource cg_wrapBuf_named(MultiBufferSource original,
-                                               LivingEntity entity, float yaw, float partialTicks,
-                                               PoseStack pose, MultiBufferSource buffer, int light) {
-        return EntityGlintRender.wrapForEntity(entity, original);
-    }
-
-    // ── popPose-before: draw outline in entity-local pose space ─────────────────────────
-
     @Inject(
-        method = "m_7392_",
+        method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
         at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V"),
         require = 0
     )
-    private void cg_outline_srg(LivingEntity entity, float yaw, float partialTicks,
-                                PoseStack pose, MultiBufferSource buffer, int light, CallbackInfo ci) {
-        EntityGlintRender.renderOutline((LivingEntityRenderer<?, ?>)(Object)this, entity, pose, buffer, light);
-    }
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void cg_entityGlint(LivingEntityRenderState state, PoseStack poseStack,
+            SubmitNodeCollector collector, CameraRenderState camera, CallbackInfo ci) {
+        // Clear any stale glow request first — every frame, every entity. A pooled/reused render state
+        // could otherwise carry a previous (glowing) entity's outline into ModelFeatureRendererMixin.
+        state.setRenderData(EntityGlintRender.GLOW_OUTLINE, null);
+        if (state.isInvisible) return;
+        EntityGlintRender.Resolution r = state.getRenderData(EntityGlintRender.RENDER_DATA);
+        if (r == null) return;
+        EntityModel<?> model = ((LivingEntityRenderer<?, ?, ?>) (Object) this).getModel();
+        if (model == null) return;
 
-    @Inject(
-        method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
-        at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V", remap = false),
-        require = 0, remap = false
-    )
-    private void cg_outline_named(LivingEntity entity, float yaw, float partialTicks,
-                                  PoseStack pose, MultiBufferSource buffer, int light, CallbackInfo ci) {
-        EntityGlintRender.renderOutline((LivingEntityRenderer<?, ?>)(Object)this, entity, pose, buffer, light);
+        if (r.data != null) {
+            EntityGlintRender.submitEntityGlint(collector, model, state, poseStack, state.lightCoords, r.data);
+        }
+
+        // Glow outline ring around the body silhouette. Instead of queuing a deferred re-pose + second
+        // setupAnim at AfterOpaqueFeatures, we stash the colour + texture on the render state here (where
+        // getTextureLocation is in hand). ModelFeatureRendererMixin reads it back at the body draw and
+        // tees the silhouette IN-PHASE on the already-posed model — exactly how vanilla's own glowing-
+        // entity outline works (ModelFeatureRenderer.renderModel re-renders into OutlineBufferSource).
+        // The mask + occluded composite still runs once in drainBodyOutlines. See 26/13-outlines.md.
+        if (r.glowing || r.glowColors.length > 0) {
+            Identifier texture = ((LivingEntityRenderer) (Object) this).getTextureLocation(state);
+            if (texture != null) {
+                state.setRenderData(EntityGlintRender.GLOW_OUTLINE,
+                        new EntityGlintRender.GlowOutline(EntityGlintRender.outlineColorFor(r), texture, model, r.seeThrough));
+            }
+        }
     }
 }

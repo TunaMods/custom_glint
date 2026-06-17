@@ -4,7 +4,7 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
@@ -15,7 +15,7 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 public record GlintDesignSyncPacket(List<String> designs) implements CustomPacketPayload {
 
     public static final Type<GlintDesignSyncPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "glint_design_sync"));
+            new Type<>(Identifier.fromNamespaceAndPath(MOD_ID, "glint_design_sync"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintDesignSyncPacket> STREAM_CODEC =
             StreamCodec.of(

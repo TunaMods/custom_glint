@@ -4,7 +4,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -23,11 +22,11 @@ public class GlintWandItem extends Item {
     }
 
     @Override
-    public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
-        if (level.isClientSide() && FMLEnvironment.dist == Dist.CLIENT) {
+    public InteractionResult use(Level level, Player player, InteractionHand hand) {
+        if (level.isClientSide() && FMLEnvironment.getDist() == Dist.CLIENT) {
             GlintWandClientHandler.openEditor(hand);
         }
-        return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide());
+        return level.isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
     }
 
     @Override
@@ -37,7 +36,8 @@ public class GlintWandItem extends Item {
 
         CompoundTag glintTag = CustomGlint.itemGlintTag(wand);
         if (glintTag.isEmpty()) {
-            player.displayClientMessage(Component.literal("Wand has no glint to apply"), true);
+            if (player instanceof net.minecraft.server.level.ServerPlayer sp)
+                sp.sendSystemMessage(Component.literal("Wand has no glint to apply"), true);
             return InteractionResult.FAIL;
         }
 

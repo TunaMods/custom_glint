@@ -9,7 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -19,7 +19,7 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static final Type<GiveGlintTrimPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "give_glint_trim"));
+            new Type<>(Identifier.fromNamespaceAndPath(MOD_ID, "give_glint_trim"));
 
     public static final StreamCodec<FriendlyByteBuf, GiveGlintTrimPacket> STREAM_CODEC =
             StreamCodec.of(GiveGlintTrimPacket::encode, GiveGlintTrimPacket::decode);
@@ -74,7 +74,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(ResourceLocation.parse(design), colors, speed, interp, scale, simultaneous);
+            layers[i] = new CustomGlint.Layer(Identifier.parse(design), colors, speed, interp, scale, simultaneous);
         }
         boolean glowing = buf.readBoolean();
         int gcLen = Math.min(buf.readVarInt(), 8);

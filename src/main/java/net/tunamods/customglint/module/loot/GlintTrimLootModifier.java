@@ -5,7 +5,7 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.storage.loot.LootContext;
@@ -28,8 +28,8 @@ public class GlintTrimLootModifier extends LootModifier {
         Suppliers.memoize(() -> RecordCodecBuilder.mapCodec(inst ->
             codecStart(inst).apply(inst, GlintTrimLootModifier::new)));
 
-    protected GlintTrimLootModifier(LootItemCondition[] conditions) {
-        super(conditions);
+    protected GlintTrimLootModifier(LootItemCondition[] conditions, int priority) {
+        super(conditions, priority);
     }
 
     private static final Map<String, Float> PATTERN_WEIGHTS = buildWeights();
@@ -107,10 +107,10 @@ public class GlintTrimLootModifier extends LootModifier {
 
     private String selectPattern(LootContext context) {
         // Get biome category to weight pattern selection
-        var origin = context.getParam(LootContextParams.ORIGIN);
+        var origin = context.getParameter(LootContextParams.ORIGIN);
         var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
         String biomeName = biome.unwrapKey()
-            .map(key -> key.location().getPath())
+            .map(key -> key.identifier().getPath())
             .orElse("plains");
 
         // Category-based selection bonus
@@ -222,7 +222,7 @@ public class GlintTrimLootModifier extends LootModifier {
         // Chest loot tables only. Without this gate the LM also fires on mob spawn-equipment
         // rolls (no DAMAGE_SOURCE, no BLOCK_STATE), spamming "Could not equip item" warnings
         // when Mob.equip can't slot a Trim/Tear anywhere.
-        ResourceLocation tableId = context.getQueriedLootTableId();
+        Identifier tableId = context.getQueriedLootTableId();
         if (tableId == null || !tableId.getPath().startsWith("chests/")) return generatedLoot;
 
         // Trims: 22% for 1st (semi-rare), 12% conditional for 2nd (~2.6% overall, rare), 8% conditional for 3rd (~0.2% overall, very rare)
@@ -234,9 +234,9 @@ public class GlintTrimLootModifier extends LootModifier {
         for (int t = 0; t < trimCount; t++) {
             String pattern = selectPattern(context);
             ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-            ResourceLocation patternLoc = pattern.equals("vanilla")
+            Identifier patternLoc = pattern.equals("vanilla")
                 ? CustomGlint.VANILLA
-                : ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
+                : Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
             GlintTrimItem.setPattern(trim, patternLoc);
             if (context.getRandom().nextFloat() < 0.25f) {
                 int colorCount = 1 + context.getRandom().nextInt(3);
