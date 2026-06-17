@@ -30,7 +30,7 @@ out vec4 fragColor;
 // SEARCH MUST be >= ceil(max of these). If you set any above 7, raise SEARCH to match AND raise
 // EntityGlintRender.SCISSOR_PAD to >= that + ~4 so the thicker ring isn't clipped at the group rect edge.
 // These are the FULL widths, applied at or nearer than REF_DIST; beyond it the ring narrows with distance.
-const float THICKNESS[4] = float[](4.0, 3.0, 3.0, 5.0);
+const float THICKNESS[4] = float[](4.0, 4.0, 3.0, 5.0);
 const int   SEARCH       = 7;             // ceil(max(THICKNESS))
 
 // Distance-proportional thinning. A constant pixel-width ring looks FATTER the farther (smaller on screen)
@@ -41,12 +41,13 @@ const int   SEARCH       = 7;             // ceil(max(THICKNESS))
 const float REF_DIST  = 4.0;     // blocks; at/under this the ring stays full THICKNESS
 const float MIN_SCALE = 0.40;    // never thinner than this fraction of THICKNESS (keeps a hairline at range)
 
-// Item-ring occlusion bias, in BLOCKS. Held/dropped/special items (categories 2,3) skip ringing a pixel
-// whose scene geometry is at least this much nearer than the item edge the ring comes from — so the item's
-// halo does not paint over the hand/arm gripping it (the ring expands outward from the item's visible edge
-// regardless of what is in front of those outer pixels). Entities/armor (0,1) are exempt so the see-through
-// glow option keeps working; their silhouette already decides occlusion per-fragment. Measured in blocks so
-// it is distance-independent (same reasoning as core/glow_silhouette's OCCLUSION_BIAS).
+// Ring occlusion bias, in BLOCKS. A source's ring skips any pixel whose scene geometry is at least this
+// much nearer than the source edge the ring comes from. Applied to ALL categories: it keeps a farther
+// object's ring from painting over a nearer object standing in front of it (two players side by side no
+// longer bleed their outlines onto each other), and keeps a held/dropped item's halo off the hand gripping
+// it. The ring expands outward from a visible edge regardless of what is in front of those outer pixels, so
+// without this test the halo draws over whatever is nearer. Measured in blocks so it is distance-independent
+// (same basis as core/glow_silhouette's OCCLUSION_BIAS).
 const float RING_OCCLUSION_BIAS = 0.10;
 
 void main() {
@@ -75,14 +76,12 @@ void main() {
             float scale = clamp(REF_DIST / max(srcDist, 0.001), MIN_SCALE, 1.0);
             float r = THICKNESS[keyN >> 5] * scale;             // this source's distance-scaled reach
             if (d2 <= r * r) {                                  // within THAT category's thickness → ring it
-                // Item categories (2 = 3rd-person held/dropped, 3 = first-person held): occlude the ring
-                // where the RING pixel has nearer scene geometry than the item edge — keeps the item halo
-                // from drawing over the hand/arm holding it. Entities/armor skip this (see RING_OCCLUSION_BIAS).
-                if ((keyN >> 5) >= 2) {
-                    float rNdc = texture(DepthSampler, texCoord).r * 2.0 - 1.0;
-                    float ringDist = ProjMat[3][2] / (rNdc + ProjMat[2][2]);
-                    if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;  // nearer geometry here → no ring
-                }
+                // Occlude the ring where this RING pixel has nearer scene geometry than the source edge the
+                // ring comes from, so a farther object's halo never paints over a nearer object (adjacent
+                // players, or a held item over the gripping hand). See RING_OCCLUSION_BIAS.
+                float rNdc = texture(DepthSampler, texCoord).r * 2.0 - 1.0;
+                float ringDist = ProjMat[3][2] / (rNdc + ProjMat[2][2]);
+                if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;  // nearer geometry here → no ring
                 fragColor = vec4(n.rgb, 1.0);
                 return;
             }
