@@ -11,7 +11,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -25,7 +24,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.CustomModelData;
 
 import java.io.BufferedWriter;
@@ -212,7 +210,7 @@ public class GlintCommand {
             int c = key.indexOf(':');
             return Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
         }
-        return Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
+        return CustomGlint.res("textures/glint/" + key + ".png");
     }
 
     /** Parses a comma-separated color-name list into ARGB ints, or null (after sending a failure) on
@@ -250,7 +248,6 @@ public class GlintCommand {
             if (!(e instanceof LivingEntity le)) continue;
             CustomGlint.writeEntity(le, layers);
             CustomGlint.setEntityGlowing(le, glowing);
-            EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
@@ -268,7 +265,6 @@ public class GlintCommand {
             if (!(e instanceof LivingEntity le)) continue;
             if (!CustomGlint.hasEntity(le)) continue;
             CustomGlint.removeEntity(le);
-            EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
@@ -286,7 +282,6 @@ public class GlintCommand {
             if (!(e instanceof LivingEntity le)) continue;
             if (enabled && !CustomGlint.hasEntity(le)) continue;
             CustomGlint.setEntityGlowing(le, enabled);
-            EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
@@ -404,12 +399,7 @@ public class GlintCommand {
             CustomGlint.Layer layer0 = layers[0];
             for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
             boolean glowing = CustomGlint.isGlowing(held);
-            CustomData.update(DataComponents.CUSTOM_DATA, trim, t -> {
-                t.putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
-                t.putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
-                t.putString(GlintTrimItem.PATTERN_TAG, layer0.design().toString());
-                t.putBoolean(GlintTrimItem.GLOWING_TAG, glowing);
-            });
+            GlintTrimItem.setConfig(trim, layer0.design(), layer0.speed(), layer0.patternScale(), glowing);
             // Copy the full multi-layer glint tag verbatim from the held item.
             CustomGlint.writeItemTag(trim, CustomGlint.itemGlintTag(held));
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).

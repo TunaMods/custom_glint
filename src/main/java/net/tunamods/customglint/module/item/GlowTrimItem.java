@@ -2,8 +2,6 @@ package net.tunamods.customglint.module.item;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -12,41 +10,48 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.TooltipDisplay;
 
-import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * Glow Trim — applies a colored outline glow only (no glint design).
- * Stores its own colors in the standard COLORS_TAG. When applied via smithing, writes
+ * Stores its colors in the ModComponents.GLOW_TRIM data component. When applied via smithing, writes
  * {@code glowColors} + {@code glowing=true} to the target item via CustomGlint.setGlowColors.
  * Mirrors GlintTrimItem's color handling (dye to add, merge to combine, max 8 colors).
  */
 public class GlowTrimItem extends Item {
-    public static final String COLORS_TAG = "colors";
 
     public GlowTrimItem(Properties pProperties) {
         super(pProperties);
     }
 
-    @Nullable
-    private static CompoundTag dataOrNull(ItemStack stack) {
-        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
-        return cd == null ? null : cd.copyTag();
+    // The Glow Trim's color list is a typed data component (ModComponents.GLOW_TRIM), value-equal
+    // (List<Integer>) so identical trims still stack.
+
+    private static int[] toIntArray(List<Integer> l) {
+        int[] a = new int[l.size()];
+        for (int n = 0; n < a.length; n++) a[n] = l.get(n);
+        return a;
     }
 
-    private static void mutateData(ItemStack stack, Consumer<CompoundTag> mutator) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, mutator);
+    private static List<Integer> toList(int[] a) {
+        List<Integer> l = new ArrayList<>(a.length);
+        for (int v : a) l.add(v);
+        return l;
     }
 
     public static int[] getColors(ItemStack stack) {
-        CompoundTag tag = dataOrNull(stack);
-        if (tag == null || !tag.contains(COLORS_TAG)) return new int[0];
-        return tag.getIntArray(COLORS_TAG).orElse(new int[0]);
+        return toIntArray(stack.getOrDefault(ModComponents.GLOW_TRIM.get(), List.of()));
+    }
+
+    /** Replaces the color list (and refreshes the preview glow). */
+    public static void setColors(ItemStack stack, int[] colors) {
+        stack.set(ModComponents.GLOW_TRIM.get(), toList(colors));
+        applyPreview(stack, colors);
     }
 
     public static boolean addColor(ItemStack stack, int color) {
@@ -54,8 +59,7 @@ public class GlowTrimItem extends Item {
         if (current.length >= 8) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
-        mutateData(stack, t -> t.putIntArray(COLORS_TAG, next));
-        applyPreview(stack, next);
+        setColors(stack, next);
         return true;
     }
 
@@ -69,8 +73,7 @@ public class GlowTrimItem extends Item {
         System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
         int bCount = total - a.length;
         if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
-        mutateData(result, t -> t.putIntArray(COLORS_TAG, merged));
-        applyPreview(result, merged);
+        setColors(result, merged);
         return result;
     }
 

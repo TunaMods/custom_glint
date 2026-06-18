@@ -21,6 +21,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.context.ContextKey;
 import net.minecraft.world.entity.LivingEntity;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.CustomGlintComponents;
 
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
@@ -39,9 +40,8 @@ import java.util.Set;
  * the renderer's outer popPose, so the pose stack is still in entity-local space (matches the
  * vantage of armor/layer renderers).
  *
- * Resolution order: per-instance via the registered {@link InstanceResolver} (standalone module
- * installs one that reads from EntityGlintCache), then {@link CustomGlint#ENTITY_GLINTS} type
- * registry. Mods that bundle only the api jar without a resolver still get type-registry-based glints.
+ * Resolution order: per-instance via the registered {@link InstanceResolver} (default reads the synced
+ * {@link CustomGlint#ENTITY_GLINT} attachment), then the {@link CustomGlint#ENTITY_GLINTS} type registry.
  */
 public final class EntityGlintRender {
     private EntityGlintRender() {}
@@ -64,8 +64,13 @@ public final class EntityGlintRender {
         }
     }
 
-    /** Default: no per-instance data — standalone module overrides this in client init. */
-    public static InstanceResolver instanceResolver = entity -> null;
+    /** Default resolver: read the synced {@link CustomGlintComponents#ENTITY_GLINT} attachment off the
+     *  entity. Overridable by compat that wants a different per-instance source. */
+    public static InstanceResolver instanceResolver = entity -> {
+        CustomGlint.GlintState s = entity.getExistingDataOrNull(CustomGlintComponents.ENTITY_GLINT);
+        if (s == null || s.isEmpty()) return null;
+        return new Resolution(s.data(), s.glowing(), s.glowColors(), s.seeThrough());
+    };
 
     /**
      * Render-state attachment key. In 26.1 the entity render is decoupled from the entity: by draw
@@ -76,7 +81,7 @@ public final class EntityGlintRender {
      * {@code state.getRenderData(RENDER_DATA)}. This is the entity analog of the item carrier.
      */
     public static final ContextKey<Resolution> RENDER_DATA =
-            new ContextKey<>(Identifier.fromNamespaceAndPath("customglint", "entity_glint"));
+            new ContextKey<>(CustomGlint.res("entity_glint"));
 
     /**
      * Per-frame glow-outline request for a glowing entity body. Set on the render state by
@@ -88,7 +93,7 @@ public final class EntityGlintRender {
      * alpha-discard so the silhouette follows the real entity shape.
      */
     public static final ContextKey<GlowOutline> GLOW_OUTLINE =
-            new ContextKey<>(Identifier.fromNamespaceAndPath("customglint", "glow_outline"));
+            new ContextKey<>(CustomGlint.res("glow_outline"));
 
     /** {@code model} is the entity's main body model; the in-phase tee fires only when a submit's model
      *  matches it, so overlay layers (which share the render state but submit their own models) don't get
@@ -925,21 +930,6 @@ public final class EntityGlintRender {
         if (state != null) model.setupAnim(state);
     }
 
-    /**
-     * Force the client glint cache to re-read this entity's current persistent NBT. Call after
-     * a client-side mutation (e.g. {@link CustomGlint#writeEntity}, {@link CustomGlint#setEntityGlowing},
-     * {@link CustomGlint#setEntityGlowColors}) when you need the change visible immediately
-     * without waiting for a server broadcast — typically preview UIs, replay viewers, or mods
-     * that reconstruct entities from stored NBT on the client.
-     *
-     * Server-side callers should use {@link net.tunamods.customglint.common.entity.EntityGlintEvents#broadcast}
-     * instead; the broadcast packet handler refreshes the cache on every tracking client.
-     *
-     * No-op (clears the cache entry) if the entity has no glint NBT.
-     */
-    public static void refreshClientCache(LivingEntity entity) {
-        EntityGlintCache.put(entity.getUUID(), CustomGlint.entityGlintTag(entity));
-    }
 
     /**
      * Cheap-gate version of glow lookup. Returns true iff the entity has a glow/glowColors signal that

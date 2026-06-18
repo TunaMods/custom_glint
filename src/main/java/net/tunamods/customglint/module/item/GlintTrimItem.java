@@ -5,7 +5,6 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -15,7 +14,6 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.item.component.TooltipDisplay;
 import org.lwjgl.glfw.GLFW;
@@ -24,15 +22,10 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 public class GlintTrimItem extends Item {
-    public static final String PATTERN_TAG  = "pattern";
-    public static final String COLORS_TAG   = "colors";
-    public static final String SPEED_TAG    = "speed";
-    public static final String SCALE_TAG    = "scale";
-    public static final String GLOWING_TAG  = "glowing";
-
     // ARGB per DyeColor ordinal: WHITE ORANGE MAGENTA LIGHT_BLUE YELLOW LIME PINK
     //                             GRAY  LIGHT_GRAY CYAN PURPLE BLUE BROWN GREEN RED BLACK
     public static final int[] DYE_COLORS = {
@@ -55,18 +48,29 @@ public class GlintTrimItem extends Item {
         super(pProperties);
     }
 
-    // The Trim's own config (pattern/colors/speed/scale/glowing) lives at the root of the item's
-    // CUSTOM_DATA component — alongside, but independent of, the glint Data that CustomGlint stores
-    // under its own "customglint" sub-key. CustomModelData is now its own data component.
+    // The Trim's editable config (pattern/colors/speed/scale/glowing) is a typed data component
+    // (ModComponents.TRIM), independent of the preview glint CustomGlint stores in its own glint
+    // component. CustomModelData (set in setPattern) is vanilla's own component.
 
-    @Nullable
-    private static CompoundTag dataOrNull(ItemStack stack) {
-        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
-        return cd == null ? null : cd.copyTag();
+    private static ModComponents.TrimConfig cfg(ItemStack stack) {
+        ModComponents.TrimConfig c = stack.get(ModComponents.TRIM.get());
+        return c == null ? ModComponents.TrimConfig.EMPTY : c;
     }
 
-    private static void mutateData(ItemStack stack, Consumer<CompoundTag> mutator) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, mutator);
+    private static void setCfg(ItemStack stack, ModComponents.TrimConfig c) {
+        stack.set(ModComponents.TRIM.get(), c);
+    }
+
+    private static int[] toIntArray(List<Integer> l) {
+        int[] a = new int[l.size()];
+        for (int n = 0; n < a.length; n++) a[n] = l.get(n);
+        return a;
+    }
+
+    private static List<Integer> toList(int[] a) {
+        List<Integer> l = new ArrayList<>(a.length);
+        for (int v : a) l.add(v);
+        return l;
     }
 
     /** 26.1.2 removed the static {@code Screen.hasShiftDown()}; query the window directly.
@@ -79,13 +83,12 @@ public class GlintTrimItem extends Item {
 
     @Nullable
     public static Identifier getPattern(ItemStack stack) {
-        CompoundTag tag = dataOrNull(stack);
-        if (tag == null || !tag.contains(PATTERN_TAG)) return null;
-        return Identifier.tryParse(tag.getStringOr(PATTERN_TAG, ""));
+        return cfg(stack).pattern().orElse(null);
     }
 
     public static void setPattern(ItemStack stack, Identifier pattern) {
-        mutateData(stack, t -> t.putString(PATTERN_TAG, pattern.toString()));
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(Optional.of(pattern), c.colors(), c.speed(), c.scale(), c.glowing()));
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
         if (idx >= 0) stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(
@@ -96,9 +99,23 @@ public class GlintTrimItem extends Item {
     }
 
     public static int[] getColors(ItemStack stack) {
-        CompoundTag tag = dataOrNull(stack);
-        if (tag == null || !tag.contains(COLORS_TAG)) return new int[0];
-        return tag.getIntArray(COLORS_TAG).orElse(new int[0]);
+        return toIntArray(cfg(stack).colors());
+    }
+
+    /** Replaces the color list (and refreshes the preview glint). Used by the dye recipe. */
+    public static void setColors(ItemStack stack, int[] colors) {
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), toList(colors), c.speed(), c.scale(), c.glowing()));
+        Identifier pattern = getPattern(stack);
+        if (pattern != null) CustomGlint.write(stack, pattern, colors, getSpeed(stack), true, getScale(stack), false);
+    }
+
+    /** Sets the display config (pattern/speed/scale/glowing) directly, preserving the current colors and
+     *  WITHOUT rewriting the preview glint — for {@code /glint extract} on a multi-layer glint, where the
+     *  full multi-layer tag is copied separately and must not be clobbered by a single-layer write. */
+    public static void setConfig(ItemStack stack, Identifier pattern, float speed, float scale, boolean glowing) {
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(Optional.of(pattern), c.colors(), speed, scale, glowing));
     }
 
     public static boolean addColor(ItemStack stack, int color) {
@@ -106,7 +123,8 @@ public class GlintTrimItem extends Item {
         if (current.length >= 8) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
-        mutateData(stack, t -> t.putIntArray(COLORS_TAG, next));
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), toList(next), c.speed(), c.scale(), c.glowing()));
         Identifier pattern = getPattern(stack);
         if (pattern != null) CustomGlint.write(stack, pattern, next, getSpeed(stack), true, getScale(stack), false);
         return true;
@@ -122,20 +140,20 @@ public class GlintTrimItem extends Item {
         System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
         int bCount = total - a.length;
         if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
-        mutateData(result, t -> t.putIntArray(COLORS_TAG, merged));
+        ModComponents.TrimConfig c = cfg(result);
+        setCfg(result, new ModComponents.TrimConfig(c.pattern(), toList(merged), c.speed(), c.scale(), c.glowing()));
         Identifier pattern = getPattern(result);
         if (pattern != null) CustomGlint.write(result, pattern, merged, getSpeed(result), true, getScale(result), false);
         return result;
     }
 
     public static float getSpeed(ItemStack stack) {
-        CompoundTag tag = dataOrNull(stack);
-        if (tag == null || !tag.contains(SPEED_TAG)) return 1.0f;
-        return tag.getFloatOr(SPEED_TAG, 0.0f);
+        return cfg(stack).speed();
     }
 
     public static void setSpeed(ItemStack stack, float speed) {
-        mutateData(stack, t -> t.putFloat(SPEED_TAG, speed));
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), c.colors(), speed, c.scale(), c.glowing()));
         CustomGlint.Data preview = CustomGlint.read(stack);
         if (preview == null || preview.layers().length <= 1) {
             Identifier pattern = getPattern(stack);
@@ -145,24 +163,23 @@ public class GlintTrimItem extends Item {
     }
 
     public static boolean isGlowing(ItemStack stack) {
-        CompoundTag tag = dataOrNull(stack);
-        return tag != null && tag.getBooleanOr(GLOWING_TAG, false);
+        return cfg(stack).glowing();
     }
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
-        mutateData(stack, t -> t.putBoolean(GLOWING_TAG, glowing));
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), c.colors(), c.speed(), c.scale(), glowing));
         Identifier pattern = getPattern(stack);
         if (pattern != null) setPattern(stack, pattern);
     }
 
     public static float getScale(ItemStack stack) {
-        CompoundTag tag = dataOrNull(stack);
-        if (tag == null || !tag.contains(SCALE_TAG)) return 1.0f;
-        return tag.getFloatOr(SCALE_TAG, 0.0f);
+        return cfg(stack).scale();
     }
 
     public static void setScale(ItemStack stack, float scale) {
-        mutateData(stack, t -> t.putFloat(SCALE_TAG, scale));
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), c.colors(), c.speed(), scale, c.glowing()));
         CustomGlint.Data preview = CustomGlint.read(stack);
         if (preview == null || preview.layers().length <= 1) {
             Identifier pattern = getPattern(stack);

@@ -2,17 +2,12 @@ package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.command.GlintCommand;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlintWandItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.*;
 import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
 import net.tunamods.customglint.module.client.TrimItemColors;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
-import net.tunamods.customglint.module.item.GlintTearItem;
-import net.tunamods.customglint.module.item.GlintLayerTearItem;
-import net.tunamods.customglint.module.item.GlintBlackTearItem;
 import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
@@ -139,7 +134,7 @@ public class CustomGlintMod {
             .icon(() -> {
                 ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
                 CustomGlint.write(icon,
-                        Identifier.fromNamespaceAndPath("customglint", "textures/glint/wave.png"),
+                        CustomGlint.res("textures/glint/wave.png"),
                         new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
                         0.5f, true, 1.0f, true);
                 return icon;
@@ -160,7 +155,7 @@ public class CustomGlintMod {
                         int c = pattern.indexOf(':');
                         loc = Identifier.fromNamespaceAndPath(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
                     } else {
-                        loc = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
+                        loc = CustomGlint.res("textures/glint/" + pattern + ".png");
                     }
                     GlintTrimItem.setPattern(trim, loc);
                     output.accept(trim);
@@ -176,6 +171,7 @@ public class CustomGlintMod {
         CREATIVE_MODE_TABS.register(modEventBus);
         LOOT_MODIFIER_SERIALIZERS.register(modEventBus);
         RECIPE_SERIALIZERS.register(modEventBus);
+        ModComponents.register(modEventBus);
 
         ModNetworking.register(modEventBus);
 
@@ -184,10 +180,6 @@ public class CustomGlintMod {
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             TrimItemColors.register(modEventBus);
         }
-
-        // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
-        // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so
-        // those registrations always happen exactly once regardless of which jar a player has.
 
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
@@ -198,7 +190,7 @@ public class CustomGlintMod {
     }
 
     private void onAddReloadListeners(AddServerReloadListenersEvent event) {
-        event.addListener(Identifier.fromNamespaceAndPath(MOD_ID, "designs"),
+        event.addListener(CustomGlint.res("designs"),
                 new SimpleJsonResourceReloadListener<List<String>>(Codec.STRING.listOf(), FileToIdConverter.json("customglint/designs")) {
             @Override
             protected void apply(Map<Identifier, List<String>> object, ResourceManager manager, ProfilerFiller profiler) {

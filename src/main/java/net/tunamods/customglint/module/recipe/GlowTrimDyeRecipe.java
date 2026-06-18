@@ -3,9 +3,7 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.DyeColor;
@@ -67,8 +65,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
         int[] next = new int[current.length + 1];
         System.arraycopy(current, 0, next, 0, current.length);
         next[current.length] = GlintTrimItem.DYE_COLORS[dyeColor.ordinal()];
-        CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlowTrimItem.COLORS_TAG, next));
-        CustomGlint.setGlowColors(result, next);
+        GlowTrimItem.setColors(result, next);
         return result;
     }
 

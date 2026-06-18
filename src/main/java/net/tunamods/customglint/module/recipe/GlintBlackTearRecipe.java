@@ -3,8 +3,7 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
+import net.tunamods.customglint.module.item.ModComponents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
@@ -65,12 +64,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
                 CustomGlint.Data data = CustomGlint.read(result);
                 if (data != null && data.layers().length > 0) pattern = data.layers()[0].design();
             }
-            CustomData.update(DataComponents.CUSTOM_DATA, result, t -> {
-                t.remove(GlintTrimItem.COLORS_TAG);
-                t.remove(GlintTrimItem.SPEED_TAG);
-                t.remove(GlintTrimItem.SCALE_TAG);
-                t.remove(GlintTrimItem.GLOWING_TAG);
-            });
+            result.remove(ModComponents.TRIM.get());
             CustomGlint.remove(result);
             if (pattern != null) GlintTrimItem.setPattern(result, pattern);
         } else {

@@ -1,11 +1,8 @@
 package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.DyeColor;
@@ -62,9 +59,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         ItemStack result = trim.copy();
         result.setCount(1);
         int[] colors = new int[]{ GlintTrimItem.DYE_COLORS[dyeColor.ordinal()] };
-        CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlintTrimItem.COLORS_TAG, colors));
-        Identifier pattern = GlintTrimItem.getPattern(result);
-        if (pattern != null) CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
+        GlintTrimItem.setColors(result, colors);
         return result;
     }
 

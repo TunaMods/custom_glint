@@ -13,7 +13,6 @@ import net.minecraft.world.level.Level;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.client.GlintWandClientHandler;
 
 public class GlintWandItem extends Item {
@@ -43,7 +42,6 @@ public class GlintWandItem extends Item {
         }
 
         CustomGlint.writeEntityTag(target, glintTag);
-        EntityGlintEvents.broadcast(target);
         return InteractionResult.SUCCESS;
     }
 }
