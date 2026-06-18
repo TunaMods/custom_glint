@@ -13,7 +13,6 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.AddClientReloadListenersEvent;
-import net.neoforged.neoforge.client.event.ConfigureMainRenderTargetEvent;
 import net.neoforged.neoforge.client.event.RegisterRenderPipelinesEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -38,12 +37,6 @@ public final class CustomGlintClientInit {
         modContainer.registerExtensionPoint(IConfigScreenFactory.class,
                 (IConfigScreenFactory) (container, parent) -> new ConfigurationScreen(container, parent));
 
-        // Vanilla trident BEWLR outline texture: use the real trident texture so the outline
-        // shader alpha-discards transparent texels instead of filling model cubes opaquely.
-        CustomGlintRenderer.BEWLR_OUTLINE_TEXTURES.put(
-                "net.minecraft.world.item.TridentItem",
-                Identifier.fromNamespaceAndPath("minecraft", "textures/entity/trident.png"));
-
         modEventBus.addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
 
         // The glow-outline composite pipelines are used via RenderPass.setPipeline directly (not through a
@@ -53,12 +46,6 @@ public final class CustomGlintClientInit {
             event.registerPipeline(GlintPipelines.GLOW_COMPOSITE_ID_PIPE);
             event.registerPipeline(GlintPipelines.GLOW_UPSCALE_PIPE);
         });
-
-        // Stencil is the basis of the whole colored-outline system. The old
-        // enableStencilBufferForFramebuffer call is gone in 26.1; the main render target only gets
-        // a stencil attachment if a mod requests one via this mod-bus event. Without it every
-        // StencilTest pipeline silently no-ops.
-        modEventBus.addListener((ConfigureMainRenderTargetEvent event) -> event.enableStencil());
 
         // Entity glint attachment. The 26.1 entity render is decoupled from the entity by draw time
         // (LivingEntityRenderer.submit only sees a LivingEntityRenderState), so the glint must ride
@@ -71,19 +58,13 @@ public final class CustomGlintClientInit {
                         (entity, state) -> state.setRenderData(EntityGlintRender.RENDER_DATA,
                                 EntityGlintRender.resolveResolution(entity))));
 
-        // Once-per-frame stencil-clear gate reset. See pendingFrameStencilClear's javadoc
-        // in CustomGlintRenderer for the multi-outline / FullyBuffered drain interaction
-        // this prevents. RenderFrameEvent.Pre fires once per rendered frame regardless of
-        // shader pack or batched-render plumbing, which is what we need.
+        // Per-frame setup. RenderFrameEvent.Pre fires once per rendered frame regardless of shader pack
+        // or batched-render plumbing.
         NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> {
-            // Clear the main-target stencil HERE (outside any render pass) — clearStencilTexture
-            // throws inside the framegraph main pass, where our outline replay runs, so the in-pass
-            // clear was silently no-op'ing and stale stencil made the outline appear only from certain
-            // angles. See CustomGlintRenderer.clearMainStencil.
-            CustomGlintRenderer.clearMainStencil();
-            CustomGlintRenderer.pendingFrameStencilClear = false;
-            CustomGlintRenderer.shaderOutlinedThisFrame.clear();
-            CustomGlintRenderer.resetStencilSlots();
+            // Register our glint pipeline with Iris (soft/reflective, no-op without Iris) so an active
+            // pack runs it through the right program instead of drawing white. Self-guards after it lands;
+            // done here (not FMLClientSetupEvent) because IrisApi's singleton isn't ready that early.
+            IrisCompat.register();
             // Drop any body outlines queued last frame but never drained (level not rendered, stage
             // cancelled, etc.) so they can't replay against the wrong frame.
             EntityGlintRender.clearBodyOutlineQueue();
@@ -102,8 +83,15 @@ public final class CustomGlintClientInit {
         // geometry. Under Fabulous graphics clouds/weather render to their own targets (combined later by
         // the transparency post-chain), so our direct-to-main composite lands before that chain at either
         // stage — no change there.
-        NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterWeather event) ->
-                EntityGlintRender.drainBodyOutlines());
+        // Off the shader path this is the glow drain: raw GL straight onto the main target, after the
+        // cloud/weather passes (so the ring composites on top of them). Under an active Iris pack this
+        // point is mid-framegraph, where Iris hijacks our framebuffer into its gbuffer (black screen) —
+        // there the drain is relocated to LevelRendererMixin (renderLevel TAIL, post-Iris). Skip here when
+        // a pack is active so the glow isn't drained twice.
+        NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterWeather event) -> {
+            if (!CustomGlintRenderer.isShaderPackActive())
+                EntityGlintRender.drainBodyOutlines();
+        });
     }
 
     private static void onRegisterClientReloadListeners(AddClientReloadListenersEvent event) {

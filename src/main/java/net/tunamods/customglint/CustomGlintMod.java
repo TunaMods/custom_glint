@@ -7,7 +7,7 @@ import net.tunamods.customglint.module.item.GlintWandItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.loot.GlintLootModifier;
 import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
-import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
+import net.tunamods.customglint.module.client.TrimItemColors;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import net.tunamods.customglint.module.item.GlintTearItem;
@@ -53,9 +53,11 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeSerializer;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -176,7 +178,12 @@ public class CustomGlintMod {
         RECIPE_SERIALIZERS.register(modEventBus);
 
         ModNetworking.register(modEventBus);
-        FirstPersonCompat.register();
+
+        // Animated glow tint for the Glint/Glow Trim inventory icons. Client-only (touches ItemTintSource);
+        // the client class is referenced solely inside the dist guard so it never loads on a server.
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+            TrimItemColors.register(modEventBus);
+        }
 
         // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
         // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so

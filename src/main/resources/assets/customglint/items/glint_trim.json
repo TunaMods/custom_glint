@@ -8,7 +8,12 @@
         "threshold": 1000.0,
         "model": {
           "type": "minecraft:model",
-          "model": "customglint:item/glint_trim_glow"
+          "model": "customglint:item/glint_trim_glow",
+          "tints": [
+            {
+              "type": "customglint:glow"
+            }
+          ]
         }
       }
     ],

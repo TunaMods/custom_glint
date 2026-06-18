@@ -15,11 +15,12 @@
     "ItemRendererMixin",
     "ItemStackRenderStateMixin",
     "ItemSubmitMixin",
+    "LevelRendererMixin",
     "LivingEntityRendererMixin",
     "ModelFeatureRendererMixin",
     "RenderBuffersMixin",
-    "RenderLayerMixin",
     "SpecialModelWrapperMixin",
+    "SubmitNodeCollectionMixin",
     "SubmitNodeStorageMixin"
   ],
   "injectors": {

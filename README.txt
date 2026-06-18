@@ -1,5 +1,5 @@
 Custom Glints - developer documentation
-Minecraft 1.21.1 / NeoForge 21.x - MIT license (attribution required)
+Minecraft 26.1.2 / NeoForge 26.1.2 - MIT license (attribution required)
 ================================================================================
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
@@ -192,7 +192,7 @@ PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK. Custom hex via
 CustomGlint.color("FFD700"). The alpha byte is a brightness multiplier
 (0xFF full, 0x00 invisible); blend mode is additive.
 
-Designs: 55 ResourceLocation constants on CustomGlint (e.g. WAVE, SPARKLE,
+Designs: 55 Identifier constants on CustomGlint (e.g. WAVE, SPARKLE,
 AURORA). Iterate with CustomGlint.PATTERNS.
 
 Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (55).
@@ -237,10 +237,6 @@ Client-only. Gate any reference with FMLEnvironment / DistExecutor.
   // Two-pass stencil outline for entity / armor models
   CustomGlintRenderer.doModelOutline(poseStack, bufferSource, packedLight,
       model, modelTexture, glint, equipmentSlot);
-
-  // Stencil outline for an item (BEWLR + flat-sprite paths)
-  CustomGlintRenderer.doItemOutline(stack, displayContext, poseStack,
-      bufferSource, packedLight, overlay);
 
   // Public ThreadLocals
   CustomGlintRenderer.CURRENT_ITEM_STACK

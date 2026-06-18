@@ -3,12 +3,6 @@ loaderVersion="${loader_version_range}"
 license="${mod_license}"
 issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
 
-# --- Compat mixins (standalone full jar only; not in the api jar) ---
-[[mixins]]
-config="custom_glint.sophisticatedbackpacks.mixins.json"
-[[mixins]]
-config="custom_glint.elytraslot.mixins.json"
-
 # --- Full mod ---
 [[mods]]
 modId="${mod_id}"

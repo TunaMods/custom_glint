@@ -6,7 +6,6 @@ import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.AddressMode;
 import com.mojang.blaze3d.textures.FilterMode;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -19,9 +18,6 @@ import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.TextureTransform;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
-import net.neoforged.neoforge.client.stencil.StencilOperation;
-import net.neoforged.neoforge.client.stencil.StencilPerFaceTest;
-import net.neoforged.neoforge.client.stencil.StencilTest;
 import org.joml.Matrix4f;
 
 import java.util.function.Supplier;
@@ -50,12 +46,6 @@ public final class GlintPipelines {
     public static final Identifier GLINT_COLOR_SHADER =
             Identifier.fromNamespaceAndPath(MOD_ID, "core/glint_color");
 
-    /** Custom outline shader (vanilla core/rendertype_outline minus the ColorModulator dependency, so
-     *  the glow ring draws opaque in the per-vertex colour on the MAIN target). Files at
-     *  {@code assets/customglint/shaders/core/outline_color.{vsh,fsh}}. */
-    public static final Identifier OUTLINE_COLOR_SHADER =
-            Identifier.fromNamespaceAndPath(MOD_ID, "core/outline_color");
-
     /** Custom GUI item-outline FRAGMENT shader: emits the flat per-vertex colour masked by the bound
      *  texture's alpha (pairs with vanilla {@code core/position_tex_color.vsh}). Used by
      *  {@link #GUI_ITEM_OUTLINE} for the inventory-icon glow halo. File at
@@ -75,10 +65,9 @@ public final class GlintPipelines {
             .withFragmentShader(GUI_ITEM_OUTLINE_SHADER)
             .build();
 
-    /** Silhouette shader for the isolated glow target. Like outline_color but writes a per-fragment
-     *  distance falloff into the mask's alpha (read by post/glow_dilate_h as a 0..1 thickness scale) so
-     *  the ring thins with distance like 1.21.1's geometry-dilated ring. Separate from
-     *  OUTLINE_COLOR_SHADER (which the stencil paths share and need opaque alpha=1). */
+    /** Silhouette shader for the isolated glow target: writes a per-fragment distance falloff into the
+     *  mask's alpha (read by the composite as a 0..1 thickness scale) so the ring thins with distance like
+     *  the old geometry-dilated ring did. */
     public static final Identifier GLOW_SILHOUETTE_SHADER =
             Identifier.fromNamespaceAndPath(MOD_ID, "core/glow_silhouette");
     /** Occlusion-disabled silhouette fragment shader (no DepthSampler / reconstruct) — the cheaper,
@@ -111,13 +100,6 @@ public final class GlintPipelines {
      *  per-binding {@link GpuSampler} now (was {@code glTexParameteri} on the texture). */
     public static GpuSampler glintSampler() {
         return RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR);
-    }
-
-    /** Clamp + NEAREST sampler for the alpha-mask / clamped textures (old CLAMP_TO_EDGE path). */
-    public static GpuSampler clampNearestSampler() {
-        return RenderSystem.getSamplerCache()
-                .getSampler(AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE,
-                        FilterMode.NEAREST, FilterMode.NEAREST, false);
     }
 
     /**
@@ -165,52 +147,6 @@ public final class GlintPipelines {
         return m;
     }
 
-    // ── Stencil outline pipeline pool ───────────────────────────────────────────
-    //
-    // The old code allocated a unique stencil slot (1..255) per outline call and mutated GL stencil
-    // ref inside a per-RenderType LayeringStateShard runnable. Pipelines are immutable now, so each
-    // slot value gets its own pre-built WRITE and TEST pipeline, cached lazily. See
-    // 09-renderer-api-verified.md and the feedback_no_bit_per_item_stencil memory (per-slot
-    // granularity, never per-bit).
-
-    private static final RenderPipeline[] SLOT_WRITE_PIPE = new RenderPipeline[256];
-    private static final RenderPipeline[] SLOT_TEST_PIPE  = new RenderPipeline[256];
-
-    /** WRITE pipeline for {@code slot}: writes the slot value into the stencil buffer everywhere the
-     *  geometry draws (dpfail=REPLACE preserved from the old code so the write succeeds even when the
-     *  polygon-offset depth fails), no color, no depth write. */
-    public static RenderPipeline stencilWritePipe(int slot) {
-        RenderPipeline cached = SLOT_WRITE_PIPE[slot];
-        if (cached != null) return cached;
-        RenderPipeline p = GLINT_COLOR.toBuilder()
-                .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/stencil_write_" + slot))
-                .withColorTargetState(new ColorTargetState(java.util.Optional.empty(), ColorTargetState.WRITE_NONE))
-                .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-                .withStencilTest(new StencilTest(
-                        new StencilPerFaceTest(StencilOperation.REPLACE, StencilOperation.REPLACE,
-                                StencilOperation.REPLACE, CompareOp.ALWAYS_PASS),
-                        0xFF, 0xFF, slot))
-                .build();
-        SLOT_WRITE_PIPE[slot] = p;
-        return p;
-    }
-
-    /** TEST pipeline for {@code slot}: draws the dilated outline geometry only where the stencil
-     *  still holds the slot value (EQUAL), without further writing it. */
-    public static RenderPipeline stencilTestPipe(int slot) {
-        RenderPipeline cached = SLOT_TEST_PIPE[slot];
-        if (cached != null) return cached;
-        RenderPipeline p = GLINT_COLOR.toBuilder()
-                .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/stencil_test_" + slot))
-                .withStencilTest(new StencilTest(
-                        new StencilPerFaceTest(StencilOperation.KEEP, StencilOperation.KEEP,
-                                StencilOperation.KEEP, CompareOp.EQUAL),
-                        0xFF, 0x00, slot))
-                .build();
-        SLOT_TEST_PIPE[slot] = p;
-        return p;
-    }
-
     // ── Item-glint animation (forGlint variant) ─────────────────────────────────
 
     /** The item-glint scroll matrix (U-only scroll + atlas-calibrated scaleU/scaleV), a faithful
@@ -237,143 +173,6 @@ public final class GlintPipelines {
         m.scale(scaleU * patternScale, scaleV * patternScale, 1.0f);
         m.translate(-0.5f, -0.5f, 0.0f);
         return m;
-    }
-
-    /** Entity-body depth-only fill (no color), to occlude back-side model outline through alpha gaps. */
-    public static final RenderPipeline BODY_DEPTH_FILL = RenderPipelines.ENTITY_SOLID.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/body_depth_fill"))
-            .withCull(false)
-            .withColorTargetState(new ColorTargetState(java.util.Optional.empty(), ColorTargetState.WRITE_NONE))
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true))
-            .build();
-
-    /** Builds an entity-textured RenderType (mask / body-fill) off the given pipeline. Entity models
-     *  emit {@link DefaultVertexFormat#ENTITY} vertices, so these pipelines use that format. */
-    public static RenderType entityMaskType(String name, RenderPipeline pipeline, Identifier texture) {
-        RenderSetup setup = RenderSetup.builder(pipeline)
-                .withTexture("Sampler0", texture)
-                .useLightmap()
-                .useOverlay()
-                .bufferSize(256)
-                .createRenderSetup();
-        return RenderType.create(name, setup);
-    }
-
-    // ── Per-slot colored-outline pipelines (WRITE silhouette / TEST dilated ring) ─
-    //
-    // Derived from vanilla OUTLINE_NO_CULL (POSITION_TEX_COLOR + core/rendertype_outline, which
-    // alpha-discards the bound texture so the ring follows the real silhouette). WRITE stamps the
-    // slot value everywhere the geometry projects (no color); TEST draws the dilated ring only where
-    // stencil != slot (so other objects' silhouettes don't block it), color on. Output forced to the
-    // main target (replaces the old FORCE_MAIN_TARGET FBO juggling). Replaces SLOT_WRITE/SLOT_TEST.
-
-    private static final RenderPipeline[] OUTLINE_WRITE_PIPE = new RenderPipeline[256];
-    private static final RenderPipeline[] OUTLINE_TEST_PIPE  = new RenderPipeline[256];
-
-    public static RenderPipeline outlineWritePipe(int slot, boolean polyOffset) {
-        RenderPipeline cached = OUTLINE_WRITE_PIPE[slot];
-        if (cached != null) return cached;
-        RenderPipeline p = RenderPipelines.OUTLINE_NO_CULL.toBuilder()
-                .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/outline_write_" + slot))
-                .withVertexShader(OUTLINE_COLOR_SHADER)
-                .withFragmentShader(OUTLINE_COLOR_SHADER)
-                // Match armor_cutout_no_cull's polygon offset on the armor path so the silhouette
-                // lands at the armor's depth; items pass false (their base draw has no offset).
-                .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false,
-                        polyOffset ? -1.0F : 0.0F, polyOffset ? -10.0F : 0.0F))
-                .withColorTargetState(new ColorTargetState(java.util.Optional.empty(), ColorTargetState.WRITE_NONE))
-                // WRITE stencil-op (dpfail = op applied on depth-fail). TRIED:
-                //   - dpfail=REPLACE (full silhouette stamp) + TEST LEQUAL → ring formed, but dropped at
-                //     angles and flickered/"got eaten up" on camera move. Turned out to be the TEST's
-                //     slope-scaled depth bias, NOT the stamp.
-                //   - dpfail=KEEP (stamp only depth-passing/visible fragments, with the -1,-10 WRITE bias
-                //     to avoid self-z-fight) + TEST ALWAYS_PASS → occluded interior is unstamped, so the
-                //     ALWAYS_PASS TEST FILLS it solid → glow bleeds through walls (torn-fill screenshot).
-                //   - dpfail=KEEP + TEST LEQUAL+bias → still flickered (same TEST slope-bias root cause).
-                // CURRENT: dpfail=REPLACE → full, depth-INDEPENDENT silhouette stamp, so the stamp never
-                //   flickers. Occlusion is handled entirely by the TEST depth test below.
-                .withStencilTest(new StencilTest(
-                        new StencilPerFaceTest(StencilOperation.KEEP, StencilOperation.REPLACE,
-                                StencilOperation.REPLACE, CompareOp.ALWAYS_PASS),
-                        0xFF, 0xFF, slot))
-                .build();
-        OUTLINE_WRITE_PIPE[slot] = p;
-        return p;
-    }
-
-    public static RenderPipeline outlineTestPipe(int slot) {
-        RenderPipeline cached = OUTLINE_TEST_PIPE[slot];
-        if (cached != null) return cached;
-        RenderPipeline p = RenderPipelines.OUTLINE_NO_CULL.toBuilder()
-                .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/outline_test_" + slot))
-                .withVertexShader(OUTLINE_COLOR_SHADER)
-                .withFragmentShader(OUTLINE_COLOR_SHADER)
-                // TEST depth variants TRIED (occlusion vs the dilated ring band):
-                //   - ALWAYS_PASS            → never drops, but glows THROUGH walls (no occlusion). [bad]
-                //   - LEQUAL, no bias        → occludes, but band z-fights nearby background (ground at
-                //                              the feet, terrain behind) and drops at certain angles. [bad]
-                //   - LEQUAL + WRITE dpfail=KEEP + ALWAYS_PASS → occluded interior unstamped → TEST fills
-                //                              it solid through walls (torn-fill screenshot). [bad]
-                // LEQUAL + toward-camera depth bias so the ring wins z-fights vs coplanar/near background
-                // (feet, ground) without glowing through real walls. depthBias = (scaleFactor, constant).
-                //   - The main-target STENCIL also had to be cleared OUTSIDE the framegraph pass
-                //     (clearStencilTexture throws inside a pass and the failure was swallowed); that clear
-                //     was moved to RenderFrameEvent.Pre — see CustomGlintRenderer.clearMainStencil. Needed,
-                //     but did NOT fix the flicker on its own.
-                //   - TRIED bias (-1,-10) and (-3,-64), both with nonzero scaleFactor → NO change; the
-                //     outline still got "eaten up" / went transparent as the camera moved.
-                // ROOT CAUSE (that attempt): a NONZERO scaleFactor multiplies the polygon's DEPTH SLOPE.
-                // At a silhouette edge the dilated model is nearly edge-on to the camera, so the slope is
-                // huge and swings with camera angle → the effective bias is unstable → ring fragments flip
-                // pass/fail per frame (the flicker). Tried scaleFactor = 0 + constant-only bias (-64).
-                //   - TRIED scaleFactor=0 + constant=-64 → STILL flickered in-game (session 6): pieces of
-                //     the ring fade in/out of transparency as the camera orbits. A constant-only bias does
-                //     NOT fix it — the band's depth is unusable at the silhouette edge regardless of bias.
-                //     Also tried the AfterOpaqueFeatures entry-point move (full committed depth) first — no
-                //     effect on the flicker, confirming it's the band depth, not partial-depth timing.
-                // DECISIVE COMPARISON vs working-1.21.1 (which occluded cleanly with this SAME LEQUAL +
-                // 1.04 dilation): 1.21.1's TEST RT had (a) NO depth bias at all and (b) depth-WRITE ON
-                // (default COLOR_DEPTH_WRITE mask, set via the RenderType, not the layering shard). The
-                // 26.1 port had drifted to depth-write OFF + a bias. With NO_CULL the dilated shell draws
-                // front AND back faces; with depth-write OFF neither self-occludes, so as the camera orbits
-                // which face wins LEQUAL vs the scene flips → the flicker. NOW TRYING the faithful 1.21.1
-                // config: LEQUAL, depth-WRITE ON, NO bias — the front band fragment writes its depth so the
-                // back face is rejected and the ring stays stable.
-                //   - TRIED LEQUAL + depth-WRITE ON + no bias (this config) → STILL flickered identically
-                //     (session 7). So matching 1.21.1's TEST RT config is NOT sufficient on its own. Since
-                //     1.21.1 had the SAME doModelOutline dilation + SAME LEQUAL and DID occlude cleanly, the
-                //     divergence is environmental to 26.1, not in this pipeline. Traced the full vanilla
-                //     render path (GameRenderer → LevelRenderer.addMainPass → framegraph): the framegraph
-                //     "clear" pass clears COLOR+DEPTH only (GlCommandEncoder._clear(GL_COLOR|GL_DEPTH)) and
-                //     NEVER the stencil, and the RenderFrameEvent.Pre stencil clear evidently wasn't taking.
-                //     Stale per-frame stencil → the NOT_EQUAL test reads garbage → exactly the "only from
-                //     certain angles / transparent spots that shift with view" signature. Tried moving the
-                //     stencil clear into EntityGlintRender.drainBodyOutlines (at AfterOpaqueFeatures).
-                //   - TRIED clearMainStencil() at the drain point → made it WORSE (session 7), reverted. The
-                //     raw clearStencilTexture binds the scratch FBO then framebuffer 0 mid-framegraph-pass,
-                //     corrupting the render. So the RenderFrameEvent.Pre clear was already working and stale
-                //     stencil is RULED OUT. This config is kept (faithful 1.21.1). With depth bias, depth-
-                //     write, entry-point timing, and stencil-clear all ruled out, the band-depth stencil ring
-                //     is the confirmed dead end → parallel framegraph outline target.
-                .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, 0.0f))
-                .withStencilTest(new StencilTest(
-                        new StencilPerFaceTest(StencilOperation.KEEP, StencilOperation.KEEP,
-                                StencilOperation.KEEP, CompareOp.NOT_EQUAL),
-                        0xFF, 0x00, slot))
-                .build();
-        OUTLINE_TEST_PIPE[slot] = p;
-        return p;
-    }
-
-    /** Builds a colored-outline RenderType (WRITE or TEST) for the given pipeline + texture. The
-     *  texture is bound for the outline shader's alpha-discard; output forced to the main target. */
-    public static RenderType outlineType(String name, RenderPipeline pipeline, Identifier texture) {
-        RenderSetup setup = RenderSetup.builder(pipeline)
-                .withTexture("Sampler0", texture)
-                .setOutputTarget(OutputTarget.MAIN_TARGET)
-                .bufferSize(1536)
-                .createRenderSetup();
-        return RenderType.create(name, setup);
     }
 
     /** Combined glow-mask RenderType for {@link #GLOW_MASK_PIPE}: Sampler0 = the entity texture (drives
@@ -404,8 +203,9 @@ public final class GlintPipelines {
 
     // ── Isolated glow-outline pipeline (parallel framegraph outline target) ──────────────────────
     //
-    // Replaces the dead-end per-pixel-depth stencil band ring for the entity body glow (see the
-    // outlineTestPipe TRIED block). Two stages:
+    // Replaces the dead-end per-pixel-depth stencil band ring the 1.20.1/1.21.1 builds used (the stencil
+    // two-pass outline, removed in 26.1). That ring flickered/dropped at silhouette edges because the
+    // dilated band's depth is unusable there regardless of bias — confirmed dead end. Two stages:
     //  1. GLOW_MASK_PIPE — ONE render of each glowing model into our own isolated half-res mask target,
     //     depth test ALWAYS_PASS (marks the whole outer shape). core/glow_silhouette decides occlusion
     //     per-fragment by sampling the full-res scene depth (DepthSampler) and encodes shape + visibility
@@ -475,65 +275,4 @@ public final class GlintPipelines {
             .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
             .withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES)
             .build();
-
-    // ── Shader-pack forward-pass outline (no stencil; additive shell behind the item) ───────────
-    //
-    // Under an active shader pack the stencil OUTLINE shader has no destination program, so this
-    // path draws the dilated mesh as a flat additive silhouette via the universal core/position_color
-    // (POSITION_COLOR) → gbuffers_basic mapping, pushed behind the item by a positive depth bias.
-    // The old raw-GL front-face cull / glDepthRange / normal-push nuances have no declarative
-    // equivalent and are collapsed here — this path is shader-pack-only and needs in-game tuning
-    // (Iris/Sodium interplay).
-
-    /** Flat-colored forward outline (POSITION_COLOR), additive, pushed back, back-face culled. */
-    public static final RenderPipeline FORWARD_OUTLINE = RenderPipelines.DEBUG_QUADS.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/forward_outline"))
-            .withColorTargetState(new ColorTargetState(BlendFunction.LIGHTNING))
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 1.0F, 10.0F))
-            .withCull(true)
-            .build();
-
-    /** Textured forward outline (POSITION_TEX_COLOR) for shell / sprite paths that alpha-discard. */
-    public static final RenderPipeline FORWARD_OUTLINE_TEX = RenderPipelines.OUTLINE_NO_CULL.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/forward_outline_tex"))
-            .withColorTargetState(new ColorTargetState(BlendFunction.LIGHTNING))
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 1.0F, 10.0F))
-            .withCull(true)
-            .build();
-
-    /** Entity-format forward outline (for normal-push consumers that emit ENTITY vertices). */
-    public static final RenderPipeline FORWARD_OUTLINE_ENTITY = RenderPipelines.ENTITY_CUTOUT.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/forward_outline_entity"))
-            .withColorTargetState(new ColorTargetState(BlendFunction.LIGHTNING))
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 1.0F, 10.0F))
-            .withCull(true)
-            .build();
-
-    /** Untextured forward-outline RenderType (POSITION_COLOR). */
-    public static RenderType forwardOutline(String name) {
-        return RenderType.create(name, RenderSetup.builder(FORWARD_OUTLINE)
-                .setOutputTarget(OutputTarget.MAIN_TARGET).bufferSize(1536).createRenderSetup());
-    }
-
-    /** Textured forward-outline RenderType (POSITION_TEX_COLOR). */
-    public static RenderType forwardOutlineTex(String name, Identifier texture) {
-        return RenderType.create(name, RenderSetup.builder(FORWARD_OUTLINE_TEX)
-                .withTexture("Sampler0", texture)
-                .setOutputTarget(OutputTarget.MAIN_TARGET).bufferSize(1536).createRenderSetup());
-    }
-
-    /** Entity-format forward-outline RenderType (for normal-push consumers). */
-    public static RenderType forwardOutlineEntity(String name, Identifier texture) {
-        return RenderType.create(name, RenderSetup.builder(FORWARD_OUTLINE_ENTITY)
-                .withTexture("Sampler0", texture).useLightmap().useOverlay()
-                .setOutputTarget(OutputTarget.MAIN_TARGET).bufferSize(1536).createRenderSetup());
-    }
-
-    /** Plain (no-stencil) textured outline RenderType — for the GUI item-icon halos. Vanilla
-     *  OUTLINE_NO_CULL outputs vertex color masked by the bound texture's alpha. */
-    public static RenderType plainOutlineType(String name, Identifier texture) {
-        return RenderType.create(name, RenderSetup.builder(RenderPipelines.OUTLINE_NO_CULL)
-                .withTexture("Sampler0", texture)
-                .setOutputTarget(OutputTarget.MAIN_TARGET).bufferSize(1536).createRenderSetup());
-    }
 }

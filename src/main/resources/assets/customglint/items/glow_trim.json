@@ -1,6 +1,11 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "customglint:item/glow_trim"
+    "model": "customglint:item/glow_trim",
+    "tints": [
+      {
+        "type": "customglint:glow"
+      }
+    ]
   }
 }

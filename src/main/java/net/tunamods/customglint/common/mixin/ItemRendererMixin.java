@@ -50,8 +50,12 @@ public class ItemRendererMixin {
         boolean glowing = holder.customglint$isGlowing();
         int[] glowColors = holder.customglint$getGlowColors();
         if (glowing || (glowColors != null && glowColors.length > 0)) {
+            // First-person hand items go to a separate queue drained only at the hand point (view-space
+            // pose; the world drain would project it against the world matrix and the ring would float
+            // off the item — most visible under Iris, which renders the hand inside the level framegraph).
+            boolean heldFp = submit.displayContext() != null && submit.displayContext().firstPerson();
             EntityGlintRender.queueItemOutline(submit.quads(), submit.pose(), submit.lightCoords(),
-                    holder.customglint$getGlint(), glowing, glowColors);
+                    holder.customglint$getGlint(), glowing, glowColors, heldFp);
         }
     }
 
@@ -67,7 +71,6 @@ public class ItemRendererMixin {
     )
     private static void cg_onFoilBuffer(MultiBufferSource bufferSource, RenderType renderType,
             PoseStack.Pose foilDecalPose, CallbackInfoReturnable<VertexConsumer> cir) {
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
         VertexConsumer consumer = applyGlint(bufferSource, GlintCarrier.DRAW_GLINT.get());
         if (consumer != null) cir.setReturnValue(consumer);
     }

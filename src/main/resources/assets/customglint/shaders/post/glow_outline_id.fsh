@@ -30,7 +30,7 @@ out vec4 fragColor;
 // SEARCH MUST be >= ceil(max of these). If you set any above 7, raise SEARCH to match AND raise
 // EntityGlintRender.SCISSOR_PAD to >= that + ~4 so the thicker ring isn't clipped at the group rect edge.
 // These are the FULL widths, applied at or nearer than REF_DIST; beyond it the ring narrows with distance.
-const float THICKNESS[4] = float[](4.0, 4.0, 3.0, 5.0);
+const float THICKNESS[4] = float[](4.0, 4.0, 3.0, 7.0);
 const int   SEARCH       = 7;             // ceil(max(THICKNESS))
 
 // Distance-proportional thinning. A constant pixel-width ring looks FATTER the farther (smaller on screen)
@@ -71,9 +71,18 @@ void main() {
             // Reconstruct this source's linear eye distance from the scene depth at its texel, then scale the
             // per-category reach so a far (small-on-screen) object gets a proportionally thinner ring.
             vec2 srcUV = texCoord + vec2(float(dx), float(dy)) * texel;
-            float ndc = texture(DepthSampler, srcUV).r * 2.0 - 1.0;
+            float srcDepthRaw = texture(DepthSampler, srcUV).r;
+            float ndc = srcDepthRaw * 2.0 - 1.0;
             float srcDist = ProjMat[3][2] / (ndc + ProjMat[2][2]);
-            float scale = clamp(REF_DIST / max(srcDist, 0.001), MIN_SCALE, 1.0);
+            // A VISIBLE silhouette source can only sit on the cleared far plane (depth ~1.0) if its geometry
+            // never wrote to the main depth buffer — i.e. the first-person held item, which under an Iris pack
+            // is drawn into Iris's gbuffer, not the main target, so the composite samples the cleared far value
+            // here. Without this guard srcDist → far → scale → MIN_SCALE and EVERY hand item rings as a thin
+            // hairline (TRIED: routing held items through the hand-projection drain fixed the float but left
+            // them thin — this is why). Held items are always close; keep them at full THICKNESS.
+            float scale = (srcDepthRaw >= 0.999999)
+                    ? 1.0
+                    : clamp(REF_DIST / max(srcDist, 0.001), MIN_SCALE, 1.0);
             float r = THICKNESS[keyN >> 5] * scale;             // this source's distance-scaled reach
             if (d2 <= r * r) {                                  // within THAT category's thickness → ring it
                 // Occlude the ring where this RING pixel has nearer scene geometry than the source edge the

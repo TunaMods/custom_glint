@@ -33,6 +33,31 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(LivingEntityRenderer.class)
 public class LivingEntityRendererMixin {
 
+    /**
+     * Publish this renderer's body model for the span of {@code submit} so the per-layer glint hook
+     * ({@code SubmitNodeStorageMixin}) can tell the body's own {@code submitModel} apart from the
+     * RenderLayer submits and skip it — the body is glinted below by {@link #cg_entityGlint}; the layers
+     * are glinted in the storage hook. Cleared at RETURN so a non-entity / non-living submit can't leave a
+     * stale model that suppresses a later layer's glint.
+     */
+    @Inject(
+        method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+        at = @At("HEAD"), require = 0
+    )
+    private void cg_markBodyModel(LivingEntityRenderState state, PoseStack poseStack,
+            SubmitNodeCollector collector, CameraRenderState camera, CallbackInfo ci) {
+        EntityGlintRender.setCurrentBodyModel(((LivingEntityRenderer<?, ?, ?>) (Object) this).getModel());
+    }
+
+    @Inject(
+        method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
+        at = @At("RETURN"), require = 0
+    )
+    private void cg_clearBodyModel(LivingEntityRenderState state, PoseStack poseStack,
+            SubmitNodeCollector collector, CameraRenderState camera, CallbackInfo ci) {
+        EntityGlintRender.setCurrentBodyModel(null);
+    }
+
     @Inject(
         method = "submit(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/level/CameraRenderState;)V",
         at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V"),

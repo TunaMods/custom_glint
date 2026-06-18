@@ -12,8 +12,6 @@ loaderVersion="${loader_version_range}" #mandatory This is typically bumped ever
 license="${mod_license}"
 [[mixins]]
 config="custom_glint.mixins.json"
-[[mixins]]
-config="custom_glint.sophisticatedbackpacks.mixins.json"
 # A URL to refer people to when problems occur with this mod
 #issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
 # If your mod is purely client-side and has no multiplayer functionality (be it dedicated servers or Open to LAN),

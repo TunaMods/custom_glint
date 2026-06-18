@@ -6,10 +6,6 @@ issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
 # --- Mixin configs (loaded for the whole jar) ---
 [[mixins]]
 config="custom_glint.mixins.json"
-[[mixins]]
-config="custom_glint.sophisticatedbackpacks.mixins.json"
-[[mixins]]
-config="custom_glint.elytraslot.mixins.json"
 
 # --- API mod ---
 [[mods]]

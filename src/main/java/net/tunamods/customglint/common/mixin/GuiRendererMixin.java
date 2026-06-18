@@ -3,6 +3,7 @@ package net.tunamods.customglint.common.mixin;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.render.GuiItemAtlas;
 import net.minecraft.client.gui.render.GuiRenderer;
 import net.minecraft.client.gui.render.TextureSetup;
@@ -28,16 +29,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@link GuiItemAtlas} slot and are blitted — AND the 26.1 GUI sorts blits by (scissor, pipeline), not
  * submission order, so a "behind the item" copy can't be guaranteed.
  *
- * <p>Instead we add ONE blit of the slot texture through {@link GlintPipelines#GUI_ITEM_OUTLINE}, whose
- * shader emits the flat glow colour only in a 1-px ring JUST OUTSIDE the item silhouette (interior texels
- * discard). Since it never covers the icon, drawing on top is fine. It is scissored to the item's 16×16
- * slot so the ring can't bleed into neighbouring slots.
+ * <p>Instead we add ONE blit of the slot texture through {@link GlintPipelines#GUI_ITEM_OUTLINE} on a quad
+ * GROWN by {@link #OUTLINE_MARGIN} item-pixels (scissor grown to match), whose shader does a uniform outward
+ * dilation of the item: it emits the flat glow colour in the {@code OUTLINE_MARGIN}-px border around the
+ * silhouette and discards over the icon itself, so drawing on top is fine. Every sample maps back into the
+ * item's own slot, so the halo can't read a neighbouring icon. Order-independent — works despite the 26.1
+ * GUI sorting blits by pipeline rather than submission order.
  *
  * <p>Glow comes off the item's render state (set by {@code ItemModelResolverMixin}); the colour resolves
  * like everywhere else: glow colours first (animated), then glint layer 0, else white.
  */
 @Mixin(GuiRenderer.class)
 public class GuiRendererMixin {
+
+    /** Halo thickness in ITEM pixels — the blit quad is grown by this much on every side to give the outward
+     *  halo room outside the 16x16 icon. MUST equal {@code MARGIN} in {@code core/gui_item_outline.fsh}
+     *  (the shader derives its SCALE and dilation radius from the same value). Tune both together. */
+    private static final int OUTLINE_MARGIN = 1;
 
     @Shadow @Final private GuiRenderState renderState;
 
@@ -58,28 +66,31 @@ public class GuiRendererMixin {
             color = glint != null ? CustomGlintRenderer.computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
         }
 
-        // Pack the atlas SLOT pixel size (= 16 * guiScale, GuiRenderer.prepareItemAtlas) into the colour's
-        // alpha byte so the outline shader can clamp its taps to THIS item's slot and never sample the
-        // neighbouring icon (the GUI atlas packs slots edge-to-edge, no gutter). The shader reconstructs
-        // slotUvSize = slotTextureSize * (1 atlas texel in UV) exactly — robust at ANY guiScale, unlike
-        // packing 1/slotUvSize, which is NON-integer at e.g. guiScale 3 (48px slots in a power-of-two atlas)
-        // and produced the slot-edge bleed. The halo is drawn opaque, so the alpha channel is free to carry it.
-        int slotTextureSize = Math.max(1, Math.min(255, 16 * (int) Minecraft.getInstance().getWindow().getGuiScale()));
-        color = (color & 0x00FFFFFF) | (slotTextureSize << 24);
+        // Pack guiScale into the colour's alpha byte. The shader needs the slot UV size s; the atlas slot is
+        // ALWAYS 16*guiScale texels, so s = 16*guiScale/atlasSize can be computed EXACTLY shader-side from just
+        // guiScale — no fwidth, no rounding, no clamp. (The earlier scheme packed the quad's on-screen px size
+        // and recovered s via fwidth; on the big zoomed wand preview that value overflowed 7 bits, clamped, and
+        // corrupted s, which tore the outline into cross lines. guiScale is small and exact.)
+        int guiScale = Math.max(1, Math.min(127, (int) Minecraft.getInstance().getWindow().getGuiScale()));
+        color = (color & 0x00FFFFFF) | (guiScale << 24);
 
         TextureSetup tex = TextureSetup.singleTexture(slotView.textureView(),
                 RenderSystem.getSamplerCache().getRepeat(FilterMode.NEAREST));
-        int x0 = itemState.x(), y0 = itemState.y(), x1 = x0 + 16, y1 = y0 + 16;
-        // Clip EXACTLY like vanilla's own item blit (GuiRenderer.submitBlitFromItemAtlas): pass the item's
-        // raw scissorArea (SCREEN space). The earlier code intersected a slot rect built from the RAW x/y,
-        // but those are POSE-RELATIVE — a container screen translates the pose to its top-left, so against
-        // the screen-space scissor they mismatched and the clip came out empty for MENU items. That's why
-        // the ring showed on the HUD hotbar (identity pose) but not in the inventory. The 16×16 blit
-        // geometry + the shader's per-slot sample clamp already confine the ring; the scissor only needs to
-        // match the item, so reuse the item's own scissorArea.
+        // Grow the blit quad by OUTLINE_MARGIN item-pixels on every side so the outward halo has room to draw
+        // OUTSIDE the 16x16 icon. UVs stay pinned to the atlas slot, so the icon appears at SCALE inside the
+        // bigger quad and the shader fills the surrounding border. (x/y are pose-local; the pose scales them.)
+        int x0 = itemState.x() - OUTLINE_MARGIN, y0 = itemState.y() - OUTLINE_MARGIN;
+        int x1 = itemState.x() + 16 + OUTLINE_MARGIN, y1 = itemState.y() + 16 + OUTLINE_MARGIN;
+        // Clip the halo to the item's on-screen SLOT BOUNDS so it can't bleed past the slot into neighbouring
+        // slots or other UI. bounds() is the 16x16 item rect transformed by the pose and already intersected
+        // with the active menu scissor — i.e. exactly the slot the icon occupies on screen. The outward halo
+        // still shows because item sprites carry a transparent border inside their 16x16, leaving room within
+        // the slot; a sprite that bleeds to the very edge simply loses the halo on that edge rather than
+        // spilling over. Falls back to scissorArea() if bounds() is somehow absent.
+        ScreenRectangle scissor = itemState.bounds() != null ? itemState.bounds() : itemState.scissorArea();
         renderState.addBlitToCurrentLayer(new BlitRenderState(
                 GlintPipelines.GUI_ITEM_OUTLINE, tex, itemState.pose(),
                 x0, y0, x1, y1,
-                slotView.u0(), slotView.u1(), slotView.v0(), slotView.v1(), color, itemState.scissorArea()));
+                slotView.u0(), slotView.u1(), slotView.v0(), slotView.v1(), color, scissor));
     }
 }

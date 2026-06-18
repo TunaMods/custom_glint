@@ -105,6 +105,8 @@ public class GlintEditorScreen extends Screen {
 
     // ── Glint import overlay ──────────────────────────────────────────────────
     private boolean      showImportPicker = false;
+    /** Full scanned list; {@link #availableGlints} is the search-filtered view rendered in the picker. */
+    private List<String> allGlints        = new ArrayList<>();
     private List<String> availableGlints  = new ArrayList<>();
     private int          importScroll     = 0;
     private EditBox      importSearchBox;
@@ -616,7 +618,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void scanGlintConfigs() {
-        availableGlints.clear();
+        allGlints.clear();
         try {
             Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
             if (Files.exists(configDir)) {
@@ -624,11 +626,13 @@ public class GlintEditorScreen extends Screen {
                     .filter(p -> p.toString().endsWith(".json"))
                     .map(p -> p.getFileName().toString().replace(".json", ""))
                     .sorted()
-                    .forEach(availableGlints::add);
+                    .forEach(allGlints::add);
             }
         } catch (Exception e) {
             // Silently fail if config dir doesn't exist
         }
+        // Apply the current search query (empty → all) to populate the rendered list.
+        filterGlints(importSearchBox != null ? importSearchBox.getValue() : "");
     }
 
     private void loadGlintFromConfig(String name) {
@@ -912,9 +916,11 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void filterGlints(String query) {
-        // Simple prefix filter
-        String lq = query.toLowerCase();
-        // Already have all glints in availableGlints, which are sorted
+        String lq = query == null ? "" : query.toLowerCase();
+        availableGlints = lq.isEmpty() ? new ArrayList<>(allGlints) : allGlints.stream()
+                .filter(d -> d.toLowerCase().contains(lq))
+                .collect(Collectors.toList());
+        importScroll = Math.max(0, Math.min(importScroll, Math.max(0, availableGlints.size() - IMPORT_ROWS)));
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────

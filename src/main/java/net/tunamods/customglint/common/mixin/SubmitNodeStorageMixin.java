@@ -46,6 +46,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * how entity/armor glint is submitted. Re-entrancy is guarded ({@link #cg_addingGlint}) and the glint is
  * added once per item submit ({@link #cg_firstGlintForToken()}), so a shield's base + pattern + foil
  * submits don't stack several glint passes.
+ *
+ * <p>ENTITY per-layer glint is NOT here — RenderLayers submit via {@code collector.order(n).submitModel},
+ * which lands on {@code SubmitNodeCollection.submitModel}, not this {@code SubmitNodeStorage.submitModel}
+ * (the latter just delegates to {@code order(0)}). See {@code SubmitNodeCollectionMixin}.
  */
 @Mixin(SubmitNodeStorage.class)
 public class SubmitNodeStorageMixin {

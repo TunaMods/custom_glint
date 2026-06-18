@@ -199,10 +199,17 @@ def apiJarTask = tasks.register('apiJar', Jar) {
 // Config-cache safe: doLast touches only captured locals + the output file, never `project`.
 def generateApiJarJarMetadata = tasks.register('generateApiJarJarMetadata') {
     def outFile = layout.buildDirectory.file('jarjar-meta/metadata.json')
-    outputs.file outFile
     def versionStr = mod_version.toString()
     def groupStr = mod_group_id.toString()
     def nestedName = apiJarName
+    // Track these as inputs so a version/group/name change re-runs the task. Without them the task has
+    // only an output and Gradle keeps a stale metadata.json across a version bump — which then declares a
+    // nested api jar version that no longer matches the embedded file (FML: "declares X but does not
+    // contain it").
+    inputs.property('version', versionStr)
+    inputs.property('group', groupStr)
+    inputs.property('nestedName', nestedName)
+    outputs.file outFile
     doLast {
         def f = outFile.get().asFile
         f.parentFile.mkdirs()
