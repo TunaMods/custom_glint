@@ -138,13 +138,11 @@ unions the body model and all overlay layers (armor, capes, saddles) into one
 outline ring.
 
   import net.tunamods.customglint.common.CustomGlint;
-  import net.tunamods.customglint.common.entity.EntityGlintEvents;
 
-  // Per-instance writes run server-side. Broadcast after each mutation.
+  // Per-instance writes run server-side; the change auto-syncs to tracking clients.
   CustomGlint.writeEntity(living, layers);
   CustomGlint.setEntityGlowColors(living, colors);
   CustomGlint.setEntityGlowing(living, true);
-  EntityGlintEvents.broadcast(living);
 
   CustomGlint.readEntity(living);
   CustomGlint.hasEntity(living);
@@ -156,31 +154,27 @@ outline ring.
       new int[]{CustomGlint.CYAN, CustomGlint.WHITE});
 
 Sync:
-  - All mutating calls run server-side. EntityGlintEvents.broadcast(living)
-    pushes the current tag to every tracking client.
-  - The api jar registers a PlayerEvent.StartTracking listener that re-syncs
-    late joiners automatically.
-  - State lives on the entity's PersistentData under the "customglint" key.
-  - The networking channel (customglint_api:main) ships in the api jar, so
-    mods that bundle the api get entity sync with no extra wiring.
+  - State is a synced data attachment (CustomGlint.ENTITY_GLINT), registered by the
+    api jar. Run all mutating calls server-side; NeoForge auto-syncs the attachment
+    to tracking clients on every write, and to late joiners on start-tracking. No
+    manual broadcast, no networking wiring, no client cache.
+  - The attachment is persisted server-side and copied across player respawn.
+  - Type-wide registrations (registerEntityGlint) need no per-entity storage; the
+    renderer consults them as a fallback when an entity has no per-instance state.
 
-Tag-level helpers for packets, NBT files, and snapshot / restore:
+Tag-level helpers for snapshot / restore and item<->entity transfer:
 
   CompoundTag tag = CustomGlint.entityGlintTag(living);   // or itemGlintTag(stack)
-  CustomGlint.writeEntityTag(living, tag);
+  CustomGlint.writeEntityTag(living, tag);                // overwrite from a tag
   CustomGlint.writeItemTag(stack, tag);                   // symmetric for items
   CustomGlint.Data layers   = CustomGlint.fromTag(tag);
   boolean          glowing  = CustomGlint.tagGlowing(tag);
   int[]            glowCols = CustomGlint.tagGlowColors(tag);
   CompoundTag      fresh    = CustomGlint.toTag(layers);
 
-Client-side mutations (writeEntity / setEntityGlowing / setEntityGlowColors called
-on the client — preview UIs, replay viewers, entities reconstructed from stored
-NBT) render immediately without waiting for a server broadcast. If you need to
-force a re-sync after manually editing the entity's persistent NBT, call the
-client-only helper:
-
-  EntityGlintRender.refreshClientCache(living);     // client-only
+  These bridge the entity attachment to the flat item NBT layout, so capturing a
+  mob's glint onto an item is one line:
+  writeItemTag(stack, entityGlintTag(living)).
 
 
 ================================================================================
