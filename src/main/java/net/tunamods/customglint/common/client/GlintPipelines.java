@@ -22,7 +22,7 @@ import org.joml.Matrix4f;
 
 import java.util.function.Supplier;
 
-import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
+import net.tunamods.customglint.common.CustomGlint;
 
 /**
  * Verified 26.1.2 render-pipeline foundation for the glint backend. Split out of
@@ -44,14 +44,14 @@ public final class GlintPipelines {
      *  multi-color layers batch in one draw). Files live at
      *  {@code assets/customglint/shaders/core/glint_color.{vsh,fsh}}. */
     public static final Identifier GLINT_COLOR_SHADER =
-            Identifier.fromNamespaceAndPath(MOD_ID, "core/glint_color");
+            CustomGlint.res("core/glint_color");
 
     /** Custom GUI item-outline FRAGMENT shader: emits the flat per-vertex colour masked by the bound
      *  texture's alpha (pairs with vanilla {@code core/position_tex_color.vsh}). Used by
      *  {@link #GUI_ITEM_OUTLINE} for the inventory-icon glow halo. File at
      *  {@code assets/customglint/shaders/core/gui_item_outline.fsh}. */
     public static final Identifier GUI_ITEM_OUTLINE_SHADER =
-            Identifier.fromNamespaceAndPath(MOD_ID, "core/gui_item_outline");
+            CustomGlint.res("core/gui_item_outline");
 
     /**
      * GUI blit pipeline for the inventory-icon glow halo. Derived from vanilla {@code GUI_TEXTURED}
@@ -61,7 +61,7 @@ public final class GlintPipelines {
      * item texture tinted. {@code GuiRendererMixin} blits this at 1-px offsets behind the real item.
      */
     public static final RenderPipeline GUI_ITEM_OUTLINE = RenderPipelines.GUI_TEXTURED.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/gui_item_outline"))
+            .withLocation(CustomGlint.res("pipeline/gui_item_outline"))
             .withFragmentShader(GUI_ITEM_OUTLINE_SHADER)
             .build();
 
@@ -69,11 +69,11 @@ public final class GlintPipelines {
      *  mask's alpha (read by the composite as a 0..1 thickness scale) so the ring thins with distance like
      *  the old geometry-dilated ring did. */
     public static final Identifier GLOW_SILHOUETTE_SHADER =
-            Identifier.fromNamespaceAndPath(MOD_ID, "core/glow_silhouette");
+            CustomGlint.res("core/glow_silhouette");
     /** Occlusion-disabled silhouette fragment shader (no DepthSampler / reconstruct) — the cheaper,
      *  show-through-walls variant selected by the client config. Shares the silhouette vertex shader. */
     public static final Identifier GLOW_SILHOUETTE_FLAT_SHADER =
-            Identifier.fromNamespaceAndPath(MOD_ID, "core/glow_silhouette_flat");
+            CustomGlint.res("core/glow_silhouette_flat");
 
     /**
      * Base colored-glint pipeline. Derived from vanilla {@link RenderPipelines#GLINT} so it inherits
@@ -83,7 +83,7 @@ public final class GlintPipelines {
      * applied on the derived pipelines / setups, not here.
      */
     public static final RenderPipeline GLINT_COLOR = RenderPipelines.GLINT.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/glint_color"))
+            .withLocation(CustomGlint.res("pipeline/glint_color"))
             .withVertexShader(GLINT_COLOR_SHADER)
             .withFragmentShader(GLINT_COLOR_SHADER)
             .withVertexFormat(DefaultVertexFormat.POSITION_TEX_COLOR, VertexFormat.Mode.QUADS)
@@ -232,7 +232,7 @@ public final class GlintPipelines {
      *  Sampler0; output target is overridden at draw time via RenderSystem.outputColor/DepthTextureOverride
      *  to our mask target. */
     public static final RenderPipeline GLOW_MASK_PIPE = RenderPipelines.OUTLINE_NO_CULL.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/glow_mask"))
+            .withLocation(CustomGlint.res("pipeline/glow_mask"))
             .withVertexShader(GLOW_SILHOUETTE_SHADER)
             .withFragmentShader(GLOW_SILHOUETTE_SHADER)
             .withSampler("DepthSampler")
@@ -244,7 +244,7 @@ public final class GlintPipelines {
      *  with NO DepthSampler (cheaper; outlines show through walls). Selected when the client config
      *  outlineOcclusion = false. */
     public static final RenderPipeline GLOW_MASK_FLAT_PIPE = RenderPipelines.OUTLINE_NO_CULL.toBuilder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/glow_mask_flat"))
+            .withLocation(CustomGlint.res("pipeline/glow_mask_flat"))
             .withVertexShader(GLOW_SILHOUETTE_SHADER)
             .withFragmentShader(GLOW_SILHOUETTE_FLAT_SHADER)
             .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, 0.0f))
@@ -253,9 +253,9 @@ public final class GlintPipelines {
 
     /** Bilinear upscale of the half-res ring onto the main target (blended). */
     public static final RenderPipeline GLOW_UPSCALE_PIPE = RenderPipeline.builder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/glow_upscale"))
-            .withVertexShader(Identifier.fromNamespaceAndPath(MOD_ID, "core/screenquad"))
-            .withFragmentShader(Identifier.fromNamespaceAndPath(MOD_ID, "post/glow_upscale"))
+            .withLocation(CustomGlint.res("pipeline/glow_upscale"))
+            .withVertexShader(CustomGlint.res("core/screenquad"))
+            .withFragmentShader(CustomGlint.res("post/glow_upscale"))
             .withSampler("InSampler")
             .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
             .withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES)
@@ -267,9 +267,9 @@ public final class GlintPipelines {
      *  vertex + post/glow_outline_id fragment; driven via RenderPass.setPipeline, so it must be registered
      *  through RegisterRenderPipelinesEvent — see CustomGlintClientInit. */
     public static final RenderPipeline GLOW_COMPOSITE_ID_PIPE = RenderPipeline.builder()
-            .withLocation(Identifier.fromNamespaceAndPath(MOD_ID, "pipeline/glow_outline_id"))
-            .withVertexShader(Identifier.fromNamespaceAndPath(MOD_ID, "core/screenquad"))
-            .withFragmentShader(Identifier.fromNamespaceAndPath(MOD_ID, "post/glow_outline_id"))
+            .withLocation(CustomGlint.res("pipeline/glow_outline_id"))
+            .withVertexShader(CustomGlint.res("core/screenquad"))
+            .withFragmentShader(CustomGlint.res("post/glow_outline_id"))
             .withSampler("MaskSampler")
             .withSampler("DepthSampler")   // full-res scene depth — distance-proportional ring thinning
             .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))

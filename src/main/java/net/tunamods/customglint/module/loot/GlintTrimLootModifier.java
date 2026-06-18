@@ -215,7 +215,7 @@ public class GlintTrimLootModifier extends LootModifier {
             ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
             Identifier patternLoc = pattern.equals("vanilla")
                 ? CustomGlint.VANILLA
-                : Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + pattern + ".png");
+                : CustomGlint.res("textures/glint/" + pattern + ".png");
             GlintTrimItem.setPattern(trim, patternLoc);
             if (context.getRandom().nextFloat() < 0.25f) {
                 int colorCount = 1 + context.getRandom().nextInt(3);

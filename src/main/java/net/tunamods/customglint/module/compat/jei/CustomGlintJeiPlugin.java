@@ -33,7 +33,7 @@ import java.util.List;
 @JeiPlugin
 public class CustomGlintJeiPlugin implements IModPlugin {
 
-    private static final Identifier UID = Identifier.fromNamespaceAndPath("customglint", "jei_plugin");
+    private static final Identifier UID = CustomGlint.res("jei_plugin");
 
     @Override
     public Identifier getPluginUid() {
@@ -59,7 +59,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
                 int c = patternName.indexOf(':');
                 patternRl = Identifier.fromNamespaceAndPath(patternName.substring(0, c), "textures/glint/" + patternName.substring(c + 1) + ".png");
             } else {
-                patternRl = Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + patternName + ".png");
+                patternRl = CustomGlint.res("textures/glint/" + patternName + ".png");
             }
             GlintTrimItem.setPattern(trimVariant, patternRl);
             trimVariants.add(trimVariant);

@@ -10,12 +10,12 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import java.util.ArrayList;
 import java.util.List;
 
-import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
+import net.tunamods.customglint.common.CustomGlint;
 
 public record GlintDesignSyncPacket(List<String> designs) implements CustomPacketPayload {
 
     public static final Type<GlintDesignSyncPacket> TYPE =
-            new Type<>(Identifier.fromNamespaceAndPath(MOD_ID, "glint_design_sync"));
+            new Type<>(CustomGlint.res("glint_design_sync"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintDesignSyncPacket> STREAM_CODEC =
             StreamCodec.of(

@@ -14,12 +14,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
-
 public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static final Type<GiveGlintTrimPacket> TYPE =
-            new Type<>(Identifier.fromNamespaceAndPath(MOD_ID, "give_glint_trim"));
+            new Type<>(CustomGlint.res("give_glint_trim"));
 
     public static final StreamCodec<FriendlyByteBuf, GiveGlintTrimPacket> STREAM_CODEC =
             StreamCodec.of(GiveGlintTrimPacket::encode, GiveGlintTrimPacket::decode);

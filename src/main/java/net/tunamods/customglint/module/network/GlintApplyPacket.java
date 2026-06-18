@@ -16,12 +16,10 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
-
 public class GlintApplyPacket implements CustomPacketPayload {
 
     public static final Type<GlintApplyPacket> TYPE =
-            new Type<>(Identifier.fromNamespaceAndPath(MOD_ID, "glint_apply"));
+            new Type<>(CustomGlint.res("glint_apply"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
             StreamCodec.of(GlintApplyPacket::encode, GlintApplyPacket::decode);

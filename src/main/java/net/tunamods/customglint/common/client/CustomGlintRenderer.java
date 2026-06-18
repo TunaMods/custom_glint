@@ -130,7 +130,7 @@ public final class CustomGlintRenderer {
      *  TextureManager to {@link #sceneDepthTex}, a holder whose view is re-pointed at the live main-target
      *  depth each frame by {@link #bindSceneDepth}. The mask shader (core/glow_silhouette) samples this to
      *  decide per-fragment occlusion, which is why no separate depth-downsample pass is needed any more. */
-    public static final Identifier SCENE_DEPTH_ID = Identifier.fromNamespaceAndPath(MOD_ID, "scene_depth");
+    public static final Identifier SCENE_DEPTH_ID = CustomGlint.res("scene_depth");
 
     /** Per-texture combined-mask RenderType (GLOW_MASK_PIPE: ALWAYS_PASS depth, shape + per-fragment
      *  visibility encoded in alpha by core/glow_silhouette). One render per mob writes everything the
@@ -505,7 +505,7 @@ public final class CustomGlintRenderer {
         }
 
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
-        Identifier loc = Identifier.fromNamespaceAndPath(MOD_ID,"glint/" + safePath);
+        Identifier loc = CustomGlint.res("glint/" + safePath);
         // 26.1: DynamicTexture needs a label supplier; wrap/filter (REPEAT + NEAREST) is no longer set
         // on the texture — GlintPipelines.glintSampler() supplies it per binding.
         DynamicTexture dt = new DynamicTexture(() -> MOD_ID + ":glint/" + safePath, gray);

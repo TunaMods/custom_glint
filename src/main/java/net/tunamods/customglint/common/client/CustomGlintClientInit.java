@@ -18,6 +18,7 @@ import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.renderstate.RegisterRenderStateModifiersEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.CustomGlintApiMod;
 
 /**
@@ -95,7 +96,7 @@ public final class CustomGlintClientInit {
     }
 
     private static void onRegisterClientReloadListeners(AddClientReloadListenersEvent event) {
-        event.addListener(Identifier.fromNamespaceAndPath("customglint", "glint_textures"),
+        event.addListener(CustomGlint.res("glint_textures"),
                 (ResourceManagerReloadListener) (ResourceManager manager) ->
                         CustomGlintRenderer.clearTextures());
     }

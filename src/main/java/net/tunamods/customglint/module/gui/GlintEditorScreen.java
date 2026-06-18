@@ -45,7 +45,7 @@ public class GlintEditorScreen extends Screen {
             int c = name.indexOf(':');
             return Identifier.fromNamespaceAndPath(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
         }
-        return Identifier.fromNamespaceAndPath("customglint", "textures/glint/" + name + ".png");
+        return CustomGlint.res("textures/glint/" + name + ".png");
     }
 
     private static String designShortName(Identifier rl) {

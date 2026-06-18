@@ -3,7 +3,7 @@ package net.tunamods.customglint.module.client;
 import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.common.CustomGlint;
 
 /**
  * Registers the animated trim-glow tint ({@link GlowTintSource}) for the Glint Trim / Glow Trim
@@ -24,7 +24,7 @@ public final class TrimItemColors {
 
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener((RegisterColorHandlersEvent.ItemTintSources event) ->
-                event.register(Identifier.fromNamespaceAndPath(CustomGlintMod.MOD_ID, "glow"),
+                event.register(CustomGlint.res("glow"),
                         GlowTintSource.MAP_CODEC));
     }
 }
