@@ -4,8 +4,8 @@ Minecraft 26.1.2 / NeoForge 26.1.2 - MIT license (attribution required)
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
 on held items, armor, elytra, horse armor, and any LivingEntity. Glints can also
-project a colored stencil outline through the "glowing" flag. NBT-driven; 55
-built-in designs, extensible via data packs.
+project a colored stencil outline through the "glowing" flag. Component-driven;
+55 built-in designs, extensible via data packs.
 
 
 ================================================================================
@@ -72,7 +72,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
   Server safety
 ================================================================================
 
-  net.tunamods.customglint.common.*         - server-safe (NBT API, registries,
+  net.tunamods.customglint.common.*         - server-safe (glint API, registries,
                                               entity events, networking).
   net.tunamods.customglint.common.client.*  - client-only (rendering pipeline).
                                               Never reference from
@@ -80,8 +80,13 @@ Alternative: declare as a hard / soft dep instead of bundling.
 
 Mixing the two will ClassNotFoundException on a dedicated server.
 
-The custom_data key is always "customglint", whether the api is bundled in your
-jar or loaded from the standalone.
+Glint state is stored in typed registries owned by the api jar, so the ids are
+the same whether the api is bundled in your jar or loaded from the standalone:
+
+  customglint:glint           - item data component (CustomGlintComponents.GLINT)
+  customglint:entity_glint    - synced entity attachment (ENTITY_GLINT)
+
+Both carry a CustomGlint.GlintState (layers + glow flags), codec-serialized.
 
 
 ================================================================================
@@ -172,8 +177,9 @@ Tag-level helpers for snapshot / restore and item<->entity transfer:
   int[]            glowCols = CustomGlint.tagGlowColors(tag);
   CompoundTag      fresh    = CustomGlint.toTag(layers);
 
-  These bridge the entity attachment to the flat item NBT layout, so capturing a
-  mob's glint onto an item is one line:
+  Item component and entity attachment serialize the same GlintState codec, so
+  these produce one shared CompoundTag shape on both sides. Capturing a mob's
+  glint onto an item is one line:
   writeItemTag(stack, entityGlintTag(living)).
 
 
@@ -254,32 +260,38 @@ list on join and /reload.
 
   Texture: assets/<your_modid>/textures/glint/mydesign.png
 
-  Reference from NBT: <your_modid>:textures/glint/<name>.png
+  Reference in glint data: <your_modid>:textures/glint/<name>.png
 
 
 ================================================================================
-  NBT format
+  Component format
 ================================================================================
 
-Item glint lives in the minecraft:custom_data component, under the "customglint"
-key. With the 1.20.5+ component syntax:
+Item glint is its own data component, customglint:glint, holding a GlintState:
+the layer list under a "glint" key plus the glow flags as siblings. It is no
+longer stuffed into minecraft:custom_data. With the 1.20.5+ component syntax:
 
-  /give @p <item>[minecraft:custom_data={customglint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
+  /give @p <item>[customglint:glint={glint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
 
 speed: 1.0 = 20 ticks / color. interpolate: 1b = smooth. simultaneous: 1b = all
-colors at once. Alpha byte of each color int = brightness.
+colors at once. Alpha byte of each color int = brightness. Layer fields other
+than design and colors are optional and default to the above.
 
 Colors in [I;...] are signed 32-bit ints. Any color with alpha >= 0x80 (i.e.
 every full-brightness color) is negative in this form; the leading 0xFF makes
 it exceed Integer.MAX_VALUE unsigned. Use the named constants from Java code,
 the color names from /glint apply, or a hex-to-signed-int converter.
 
-Add glowing:1b alongside layers for the colored outline:
+Add glowing:1b as a sibling of glint for the colored outline:
 
-  /give @p minecraft:diamond_sword[minecraft:custom_data={customglint:{glowing:1b,layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
+  /give @p minecraft:diamond_sword[customglint:glint={glowing:1b,glint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
+
+Independent outline colors go in a glowColors sibling array, e.g.
+glowColors:[I;-65536,-1]; when present the outline cycles through them instead
+of tracking glint layer 0.
 
 Remove the glint from a held item with the mod command:
 
   /glint remove
 
-Or hand out a clean item by dropping the whole component: <item>[!minecraft:custom_data].
+Or hand out a clean item by dropping the whole component: <item>[!customglint:glint].
