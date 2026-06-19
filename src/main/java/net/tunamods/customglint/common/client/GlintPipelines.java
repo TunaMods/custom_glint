@@ -70,10 +70,6 @@ public final class GlintPipelines {
      *  the old geometry-dilated ring did. */
     public static final Identifier GLOW_SILHOUETTE_SHADER =
             CustomGlint.res("core/glow_silhouette");
-    /** Occlusion-disabled silhouette fragment shader (no DepthSampler / reconstruct) — the cheaper,
-     *  show-through-walls variant selected by the client config. Shares the silhouette vertex shader. */
-    public static final Identifier GLOW_SILHOUETTE_FLAT_SHADER =
-            CustomGlint.res("core/glow_silhouette_flat");
 
     /**
      * Base colored-glint pipeline. Derived from vanilla {@link RenderPipelines#GLINT} so it inherits
@@ -190,17 +186,6 @@ public final class GlintPipelines {
         return RenderType.create(name, setup);
     }
 
-    /** Occlusion-OFF glow-mask RenderType (no DepthSampler): the cheaper, show-through-walls variant
-     *  ({@link #GLOW_MASK_FLAT_PIPE} / {@link #GLOW_SILHOUETTE_FLAT_SHADER}). */
-    public static RenderType glowMaskTypeFlat(String name, Identifier texture) {
-        RenderSetup setup = RenderSetup.builder(GLOW_MASK_FLAT_PIPE)
-                .withTexture("Sampler0", texture)
-                .setOutputTarget(OutputTarget.MAIN_TARGET)
-                .bufferSize(1536)
-                .createRenderSetup();
-        return RenderType.create(name, setup);
-    }
-
     // ── Isolated glow-outline pipeline (parallel framegraph outline target) ──────────────────────
     //
     // Replaces the dead-end per-pixel-depth stencil band ring the 1.20.1/1.21.1 builds used (the stencil
@@ -236,17 +221,6 @@ public final class GlintPipelines {
             .withVertexShader(GLOW_SILHOUETTE_SHADER)
             .withFragmentShader(GLOW_SILHOUETTE_SHADER)
             .withSampler("DepthSampler")
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, 0.0f))
-            .withColorTargetState(ColorTargetState.DEFAULT)
-            .build();
-
-    /** Occlusion-OFF mask pipeline: same vertex shader + LEQUAL early-Z, but the flat fragment shader
-     *  with NO DepthSampler (cheaper; outlines show through walls). Selected when the client config
-     *  outlineOcclusion = false. */
-    public static final RenderPipeline GLOW_MASK_FLAT_PIPE = RenderPipelines.OUTLINE_NO_CULL.toBuilder()
-            .withLocation(CustomGlint.res("pipeline/glow_mask_flat"))
-            .withVertexShader(GLOW_SILHOUETTE_SHADER)
-            .withFragmentShader(GLOW_SILHOUETTE_FLAT_SHADER)
             .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, 0.0f))
             .withColorTargetState(ColorTargetState.DEFAULT)
             .build();

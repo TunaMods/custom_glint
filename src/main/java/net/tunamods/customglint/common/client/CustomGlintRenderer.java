@@ -88,13 +88,11 @@ public final class CustomGlintRenderer {
             for (RenderType rt : BY_ARMOR_GLINT.values())       fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) fixedBufferRegistry.remove(rt);
             for (RenderType rt : BY_GLOW_MASK.values())          fixedBufferRegistry.remove(rt);
-            for (RenderType rt : BY_GLOW_MASK_FLAT.values())     fixedBufferRegistry.remove(rt);
         }
         BY_GLINT.clear();
         BY_ARMOR_GLINT.clear();
         BY_HORSE_ARMOR_GLINT.clear();
         BY_GLOW_MASK.clear();
-        BY_GLOW_MASK_FLAT.clear();
         // Free the in-phase glow-body native buffers. Their keys are RenderTypes that the cleared
         // BY_GLOW_MASK maps just dropped, so after a reload glowMaskRT mints fresh RenderType instances
         // and computeIfAbsent would orphan these builders — a slow per-reload native-memory leak. Close
@@ -122,9 +120,6 @@ public final class CustomGlintRenderer {
     // EntityGlintRender.drainBodyOutlines at RenderLevelStageEvent.AfterOpaqueFeatures.
 
     private static final Map<Identifier, RenderType> BY_GLOW_MASK = new HashMap<>();
-    /** Occlusion-OFF mask RTs (config outlineOcclusion = false), cached separately so toggling the
-     *  setting live just swaps which map glowMaskRT reads. */
-    private static final Map<Identifier, RenderType> BY_GLOW_MASK_FLAT = new HashMap<>();
 
     /** Identifier the combined-mask RenderType binds for the scene-depth sampler. Resolved through
      *  TextureManager to {@link #sceneDepthTex}, a holder whose view is re-pointed at the live main-target
@@ -136,27 +131,12 @@ public final class CustomGlintRenderer {
      *  visibility encoded in alpha by core/glow_silhouette). One render per mob writes everything the
      *  composite needs — no separate shape pass. The draw is redirected to the half-res mask target by
      *  the caller via RenderSystem.outputColor/DepthTextureOverride. */
-    /** {@code seeThrough} selects the cheaper no-occlusion variant ({@link GlintPipelines#GLOW_MASK_FLAT_PIPE})
-     *  whose outline draws through walls — a per-glow developer option (CustomGlint.setEntityGlowSeeThrough),
-     *  NOT a client setting. Default false = occluded. */
-    public static RenderType glowMaskRT(Identifier texture, boolean seeThrough) {
-        RenderType rt;
-        if (seeThrough) {
-            rt = BY_GLOW_MASK_FLAT.computeIfAbsent(texture, t ->
-                    GlintPipelines.glowMaskTypeFlat(MOD_ID + ":glow_mask_flat_" + texTag(t), t));
-        } else {
-            rt = BY_GLOW_MASK.computeIfAbsent(texture, t ->
-                    GlintPipelines.glowMaskType(MOD_ID + ":glow_mask_" + texTag(t), t, SCENE_DEPTH_ID));
-        }
+    public static RenderType glowMaskRT(Identifier texture) {
+        RenderType rt = BY_GLOW_MASK.computeIfAbsent(texture, t ->
+                GlintPipelines.glowMaskType(MOD_ID + ":glow_mask_" + texTag(t), t, SCENE_DEPTH_ID));
         registerFixed(rt);
         registerLiveFixedBuffer(rt);
         return rt;
-    }
-
-    /** Occluded glow-mask RT (the default). Convenience for the armor/item paths that don't yet carry a
-     *  per-glow see-through flag. */
-    public static RenderType glowMaskRT(Identifier texture) {
-        return glowMaskRT(texture, false);
     }
 
     /** Accumulates one entity model into the single combined-mask buffer with ONE model render and ONE
@@ -235,9 +215,9 @@ public final class CustomGlintRenderer {
      * the body {@code renderToBuffer}. Also records the camera-relative bbox for the composite scissor.
      */
     public static VertexConsumer fanBodyGlow(VertexConsumer bodyBuffer, PoseStack.Pose pose,
-            int color, Identifier texture, float bbWidth, float bbHeight, boolean seeThrough,
+            int color, Identifier texture, float bbWidth, float bbHeight,
             Object entityState) {
-        return fanEntityGlow(bodyBuffer, pose, color, texture, bbWidth, bbHeight, seeThrough, entityState, true);
+        return fanEntityGlow(bodyBuffer, pose, color, texture, bbWidth, bbHeight, entityState, true);
     }
 
     /** Full-opaque silhouette for layer/special models: alpha never discards, so the whole model shape
@@ -257,12 +237,12 @@ public final class CustomGlintRenderer {
      * composite scissor covers a layer that sticks out past the body (mushrooms, wool).
      */
     public static VertexConsumer fanLayerGlow(VertexConsumer layerBuffer, PoseStack.Pose pose,
-            int color, boolean seeThrough, Object entityState) {
-        return fanEntityGlow(layerBuffer, pose, color, WHITE_SILHOUETTE, 0.0f, 0.0f, seeThrough, entityState, false);
+            int color, Object entityState) {
+        return fanEntityGlow(layerBuffer, pose, color, WHITE_SILHOUETTE, 0.0f, 0.0f, entityState, false);
     }
 
     private static VertexConsumer fanEntityGlow(VertexConsumer baseBuffer, PoseStack.Pose pose,
-            int color, Identifier texture, float bbWidth, float bbHeight, boolean seeThrough,
+            int color, Identifier texture, float bbWidth, float bbHeight,
             Object entityState, boolean isBody) {
         if (texture == null || pose == null || !GlintClientConfig.entityOutlines()) return baseBuffer;
         Matrix4f m = pose.pose();
@@ -273,7 +253,7 @@ public final class CustomGlintRenderer {
             if (maxEnt > 0 && bodyGlowCount >= maxEnt) return baseBuffer; // entity cap reached this frame
             bodyGlowCount++;
         }
-        RenderType rt = glowMaskRT(texture, seeThrough);
+        RenderType rt = glowMaskRT(texture);
         GLOW_BODY_FIXED.computeIfAbsent(rt, k -> new ByteBufferBuilder(k.bufferSize()));
         if (glowBodyBuffer == null) {
             glowBodyBuffer = MultiBufferSource.immediateWithBuffers(GLOW_BODY_FIXED, new ByteBufferBuilder(256));

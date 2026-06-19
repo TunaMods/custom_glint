@@ -89,7 +89,7 @@ public class LivingEntityRendererMixin {
             Identifier texture = ((LivingEntityRenderer) (Object) this).getTextureLocation(state);
             if (texture != null) {
                 state.setRenderData(EntityGlintRender.GLOW_OUTLINE,
-                        new EntityGlintRender.GlowOutline(EntityGlintRender.outlineColorFor(r), texture, model, r.seeThrough));
+                        new EntityGlintRender.GlowOutline(EntityGlintRender.outlineColorFor(r), texture, model));
             }
         }
     }

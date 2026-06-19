@@ -54,13 +54,10 @@ public final class EntityGlintRender {
         @Nullable public final CustomGlint.Data data;
         public final boolean glowing;
         public final int[] glowColors;
-        /** Whether this entity's glow outline draws through walls (dev API: setEntityGlowSeeThrough). */
-        public final boolean seeThrough;
-        public Resolution(@Nullable CustomGlint.Data data, boolean glowing, int[] glowColors, boolean seeThrough) {
+        public Resolution(@Nullable CustomGlint.Data data, boolean glowing, int[] glowColors) {
             this.data = data;
             this.glowing = glowing;
             this.glowColors = glowColors;
-            this.seeThrough = seeThrough;
         }
     }
 
@@ -69,7 +66,7 @@ public final class EntityGlintRender {
     public static InstanceResolver instanceResolver = entity -> {
         CustomGlint.GlintState s = entity.getExistingDataOrNull(CustomGlintComponents.ENTITY_GLINT);
         if (s == null || s.isEmpty()) return null;
-        return new Resolution(s.data(), s.glowing(), s.glowColors(), s.seeThrough());
+        return new Resolution(s.data(), s.glowing(), s.glowColors());
     };
 
     /**
@@ -98,7 +95,7 @@ public final class EntityGlintRender {
     /** {@code model} is the entity's main body model; the in-phase tee fires only when a submit's model
      *  matches it, so overlay layers (which share the render state but submit their own models) don't get
      *  teed with the body texture. Worn armor outlines stay on the separate equipment path. */
-    public record GlowOutline(int color, Identifier texture, Object model, boolean seeThrough) {}
+    public record GlowOutline(int color, Identifier texture, Object model) {}
 
     /**
      * Full glint resolution for an entity (per-instance NBT first, then the {@link CustomGlint#ENTITY_GLINTS}
@@ -111,7 +108,7 @@ public final class EntityGlintRender {
         if (r != null) return r;
         CustomGlint.Data data = CustomGlint.getEntityGlint(entity.getType());
         if (data == null) return null;
-        return new Resolution(data, false, new int[0], false);
+        return new Resolution(data, false, new int[0]);
     }
 
     /**

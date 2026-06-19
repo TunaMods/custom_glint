@@ -54,13 +54,12 @@ public class ModelFeatureRendererMixin {
                     // Body: fan this single walk into the glow mask too — no extra traversal — using the
                     // real entity texture so the silhouette alpha-discards to the body shape.
                     target = CustomGlintRenderer.fanBodyGlow(buffer, submit.pose(), go.color(), go.texture(),
-                            state.boundingBoxWidth, state.boundingBoxHeight, go.seeThrough(), state);
+                            state.boundingBoxWidth, state.boundingBoxHeight, state);
                 } else if (EntityGlintRender.isEntitySurface(renderType)) {
                     // RenderLayer surface of the SAME glowing entity (sheep wool, slime outer cube, saddle,
                     // stray clothing, …): fan its silhouette into the same mask + share the entity outline id
                     // so the mob composites as ONE ring. White.png = full layer geometry (set inside).
-                    target = CustomGlintRenderer.fanLayerGlow(buffer, submit.pose(), go.color(),
-                            go.seeThrough(), state);
+                    target = CustomGlintRenderer.fanLayerGlow(buffer, submit.pose(), go.color(), state);
                 }
             }
         }

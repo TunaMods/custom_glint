@@ -72,7 +72,7 @@ public final class CustomGlint {
 
     public record Data(Layer[] layers) {
         /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous}, … ] }}.
-         *  Glow state (glowing / glowColors / glowSeeThrough) is stored as sibling keys in the same tag,
+         *  Glow state (glowing / glowColors) is stored as sibling keys in the same tag,
          *  outside this codec. */
         public static final Codec<Data> CODEC = Layer.CODEC.listOf().xmap(
                 list -> new Data(list.toArray(new Layer[0])),
@@ -93,11 +93,11 @@ public final class CustomGlint {
      * {@link CustomGlintComponents#ENTITY_GLINT} entity attachment. Codec-serialized; the attachment
      * auto-syncs on write, so there is no manual sync packet.
      */
-    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors, boolean seeThrough) {
-        public static final GlintState EMPTY = new GlintState(null, false, new int[0], false);
+    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors) {
+        public static final GlintState EMPTY = new GlintState(null, false, new int[0]);
 
         public boolean isEmpty() {
-            return data == null && !glowing && glowColors.length == 0 && !seeThrough;
+            return data == null && !glowing && glowColors.length == 0;
         }
 
         public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -106,9 +106,8 @@ public final class CustomGlint {
                 Codec.INT.listOf().xmap(
                         list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
                         arr -> Arrays.stream(arr).boxed().toList()
-                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
-                Codec.BOOL.optionalFieldOf("seeThrough", false).forGetter(GlintState::seeThrough)
-        ).apply(i, (glint, glowing, colors, see) -> new GlintState(glint.orElse(null), glowing, colors, see)));
+                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors)
+        ).apply(i, (glint, glowing, colors) -> new GlintState(glint.orElse(null), glowing, colors)));
 
         public static final Codec<GlintState> CODEC = MAP_CODEC.codec();
         public static final StreamCodec<ByteBuf, GlintState> STREAM_CODEC = ByteBufCodecs.fromCodec(CODEC);
@@ -116,11 +115,11 @@ public final class CustomGlint {
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof GlintState g)) return false;
-            return glowing == g.glowing && seeThrough == g.seeThrough
+            return glowing == g.glowing
                     && Objects.equals(data, g.data) && Arrays.equals(glowColors, g.glowColors);
         }
         @Override public int hashCode() {
-            return Objects.hash(data, glowing, seeThrough) * 31 + Arrays.hashCode(glowColors);
+            return Objects.hash(data, glowing) * 31 + Arrays.hashCode(glowColors);
         }
     }
 
@@ -238,7 +237,7 @@ public final class CustomGlint {
     };
 
     // ── Item glint storage ────────────────────────────────────────────────────
-    // All field names ("layers"/"glint"/"glowing"/"glowColors"/"seeThrough"/…) live in the codecs
+    // All field names ("layers"/"glint"/"glowing"/"glowColors"/…) live in the codecs
     // (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants any more.
 
     // Item glint state is a typed GlintState data component (see GLINT) — no more CompoundTag in
@@ -269,7 +268,7 @@ public final class CustomGlint {
     /** Sets the glint layers, preserving the stack's existing glow flags. */
     public static void write(ItemStack stack, Layer[] layers) {
         GlintState cur = itemState(stack);
-        setItemState(stack, new GlintState(new Data(layers), cur.glowing(), cur.glowColors(), cur.seeThrough()));
+        setItemState(stack, new GlintState(new Data(layers), cur.glowing(), cur.glowColors()));
     }
 
     public static void write(ItemStack stack, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -286,7 +285,7 @@ public final class CustomGlint {
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
         GlintState cur = itemState(stack);
-        setItemState(stack, new GlintState(cur.data(), glowing, cur.glowColors(), cur.seeThrough()));
+        setItemState(stack, new GlintState(cur.data(), glowing, cur.glowColors()));
     }
 
     /** Glow Trim colors — drive the outline color animation independently of any glint Data. */
@@ -301,13 +300,13 @@ public final class CustomGlint {
     /** Sets glowColors AND glowing=true. Independent of any glint Data on the stack. */
     public static void setGlowColors(ItemStack stack, int[] colors) {
         GlintState cur = itemState(stack);
-        setItemState(stack, new GlintState(cur.data(), true, colors, cur.seeThrough()));
+        setItemState(stack, new GlintState(cur.data(), true, colors));
     }
 
     public static void clearGlowColors(ItemStack stack) {
         GlintState cur = itemState(stack);
         if (cur.glowColors().length == 0) return;
-        setItemState(stack, new GlintState(cur.data(), cur.glowing(), new int[0], cur.seeThrough()));
+        setItemState(stack, new GlintState(cur.data(), cur.glowing(), new int[0]));
     }
 
     public static ItemStack glinted(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -427,7 +426,7 @@ public final class CustomGlint {
     /** Sets the glint layers, preserving the entity's existing glow flags. Auto-syncs to trackers. */
     public static void writeEntity(LivingEntity entity, Layer[] layers) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors(), cur.seeThrough()));
+        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors()));
     }
 
     public static void removeEntity(LivingEntity entity) {
@@ -440,22 +439,7 @@ public final class CustomGlint {
 
     public static void setEntityGlowing(LivingEntity entity, boolean glowing) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors(), cur.seeThrough()));
-    }
-
-    /**
-     * Per-entity glow-outline see-through-walls flag. When true, this entity's glow outline draws ON TOP
-     * of world geometry (visible through walls) instead of being occluded — useful for tracker/marker
-     * style highlights. Default false (occluded, like a normal outline). Set it server-side; the synced
-     * attachment pushes the change to tracking clients automatically.
-     */
-    public static boolean isEntityGlowSeeThrough(LivingEntity entity) {
-        return entityState(entity).seeThrough();
-    }
-
-    public static void setEntityGlowSeeThrough(LivingEntity entity, boolean seeThrough) {
-        GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), cur.glowColors(), seeThrough));
+        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors()));
     }
 
     /** Per-entity Glow Trim colors — drive the outline color animation independently of any
@@ -471,13 +455,13 @@ public final class CustomGlint {
     /** Sets glowColors AND glowing=true on the entity. Auto-syncs to tracking clients (no manual call). */
     public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), true, colors, cur.seeThrough()));
+        setEntityState(entity, new GlintState(cur.data(), true, colors));
     }
 
     public static void clearEntityGlowColors(LivingEntity entity) {
         GlintState cur = entityState(entity);
         if (cur.glowColors().length == 0) return;
-        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0], cur.seeThrough()));
+        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0]));
     }
 
     // ── CompoundTag bridge (snapshot / restore, item↔entity transfer) ─────────
@@ -528,17 +512,13 @@ public final class CustomGlint {
         return stateFromTag(glintTag).glowing();
     }
 
-    public static boolean tagGlowSeeThrough(@Nullable CompoundTag glintTag) {
-        return stateFromTag(glintTag).seeThrough();
-    }
-
     public static int[] tagGlowColors(@Nullable CompoundTag glintTag) {
         return stateFromTag(glintTag).glowColors();
     }
 
     /** A glint tag holding just these layers (no glow flags). */
     public static CompoundTag toTag(Layer[] layers) {
-        return stateToTag(new GlintState(new Data(layers), false, new int[0], false));
+        return stateToTag(new GlintState(new Data(layers), false, new int[0]));
     }
 
     public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
