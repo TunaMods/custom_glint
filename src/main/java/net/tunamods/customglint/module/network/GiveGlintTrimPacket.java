@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.network;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.component.DataComponents;
@@ -9,7 +9,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -42,16 +41,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
     }
 
     public static void encode(FriendlyByteBuf buf, GiveGlintTrimPacket pkt) {
-        buf.writeVarInt(pkt.layers.length);
-        for (CustomGlint.Layer layer : pkt.layers) {
-            buf.writeUtf(layer.design().toString());
-            buf.writeVarInt(layer.colors().length);
-            for (int c : layer.colors()) buf.writeInt(c);
-            buf.writeFloat(layer.speed());
-            buf.writeBoolean(layer.interpolate());
-            buf.writeFloat(layer.patternScale());
-            buf.writeBoolean(layer.simultaneous());
-        }
+        GlintApplyPacket.writeLayers(buf, pkt.layers);
         buf.writeBoolean(pkt.glowing);
         buf.writeVarInt(pkt.glowColors.length);
         for (int c : pkt.glowColors) buf.writeInt(c);
@@ -60,24 +50,9 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
     }
 
     public static GiveGlintTrimPacket decode(FriendlyByteBuf buf) {
-        int layerCount = Math.min(buf.readVarInt(), 8);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
-        for (int i = 0; i < layerCount; i++) {
-            String design = buf.readUtf();
-            int colorLen = Math.min(buf.readVarInt(), 8);
-            int[] colors = new int[colorLen];
-            for (int j = 0; j < colorLen; j++) colors[j] = buf.readInt();
-            float speed = buf.readFloat();
-            if (speed <= 0) speed = 1.0f;
-            boolean interp = buf.readBoolean();
-            float scale = buf.readFloat();
-            boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(Identifier.parse(design), colors, speed, interp, scale, simultaneous);
-        }
+        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
         boolean glowing = buf.readBoolean();
-        int gcLen = Math.min(buf.readVarInt(), 8);
-        int[] glowColors = new int[gcLen];
-        for (int i = 0; i < gcLen; i++) glowColors[i] = buf.readInt();
+        int[] glowColors = GlintApplyPacket.readCappedColors(buf);
         String trimName = buf.readUtf(32767);
         int trimNameColor = buf.readInt();
         return new GiveGlintTrimPacket(layers, glowing, glowColors, trimName, trimNameColor);
@@ -87,22 +62,29 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer player)) return;
 
-            ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
             if (pkt.layers.length > 0) {
-                CustomGlint.Layer layer0 = pkt.layers[0];
+                // Roll a unique seed into any unseeded chromatic layer (the editor builds layers without one).
+                CustomGlint.Layer[] seeded = CustomGlint.ensureChromaticSeeds(pkt.layers);
+                CustomGlint.Layer layer0 = seeded[0];
                 for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
                 GlintTrimItem.setSpeed(trim, layer0.speed());
                 GlintTrimItem.setScale(trim, layer0.patternScale());
+                GlintTrimItem.setScrollDir(trim, layer0.scrollDir());
+                GlintTrimItem.setScrollOffset(trim, layer0.scrollOffset());
                 GlintTrimItem.setPattern(trim, layer0.design());
                 GlintTrimItem.setGlowing(trim, pkt.glowing);
-                CustomGlint.setGlowing(trim, pkt.glowing);
 
-                if (pkt.layers.length > 1) {
-                    CustomGlint.remove(trim);
-                    CustomGlint.write(trim, pkt.layers);
-                    CustomGlint.setGlowing(trim, pkt.glowing);
-                }
+                // The GlintTrimItem setters above only seed the trim's display config + CustomModelData;
+                // each of them rewrites the glint Data as a single SEQUENTIAL layer. Write the real Data
+                // from the packet layers last so every layer's simultaneous flag (and any extra layers)
+                // is preserved, otherwise a single-layer simultaneous trim always came out sequential.
+                CustomGlint.write(trim, seeded);
+                CustomGlint.setGlowing(trim, pkt.glowing);
+                // Keep the TrimConfig seed in sync with the Data we just wrote (setPattern rolled its own,
+                // independent seed; align both so the preview, smithing transfer, and later edits agree).
+                GlintTrimItem.setSeed(trim, layer0.seed());
             }
 
             // Apply custom name and color if provided

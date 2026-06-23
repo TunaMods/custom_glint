@@ -9,7 +9,7 @@ import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.commands.CommandSourceStack;
@@ -62,6 +62,18 @@ public class GlintCommand {
         (ctx, builder) -> {
             String remaining = builder.getRemaining().toLowerCase();
             for (String name : GlintTrimItem.PATTERNS) {
+                if (name.startsWith(remaining)) builder.suggest(name);
+            }
+            return builder.buildFuture();
+        };
+
+    private static final String[] SCROLL_NAMES =
+        { "static", "e", "ne", "n", "nw", "w", "sw", "s", "se" };
+
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_SCROLL =
+        (ctx, builder) -> {
+            String remaining = builder.getRemaining().toLowerCase();
+            for (String name : SCROLL_NAMES) {
                 if (name.startsWith(remaining)) builder.suggest(name);
             }
             return builder.buildFuture();
@@ -121,7 +133,17 @@ public class GlintCommand {
                                             FloatArgumentType.getFloat(ctx, "speed"),
                                             BoolArgumentType.getBool(ctx, "smooth"),
                                             FloatArgumentType.getFloat(ctx, "scale"),
-                                            BoolArgumentType.getBool(ctx, "simultaneous"))))))))))
+                                            BoolArgumentType.getBool(ctx, "simultaneous")))
+                                        .then(Commands.argument("direction", StringArgumentType.word())
+                                            .suggests(SUGGEST_SCROLL)
+                                            .executes(ctx -> apply(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "design"),
+                                                StringArgumentType.getString(ctx, "colors"),
+                                                FloatArgumentType.getFloat(ctx, "speed"),
+                                                BoolArgumentType.getBool(ctx, "smooth"),
+                                                FloatArgumentType.getFloat(ctx, "scale"),
+                                                BoolArgumentType.getBool(ctx, "simultaneous"),
+                                                GlintTrimItem.scrollFromName(StringArgumentType.getString(ctx, "direction"))))))))))))
             .then(Commands.literal("remove")
                 .executes(ctx -> remove(ctx.getSource())))
             .then(Commands.literal("glow")
@@ -186,7 +208,19 @@ public class GlintCommand {
                                                         BoolArgumentType.getBool(ctx, "smooth"),
                                                         FloatArgumentType.getFloat(ctx, "scale"),
                                                         BoolArgumentType.getBool(ctx, "simultaneous"),
-                                                        BoolArgumentType.getBool(ctx, "glowing")))))))))))
+                                                        BoolArgumentType.getBool(ctx, "glowing")))
+                                                    .then(Commands.argument("direction", StringArgumentType.word())
+                                                        .suggests(SUGGEST_SCROLL)
+                                                        .executes(ctx -> applyEntity(ctx.getSource(),
+                                                            EntityArgument.getEntities(ctx, "targets"),
+                                                            StringArgumentType.getString(ctx, "design"),
+                                                            StringArgumentType.getString(ctx, "colors"),
+                                                            FloatArgumentType.getFloat(ctx, "speed"),
+                                                            BoolArgumentType.getBool(ctx, "smooth"),
+                                                            FloatArgumentType.getFloat(ctx, "scale"),
+                                                            BoolArgumentType.getBool(ctx, "simultaneous"),
+                                                            BoolArgumentType.getBool(ctx, "glowing"),
+                                                            GlintTrimItem.scrollFromName(StringArgumentType.getString(ctx, "direction")))))))))))))
                     .then(Commands.literal("remove")
                         .executes(ctx -> removeEntity(ctx.getSource(),
                             EntityArgument.getEntities(ctx, "targets"))))
@@ -205,18 +239,17 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return null;
         }
-        if ("vanilla".equals(key)) return CustomGlint.VANILLA;
-        if (key.contains(":")) {
-            int c = key.indexOf(':');
-            return Identifier.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        }
-        return CustomGlint.res("textures/glint/" + key + ".png");
+        return CustomGlint.designFromName(key);
     }
 
     /** Parses a comma-separated color-name list into ARGB ints, or null (after sending a failure) on
      *  the first unknown color. */
     private static int[] parseColors(CommandSourceStack source, String colorsArg) {
         String[] parts = colorsArg.split(",");
+        if (parts.length > 8) {
+            source.sendFailure(Component.literal("Too many colors (max 8); got " + parts.length + "."));
+            return null;
+        }
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             String name = parts[i].trim().toLowerCase();
@@ -235,12 +268,21 @@ public class GlintCommand {
                                    String designName, String colorsArg,
                                    float speed, boolean smooth, float scale, boolean simultaneous,
                                    boolean glowing) {
+        return applyEntity(source, targets, designName, colorsArg, speed, smooth, scale, simultaneous,
+                glowing, CustomGlint.SCROLL_E);
+    }
+
+    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
+                                   String designName, String colorsArg,
+                                   float speed, boolean smooth, float scale, boolean simultaneous,
+                                   boolean glowing, int scrollDir) {
         Identifier design = resolveDesign(source, designName);
         if (design == null) return 0;
         int[] colors = parseColors(source, colorsArg);
         if (colors == null) return 0;
 
-        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
+        int seed = CustomGlint.isChromatic(design) ? CustomGlint.randomChromaticSeed() : 0;
+        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous, scrollDir, 0.0f, seed);
         CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
 
         int count = 0;
@@ -297,6 +339,11 @@ public class GlintCommand {
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
                               float speed, boolean smooth, float scale, boolean simultaneous) {
+        return apply(source, designName, colorsArg, speed, smooth, scale, simultaneous, CustomGlint.SCROLL_E);
+    }
+
+    private static int apply(CommandSourceStack source, String designName, String colorsArg,
+                              float speed, boolean smooth, float scale, boolean simultaneous, int scrollDir) {
         ServerPlayer player = source.getPlayer();
         if (player == null) {
             source.sendFailure(Component.literal("Must be a player"));
@@ -314,7 +361,8 @@ public class GlintCommand {
             return 0;
         }
 
-        CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous);
+        int seed = CustomGlint.isChromatic(design) ? CustomGlint.randomChromaticSeed() : 0;
+        CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous, scrollDir, 0.0f, seed);
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
     }
@@ -333,7 +381,7 @@ public class GlintCommand {
         }
 
         if (enabled && !CustomGlint.has(stack)) {
-            source.sendFailure(Component.literal("Item has no custom glint — apply a glint first"));
+            source.sendFailure(Component.literal("Item has no custom glint, apply a glint first"));
             return 0;
         }
 
@@ -385,13 +433,21 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer[] layers = data.layers();
-        ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        // A decoded Data may legally hold zero layers ({"layers":[]} via crafted give-NBT / datapack,
+        // Data.CODEC sets no minimum). The multi-layer branch below dereferences layers[0], so guard here.
+        if (layers.length == 0) {
+            source.sendFailure(Component.literal("Item has no custom glint"));
+            return 0;
+        }
+        ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
         if (layers.length == 1) {
             CustomGlint.Layer layer = layers[0];
             for (int color : layer.colors()) GlintTrimItem.addColor(trim, color);
             GlintTrimItem.setSpeed(trim, layer.speed());
             GlintTrimItem.setScale(trim, layer.patternScale());
+            GlintTrimItem.setScrollDir(trim, layer.scrollDir());
+            GlintTrimItem.setScrollOffset(trim, layer.scrollOffset());
             GlintTrimItem.setPattern(trim, layer.design());
             GlintTrimItem.setGlowing(trim, CustomGlint.isGlowing(held));
         } else {
@@ -399,9 +455,9 @@ public class GlintCommand {
             CustomGlint.Layer layer0 = layers[0];
             for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
             boolean glowing = CustomGlint.isGlowing(held);
-            GlintTrimItem.setConfig(trim, layer0.design(), layer0.speed(), layer0.patternScale(), glowing);
-            // Copy the full multi-layer glint tag verbatim from the held item.
-            CustomGlint.writeItemTag(trim, CustomGlint.itemGlintTag(held));
+            GlintTrimItem.setConfig(trim, layer0.design(), layer0.speed(), layer0.patternScale(), layer0.scrollDir(), layer0.scrollOffset(), glowing);
+            // Copy the full multi-layer glint state verbatim from the held item.
+            CustomGlint.writeState(trim, CustomGlint.readState(held));
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
@@ -466,6 +522,8 @@ public class GlintCommand {
                 layerObj.addProperty("interpolate", layer.interpolate());
                 layerObj.addProperty("patternScale", layer.patternScale());
                 layerObj.addProperty("simultaneous", layer.simultaneous());
+                layerObj.addProperty("scroll", layer.scrollDir());
+                layerObj.addProperty("offset", layer.scrollOffset());
 
                 layersArray.add(layerObj);
             }

@@ -2,6 +2,7 @@ package net.tunamods.customglint.module.network;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintWandItem;
+import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
@@ -20,6 +21,11 @@ public class GlintApplyPacket implements CustomPacketPayload {
 
     public static final Type<GlintApplyPacket> TYPE =
             new Type<>(CustomGlint.res("glint_apply"));
+
+    /** Hard upper bound on any wire-supplied count we then drain in a read loop (colors, layers, shards).
+     *  Legit values are ≤16; this rejects a crafted packet's absurd count cleanly (DecoderException →
+     *  the sender is disconnected) instead of spinning {@code readInt()} until the buffer underflows. */
+    static final int MAX_WIRE_COUNT = 256;
 
     public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
             StreamCodec.of(GlintApplyPacket::encode, GlintApplyPacket::decode);
@@ -63,16 +69,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
         buf.writeEnum(pkt.wandHand);
         buf.writeBoolean(pkt.remove);
         if (!pkt.remove) {
-            buf.writeVarInt(pkt.layers.length);
-            for (CustomGlint.Layer layer : pkt.layers) {
-                buf.writeUtf(layer.design().toString());
-                buf.writeVarInt(layer.colors().length);
-                for (int c : layer.colors()) buf.writeInt(c);
-                buf.writeFloat(layer.speed());
-                buf.writeBoolean(layer.interpolate());
-                buf.writeFloat(layer.patternScale());
-                buf.writeBoolean(layer.simultaneous());
-            }
+            writeLayers(buf, pkt.layers);
             buf.writeUtf(pkt.itemId);
             buf.writeBoolean(pkt.glowing);
             buf.writeVarInt(pkt.glowColors.length);
@@ -90,29 +87,74 @@ public class GlintApplyPacket implements CustomPacketPayload {
             boolean wandOnly = buf.readBoolean();
             return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0], "", 0xFFFFFFFF, wandOnly);
         }
-        int layerCount = Math.min(buf.readVarInt(), 8);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
-        for (int i = 0; i < layerCount; i++) {
+        CustomGlint.Layer[] layers = readLayers(buf, 8);
+        String itemId = buf.readUtf();
+        boolean glowing = buf.readBoolean();
+        int[] glowColors = readCappedColors(buf);
+        String trimName = buf.readUtf();
+        int trimNameColor = buf.readInt();
+        boolean wandOnly = buf.readBoolean();
+        return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
+    }
+
+    /** Reads a color array, draining every int the sender wrote (so the buffer stays aligned) while keeping
+     *  at most the first 8. A crafted packet claiming more than 8 colors would otherwise leave stale ints in
+     *  the buffer and desync the rest of the decode. */
+    static int[] readCappedColors(FriendlyByteBuf buf) {
+        int sent = buf.readVarInt();
+        if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad color count: " + sent);
+        int len = Math.min(sent, 8);
+        int[] colors = new int[len];
+        for (int j = 0; j < sent; j++) {
+            int c = buf.readInt();
+            if (j < len) colors[j] = c;
+        }
+        return colors;
+    }
+
+    /** Shared layer-array wire format (used by GlintApplyPacket, GiveGlintTrimPacket and GlintPrintPacket).
+     *  Symmetric with {@link #readLayers}. */
+    static void writeLayers(FriendlyByteBuf buf, CustomGlint.Layer[] layers) {
+        buf.writeVarInt(layers.length);
+        for (CustomGlint.Layer layer : layers) {
+            buf.writeUtf(layer.design().toString());
+            buf.writeVarInt(layer.colors().length);
+            for (int c : layer.colors()) buf.writeInt(c);
+            buf.writeFloat(layer.speed());
+            buf.writeBoolean(layer.interpolate());
+            buf.writeFloat(layer.patternScale());
+            buf.writeBoolean(layer.simultaneous());
+            buf.writeVarInt(layer.scrollDir());
+            buf.writeFloat(layer.scrollOffset());
+            buf.writeInt(layer.seed());
+        }
+    }
+
+    /** Reads a layer array, draining every layer the sender wrote (so the buffer stays aligned) while keeping
+     *  at most {@code cap}. Malformed design strings fall back to the vanilla glint and a non-positive speed is
+     *  clamped, so a crafted packet can't throw on the network thread or desync the trailing fields. */
+    static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
+        int sent = buf.readVarInt();
+        if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad layer count: " + sent);
+        int keep = Math.max(0, Math.min(sent, cap));
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[keep];
+        for (int i = 0; i < sent; i++) {
             String design = buf.readUtf();
-            int colorLen = Math.min(buf.readVarInt(), 8);
-            int[] colors = new int[colorLen];
-            for (int j = 0; j < colorLen; j++) colors[j] = buf.readInt();
+            int[] colors = readCappedColors(buf);
             float speed = buf.readFloat();
             if (speed <= 0) speed = 1.0f;
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(Identifier.parse(design), colors, speed, interp, scale, simultaneous);
+            int scrollDir = buf.readVarInt();
+            float scrollOffset = buf.readFloat();
+            int seed = buf.readInt();
+            if (i >= keep) continue; // drained for alignment; not stored
+            Identifier designRl = Identifier.tryParse(design);
+            if (designRl == null) designRl = CustomGlint.VANILLA;
+            layers[i] = new CustomGlint.Layer(designRl, colors, speed, interp, scale, simultaneous, scrollDir, scrollOffset, seed);
         }
-        String itemId = buf.readUtf();
-        boolean glowing = buf.readBoolean();
-        int gcLen = Math.min(buf.readVarInt(), 8);
-        int[] glowColors = new int[gcLen];
-        for (int i = 0; i < gcLen; i++) glowColors[i] = buf.readInt();
-        String trimName = buf.readUtf();
-        int trimNameColor = buf.readInt();
-        boolean wandOnly = buf.readBoolean();
-        return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
+        return layers;
     }
 
     public static void handle(GlintApplyPacket pkt, IPayloadContext ctx) {
@@ -129,29 +171,40 @@ public class GlintApplyPacket implements CustomPacketPayload {
                 }
                 if (wandIsWand) CustomGlint.remove(wand);
             } else if (pkt.itemId.isEmpty()) {
+                // Roll a unique seed into any unseeded chromatic layer (the editor builds layers without one).
+                CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(pkt.layers);
                 if (!pkt.wandOnly) {
                     ItemStack target = player.getItemInHand(otherHand);
                     if (!target.isEmpty()) {
-                        CustomGlint.write(target, pkt.layers);
+                        CustomGlint.write(target, layers);
                         applyGlow(pkt, target);
                         applyName(pkt, target);
                     }
                 }
                 if (wandIsWand) {
-                    CustomGlint.write(wand, pkt.layers);
+                    CustomGlint.write(wand, layers);
                     applyGlow(pkt, wand);
                     applyName(pkt, wand);
                 }
             } else {
-                Item item = BuiltInRegistries.ITEM.getOptional(Identifier.parse(pkt.itemId)).orElse(null);
+                // Server-authoritative gate. This branch spawns an arbitrary registered item into the
+                // player's inventory, a creative convenience reached only through the wand UI (the wand has
+                // no recipe; it's creative/command-only). The packet is client-sent, so re-verify here that
+                // the player actually holds the wand AND is in creative. Without this a modified client could
+                // send the packet with any itemId and spawn/dupe items at will.
+                if (!wandIsWand || !player.isCreative()) return;
+                Identifier itemRl = Identifier.tryParse(pkt.itemId);
+                if (itemRl == null) return;
+                Item item = BuiltInRegistries.ITEM.getOptional(itemRl).orElse(null);
                 if (item == null) return;
+                CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(pkt.layers);
                 ItemStack given = new ItemStack(item);
-                CustomGlint.write(given, pkt.layers);
+                CustomGlint.write(given, layers);
                 applyGlow(pkt, given);
                 applyName(pkt, given);
                 player.addItem(given);
                 if (wandIsWand) {
-                    CustomGlint.write(wand, pkt.layers);
+                    CustomGlint.write(wand, layers);
                     applyGlow(pkt, wand);
                     applyName(pkt, wand);
                 }

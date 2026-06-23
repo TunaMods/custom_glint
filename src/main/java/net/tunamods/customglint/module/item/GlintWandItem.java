@@ -1,6 +1,5 @@
 package net.tunamods.customglint.module.item;
 
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -32,16 +31,20 @@ public class GlintWandItem extends Item {
     @Override
     public InteractionResult interactLivingEntity(ItemStack wand, Player player, LivingEntity target, InteractionHand hand) {
         if (!player.isShiftKeyDown()) return InteractionResult.PASS;
-        if (target.level().isClientSide()) return InteractionResult.SUCCESS;
 
-        CompoundTag glintTag = CustomGlint.itemGlintTag(wand);
-        if (glintTag.isEmpty()) {
+        // Read the glint on both sides (component read is server-safe) so an empty wand returns FAIL on the
+        // client too, otherwise the client always plays the swing animation before the server-only check
+        // fails it.
+        CustomGlint.GlintState glint = CustomGlint.readState(wand);
+        if (glint.isEmpty()) {
             if (player instanceof ServerPlayer sp)
                 sp.sendSystemMessage(Component.literal("Wand has no glint to apply"), true);
             return InteractionResult.FAIL;
         }
 
-        CustomGlint.writeEntityTag(target, glintTag);
+        if (target.level().isClientSide()) return InteractionResult.SUCCESS;
+
+        CustomGlint.writeEntityState(target, glint);
         return InteractionResult.SUCCESS;
     }
 }

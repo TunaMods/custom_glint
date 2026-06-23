@@ -12,7 +12,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
 import net.neoforged.neoforge.common.loot.IGlobalLootModifier;
 import net.neoforged.neoforge.common.loot.LootModifier;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -106,12 +106,18 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private String selectPattern(LootContext context) {
-        // Weight pattern selection by the biome the chest sits in.
-        var origin = context.getParameter(LootContextParams.ORIGIN);
-        var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
-        String biomeName = biome.unwrapKey()
-            .map(key -> key.identifier().getPath())
-            .orElse("plains");
+        // Weight pattern selection by the biome the chest sits in. ORIGIN is optional in the loot context;
+        // getParameter throws if it's absent, so guard and fall back to a neutral biome weighting. (Chest
+        // tables supply ORIGIN today, but a datapack/mod routing another table through the chests/ path
+        // namespace might not.)
+        String biomeName = "plains";
+        if (context.hasParameter(LootContextParams.ORIGIN)) {
+            var origin = context.getParameter(LootContextParams.ORIGIN);
+            var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
+            biomeName = biome.unwrapKey()
+                .map(key -> key.identifier().getPath())
+                .orElse("plains");
+        }
 
         float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
         float endBonus = isEndBiome(biomeName) ? 3.0f : 1.0f;
@@ -152,6 +158,7 @@ public class GlintTrimLootModifier extends LootModifier {
             totalWeight += weight;
         }
 
+        if (patterns.isEmpty()) return "vanilla"; // guard nextInt(0) / empty weighting
         float pick = context.getRandom().nextFloat() * totalWeight;
         for (int i = 0; i < patterns.size(); i++) {
             pick -= weights[i];
@@ -212,10 +219,8 @@ public class GlintTrimLootModifier extends LootModifier {
 
         for (int t = 0; t < trimCount; t++) {
             String pattern = selectPattern(context);
-            ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-            Identifier patternLoc = pattern.equals("vanilla")
-                ? CustomGlint.VANILLA
-                : CustomGlint.res("textures/glint/" + pattern + ".png");
+            ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
+            Identifier patternLoc = CustomGlint.designFromName(pattern); // handles vanilla + chromatic sentinels
             GlintTrimItem.setPattern(trim, patternLoc);
             if (context.getRandom().nextFloat() < 0.25f) {
                 int colorCount = 1 + context.getRandom().nextInt(3);
@@ -227,19 +232,19 @@ public class GlintTrimLootModifier extends LootModifier {
 
         // Glow Trims: 18% for 1st, 10% for 2nd, 5% for 3rd
         if (context.getRandom().nextFloat() < 0.18f) {
-            ItemStack glowTrim = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+            ItemStack glowTrim = new ItemStack(ModItems.GLOW_TRIM.get());
             int colorCount = 1 + context.getRandom().nextInt(3);
             for (int i = 0; i < colorCount; i++)
                 GlowTrimItem.addColor(glowTrim, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
             generatedLoot.add(glowTrim);
             if (context.getRandom().nextFloat() < 0.10f) {
-                ItemStack glowTrim2 = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+                ItemStack glowTrim2 = new ItemStack(ModItems.GLOW_TRIM.get());
                 colorCount = 1 + context.getRandom().nextInt(3);
                 for (int i = 0; i < colorCount; i++)
                     GlowTrimItem.addColor(glowTrim2, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
                 generatedLoot.add(glowTrim2);
                 if (context.getRandom().nextFloat() < 0.05f) {
-                    ItemStack glowTrim3 = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+                    ItemStack glowTrim3 = new ItemStack(ModItems.GLOW_TRIM.get());
                     colorCount = 1 + context.getRandom().nextInt(3);
                     for (int i = 0; i < colorCount; i++)
                         GlowTrimItem.addColor(glowTrim3, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
@@ -250,35 +255,43 @@ public class GlintTrimLootModifier extends LootModifier {
 
         // Each tear type independently: 20% for 1st, 10% for 2nd, 5% for 3rd
         if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+            generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
             if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+                generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
                 if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+                    generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
             }
         }
         if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
+            generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
             if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
+                generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
+                    generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
             }
         }
         if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(CustomGlintMod.GLINT_LAYER_TEAR.get().getDefaultInstance());
+            generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
             if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(CustomGlintMod.GLINT_LAYER_TEAR.get().getDefaultInstance());
+                generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
                 if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(CustomGlintMod.GLINT_LAYER_TEAR.get().getDefaultInstance());
+                    generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
             }
         }
         if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance());
+            generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
             if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance());
+                generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
                 if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance());
+                    generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
+            }
+        }
+        if (context.getRandom().nextFloat() < 0.20f) {
+            generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
+            if (context.getRandom().nextFloat() < 0.10f) {
+                generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
+                if (context.getRandom().nextFloat() < 0.05f)
+                    generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
             }
         }
 
