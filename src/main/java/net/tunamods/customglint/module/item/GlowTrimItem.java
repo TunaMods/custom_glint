@@ -18,12 +18,16 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Glow Trim — applies a colored outline glow only (no glint design).
+ * Glow Trim, applies a colored outline glow only (no glint design).
  * Stores its colors in the ModComponents.GLOW_TRIM data component. When applied via smithing, writes
  * {@code glowColors} + {@code glowing=true} to the target item via CustomGlint.setGlowColors.
  * Mirrors GlintTrimItem's color handling (dye to add, merge to combine, max 8 colors).
  */
 public class GlowTrimItem extends Item {
+
+    /** Storage-library key for the Glow Trim in the Glint Table grid (it has no design pattern of its
+     *  own). Distinct from the "glow" texture design in {@link GlintTrimItem#PATTERNS}. */
+    public static final String STORAGE_KEY = "glow_trim";
 
     public GlowTrimItem(Properties pProperties) {
         super(pProperties);
@@ -87,10 +91,10 @@ public class GlowTrimItem extends Item {
     public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, TooltipDisplay pDisplay, Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (colors.length == 0) {
-            pTooltipComponents.accept(Component.literal("No color — craft with a dye to add one"));
+            pTooltipComponents.accept(Component.literal("No color, craft with a dye to add one"));
             return;
         }
-        pTooltipComponents.accept(Component.literal("Applies a colored outline glow — apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
+        pTooltipComponents.accept(Component.literal("Applies a colored outline glow, apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
         MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
         for (int i = 0; i < colors.length; i++) {
             int rgb = colors[i] & 0xFFFFFF;

@@ -4,6 +4,10 @@
     "model": "customglint:item/glow_trim",
     "tints": [
       {
+        "type": "minecraft:constant",
+        "value": -1
+      },
+      {
         "type": "customglint:glow"
       }
     ]

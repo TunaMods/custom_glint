@@ -24,12 +24,12 @@ public class CustomGlintApiMod {
         // Renderer-touching init (resource reload listener for the texture cache, the CLIENT rendering
         // config + screen, render-state modifiers) happens only on the client. The client classes are
         // referenced solely inside the dist guard, so the JVM never resolves CustomGlintRenderer or the
-        // config screen on a dedicated server — the guarded branch only runs on the matching dist.
+        // config screen on a dedicated server, the guarded branch only runs on the matching dist.
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             CustomGlintClientInit.run(modEventBus, modContainer);
         }
 
-        // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
+        // Server-safe event listeners, only touch NBT/data registries on CustomGlint.
         NeoForge.EVENT_BUS.addListener(this::onCraft);
         NeoForge.EVENT_BUS.addListener(this::onFish);
         NeoForge.EVENT_BUS.addListener(this::onMobDrop);

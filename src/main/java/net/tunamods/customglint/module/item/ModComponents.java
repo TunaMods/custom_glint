@@ -10,6 +10,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.tunamods.customglint.common.CustomGlint;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,16 +30,29 @@ public final class ModComponents {
     public static final DeferredRegister.DataComponents DATA_COMPONENTS =
             DeferredRegister.createDataComponents(Registries.DATA_COMPONENT_TYPE, MOD_ID);
 
-    /** The Glint Trim's editable config — pattern, color list, speed, scale, glowing flag. */
-    public record TrimConfig(Optional<Identifier> pattern, List<Integer> colors, float speed, float scale, boolean glowing) {
-        public static final TrimConfig EMPTY = new TrimConfig(Optional.empty(), List.of(), 1.0f, 1.0f, false);
+    /** The Glint Trim's editable config, pattern, color list, speed, scale, scroll direction + static
+     *  offset, glowing flag. {@code scroll}/{@code offset} mirror {@link CustomGlint.Layer}. */
+    public record TrimConfig(Optional<Identifier> pattern, List<Integer> colors, float speed, float scale,
+                             int scroll, float offset, boolean glowing, int seed) {
+        /** Back-compat constructor for the seven-field call sites: {@code seed} defaults to 0 (only
+         *  {@link CustomGlint#CHROMATIC} trims roll a real one). */
+        public TrimConfig(Optional<Identifier> pattern, List<Integer> colors, float speed, float scale,
+                          int scroll, float offset, boolean glowing) {
+            this(pattern, colors, speed, scale, scroll, offset, glowing, 0);
+        }
+
+        public static final TrimConfig EMPTY = new TrimConfig(Optional.empty(), List.of(), 1.0f, 1.0f,
+                CustomGlint.SCROLL_E, 0.0f, false);
 
         public static final Codec<TrimConfig> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Identifier.CODEC.optionalFieldOf("pattern").forGetter(TrimConfig::pattern),
-                Codec.INT.listOf().optionalFieldOf("colors", List.of()).forGetter(TrimConfig::colors),
+                Codec.INT.sizeLimitedListOf(CustomGlint.MAX_COLORS_PER_LAYER).optionalFieldOf("colors", List.of()).forGetter(TrimConfig::colors),
                 Codec.FLOAT.optionalFieldOf("speed", 1.0f).forGetter(TrimConfig::speed),
                 Codec.FLOAT.optionalFieldOf("scale", 1.0f).forGetter(TrimConfig::scale),
-                Codec.BOOL.optionalFieldOf("glowing", false).forGetter(TrimConfig::glowing)
+                Codec.INT.optionalFieldOf("scroll", CustomGlint.SCROLL_E).forGetter(TrimConfig::scroll),
+                Codec.FLOAT.optionalFieldOf("offset", 0.0f).forGetter(TrimConfig::offset),
+                Codec.BOOL.optionalFieldOf("glowing", false).forGetter(TrimConfig::glowing),
+                Codec.INT.optionalFieldOf("seed", 0).forGetter(TrimConfig::seed)
         ).apply(i, TrimConfig::new));
 
         public static final StreamCodec<ByteBuf, TrimConfig> STREAM_CODEC = ByteBufCodecs.fromCodec(CODEC);
@@ -49,11 +63,12 @@ public final class ModComponents {
                     .persistent(TrimConfig.CODEC)
                     .networkSynchronized(TrimConfig.STREAM_CODEC));
 
-    /** The Glow Trim's color list (drives the glow-color animation on smithing). */
+    /** The Glow Trim's color list (drives the glow-color animation on smithing). Capped at 8 to match
+     *  every input path (GlowTrimItem.addColor / mergeColors) so a crafted component can't store more. */
     public static final Supplier<DataComponentType<List<Integer>>> GLOW_TRIM =
             DATA_COMPONENTS.registerComponentType("glow_trim", b -> b
-                    .persistent(Codec.INT.listOf())
-                    .networkSynchronized(ByteBufCodecs.fromCodec(Codec.INT.listOf())));
+                    .persistent(Codec.INT.sizeLimitedListOf(CustomGlint.MAX_COLORS_PER_LAYER))
+                    .networkSynchronized(ByteBufCodecs.fromCodec(Codec.INT.sizeLimitedListOf(CustomGlint.MAX_COLORS_PER_LAYER))));
 
     public static void register(IEventBus modEventBus) {
         DATA_COMPONENTS.register(modEventBus);

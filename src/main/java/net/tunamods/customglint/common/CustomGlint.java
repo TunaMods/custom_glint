@@ -14,7 +14,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 import javax.annotation.Nullable;
 import java.util.Arrays;
@@ -23,13 +22,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
- * Server-safe data API for Custom Glints. NBT read/write, color and design constants, and the
- * auto-apply registries live here. The rendering pipeline lives in {@link CustomGlintRenderer},
- * which is client-only and references this class for {@link Layer}/{@link Data} types and NBT.
+ * Server-safe data API for Custom Glints. Item/entity glint state read/write (backed by a typed
+ * {@code GlintState} data component + a synced attachment, not loose NBT), color and design constants,
+ * and the auto-apply registries live here. The rendering pipeline lives in
+ * {@code net.tunamods.customglint.common.client.CustomGlintRenderer} (referenced by name, not imported:
+ * it is client-only, and a real symbol reference from this server-reachable class would
+ * {@code ClassNotFoundException} on a dedicated server), which references this class for
+ * {@link Layer}/{@link Data} types and state access.
  *
  * Split was required because the previous unified class extended {@code RenderStateShard} (a
  * client-only base class) and imported {@code Minecraft}/{@code RenderType}/etc., so any
@@ -41,30 +45,58 @@ public final class CustomGlint {
 
     // ── Layer ─────────────────────────────────────────────────────────────────
 
-    public record Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+    /** {@link Layer#scrollDir} values: the direction the animated glint drifts. {@code STATIC} freezes the
+     *  animation and uses {@link Layer#scrollOffset} as a manual position instead. The eight compass values
+     *  go counter-clockwise from East. Default is {@code E} (the historical horizontal scroll). */
+    public static final int SCROLL_STATIC = 0, SCROLL_E = 1, SCROLL_NE = 2, SCROLL_N = 3, SCROLL_NW = 4,
+            SCROLL_W = 5, SCROLL_SW = 6, SCROLL_S = 7, SCROLL_SE = 8;
+
+    /** Max colors a single layer may carry. Enforced at every input boundary (wand editor, packets, NBT
+     *  decode via {@link Layer#CODEC}); the renderer cycles through them, so more would never display. */
+    public static final int MAX_COLORS_PER_LAYER = 8;
+
+    public record Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
+                        boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        /** Back-compat constructor for the eight-field call sites (recipes, packets, tear apply): the
+         *  procedural-chromatic {@link #seed} defaults to 0 (only {@link #CHROMATIC} layers use it). */
+        public Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
+                     boolean simultaneous, int scrollDir, float scrollOffset) {
+            this(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, 0);
+        }
+
         public static final Codec<Layer> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Identifier.CODEC.fieldOf("design").forGetter(Layer::design),
-                Codec.INT.listOf().xmap(
+                // Bound the color list to the same 8-color cap every other path enforces (item NBT, the wand
+                // editor, the print/apply/give packets). Without it, a crafted print-packet NBT layer or a
+                // future component decode could carry an arbitrarily large color array straight into a stored
+                // ItemStack/attachment. sizeLimitedListOf rejects an oversized list during decode.
+                Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
                         list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
                         arr -> Arrays.stream(arr).boxed().toList()
                 ).fieldOf("colors").forGetter(Layer::colors),
                 Codec.FLOAT.optionalFieldOf("speed", 1.0f).forGetter(Layer::speed),
                 Codec.BOOL.optionalFieldOf("interpolate", true).forGetter(Layer::interpolate),
                 Codec.FLOAT.optionalFieldOf("scale", 1.0f).forGetter(Layer::patternScale),
-                Codec.BOOL.optionalFieldOf("simultaneous", true).forGetter(Layer::simultaneous)
+                Codec.BOOL.optionalFieldOf("simultaneous", true).forGetter(Layer::simultaneous),
+                Codec.INT.optionalFieldOf("scroll", SCROLL_E).forGetter(Layer::scrollDir),
+                Codec.FLOAT.optionalFieldOf("offset", 0.0f).forGetter(Layer::scrollOffset),
+                Codec.INT.optionalFieldOf("seed", 0).forGetter(Layer::seed)
         ).apply(i, Layer::new));
 
         // Value equality (the record default would compare the int[] by identity, breaking item
-        // stacking / ItemStack.matches / recipe matching — the old NBT was value-equal).
+        // stacking / ItemStack.matches / recipe matching, the old NBT was value-equal).
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof Layer l)) return false;
             return Float.compare(speed, l.speed) == 0 && interpolate == l.interpolate
                     && Float.compare(patternScale, l.patternScale) == 0 && simultaneous == l.simultaneous
+                    && scrollDir == l.scrollDir && Float.compare(scrollOffset, l.scrollOffset) == 0
+                    && seed == l.seed
                     && Objects.equals(design, l.design) && Arrays.equals(colors, l.colors);
         }
         @Override public int hashCode() {
-            return Objects.hash(design, speed, interpolate, patternScale, simultaneous) * 31 + Arrays.hashCode(colors);
+            return Objects.hash(design, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) * 31
+                    + Arrays.hashCode(colors);
         }
     }
 
@@ -89,7 +121,7 @@ public final class CustomGlint {
 
     /**
      * Per-entity glint state: the glint {@link Data} (nullable) plus the three glow flags. The payload for
-     * both glint registries — the {@link CustomGlintComponents#GLINT} item data component and the
+     * both glint registries, the {@link CustomGlintComponents#GLINT} item data component and the
      * {@link CustomGlintComponents#ENTITY_GLINT} entity attachment. Codec-serialized; the attachment
      * auto-syncs on write, so there is no manual sync packet.
      */
@@ -103,7 +135,10 @@ public final class CustomGlint {
         public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Data.CODEC.optionalFieldOf("glint").forGetter(s -> Optional.ofNullable(s.data())),
                 Codec.BOOL.optionalFieldOf("glowing", false).forGetter(GlintState::glowing),
-                Codec.INT.listOf().xmap(
+                // Same 8-color cap as Layer.colors above (every input path, Glow Trim, the print/apply
+                // packets, the wand editor, already enforces it). Without it a crafted component/packet
+                // could round-trip an arbitrarily large glow-color list into a stored item / synced attachment.
+                Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
                         list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
                         arr -> Arrays.stream(arr).boxed().toList()
                 ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors)
@@ -126,7 +161,7 @@ public final class CustomGlint {
     // ── Colors ────────────────────────────────────────────────────────────────
 
     /** Parses a {@code "RRGGBB"} / {@code "#RRGGBB"} hex string to an opaque ARGB int. For string color
-     *  sources — commands, data packs, the config — where the value isn't a compile-time constant. The
+     *  sources, commands, data packs, the config, where the value isn't a compile-time constant. The
      *  named constants below come from {@link DyeColor}; only external string input flows through here. */
     public static int color(String hex) {
         return Integer.parseUnsignedInt(hex.startsWith("#") ? hex.substring(1) : hex, 16) | 0xFF000000;
@@ -137,7 +172,7 @@ public final class CustomGlint {
         return Identifier.fromNamespaceAndPath(MOD_ID, path);
     }
 
-    // The 16 named glint colors ARE Minecraft's dye colors — sourced from DyeColor.getTextColor()
+    // The 16 named glint colors ARE Minecraft's dye colors, sourced from DyeColor.getTextColor()
     // (the vivid per-dye colour, already opaque ARGB) so they track vanilla instead of drifting.
     public static final int RED        = DyeColor.RED.getTextColor();
     public static final int ORANGE     = DyeColor.ORANGE.getTextColor();
@@ -159,6 +194,11 @@ public final class CustomGlint {
     // ── Designs ───────────────────────────────────────────────────────────────
 
     public static final Identifier VANILLA    = Identifier.fromNamespaceAndPath("minecraft", "textures/misc/enchanted_glint_item.png");
+    /** Procedural chromatic "design", has no PNG. Each {@link Layer} carries a random {@link Layer#seed};
+     *  the chromatic shader generates per-seed oil-slick noise tinted by the layer's colors (or a rainbow
+     *  hue fallback when none are set). The render factories route it specially and never sample it as a
+     *  texture. Because the seed is rolled per trim, no two chromatic trims look alike. */
+    public static final Identifier CHROMATIC  = res("chromatic");
     public static final Identifier ARCS      = res("textures/glint/arcs.png");
     public static final Identifier AURORA    = res("textures/glint/aurora.png");
     public static final Identifier BLOBS     = res("textures/glint/blobs.png");
@@ -215,7 +255,7 @@ public final class CustomGlint {
     public static final Identifier ZIGZAG    = res("textures/glint/zigzag.png");
 
     public static final Identifier[] PATTERNS = {
-            VANILLA,
+            VANILLA, CHROMATIC,
             ARCS, AURORA, BLOBS, CASCADE, CHECKER, CHEVRON, CORAL, CRACKS,
             CROSSHATCH, CRYSTAL, DEBRIS, DIAMONDS, DUNES, EMBER, FEATHER, FIRE,
             FROST, GLITCH, GLOW, GRID, HALO, HEXAGON, LIGHTNING, MARBLE,
@@ -225,22 +265,69 @@ public final class CustomGlint {
             TIDE, TILE, VEIN, WAVE, WEAVE, ZIGZAG
     };
 
-    /** Saturated colors only — used by JEI plugin and trim creative tab for preset display. */
+    /** Saturated colors only, used by JEI plugin and trim creative tab for preset display. */
     public static final int[] VIBRANT_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK
     };
 
-    /** All 16 named colors including neutrals — full palette for downstream mod use. */
+    /** All 16 named colors including neutrals, full palette for downstream mod use. */
     public static final int[] ALL_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK,
             BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
     };
 
+    /** A fresh nonzero seed for a new {@link #CHROMATIC} layer (0 means "no seed / not chromatic"), so two
+     *  chromatic glints never share an oil-slick pattern. */
+    public static int randomChromaticSeed() {
+        int s;
+        do { s = ThreadLocalRandom.current().nextInt(); } while (s == 0);
+        return s;
+    }
+
+    public static boolean isChromatic(Identifier design) { return CHROMATIC.equals(design); }
+    public static boolean isChromatic(Layer layer) { return layer != null && CHROMATIC.equals(layer.design()); }
+
+    /** Returns {@code layers} with a fresh nonzero {@link Layer#seed} rolled into every {@link #CHROMATIC}
+     *  layer that arrives unseeded (seed 0). Non-chromatic layers and already-seeded chromatic layers pass
+     *  through unchanged. Call this server-side at the point layers are committed (packet handlers, the Glint
+     *  Table) so editor / wire paths that build layers without rolling a seed still get unique patterns. */
+    public static Layer[] ensureChromaticSeeds(Layer[] layers) {
+        Layer[] out = layers;
+        for (int i = 0; i < layers.length; i++) {
+            Layer l = layers[i];
+            if (isChromatic(l) && l.seed() == 0) {
+                if (out == layers) out = layers.clone();
+                out[i] = new Layer(l.design(), l.colors(), l.speed(), l.interpolate(), l.patternScale(),
+                        l.simultaneous(), l.scrollDir(), l.scrollOffset(), randomChromaticSeed());
+            }
+        }
+        return out;
+    }
+
+    /** Resolves a design <em>name</em> (as stored on a Trim / typed in a command / shown in the picker)
+     *  to its design {@link Identifier}. Handles the {@code vanilla} and {@code chromatic} sentinels and
+     *  {@code namespace:name} qualified names; everything else maps to {@code <ns>:textures/glint/<name>.png}.
+     *  Single source of truth for the editor, creative tab, and command resolvers. */
+    public static Identifier designFromName(String name) {
+        if ("vanilla".equals(name)) return VANILLA;
+        if ("chromatic".equals(name)) return CHROMATIC;
+        // tryParse (not the throwing fromNamespaceAndPath), this runs server-side on remote-controlled
+        // strings (e.g. GlintGiveDesignPacket), so a malformed name must fall back, never crash the tick.
+        Identifier id;
+        if (name.indexOf(':') >= 0) {
+            int c = name.indexOf(':');
+            id = Identifier.tryParse(name.substring(0, c) + ":textures/glint/" + name.substring(c + 1) + ".png");
+        } else {
+            id = Identifier.tryParse(MOD_ID + ":textures/glint/" + name + ".png");
+        }
+        return id != null ? id : VANILLA;
+    }
+
     // ── Item glint storage ────────────────────────────────────────────────────
     // All field names ("layers"/"glint"/"glowing"/"glowColors"/…) live in the codecs
     // (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants any more.
 
-    // Item glint state is a typed GlintState data component (see GLINT) — no more CompoundTag in
+    // Item glint state is a typed GlintState data component (see GLINT), no more CompoundTag in
     // CUSTOM_DATA. These accessors keep their old signatures so callers (recipes, GUI, packets, the
     // trim items, the renderer) are unaffected by the storage change.
 
@@ -254,6 +341,19 @@ public final class CustomGlint {
     private static void setItemState(ItemStack stack, GlintState state) {
         if (state.isEmpty()) stack.remove(CustomGlintComponents.GLINT.get());
         else stack.set(CustomGlintComponents.GLINT.get(), state);
+    }
+
+    /** The stack's full glint state (never null; {@link GlintState#EMPTY} when none). This is the
+     *  component-era transfer primitive: {@code GlintState} is an immutable value, so copying it to
+     *  another holder ({@link #writeState} / {@link #writeEntityState}) needs no serialization. Prefer
+     *  this over the {@link #itemGlintTag} CompoundTag bridge for in-memory item↔entity transfer. */
+    public static GlintState readState(ItemStack stack) {
+        return itemState(stack);
+    }
+
+    /** Overwrites the stack's full glint state in one shot ({@link GlintState#EMPTY} clears it). */
+    public static void writeState(ItemStack stack, GlintState state) {
+        setItemState(stack, state);
     }
 
     @Nullable
@@ -272,7 +372,18 @@ public final class CustomGlint {
     }
 
     public static void write(ItemStack stack, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) });
+        write(stack, design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f);
+    }
+
+    public static void write(ItemStack stack, Identifier design, int[] colors, float speed, boolean interpolate,
+                             float patternScale, boolean simultaneous, int scrollDir, float scrollOffset) {
+        write(stack, design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, 0);
+    }
+
+    /** As above plus the procedural-chromatic {@link Layer#seed} (ignored by non-{@link #CHROMATIC} designs). */
+    public static void write(ItemStack stack, Identifier design, int[] colors, float speed, boolean interpolate,
+                             float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) });
     }
 
     public static void remove(ItemStack stack) {
@@ -288,7 +399,7 @@ public final class CustomGlint {
         setItemState(stack, new GlintState(cur.data(), glowing, cur.glowColors()));
     }
 
-    /** Glow Trim colors — drive the outline color animation independently of any glint Data. */
+    /** Glow Trim colors, drive the outline color animation independently of any glint Data. */
     public static int[] getGlowColors(ItemStack stack) {
         return itemState(stack).glowColors();
     }
@@ -336,7 +447,7 @@ public final class CustomGlint {
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
     }
 
     public static void registerCraftGlint(Item item, Identifier design, int[] colors) {
@@ -352,7 +463,7 @@ public final class CustomGlint {
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
     public static void registerFishingGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
     }
 
     public static void registerFishingGlint(Item item, Identifier design, int[] colors) {
@@ -368,7 +479,7 @@ public final class CustomGlint {
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
     }
 
     public static void registerMobDropGlint(Item item, Identifier design, int[] colors) {
@@ -398,6 +509,18 @@ public final class CustomGlint {
         else entity.setData(CustomGlintComponents.ENTITY_GLINT, state);
     }
 
+    /** The entity's full glint state (never null; {@link GlintState#EMPTY} when none). The typed
+     *  counterpart to {@link #readState}; copy the value straight to an item with {@link #writeState}
+     *  for a serialization-free entity→item transfer. */
+    public static GlintState readEntityState(LivingEntity entity) {
+        return entityState(entity);
+    }
+
+    /** Overwrites the entity's full glint state in one shot ({@link GlintState#EMPTY} clears it). Auto-syncs. */
+    public static void writeEntityState(LivingEntity entity, GlintState state) {
+        setEntityState(entity, state);
+    }
+
     public static final Map<EntityType<?>, Data> ENTITY_GLINTS = new HashMap<>();
 
     public static void registerEntityGlint(EntityType<?> type, Data data) {
@@ -405,7 +528,7 @@ public final class CustomGlint {
     }
 
     public static void registerEntityGlint(EntityType<?> type, Identifier design, int[] colors) {
-        registerEntityGlint(type, new Data(new Layer[]{ new Layer(design, colors, 1.0f, true, 1.0f, true) }));
+        registerEntityGlint(type, new Data(new Layer[]{ new Layer(design, colors, 1.0f, true, 1.0f, true, SCROLL_E, 0.0f) }));
     }
 
     @Nullable
@@ -442,7 +565,7 @@ public final class CustomGlint {
         setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors()));
     }
 
-    /** Per-entity Glow Trim colors — drive the outline color animation independently of any
+    /** Per-entity Glow Trim colors, drive the outline color animation independently of any
      *  glint Data, identical semantics to {@link #getGlowColors(ItemStack)} but on a mob. */
     public static int[] getEntityGlowColors(LivingEntity entity) {
         return entityState(entity).glowColors();
@@ -464,10 +587,11 @@ public final class CustomGlint {
         setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0]));
     }
 
-    // ── CompoundTag bridge (snapshot / restore, item↔entity transfer) ─────────
-    // All glint state — item and entity — serializes through the GlintState codec, so an item tag and
-    // an entity tag are the same shape and transfer is a one-liner. These stay CompoundTag-based because
-    // that is what callers and external tooling pass around (give NBT, /data, stored snapshots).
+    // ── CompoundTag bridge (serialized snapshot / restore) ────────────────────
+    // The GlintState codec driven through NbtOps, for the cases that genuinely need a serialized form:
+    // a stored snapshot, give NBT, /data, a custom packet. For in-memory item↔entity transfer prefer the
+    // typed readState/writeState accessors above, GlintState is an immutable value, so a direct copy
+    // skips this encode/decode round-trip. An item tag and an entity tag share one shape (same codec).
 
     private static CompoundTag stateToTag(GlintState state) {
         if (state.isEmpty()) return new CompoundTag();
@@ -484,8 +608,9 @@ public final class CustomGlint {
         return stateToTag(itemState(stack));
     }
 
-    /** The entity's glint state as a CompoundTag (empty if none). Same shape as {@link #itemGlintTag},
-     *  so {@code writeItemTag(stack, entityGlintTag(entity))} (and the reverse) transfers state directly. */
+    /** The entity's glint state as a CompoundTag (empty if none). Same shape as {@link #itemGlintTag}.
+     *  For a live item↔entity copy prefer {@link #readEntityState} + {@link #writeState}; reach for this
+     *  only when you actually want the serialized tag. */
     public static CompoundTag entityGlintTag(LivingEntity entity) {
         return stateToTag(entityState(entity));
     }
@@ -524,7 +649,7 @@ public final class CustomGlint {
     public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
 
     public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
     }
 
     public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors) {

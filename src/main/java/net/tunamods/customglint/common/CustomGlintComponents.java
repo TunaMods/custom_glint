@@ -15,9 +15,9 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 /**
  * API-jar registries for glint state, both carrying a {@link GlintState}:
  * <ul>
- *   <li>{@link #GLINT} — a typed item data component ({@code customglint:glint}), the modern
+ *   <li>{@link #GLINT}, a typed item data component ({@code customglint:glint}), the modern
  *       replacement for stuffing a CompoundTag into vanilla's {@code CUSTOM_DATA}.</li>
- *   <li>{@link #ENTITY_GLINT} — a synced entity {@link AttachmentType}: NeoForge auto-syncs it to
+ *   <li>{@link #ENTITY_GLINT}, a synced entity {@link AttachmentType}: NeoForge auto-syncs it to
  *       tracking clients on every write, persists it server-side, and copies it across player respawn.</li>
  * </ul>
  * Lives in the api jar so embedders that bundle only the api get both with no wiring; {@link CustomGlintApiMod}
