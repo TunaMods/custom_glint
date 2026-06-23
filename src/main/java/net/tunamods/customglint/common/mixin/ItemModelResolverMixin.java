@@ -27,35 +27,40 @@ public class ItemModelResolverMixin {
     @Inject(method = "updateForTopItem", at = @At("RETURN"), require = 0)
     private void cg_attachGlint(ItemStackRenderState output, ItemStack item, ItemDisplayContext displayContext,
             Level level, ItemOwner owner, int seed, CallbackInfo ci) {
-        CustomGlint.Data glint = item.isEmpty() ? null : CustomGlint.read(item);
+        // One component read instead of read()/isGlowing()×N/getGlowColors()×N on the same stack, this
+        // runs for every item render-state rebuild (mirrors EquipmentLayerRendererMixin's single readState).
+        CustomGlint.GlintState state = CustomGlint.readState(item);
+        CustomGlint.Data glint = state.data();
+        boolean glowing = state.glowing();
+        int[] glowColors = state.glowColors(); // never null; consumers null/empty-check either way
         CgGlintHolder holder = (CgGlintHolder) (Object) output;
         holder.customglint$setGlint(glint);
         // Glow rides the carrier independently of the glint: a Glow-Trimmed item with no glint still
         // outlines. The deferred item draw reads these back off the ItemSubmit node to queue the ring.
-        holder.customglint$setGlowing(!item.isEmpty() && CustomGlint.isGlowing(item));
-        holder.customglint$setGlowColors(item.isEmpty() ? null : CustomGlint.getGlowColors(item));
+        holder.customglint$setGlowing(glowing);
+        holder.customglint$setGlowColors(glowColors);
 
-        // The GUI renders items into an atlas cached by getModelIdentity() (see GuiItemAtlas) — the
+        // The GUI renders items into an atlas cached by getModelIdentity() (see GuiItemAtlas), the
         // glint is NOT part of vanilla's identity, so two items of the same base type + foil state
         // share one cached slot. Without this, giving a glinted item freezes the editor preview on
         // that config. Fold the glint config into the identity so each distinct look gets its own slot.
-        if (!item.isEmpty() && (glint != null || CustomGlint.isGlowing(item))) {
-            output.appendModelIdentityElement(cg_identity(item, glint));
+        if (glint != null || glowing) {
+            output.appendModelIdentityElement(cg_identity(glint, glowing, glowColors));
         }
     }
 
     @org.spongepowered.asm.mixin.Unique
-    private static String cg_identity(ItemStack item, CustomGlint.Data glint) {
+    private static String cg_identity(CustomGlint.Data glint, boolean glowing, int[] glowColors) {
         StringBuilder sb = new StringBuilder("customglint:");
         if (glint != null) {
             for (CustomGlint.Layer l : glint.layers()) {
                 sb.append(l.design()).append('@').append(l.speed()).append(',')
                   .append(l.interpolate()).append(',').append(l.patternScale()).append(',')
-                  .append(l.simultaneous()).append(Arrays.toString(l.colors())).append(';');
+                  .append(l.simultaneous()).append(',').append(l.scrollDir()).append(',').append(l.scrollOffset())
+                  .append(Arrays.toString(l.colors())).append(';');
             }
         }
-        sb.append("glow=").append(CustomGlint.isGlowing(item))
-          .append(Arrays.toString(CustomGlint.getGlowColors(item)));
+        sb.append("glow=").append(glowing).append(Arrays.toString(glowColors));
         return sb.toString();
     }
 }

@@ -23,8 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p>The first-person hand renders with its own projection ({@code GameRenderer.hudProjection}, set up
  * from {@code cameraState.hudFov} immediately before {@code renderItemInHand}). That projection is uploaded
- * to a GPU buffer — {@code RenderSystem.setProjectionMatrix} takes a {@code GpuBufferSlice}, not a
- * {@code Matrix4f} — so it can't be read back at the drain. We grab the {@code Matrix4f} here at
+ * to a GPU buffer, {@code RenderSystem.setProjectionMatrix} takes a {@code GpuBufferSlice}, not a
+ * {@code Matrix4f}, so it can't be read back at the drain. We grab the {@code Matrix4f} here at
  * {@code renderItemInHand} HEAD (after {@code hudProjection} is configured) and hand it to
  * {@link EntityGlintRender} for the held-item composite scissor.
  *
@@ -32,7 +32,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * item's outline is drained inside {@code renderHandsWithItems} RETURN ({@code ItemInHandRendererMixin}),
  * while the hand pose's modelview is still on the stack. Under a pack Iris cancels vanilla's
  * {@code renderHandsWithItems} ({@code MixinGameRenderer.iris$disableVanillaHandRendering}) and renders the
- * hand itself, in-pipeline, via {@code HandRenderer.renderSolid} — baking the hand perspective + bob into
+ * hand itself, in-pipeline, via {@code HandRenderer.renderSolid}, baking the hand perspective + bob into
  * the uploaded projection and drawing with an identity modelview. So the held-item drain moves HERE, to
  * {@code renderItemInHand} RETURN (past Iris's pass, no gbuffer hijack), and reconstructs that state from
  * the still-bound {@code hudProjection} + a rebuilt bob modelview. See the TRIED history on the RETURN
@@ -52,10 +52,10 @@ public class GameRendererMixin {
         EntityGlintRender.setFirstPersonProjection(hudProjection.getMatrix(new Matrix4f()));
     }
 
-    // TRIED (attempt 1, insufficient ALONE): adding only this RETURN drain did nothing — the held item
+    // TRIED (attempt 1, insufficient ALONE): adding only this RETURN drain did nothing, the held item
     // outline still floated. Root cause: under Iris the hand item is captured into the shared item-outline
     // queue DURING the level framegraph (Iris renders the hand in-pipeline), so LevelRendererMixin's
-    // renderLevel-TAIL world drain already consumed AND cleared it (with the world projection — that's the
+    // renderLevel-TAIL world drain already consumed AND cleared it (with the world projection, that's the
     // float) before this RETURN ran, leaving an empty queue here. The fix that made this drain effective:
     // route first-person items to a dedicated HELD_FP_OUTLINES queue the world drain never touches (see
     // EntityGlintRender.HELD_FP_OUTLINES + ItemRendererMixin's displayContext().firstPerson() gate), so the
@@ -66,7 +66,7 @@ public class GameRendererMixin {
     // Iris's HandRenderer.setupGlState/renderSolid (jars/iris_extract): under a pack Iris bakes the hand
     // perspective + bobHurt/bobView INTO the uploaded projection matrix and renders the hand with an
     // IDENTITY modelview, and the item submit poses are hand-LOCAL (relative to a fresh PoseStack). So
-    // multiplying by the world view put the hand-local pose out into the world ≈1 block away — the float.
+    // multiplying by the world view put the hand-local pose out into the world ≈1 block away, the float.
     //
     // FIX (attempt 3): we don't have Iris's baked projection (it's uploaded as an unreadable GpuBufferSlice),
     // but the plain hand perspective (`hudProjection`, set by vanilla at GameRenderer line 746) is STILL the
@@ -81,7 +81,7 @@ public class GameRendererMixin {
         if (!CustomGlintRenderer.isShaderPackActive()) {
             return;   // off the pack path ItemInHandRendererMixin already drained the held item.
         }
-        // Rebuild the hand bob (bobHurt + optional bobView) into a fresh pose — Iris baked this into its
+        // Rebuild the hand bob (bobHurt + optional bobView) into a fresh pose, Iris baked this into its
         // projection; we instead carry it in the modelview because our ProjMat is the plain hudProjection.
         PoseStack bob = new PoseStack();
         bobHurt(cameraState, bob);
@@ -93,6 +93,9 @@ public class GameRendererMixin {
         mvStack.set(bob.last().pose());   // absolute: hand items are hand-local; bob is the whole modelview.
         try {
             EntityGlintRender.drainBodyOutlines(false);
+            // First-person held chromatic items: re-render post-Iris with the hand projection + bob modelview
+            // in place (same state the glow FP drain uses). See EntityGlintRender.drainChromaticOverlays.
+            EntityGlintRender.drainChromaticOverlays(true);
         } finally {
             mvStack.popMatrix();
         }

@@ -2,6 +2,8 @@ package net.tunamods.customglint.common.client;
 
 import net.tunamods.customglint.common.CustomGlint;
 
+import java.util.ArrayDeque;
+
 /**
  * Thread-locals that bridge the two phases of the 26.1 item render:
  *
@@ -37,6 +39,62 @@ public final class GlintCarrier {
      * rings. Read by {@code SubmitNodeStorageMixin} during the special renderer's submit.
      */
     public static final ThreadLocal<Object> SUBMIT_TOKEN = new ThreadLocal<>();
+
+    /** Saved outer-submit context, so a nested {@code submit(...)} restores (not clears) the enclosing
+     *  item's glint/glow when it returns. */
+    private record SubmitFrame(CustomGlint.Data glint, Boolean glowing, int[] glowColors, Object token) {}
+    private static final ThreadLocal<ArrayDeque<SubmitFrame>> SUBMIT_STACK = ThreadLocal.withInitial(ArrayDeque::new);
+
+    /**
+     * Publishes one item's submit context for the duration of its {@code submit(...)}, saving whatever was
+     * already bound. Pairs with {@link #popSubmit()} at RETURN. The save/restore (rather than a plain
+     * set/remove) keeps nesting safe: if a special/BEWLR-style renderer resolves and submits a sub-item
+     * while an outer item's submit is still on the stack, the inner pop restores the outer item's context
+     * instead of wiping it, without it the rest of the outer item's geometry would lose its glint/glow.
+     */
+    public static void pushSubmit(CustomGlint.Data glint, boolean glowing, int[] glowColors, Object token) {
+        SUBMIT_STACK.get().push(new SubmitFrame(SUBMIT_GLINT.get(), SUBMIT_GLOWING.get(), SUBMIT_GLOW_COLORS.get(), SUBMIT_TOKEN.get()));
+        SUBMIT_GLINT.set(glint);
+        SUBMIT_GLOWING.set(glowing);
+        SUBMIT_GLOW_COLORS.set(glowColors);
+        SUBMIT_TOKEN.set(token);
+    }
+
+    /** Restores the context saved by the matching {@link #pushSubmit}; clears to null at the outermost frame. */
+    public static void popSubmit() {
+        ArrayDeque<SubmitFrame> stack = SUBMIT_STACK.get();
+        SubmitFrame prev = stack.isEmpty() ? null : stack.pop();
+        if (prev == null) {
+            SUBMIT_GLINT.remove();
+            SUBMIT_GLOWING.remove();
+            SUBMIT_GLOW_COLORS.remove();
+            SUBMIT_TOKEN.remove();
+        } else {
+            setOrRemove(SUBMIT_GLINT, prev.glint());
+            setOrRemove(SUBMIT_GLOWING, prev.glowing());
+            setOrRemove(SUBMIT_GLOW_COLORS, prev.glowColors());
+            setOrRemove(SUBMIT_TOKEN, prev.token());
+        }
+    }
+
+    private static <T> void setOrRemove(ThreadLocal<T> tl, T value) {
+        if (value == null) tl.remove(); else tl.set(value);
+    }
+
+    /**
+     * Defensive per-frame reset. The HEAD injects that set these locals pair with RETURN injects that
+     * clear them, but a RETURN inject does not fire if the wrapped render method throws, a thrown frame
+     * would otherwise leave stale glint/glow state bound to the render thread and poison the next frame.
+     * Called once at frame start (see {@code CustomGlintClientInit}) so each frame starts clean.
+     */
+    public static void resetSubmitState() {
+        SUBMIT_GLINT.remove();
+        DRAW_GLINT.remove();
+        SUBMIT_GLOWING.remove();
+        SUBMIT_GLOW_COLORS.remove();
+        SUBMIT_TOKEN.remove();
+        SUBMIT_STACK.get().clear();
+    }
 
     private GlintCarrier() {}
 }

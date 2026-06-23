@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Drains the glow-outline pass AFTER the level is fully rendered — the shader-pack path only.
+ * Drains the glow-outline pass AFTER the level is fully rendered, the shader-pack path only.
  *
  * <p><b>Why this exists.</b> Off the shader path, the glow capture + composite run mid-{@code renderLevel}
  * at {@code RenderLevelStageEvent.AfterWeather} (see {@code CustomGlintClientInit}); that drain draws raw GL
@@ -26,11 +26,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * rendering, Iris rebinds its OWN gbuffer framebuffer for any unknown shader
  * ({@code IrisRenderingPipeline.bindDefault} via {@code MixinCompiledShaderProgram}). Our glow mask + the
  * fullscreen composite use custom GLSL Iris doesn't know, so their framebuffer gets hijacked into Iris's
- * deferred buffers and the pack's later composite passes re-shade the result — the whole screen goes black
+ * deferred buffers and the pack's later composite passes re-shade the result, the whole screen goes black
  * with only the per-object scissor boxes showing.
  *
  * <p><b>The fix is timing, not program assignment</b> (assigning the composite to an Iris program would
- * REPLACE our post shader — see {@code IrisCompat}). {@code renderLevel} builds and executes the framegraph
+ * REPLACE our post shader, see {@code IrisCompat}). {@code renderLevel} builds and executes the framegraph
  * internally; Iris's deferred + final composite run inside it, so by {@code @At("TAIL")} the framegraph is
  * done, Iris has written its final image to the main target, and {@code ImmediateState.isRenderingLevel} is
  * false. Drawing the glow here is exactly like a GUI overlay: our own shaders run, our own targets bind, and
@@ -44,7 +44,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * push {@code modelViewMatrix} (the same matrix the level used) around the drain and pop it after.
  *
  * <p>Gated on {@link CustomGlintRenderer#isShaderPackActive()}: with no pack the AfterWeather drain owns the
- * frame (and must — it sequences correctly against vanilla cloud/weather passes), so this no-ops to avoid a
+ * frame (and must, it sequences correctly against vanilla cloud/weather passes), so this no-ops to avoid a
  * double drain. The first-person hand-item drain ({@code ItemInHandRendererMixin}) is unaffected: it already
  * runs after {@code renderLevel}, when the hand items are queued.
  */
@@ -57,13 +57,17 @@ public class LevelRendererMixin {
             Matrix4fc modelViewMatrix, GpuBufferSlice terrainFog, Vector4f fogColor,
             boolean shouldRenderSky, ChunkSectionsToRender chunkSectionsToRender, CallbackInfo ci) {
         if (CustomGlintRenderer.isShaderPackActive()) {
-            // Re-apply the camera-view matrix the level rendered with — renderLevel already popped it,
+            // Re-apply the camera-view matrix the level rendered with, renderLevel already popped it,
             // so the glow mask would otherwise project against an identity view and float off-target.
             Matrix4fStack mvStack = RenderSystem.getModelViewStack();
             mvStack.pushMatrix();
             mvStack.mul(modelViewMatrix);
             try {
                 EntityGlintRender.drainBodyOutlines();
+                // Chromatic glint can't draw in-phase under a pack (Iris → flat white); re-render the queued
+                // chromatic models + 3rd-person/dropped items here, post-Iris, with the camera view on the
+                // stack. First-person held items drain at the hand point (GameRendererMixin). See drainChromaticOverlays.
+                EntityGlintRender.drainChromaticOverlays(false);
             } finally {
                 mvStack.popMatrix();
             }

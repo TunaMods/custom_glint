@@ -3,7 +3,6 @@ package net.tunamods.customglint.common.client;
 import com.google.common.reflect.TypeToken;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.entity.LivingEntity;
@@ -46,6 +45,7 @@ public final class CustomGlintClientInit {
         modEventBus.addListener((RegisterRenderPipelinesEvent event) -> {
             event.registerPipeline(GlintPipelines.GLOW_COMPOSITE_ID_PIPE);
             event.registerPipeline(GlintPipelines.GLOW_UPSCALE_PIPE);
+            event.registerPipeline(GlintPipelines.CHROMATIC_COMPOSITE_PIPE);
         });
 
         // Entity glint attachment. The 26.1 entity render is decoupled from the entity by draw time
@@ -62,6 +62,10 @@ public final class CustomGlintClientInit {
         // Per-frame setup. RenderFrameEvent.Pre fires once per rendered frame regardless of shader pack
         // or batched-render plumbing.
         NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> {
+            // Opt-in GL debug probe (-Dcustomglint.gldebug=true). No-ops otherwise. Installs a synchronous
+            // debug callback that logs a stack trace for the first occurrence of each high-severity GL error
+            // (e.g. the "No active program" spam under Iris), naming the exact offending draw.
+            GlDebugProbe.install();
             // Register our glint pipeline with Iris (soft/reflective, no-op without Iris) so an active
             // pack runs it through the right program instead of drawing white. Self-guards after it lands;
             // done here (not FMLClientSetupEvent) because IrisApi's singleton isn't ready that early.
@@ -69,10 +73,20 @@ public final class CustomGlintClientInit {
             // Drop any body outlines queued last frame but never drained (level not rendered, stage
             // cancelled, etc.) so they can't replay against the wrong frame.
             EntityGlintRender.clearBodyOutlineQueue();
+            // Clear the item-render bridge thread-locals. A frame whose render threw skips the RETURN
+            // injects that normally clear them, so reset here to keep stale glint/glow state from leaking
+            // into the next frame.
+            GlintCarrier.resetSubmitState();
+            // Cache the GUI scale once for this frame, the GUI glint/glow overlay reads it per glinted icon,
+            // and it can't change mid-frame.
+            CustomGlintRenderer.refreshFrameGuiScale();
+            // Resolve "is a shader pack active" once for this frame (reflective Iris probe, hit many times
+            // per frame downstream); a pack can't toggle mid-frame.
+            CustomGlintRenderer.refreshFrameShaderActive();
         });
 
         // Entity-body glow rings are queued during the entity submit(...) extraction (where the
-        // entity-local pose is in hand) and drained HERE — at AfterWeather, the last level stage. The
+        // entity-local pose is in hand) and drained HERE, at AfterWeather, the last level stage. The
         // composite writes straight to the main target's colour texture (raw GL, frame-graph pass aside),
         // and under Fancy graphics the clouds and weather passes ALSO write to main, executing AFTER the
         // "main" pass where the earlier stages fire. Draining at AfterTranslucentFeatures (inside the main
@@ -83,10 +97,10 @@ public final class CustomGlintClientInit {
         // phase and never overwritten by translucent draws, so the ring still hides behind solid world
         // geometry. Under Fabulous graphics clouds/weather render to their own targets (combined later by
         // the transparency post-chain), so our direct-to-main composite lands before that chain at either
-        // stage — no change there.
+        // stage, no change there.
         // Off the shader path this is the glow drain: raw GL straight onto the main target, after the
         // cloud/weather passes (so the ring composites on top of them). Under an active Iris pack this
-        // point is mid-framegraph, where Iris hijacks our framebuffer into its gbuffer (black screen) —
+        // point is mid-framegraph, where Iris hijacks our framebuffer into its gbuffer (black screen),
         // there the drain is relocated to LevelRendererMixin (renderLevel TAIL, post-Iris). Skip here when
         // a pack is active so the glow isn't drained twice.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterWeather event) -> {

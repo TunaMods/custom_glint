@@ -1,5 +1,7 @@
 package net.tunamods.customglint.common.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -9,6 +11,7 @@ import net.minecraft.client.renderer.OutlineBufferSource;
 import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.client.renderer.feature.ItemFeatureRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CgGlintHolder;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
@@ -38,24 +41,63 @@ import java.util.List;
 @Mixin(ItemFeatureRenderer.class)
 public class ItemRendererMixin {
 
+    /**
+     * Mute vanilla's glowing outline on an item that carries OUR glow, the item-pipeline twin of
+     * {@code ModelFeatureRendererMixin.cg_muteVanillaGlow}. Covers dropped items on the floor and
+     * 3rd-person held items: when such an item is also vanilla-glowing (e.g. a glowing dropped entity,
+     * or held by a glowing mob), {@code renderItem} would tee its silhouette into the OutlineBufferSource
+     * via {@code submit.outlineColor()}. We draw our own ring for it, so force the colour to 0 to drop
+     * vanilla's tee and avoid two stacked outlines. Gated on the same glow condition this mixin queues our
+     * item ring on (see {@code cg_renderItemHead}).
+     */
+    @ModifyExpressionValue(method = "renderItem",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/SubmitNodeStorage$ItemSubmit;outlineColor()I"),
+            require = 0)
+    private int cg_muteVanillaItemGlow(int original, @Local(argsOnly = true) SubmitNodeStorage.ItemSubmit submit) {
+        CgGlintHolder holder = (CgGlintHolder) (Object) submit;
+        int[] glowColors = holder.customglint$getGlowColors();
+        if (holder.customglint$isGlowing() || (glowColors != null && glowColors.length > 0)) {
+            return 0;
+        }
+        return original;
+    }
+
     @Inject(method = "renderItem", at = @At("HEAD"), require = 0)
     private void cg_renderItemHead(MultiBufferSource.BufferSource bufferSource,
             OutlineBufferSource outlineBufferSource, SubmitNodeStorage.ItemSubmit submit, CallbackInfo ci) {
         CgGlintHolder holder = (CgGlintHolder) (Object) submit;
         GlintCarrier.DRAW_GLINT.set(holder.customglint$getGlint());
         // Queue the item's glow outline for the AfterOpaqueFeatures drain (the same isolated
-        // silhouette-mask + composite pass that draws entity rings — see EntityGlintRender). The item's
+        // silhouette-mask + composite pass that draws entity rings, see EntityGlintRender). The item's
         // base quads have just been (or are about to be) drawn to the main target, so by drain time the
         // scene depth the mask shader samples for occlusion is committed.
         boolean glowing = holder.customglint$isGlowing();
         int[] glowColors = holder.customglint$getGlowColors();
-        if (glowing || (glowColors != null && glowColors.length > 0)) {
+        // GUI icons get their glow from the flat halo blit (GuiRendererMixin), not this 3D silhouette
+        // composite, which drains at AfterOpaqueFeatures (a world phase) and would otherwise just queue
+        // per-glowing-icon jobs every atlas bake that never draw correctly. Skip them.
+        boolean isGui = submit.displayContext() == ItemDisplayContext.GUI;
+        if (!isGui && (glowing || (glowColors != null && glowColors.length > 0))) {
             // First-person hand items go to a separate queue drained only at the hand point (view-space
             // pose; the world drain would project it against the world matrix and the ring would float
-            // off the item — most visible under Iris, which renders the hand inside the level framegraph).
+            // off the item, most visible under Iris, which renders the hand inside the level framegraph).
             boolean heldFp = submit.displayContext() != null && submit.displayContext().firstPerson();
             EntityGlintRender.queueItemOutline(submit.quads(), submit.pose(), submit.lightCoords(),
                     holder.customglint$getGlint(), glowing, glowColors, heldFp);
+        }
+        // Chromatic glint layers can't draw in-phase under a pack (Iris → flat white); queue them for the
+        // post-Iris overlay drain (world drain for 3rd-person/dropped, hand drain for first-person). Non-
+        // chromatic layers still draw through getFoilBuffer/applyGlint, which skips chromatic under a pack.
+        CustomGlint.Data glint = holder.customglint$getGlint();
+        if (!isGui && glint != null && CustomGlintRenderer.isShaderPackActive()) {
+            boolean heldFp = submit.displayContext() != null && submit.displayContext().firstPerson();
+            CustomGlint.Layer[] gl = glint.layers();
+            for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
+                if (!CustomGlint.isChromatic(gl[layerIdx])) continue;
+                EntityGlintRender.queueChromaticItem(submit.quads(), submit.pose(),
+                        glint, layerIdx, submit.lightCoords(), heldFp);
+            }
         }
     }
 
@@ -86,19 +128,23 @@ public class ItemRendererMixin {
         if (glint == null) return null;
 
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             int[] colors = layers[layerIdx].colors();
-            if (layers[layerIdx].simultaneous()) {
+            if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+            // Under a shader pack a chromatic layer is drawn by the post-Iris overlay drain (queued in
+            // cg_renderItemHead), not here, drawing it in-phase would flash flat white. Skip it.
+            if (CustomGlint.isChromatic(layers[layerIdx]) && CustomGlintRenderer.isShaderPackActive()) continue;
+            // Chromatic composites every color in ONE draw (palette texture), so never loop per-color.
+            if (layers[layerIdx].simultaneous() && !CustomGlint.isChromatic(layers[layerIdx])) {
                 for (int i = 0; i < colors.length; i++) {
-                    RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, true, i);
+                    RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, true, i);
                     if (rt != null) list.add(cg_colored(cg_buffer(buffer, rt), colors[i]));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, true, 0);
+                RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, true, 0);
                 if (rt != null) list.add(cg_colored(cg_buffer(buffer, rt), color));
             }
         }
@@ -110,7 +156,7 @@ public class ItemRendererMixin {
      * Returns the buffer for a glint layer, first ensuring the layer's RenderType has its own
      * {@code ByteBufferBuilder} in the <em>actual</em> buffer source being drawn through. An immediate
      * {@code BufferSource} routes any RenderType not in {@code fixedBuffers} through one shared builder,
-     * and requesting a second such type flushes the first — which silently dropped every glint layer
+     * and requesting a second such type flushes the first, which silently dropped every glint layer
      * past the first (and differs between the world source and the GUI source). Giving each layer a
      * dedicated buffer lets them all accumulate and draw together.
      */
@@ -119,7 +165,7 @@ public class ItemRendererMixin {
             try {
                 src.fixedBuffers.put(rt, new ByteBufferBuilder(rt.bufferSize()));
             } catch (UnsupportedOperationException ignored) {
-                // Immutable fixedBuffers (Iris/Sodium) — falls back to the shared builder.
+                // Immutable fixedBuffers (Iris/Sodium), falls back to the shared builder.
             }
         }
         return buffer.getBuffer(rt);

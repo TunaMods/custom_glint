@@ -19,7 +19,7 @@ import java.util.Map;
  * which computes {@code vertexColour × texture} (grayscale design × glint colour) and is emissive.
  *
  * <p>The glow pipelines ({@code GLOW_MASK_*}, {@code GLOW_COMPOSITE_ID}, {@code GLOW_UPSCALE}) are
- * deliberately NOT assigned — they run our own post-process GLSL, which an Iris program would replace and
+ * deliberately NOT assigned, they run our own post-process GLSL, which an Iris program would replace and
  * destroy. Glow survives a pack by TIMING instead: its capture + composite drain after Iris finishes the
  * frame (see {@code EntityGlintRender} / {@code LevelRendererMixin}), not by program assignment.
  *
@@ -38,7 +38,7 @@ public final class IrisCompat {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     /** Set once the assignment actually lands (api ready + assign succeeded), or once Iris is confirmed
-     *  absent. Until then {@link #register()} retries — it's called every frame, cheap after this trips. */
+     *  absent. Until then {@link #register()} retries, it's called every frame, cheap after this trips. */
     private static volatile boolean applied = false;
 
     /**
@@ -55,7 +55,7 @@ public final class IrisCompat {
             apiCls = Class.forName(API_CLASS);
             progCls = Class.forName(PROGRAM_CLASS);
         } catch (Throwable t) {
-            applied = true;   // Iris not on the classpath at all — never retry, stay silent.
+            applied = true;   // Iris not on the classpath at all, never retry, stay silent.
             return;
         }
 
@@ -65,12 +65,12 @@ public final class IrisCompat {
             api = apiCls.getMethod("getInstance").invoke(null);
             assign = apiCls.getMethod("assignPipeline", RenderPipeline.class, progCls);
         } catch (Throwable t) {
-            LOGGER.warn("[customglint] Iris present but assignPipeline lookup failed — glint won't be "
+            LOGGER.warn("[customglint] Iris present but assignPipeline lookup failed, glint won't be "
                     + "pack-shaded", t);
             applied = true;
             return;
         }
-        if (api == null) return;   // Iris loaded but its singleton isn't ready yet — try again next frame.
+        if (api == null) return;   // Iris loaded but its singleton isn't ready yet, try again next frame.
 
         // Iris's own matcher (ShaderKey.findBestMatch) auto-assigns our GLINT-derived pipeline to a
         // wrong program (it caches the match in IrisPipelines.coreShaderMap on compile), and the public
@@ -85,7 +85,7 @@ public final class IrisCompat {
             applied = true;
             LOGGER.info("[customglint] Iris glint pipeline assigned -> {}", GLINT_PROGRAM);
         } catch (Throwable t) {
-            LOGGER.warn("[customglint] Iris assignPipeline({}, {}) failed — glint will render white "
+            LOGGER.warn("[customglint] Iris assignPipeline({}, {}) failed, glint will render white "
                     + "under a pack", "GLINT_COLOR", GLINT_PROGRAM, t);
             applied = true;
         }
@@ -104,7 +104,7 @@ public final class IrisCompat {
                 ((Map<Object, Object>) m).remove(GlintPipelines.GLINT_COLOR);
             }
         } catch (Throwable ignored) {
-            // Map renamed/moved in this Iris build — assignPipeline below will throw and we log it.
+            // Map renamed/moved in this Iris build, assignPipeline below will throw and we log it.
         }
     }
 }

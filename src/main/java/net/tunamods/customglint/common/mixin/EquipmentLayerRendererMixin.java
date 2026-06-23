@@ -28,13 +28,15 @@ import java.util.List;
  *
  * <p><b>26.1 unified all equipment rendering through {@link EquipmentLayerRenderer#renderLayers}.</b>
  * The old dedicated layers ({@code HumanoidArmorLayer}, {@code ElytraLayer}, {@code HorseArmorLayer})
- * no longer draw directly — humanoid armor ({@code HumanoidArmorLayer}), elytra/capes
+ * no longer draw directly, humanoid armor ({@code HumanoidArmorLayer}), elytra/capes
  * ({@code WingsLayer}, {@code LayerType.WINGS}), and barding/animal armor
  * ({@code SimpleEquipmentLayer}, {@code LayerType.HORSE_BODY}/{@code WOLF_BODY}/…) all funnel into this
  * one method, and every layer is submitted with {@code RenderTypes.armorCutoutNoCull} (EQUAL depth +
  * {@code VIEW_OFFSET_Z_LAYERING}). So a single mixin here replaces the three old layer mixins, and the
- * horse-armor {@code NO_LAYERING} special case from 1.21.1 is obsolete — {@link CustomGlintRenderer#forArmorGlint}
- * (VIEW_OFFSET_Z) is correct for all of them. The {@code WingsLayer} {@code (0,0,0.125)} elytra offset
+ * dedicated horse-armor {@code NO_LAYERING} path the 1.21.1 build used for barding is gone from the armor
+ * side, {@link CustomGlintRenderer#forArmorGlint} (VIEW_OFFSET_Z) is correct for every equipment layer here.
+ * (The {@code NO_LAYERING} render state itself still exists in {@link CustomGlintRenderer#forEntityBodyGlint},
+ * which now backs entity-body draws rather than barding.) The {@code WingsLayer} {@code (0,0,0.125)} elytra offset
  * is already on the {@code PoseStack} by the time {@code renderLayers} runs, so our glint inherits it.
  *
  * <p>Each glint layer/colour is queued as its own {@code submitModel} node reusing the equipment
@@ -55,7 +57,7 @@ public class EquipmentLayerRendererMixin {
 
     /**
      * Suppresses vanilla's enchantment foil ({@code armorEntityGlint}) on a piece that carries our own
-     * glint, so the two don't stack — our glint replaces the look, matching the item path.
+     * glint, so the two don't stack, our glint replaces the look, matching the item path.
      */
     @ModifyExpressionValue(
         method = RENDER_LAYERS,
@@ -71,44 +73,67 @@ public class EquipmentLayerRendererMixin {
     private void cg_equipmentGlint(EquipmentClientInfo.LayerType layerType, ResourceKey assetId, Model model,
             Object state, ItemStack itemStack, PoseStack poseStack, SubmitNodeCollector collector,
             int lightCoords, Identifier playerTextureOverride, int outlineColor, int order,
-            CallbackInfo ci, @Local List<?> layers) {
+            CallbackInfo ci, @Local(ordinal = 0) List<?> layers) {
         if (layers.isEmpty()) return;
-        CustomGlint.Data glint = CustomGlint.read(itemStack);
+        // One component fetch covers glint + both glow flags below (each accessor would otherwise re-fetch
+        // the GlintState component), this fires per equipment layer per wearer per frame.
+        var glintState = CustomGlint.readState(itemStack);
+        CustomGlint.Data glint = glintState.data();
 
         if (glint != null) {
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             CustomGlint.Layer[] gl = glint.layers();
             for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
                 int[] colors = gl[layerIdx].colors();
-                if (gl[layerIdx].simultaneous()) {
+                if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+                // Under an active shader pack a chromatic layer can't draw in-phase (Iris replaces our
+                // procedural program → flat white, the reported elytra bug); queue it for the post-Iris
+                // overlay drain instead. See EntityGlintRender.queueChromaticModel / drainChromaticOverlays.
+                if (CustomGlint.isChromatic(gl[layerIdx]) && CustomGlintRenderer.isShaderPackActive()) {
+                    Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
+                    RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex);
+                    if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false);
+                } else if (gl[layerIdx].simultaneous() && !CustomGlint.isChromatic(gl[layerIdx])) {
                     for (int i = 0; i < colors.length; i++) {
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
+                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i);
                         if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, 0);
                     if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, color);
                 }
             }
         }
 
-        // Glow outline — independent of the glint (a Glow-Trimmed armor piece with no glint still
+        // Glow outline, independent of the glint (a Glow-Trimmed armor piece with no glint still
         // outlines). Queued for the AfterOpaqueFeatures drain (the same mask + composite as entities).
         // The first layer's texture drives the silhouette alpha-discard so the ring follows the real
         // armor shape; the model + state are re-posed via setupAnim at drain (matching the armor body
         // draw), so multi-wearer scenes don't share a stale pose. Covers humanoid armor, elytra/capes
-        // (WINGS), and barding (HORSE_BODY/WOLF_BODY) — all funnel through renderLayers.
-        boolean glowing = CustomGlint.isGlowing(itemStack);
-        int[] glowColors = CustomGlint.getGlowColors(itemStack);
+        // (WINGS), and barding (HORSE_BODY/WOLF_BODY), all funnel through renderLayers.
+        boolean glowing = glintState.glowing();
+        int[] glowColors = glintState.glowColors();
         if (glowing || glowColors.length > 0) {
-            EquipmentClientInfo.Layer first = (EquipmentClientInfo.Layer) layers.get(0);
-            Identifier tex = first.usePlayerTexture() && playerTextureOverride != null
-                    ? playerTextureOverride : first.getTextureLocation(layerType);
-            tex = ClientHooks.getArmorTexture(itemStack, layerType, first, tex);
-            EntityGlintRender.queueArmorOutline(model, state, poseStack.last(), tex, lightCoords,
-                    glint, glowing, glowColors);
+            Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
+            if (tex != null) {
+                EntityGlintRender.queueArmorOutline(model, state, poseStack.last(), tex, lightCoords,
+                        glint, glowing, glowColors);
+            }
         }
+    }
+
+    /** The equipment layer's resolved texture (player-skin override, then the layer's own texture, then the
+     *  Forge armor-texture hook for modded armor). Its alpha drives the cutout silhouette for both the glow
+     *  outline and the post-Iris chromatic overlay. Returns null when the ordinal-captured {@code layers}
+     *  local doesn't hold {@link EquipmentClientInfo.Layer}s, a mapping shift in a future 26.x point release
+     *  could rebind {@code @Local(ordinal=0)} to a different List; failing soft here degrades the cosmetic
+     *  texture-dependent passes instead of throwing ClassCastException on the render thread. */
+    private static Identifier cg_equipTexture(List<?> layers, EquipmentClientInfo.LayerType layerType,
+            ItemStack itemStack, Identifier playerTextureOverride) {
+        if (layers.isEmpty() || !(layers.get(0) instanceof EquipmentClientInfo.Layer first)) return null;
+        Identifier tex = first.usePlayerTexture() && playerTextureOverride != null
+                ? playerTextureOverride : first.getTextureLocation(layerType);
+        return ClientHooks.getArmorTexture(itemStack, layerType, first, tex);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

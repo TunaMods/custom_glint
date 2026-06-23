@@ -20,8 +20,8 @@ public interface CgGlintHolder {
     /**
      * The item's glow state, carried alongside the glint so the deferred item draw can decide whether
      * to emit a glow outline (see {@code ItemRendererMixin}). Glow is independent of the glint
-     * ({@link CustomGlint#isGlowing}/{@link CustomGlint#getGlowColors}) — a Glow-Trimmed item with no
-     * glint still outlines — so it can't be derived from the glint {@link CustomGlint.Data}.
+     * ({@link CustomGlint#isGlowing}/{@link CustomGlint#getGlowColors}), a Glow-Trimmed item with no
+     * glint still outlines, so it can't be derived from the glint {@link CustomGlint.Data}.
      */
     default boolean customglint$isGlowing() { return false; }
 
@@ -30,4 +30,16 @@ public interface CgGlintHolder {
     default int[] customglint$getGlowColors() { return null; }
 
     default void customglint$setGlowColors(int[] glowColors) {}
+
+    /**
+     * True when this item's glint is drawn as a LIVE GUI overlay rather than baked into the cached atlas
+     * icon. Set by {@code CuboidItemModelWrapperMixin} for flat items rendered in the {@code GUI} context:
+     * it stops forcing the foil/animated flag so the base icon caches once, and {@code GuiRendererMixin}
+     * draws the scrolling glint on top via {@link GuiItemGlintRenderState}. Special 3D items (trident /
+     * shield, via {@code SpecialModelWrapperMixin}) keep baking + animating their glint, so this stays
+     * false for them and no overlay is emitted (which would double the glint).
+     */
+    default boolean customglint$isGuiGlintOverlay() { return false; }
+
+    default void customglint$setGuiGlintOverlay(boolean overlay) {}
 }

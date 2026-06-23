@@ -16,7 +16,7 @@ import net.tunamods.customglint.common.CustomGlint;
  * one source under {@code customglint:glow} and reference it from {@code items/glow_trim.json} and the
  * glowing variant in {@code items/glint_trim.json}.
  *
- * <p>Client-only — called from the {@code CustomGlintMod} constructor inside a {@code Dist.CLIENT} guard,
+ * <p>Client-only, called from the {@code CustomGlintMod} constructor inside a {@code Dist.CLIENT} guard,
  * so the class (and its client-only imports) never loads on a dedicated server.
  */
 public final class TrimItemColors {

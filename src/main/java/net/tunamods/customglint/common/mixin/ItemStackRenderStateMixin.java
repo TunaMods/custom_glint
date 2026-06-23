@@ -25,6 +25,7 @@ public class ItemStackRenderStateMixin implements CgGlintHolder {
     @Unique private CustomGlint.Data customglint$glint;
     @Unique private boolean customglint$glowing;
     @Unique private int[] customglint$glowColors;
+    @Unique private boolean customglint$guiGlintOverlay;
 
     @Override
     public CustomGlint.Data customglint$getGlint() {
@@ -56,22 +57,37 @@ public class ItemStackRenderStateMixin implements CgGlintHolder {
         this.customglint$glowColors = glowColors;
     }
 
+    @Override
+    public boolean customglint$isGuiGlintOverlay() {
+        return this.customglint$guiGlintOverlay;
+    }
+
+    @Override
+    public void customglint$setGuiGlintOverlay(boolean overlay) {
+        this.customglint$guiGlintOverlay = overlay;
+    }
+
+    // ItemStackRenderState is a reused scratch object; updateForTopItem clears it before rebuilding. The
+    // glint/glow fields are overwritten every item by ItemModelResolverMixin, but the overlay flag is only
+    // SET (by CuboidItemModelWrapperMixin, for flat GUI items), so it must be cleared here or it would
+    // leak to the next item drawn through the same scratch state.
+    @Inject(method = "clear", at = @At("RETURN"), require = 0)
+    private void cg_clearOverlayFlag(CallbackInfo ci) {
+        this.customglint$guiGlintOverlay = false;
+    }
+
     @Inject(method = "submit", at = @At("HEAD"), require = 0)
     private void cg_submitHead(PoseStack poseStack, SubmitNodeCollector collector, int light, int overlay,
             int outlineColor, CallbackInfo ci) {
-        GlintCarrier.SUBMIT_GLINT.set(this.customglint$glint);
-        GlintCarrier.SUBMIT_GLOWING.set(this.customglint$glowing);
-        GlintCarrier.SUBMIT_GLOW_COLORS.set(this.customglint$glowColors);
-        // Fresh per-item token so all of a special item's sub-model submits share one outline group.
-        GlintCarrier.SUBMIT_TOKEN.set(new Object());
+        // Save/restore (push/pop) rather than set/remove so a nested cross-instance submit restores this
+        // item's context on return instead of clearing it. Fresh per-item token so all of a special item's
+        // sub-model submits share one outline group.
+        GlintCarrier.pushSubmit(this.customglint$glint, this.customglint$glowing, this.customglint$glowColors, new Object());
     }
 
     @Inject(method = "submit", at = @At("RETURN"), require = 0)
     private void cg_submitReturn(PoseStack poseStack, SubmitNodeCollector collector, int light, int overlay,
             int outlineColor, CallbackInfo ci) {
-        GlintCarrier.SUBMIT_GLINT.remove();
-        GlintCarrier.SUBMIT_GLOWING.remove();
-        GlintCarrier.SUBMIT_GLOW_COLORS.remove();
-        GlintCarrier.SUBMIT_TOKEN.remove();
+        GlintCarrier.popSubmit();
     }
 }

@@ -47,6 +47,9 @@ out vec4 fragColor;
 // — the mixin grows the blit quad by this much and SCALE is derived from it. This is the thickness knob.
 const float MARGIN = 1.0;
 const float SCALE  = (16.0 + 2.0 * MARGIN) / 16.0;   // expanded-quad : icon size ratio
+// Actual halo thickness in item-pixels. <= MARGIN (the quad only has MARGIN px of room). Drop below 1.0 for a
+// thinner outline without touching the quad geometry / GuiRendererMixin.OUTLINE_MARGIN.
+const float THICKNESS = 0.6;
 // Alpha threshold splitting "item" from "empty". ~0.2 sits at the visible silhouette edge.
 const float EDGE = 0.2;
 
@@ -87,7 +90,7 @@ void main() {
 
     // Outward dilation: glow iff any item pixel lies within MARGIN item-pixels. SQUARE (Chebyshev) scan in
     // one-item-pixel steps so diagonals stay continuous and thickness is uniform on all sides.
-    float stepL = 1.0 / 16.0;
+    float stepL = THICKNESS / 16.0;
     int M = int(MARGIN + 0.5);
     float found = 0.0;
     for (int ox = -M; ox <= M; ox++) {

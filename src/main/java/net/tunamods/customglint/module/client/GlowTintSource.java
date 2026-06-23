@@ -5,6 +5,7 @@ import net.minecraft.client.color.item.ItemTintSource;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -12,9 +13,12 @@ import net.tunamods.customglint.module.item.GlowTrimItem;
 import javax.annotation.Nullable;
 
 /**
- * Animated per-color tint for the Glow Trim / glowing Glint Trim inventory icons — the white part of the
- * trim texture (tintindex 0, layer0 of {@code item/generated}) is recoloured to the item's animated glow
- * colour, cycling through its stored glow colours exactly like the in-world glow ring.
+ * Animated per-color tint for the Glow Trim / glowing Glint Trim inventory icons, the white outline of the
+ * trim texture is recoloured to the item's animated glow colour, cycling through its stored glow colours
+ * exactly like the in-world glow ring. The outline is split into its own model layer ({@code layer1},
+ * tintindex 1, texture {@code glow_glint_trim_edge}) so only the pure-white edge tints; the grey body
+ * ({@code layer0}, tintindex 0, texture {@code glow_glint_trim_body}) carries a constant-white (untinted)
+ * tint. A single multiply over the whole sprite would have darkened the grey body toward the glow colour.
  *
  * <p>26.1 replaced the old {@code RegisterColorHandlersEvent.Item} {@code ItemColor} lambda with a
  * data-driven {@link ItemTintSource}: this type is registered under {@code customglint:glow} (see
@@ -41,13 +45,17 @@ public final class GlowTintSource implements ItemTintSource {
         return MAP_CODEC;
     }
 
-    /** Glow colours for whichever trim this tint is applied to: a Glow Trim's own colours, or a Glint
-     *  Trim's colours only while it's glowing (the glow item-model variant — selected at custom_model_data
-     *  ≥ 1000 — is the only one carrying this tint, so the {@code isGlowing} check is belt-and-suspenders). */
+    /** Glow colours for whichever trim this tint is applied to: a Glow Trim's own colours, or a glowing
+     *  Glint Trim's FIRST glint layer (layer 0), only layer 1 drives the white-edge recolour, so editing a
+     *  different layer in the Glint Table doesn't change it. Falls back to the trim's config colours if it
+     *  somehow carries no glint data. */
     private static int[] resolveGlowColors(ItemStack stack) {
         if (stack.getItem() instanceof GlowTrimItem) return GlowTrimItem.getColors(stack);
         if (stack.getItem() instanceof GlintTrimItem) {
-            return GlintTrimItem.isGlowing(stack) ? GlintTrimItem.getColors(stack) : EMPTY;
+            if (!GlintTrimItem.isGlowing(stack)) return EMPTY;
+            CustomGlint.Data d = CustomGlint.read(stack);
+            if (d != null && d.layers().length > 0) return d.layers()[0].colors();
+            return GlintTrimItem.getColors(stack);
         }
         return EMPTY;
     }

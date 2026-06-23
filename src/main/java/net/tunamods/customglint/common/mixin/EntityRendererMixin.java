@@ -19,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * entity also carries our glow (per-instance glowing flag or glow colours), we zero that at RETURN so only
  * our coloured outline draws. Tightly gated on our glow, so vanilla glow on a non-glinted entity is left
  * alone. (Edge case: if our glow is suppressed by the outline distance/entity caps, the entity loses the
- * vanilla outline too at range — acceptable; ours is the intended look.)
+ * vanilla outline too at range, acceptable; ours is the intended look.)
  */
 @Mixin(EntityRenderer.class)
 public class EntityRendererMixin {

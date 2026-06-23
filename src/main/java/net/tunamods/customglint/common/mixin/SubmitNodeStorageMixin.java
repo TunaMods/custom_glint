@@ -25,14 +25,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>Quad items go through {@code submitItem} → {@code ItemFeatureRenderer.renderItem}, which
  * {@code ItemRendererMixin} hooks to queue their outline. Special items instead submit a
  * {@code submitModel} (shield) or {@code submitModelPart} (trident) from inside
- * {@code ItemStackRenderState.LayerRenderState.submit}, so they never reach that hook — which is why
+ * {@code ItemStackRenderState.LayerRenderState.submit}, so they never reach that hook, which is why
  * their glow showed nothing. Every {@code submitModel}/{@code submitModelPart} overload funnels through
  * the two abstract methods on {@link SubmitNodeStorage}, so hooking those at HEAD catches all of them.
  *
  * <p>The capture is gated on the item-glow context published by {@code ItemStackRenderStateMixin} for
  * the duration of {@code ItemStackRenderState.submit}: {@link GlintCarrier#SUBMIT_GLOWING} /
  * {@link GlintCarrier#SUBMIT_GLOW_COLORS} are non-null only inside an item submit, and a special
- * renderer's model/part submissions are the only model nodes produced there — so entity and armor model
+ * renderer's model/part submissions are the only model nodes produced there, so entity and armor model
  * submits (which happen outside item submit) are never captured. The silhouette uses white.png (full
  * model shape), matching the 1.21.1 BEWLR outline; it's queued for the shared AfterOpaqueFeatures /
  * hand-render drain in {@link EntityGlintRender}.
@@ -40,14 +40,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>The same hooks also draw the item's animated GLINT (not just the glow outline). In 26.1 the foil is
  * gated on enchantment ({@code SpecialModelWrapper.update} reads {@code ItemStack.hasFoil()}), so a glinted
  * but unenchanted trident/shield never reaches the foil draw. Rather than force the foil on and replace it
- * (the quad-item path, which has no analog here — the trident routes through a 4-arg {@code getFoilBuffer}
+ * (the quad-item path, which has no analog here, the trident routes through a 4-arg {@code getFoilBuffer}
  * and the shield through a separate {@code entityGlint} node), we draw our own glint geometry directly:
  * when an item glint is present we submit extra model/part nodes through our glint RenderTypes, mirroring
  * how entity/armor glint is submitted. Re-entrancy is guarded ({@link #cg_addingGlint}) and the glint is
  * added once per item submit ({@link #cg_firstGlintForToken()}), so a shield's base + pattern + foil
  * submits don't stack several glint passes.
  *
- * <p>ENTITY per-layer glint is NOT here — RenderLayers submit via {@code collector.order(n).submitModel},
+ * <p>ENTITY per-layer glint is NOT here, RenderLayers submit via {@code collector.order(n).submitModel},
  * which lands on {@code SubmitNodeCollection.submitModel}, not this {@code SubmitNodeStorage.submitModel}
  * (the latter just delegates to {@code order(0)}). See {@code SubmitNodeCollectionMixin}.
  */
@@ -58,7 +58,7 @@ public class SubmitNodeStorageMixin {
     private void cg_captureSpecialModel(Model model, Object state, PoseStack poseStack, RenderType renderType,
             int lightCoords, int overlayCoords, int tintedColor, TextureAtlasSprite sprite, int outlineColor,
             ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, CallbackInfo ci) {
-        if (cg_addingGlint) return; // our own glint nodes, submitted below — don't recurse
+        if (cg_addingGlint) return; // our own glint nodes, submitted below, don't recurse
         // Consume vanilla foil: a special renderer (shield) submits its enchantment glint as a SEPARATE
         // model node in a vanilla glint RenderType. When our glint is present we draw our own, so drop
         // vanilla's node here to avoid a doubled shimmer. (The shield's base/pattern nodes use cutout
@@ -88,7 +88,7 @@ public class SubmitNodeStorageMixin {
             int lightCoords, int overlayCoords, TextureAtlasSprite sprite, boolean sheeted, boolean hasFoil,
             int tintedColor, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay, int outlineColor,
             CallbackInfo ci) {
-        if (cg_addingGlint) return; // our own glint nodes, submitted below — don't recurse
+        if (cg_addingGlint) return; // our own glint nodes, submitted below, don't recurse
         if (cg_glowingItem()) {
             EntityGlintRender.queueSpecialPartOutline(modelPart, poseStack.last(), lightCoords,
                     GlintCarrier.SUBMIT_GLINT.get(), cg_glowingFlag(), GlintCarrier.SUBMIT_GLOW_COLORS.get());
@@ -108,7 +108,7 @@ public class SubmitNodeStorageMixin {
     /**
      * Consume vanilla foil on the trident: its foil rides the {@code hasFoil} flag of its single
      * {@code submitModelPart} (not a separate node), so when our glint is present we force the flag false
-     * — the base part still renders, but {@code ModelPartFeatureRenderer} skips the vanilla glint buffer.
+     *, the base part still renders, but {@code ModelPartFeatureRenderer} skips the vanilla glint buffer.
      * {@code argsOnly} ordinal 1 = {@code hasFoil} (ordinal 0 is {@code sheeted}). Skipped while we submit
      * our own glint parts (those pass {@code hasFoil=false} already).
      */
@@ -119,7 +119,7 @@ public class SubmitNodeStorageMixin {
     }
 
     /** True for vanilla's enchantment-glint RenderTypes (the foil sheets). Identity compare against the
-     *  three memoized singletons — our own glint RTs are never these. */
+     *  three memoized singletons, our own glint RTs are never these. */
     @org.spongepowered.asm.mixin.Unique
     private static boolean cg_isVanillaGlint(RenderType rt) {
         return rt == RenderTypes.entityGlint() || rt == RenderTypes.glint() || rt == RenderTypes.glintTranslucent();

@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "refmap": "custom_glint.mixins.refmap.json",
   "client": [
+    "BatchableBufferSourceMixin",
     "CuboidItemModelWrapperMixin",
     "EntityRendererMixin",
     "EquipmentLayerRendererMixin",
