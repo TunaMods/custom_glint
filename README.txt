@@ -4,8 +4,9 @@ Minecraft 26.1.2 / NeoForge 26.1.2 - MIT license (attribution required)
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
 on held items, armor, elytra, horse armor, and any LivingEntity. Glints can also
-project a colored stencil outline through the "glowing" flag. Component-driven;
-55 built-in designs, extensible via data packs.
+project a colored glow outline through the "glowing" flag. Component-driven;
+57 built-in designs (including a procedural chromatic one), extensible via data
+packs.
 
 
 ================================================================================
@@ -34,15 +35,15 @@ In build.gradle:
     repositories {
         maven {
             name = "TunaMods Custom Glints"
-            url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.21.1/mcmodsrepo"
+            url = "https://raw.githubusercontent.com/TunaMods/custom_glint/26.1.2/mcmodsrepo"
         }
     }
 
     dependencies {
         jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
             version {
-                strictly "[1.5.0,2.0)"
-                prefer "1.5.0"
+                strictly "[1.6.0,2.0)"
+                prefer "1.6.0"
             }
         }
     }
@@ -63,7 +64,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
     [[dependencies.yourmodid]]
         modId="customglint_api"
         type="required"
-        versionRange="[1.5,)"
+        versionRange="[1.6,)"
         ordering="NONE"
         side="BOTH"
 
@@ -167,7 +168,20 @@ Sync:
   - Type-wide registrations (registerEntityGlint) need no per-entity storage; the
     renderer consults them as a fallback when an entity has no per-instance state.
 
-Tag-level helpers for snapshot / restore and item<->entity transfer:
+Item<->entity transfer: copy the typed state value directly. GlintState is an
+immutable record (the same value stored in the item component and the entity
+attachment), so no serialization is involved.
+
+  CustomGlint.GlintState glint = CustomGlint.readState(stack);   // item
+  CustomGlint.GlintState glint = CustomGlint.readEntityState(living);
+  CustomGlint.writeState(stack, glint);                          // item, EMPTY clears
+  CustomGlint.writeEntityState(living, glint);                   // entity, auto-syncs
+
+  // Capture a mob's glint onto an item in one line, no round-trip:
+  CustomGlint.writeState(stack, CustomGlint.readEntityState(living));
+
+Serialized snapshots (when you need an actual CompoundTag: stored snapshot, give
+NBT, a custom packet). Item component and entity attachment share one tag shape:
 
   CompoundTag tag = CustomGlint.entityGlintTag(living);   // or itemGlintTag(stack)
   CustomGlint.writeEntityTag(living, tag);                // overwrite from a tag
@@ -176,11 +190,6 @@ Tag-level helpers for snapshot / restore and item<->entity transfer:
   boolean          glowing  = CustomGlint.tagGlowing(tag);
   int[]            glowCols = CustomGlint.tagGlowColors(tag);
   CompoundTag      fresh    = CustomGlint.toTag(layers);
-
-  Item component and entity attachment serialize the same GlintState codec, so
-  these produce one shared CompoundTag shape on both sides. Capturing a mob's
-  glint onto an item is one line:
-  writeItemTag(stack, entityGlintTag(living)).
 
 
 ================================================================================
@@ -192,10 +201,12 @@ PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK. Custom hex via
 CustomGlint.color("FFD700"). The alpha byte is a brightness multiplier
 (0xFF full, 0x00 invisible); blend mode is additive.
 
-Designs: 55 Identifier constants on CustomGlint (e.g. WAVE, SPARKLE,
-AURORA). Iterate with CustomGlint.PATTERNS.
+Designs: 57 Identifier constants on CustomGlint (e.g. WAVE, SPARKLE, AURORA),
+including CHROMATIC - a procedural animated oil-slick that blends up to 8 colors
+in-shader (give it a colors array like any other design). Iterate with
+CustomGlint.PATTERNS.
 
-Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (55).
+Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (57).
 
 
 ================================================================================
@@ -210,41 +221,17 @@ Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (55
   - Horse armor (vanilla + modded).
   - Living entities (body + overlay layers as one unioned outline ring).
   - Glowing outline pass on items and all four armor surfaces above.
-  - Iris / Oculus shader-pack outline path.
+  - Iris shader-pack path (custom glint pipelines are reassigned to the active
+    pack so glint renders instead of drawing white).
   - Atlas-calibrated pattern scale on non-square block atlases.
   - Texture and RenderType eviction on resource pack reload.
 
-NOT wired automatically: BEWLR renderers that bypass the vanilla item-foil
-buffer and call MultiBufferSource.getBuffer(RenderType) themselves. Drive the
-pipeline directly via the hooks below if your mod ships one.
-
-
-================================================================================
-  Advanced rendering hooks
-================================================================================
-
-Client-only. Gate any reference with FMLEnvironment / DistExecutor.
-
-  import net.tunamods.customglint.common.client.CustomGlintRenderer;
-
-  int argb = CustomGlintRenderer.outlineColor(stack);
-
-  // RenderType factories (cached, self-register into fixedBuffers)
-  RenderType rt  = CustomGlintRenderer.forGlint(glint, layerIdx, frameColor, isItem, colorIdx);
-  RenderType rtA = CustomGlintRenderer.forArmorGlint(glint, layerIdx, frameColor, colorIdx);
-  RenderType rtH = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
-
-  // Two-pass stencil outline for entity / armor models
-  CustomGlintRenderer.doModelOutline(poseStack, bufferSource, packedLight,
-      model, modelTexture, glint, equipmentSlot);
-
-  // Public ThreadLocals
-  CustomGlintRenderer.CURRENT_ITEM_STACK
-  CustomGlintRenderer.IN_OUTLINE
-  CustomGlintRenderer.COLOR_BUF
-
-  // Optional gate to suppress outlines (true = skip)
-  CustomGlintRenderer.outlineSuppressor = () -> shouldSuppress();
+There are no public render hooks in this version. Set glint or glow data with the
+CustomGlint API above and the renderer draws it everywhere on the automatic list,
+including 3D models with custom BEWLR renderers, which the submit-node pipeline
+picks up with no per-mod code. A renderer that bypasses that pipeline (drawing
+straight to its own RenderType) is not covered by the api; supporting one needs a
+dedicated mixin, which ships in the standalone mod, not the bundled api jar.
 
 
 ================================================================================
