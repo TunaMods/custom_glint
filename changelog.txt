@@ -1,6 +1,14 @@
 [1.6.0]
 
 - Ported to NeoForge 26.1.2
+- Added the Glint Table: a block for building and printing trims with a slot-based editor
+- Added the Chromatic design, a procedural animated oil-slick that blends up to 8 colors
+- Added eight scroll directions and a manual offset for the glint animation
+- Added a Rainbow Dye item
+- Added crafting to set a trim's glint brightness
+- Glint Trim chest loot can now also drop Rainbow Dye and the layer and black tears
+- Glints and glow outlines now render correctly under shader packs
+- Smoother creative inventory and tooltips when many glinted items are shown
 - Fixed the wand editor's glint-import search box not filtering the list
 - The 16 named glint colors now match Minecraft's dye colors exactly
 
