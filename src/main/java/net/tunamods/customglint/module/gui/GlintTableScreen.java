@@ -23,6 +23,7 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.tunamods.customglint.module.item.ModItems;
@@ -44,6 +45,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.IntConsumer;
@@ -229,7 +231,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         this.titleLabelX = (this.imageWidth - this.font.width(this.title)) / 2;
 
         nameBox = new EditBox(font, leftPos + NAME_BOX_X, topPos + NAME_BOX_Y, NAME_BOX_W, 12,
-                Component.literal("Name"));
+                Component.translatable("screen.customglint.glint_table.name"));
         nameBox.setMaxLength(32);
         nameBox.setValue(trimName);
         nameBox.setResponder(s -> trimName = s);
@@ -239,7 +241,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // Custom-hex entry beside a rainbow/custom color shard (positioned + shown per-frame in extractContents).
         // Wide enough to show the full 6-digit hex. Added as an event-only widget (not a renderable) so it can
         // be drawn manually at the very end of extractContents, on top of the modifier buttons it may overlap.
-        hexBox = new EditBox(font, leftPos, topPos, 56, COLOR_ICON, Component.literal("Hex"));
+        hexBox = new EditBox(font, leftPos, topPos, 56, COLOR_ICON, Component.translatable("screen.customglint.glint_table.hex"));
         hexBox.setMaxLength(6);
         hexBox.setResponder(this::applyHex);
         hexBox.setVisible(false);
@@ -810,12 +812,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (!menu.getCarried().isEmpty()) return; // don't tooltip while a stack is on the cursor
         if (mx >= leftPos + SKIN_BTN_X && mx < leftPos + SKIN_BTN_X + SKIN_BTN_W
                 && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
-            g.setTooltipForNextFrame(font, Component.literal("Click to change the table skin"), mx, my);
+            g.setTooltipForNextFrame(font, Component.translatable("screen.customglint.glint_table.skin_tooltip"), mx, my);
             return;
         }
         if (mx >= leftPos + SKIN_BTN_X - SND_BTN_W - 2 && mx < leftPos + SKIN_BTN_X - 2
                 && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
-            g.setTooltipForNextFrame(font, Component.literal("Button sounds: " + (GlintClientConfig.glintTableSound() ? "On" : "Off")), mx, my);
+            g.setTooltipForNextFrame(font, Component.translatable("screen.customglint.glint_table.sound",
+                    Component.translatable(GlintClientConfig.glintTableSound()
+                            ? "screen.customglint.glint_table.on" : "screen.customglint.glint_table.off")), mx, my);
             return;
         }
         if (mx >= leftPos + PRINT_X && mx < leftPos + PRINT_X + PRINT_W
@@ -1369,7 +1373,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             pose.pushMatrix();
             pose.translate(nx + NAME_BOX_W / 2f, ny + 3f);
             pose.scale(0.85f, 0.85f);
-            centered(g, "Not Available", 0, 0, COST_BAD);
+            centered(g, Component.translatable("screen.customglint.glint_table.not_available").getString(), 0, 0, COST_BAD);
             pose.popMatrix();
         }
     }
@@ -1476,59 +1480,71 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     /** Every reason the print is blocked, in plain language (mirrors {@link #canPrint}); empty when printable.
      *  Shown on the disabled Print button so the missing piece is obvious instead of a guessing game. */
-    private List<String> printIssues() {
-        List<String> out = new ArrayList<>();
+    private List<Component> printIssues() {
+        List<Component> out = new ArrayList<>();
         ItemStack src = activeTrim();
         if (src.isEmpty() || !(src.getItem() instanceof GlintTrimItem) || GlintTrimItem.getPattern(src) == null) {
-            out.add("Pick a design");
+            out.add(Component.translatable("screen.customglint.glint_table.issue.pick_design"));
             return out; // everything else depends on a chosen design
         }
-        if (totalLayers() > MAX_LAYERS) out.add("Too many layers (max " + MAX_LAYERS + ")");
-        if (layerTearCount() < totalLayers() - 1) out.add("Add a Layer Tear for each extra layer");
+        if (totalLayers() > MAX_LAYERS) out.add(Component.translatable("screen.customglint.glint_table.issue.too_many_layers", MAX_LAYERS));
+        if (layerTearCount() < totalLayers() - 1) out.add(Component.translatable("screen.customglint.glint_table.issue.need_layer_tear"));
         boolean badLayer = false;
         for (CustomGlint.Layer l : lowerLayers) if (!layerValid(l)) badLayer = true;
         for (CustomGlint.Layer l : upperLayers) if (!layerValid(l)) badLayer = true;
-        if (badLayer) out.add("A layer needs 1–8 colors and an owned design");
+        if (badLayer) out.add(Component.translatable("screen.customglint.glint_table.issue.bad_layer"));
 
         ItemStack base = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
         if (!fromBase && selectedPrinted.isEmpty()
                 && (selectedMain == null || !GlintStoredSyncPacket.CLIENT_STORED.contains(selectedMain)))
-            out.add("You don't own this design yet");
-        if (!donorOwned()) out.add("You don't own the merge trim's design");
+            out.add(Component.translatable("screen.customglint.glint_table.issue.design_not_owned"));
+        if (!donorOwned()) out.add(Component.translatable("screen.customglint.glint_table.issue.donor_not_owned"));
 
         int baseColorCount = fromBase ? GlintTrimItem.getColors(base).length : 0;
-        if (baseColorCount == 0 && countSelectedDyes() == 0) out.add("Add at least one color");
+        if (baseColorCount == 0 && countSelectedDyes() == 0) out.add(Component.translatable("screen.customglint.glint_table.issue.add_color"));
         int mainCount = fromBase ? baseColorCount : countSelectedDyes();
-        if (mainCount + donorColors().length > 8) out.add("Too many colors (max 8)");
+        if (mainCount + donorColors().length > 8) out.add(Component.translatable("screen.customglint.glint_table.issue.too_many_colors"));
 
         ItemStack repro = reproSource();
         if (!repro.isEmpty()) {
             CustomGlint.Data d = CustomGlint.read(repro);
-            if (d != null && d.layers().length > 1) out.add("Can't rebuild a multi-layer trim here");
+            if (d != null && d.layers().length > 1) out.add(Component.translatable("screen.customglint.glint_table.issue.no_multilayer"));
             else if (d != null && d.layers().length == 1 && d.layers()[0].simultaneous()
                     && d.layers()[0].colors().length >= 2
                     && tearSimultaneous && !menu.slots.get(GlintTableMenu.SLOT_TEAR).hasItem())
-                out.add("Add a Glint Tear for simultaneous colors");
+                out.add(Component.translatable("screen.customglint.glint_table.issue.need_sim_tear_color"));
         }
         if (activeSourceSim && !tearSimultaneous && !menu.slots.get(GlintTableMenu.SLOT_TEAR_SEQ).hasItem())
-            out.add("Reverting to sequential needs a Sequential Glint Tear");
+            out.add(Component.translatable("screen.customglint.glint_table.issue.need_seq_tear",
+                    itemName(ModItems.GLINT_TEAR_SEQUENTIAL.get())));
         int simNeed = committedSimLayers();
         if (menu.slots.get(GlintTableMenu.SLOT_TEAR).getItem().getCount() < simNeed)
-            out.add("Need Simultaneous Glint Tear ×" + simNeed + " for the simultaneous layers");
+            out.add(Component.translatable("screen.customglint.glint_table.issue.need_sim_tears",
+                    itemName(ModItems.GLINT_TEAR_SIMULTANEOUS.get()), simNeed));
 
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
         boolean baseHasGlowColors = fromBase && CustomGlint.getGlowColors(base).length > 0;
         boolean baseNamed = fromBase && base.has(DataComponents.CUSTOM_NAME);
         int[] cost = layerCosts();
-        if (menu.slots.get(GlintTableMenu.SLOT_REDSTONE).getItem().getCount() < cost[0]) out.add("Speed needs Redstone ×" + cost[0]);
-        if (menu.slots.get(GlintTableMenu.SLOT_SLIME).getItem().getCount() < cost[1]) out.add("Scale needs Slime Ball ×" + cost[1]);
-        if (menu.slots.get(GlintTableMenu.SLOT_GLASS).getItem().getCount() < cost[2]) out.add("Opacity needs Glass ×" + cost[2]);
-        if (modGlow && !baseGlowing && !menu.slots.get(GlintTableMenu.SLOT_GLOWSTONE).hasItem()) out.add("Glow needs Glowstone Dust");
-        if (modNamed && !baseNamed && !menu.slots.get(GlintTableMenu.SLOT_NAMETAG).hasItem()) out.add("Name needs a Name Tag");
+        if (menu.slots.get(GlintTableMenu.SLOT_REDSTONE).getItem().getCount() < cost[0])
+            out.add(Component.translatable("screen.customglint.glint_table.issue.speed_needs", itemName(Items.REDSTONE), cost[0]));
+        if (menu.slots.get(GlintTableMenu.SLOT_SLIME).getItem().getCount() < cost[1])
+            out.add(Component.translatable("screen.customglint.glint_table.issue.scale_needs", itemName(Items.SLIME_BALL), cost[1]));
+        if (menu.slots.get(GlintTableMenu.SLOT_GLASS).getItem().getCount() < cost[2])
+            out.add(Component.translatable("screen.customglint.glint_table.issue.opacity_needs", itemName(Items.GLASS), cost[2]));
+        if (modGlow && !baseGlowing && !menu.slots.get(GlintTableMenu.SLOT_GLOWSTONE).hasItem())
+            out.add(Component.translatable("screen.customglint.glint_table.issue.glow_needs", itemName(Items.GLOWSTONE_DUST)));
+        if (modNamed && !baseNamed && !menu.slots.get(GlintTableMenu.SLOT_NAMETAG).hasItem())
+            out.add(Component.translatable("screen.customglint.glint_table.issue.name_needs", itemName(Items.NAME_TAG)));
         if (modGlow && !glowAuto && slotColor(GlintTableMenu.SLOT_GLOW_DYE, glowHex) < 0 && !baseHasGlowColors)
-            out.add("Glow (Manual) needs a color, add a dye or switch Glow to Auto");
+            out.add(Component.translatable("screen.customglint.glint_table.issue.glow_manual_needs"));
         return out;
+    }
+
+    /** The localized display name of an item, for material/requirement lines (auto-tracks the item's lang). */
+    private static Component itemName(Item item) {
+        return new ItemStack(item).getHoverName();
     }
 
 
@@ -1536,17 +1552,17 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
      *  slot holds enough and red when it's short, plus a header that flags an incomplete build. */
     private List<Component> printTooltip() {
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.literal("Print Trim").withStyle(ChatFormatting.WHITE));
+        lines.add(Component.translatable("screen.customglint.glint_table.print").withStyle(ChatFormatting.WHITE));
 
         // When blocked, spell out exactly what's missing instead of a vague "incomplete".
-        List<String> issues = printIssues();
+        List<Component> issues = printIssues();
         if (!issues.isEmpty()) {
-            lines.add(Component.literal("Can't print yet:").withStyle(ChatFormatting.RED));
-            for (String s : issues) lines.add(Component.literal("• " + s).withStyle(ChatFormatting.RED));
+            lines.add(Component.translatable("screen.customglint.glint_table.cant_print").withStyle(ChatFormatting.RED));
+            for (Component s : issues) lines.add(Component.literal("• ").append(s).withStyle(ChatFormatting.RED));
             return lines;
         }
 
-        lines.add(Component.literal("Consumes:").withStyle(ChatFormatting.GRAY));
+        lines.add(Component.translatable("screen.customglint.glint_table.consumes").withStyle(ChatFormatting.GRAY));
 
         ItemStack base = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
@@ -1554,32 +1570,31 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
         boolean any = false;
         int[] cost = layerCosts();
-        if (cost[0] > 0)             { reqLine(lines, "Redstone", cost[0], GlintTableMenu.SLOT_REDSTONE); any = true; }
-        if (cost[1] > 0)             { reqLine(lines, "Slime Ball", cost[1], GlintTableMenu.SLOT_SLIME); any = true; }
-        if (cost[2] > 0)             { reqLine(lines, "Glass", cost[2], GlintTableMenu.SLOT_GLASS); any = true; }
-        if (modGlow && !baseGlowing) { reqLine(lines, "Glowstone Dust", 1, GlintTableMenu.SLOT_GLOWSTONE); any = true; }
+        if (cost[0] > 0)             { reqLine(lines, itemName(Items.REDSTONE), cost[0], GlintTableMenu.SLOT_REDSTONE); any = true; }
+        if (cost[1] > 0)             { reqLine(lines, itemName(Items.SLIME_BALL), cost[1], GlintTableMenu.SLOT_SLIME); any = true; }
+        if (cost[2] > 0)             { reqLine(lines, itemName(Items.GLASS), cost[2], GlintTableMenu.SLOT_GLASS); any = true; }
+        if (modGlow && !baseGlowing) { reqLine(lines, itemName(Items.GLOWSTONE_DUST), 1, GlintTableMenu.SLOT_GLOWSTONE); any = true; }
         int extraLayers = lowerLayers.size() + upperLayers.size();
-        if (extraLayers > 0)         { reqLine(lines, "Layer Tear", extraLayers, GlintTableMenu.SLOT_LAYER_TEAR); any = true; }
+        if (extraLayers > 0)         { reqLine(lines, itemName(ModItems.GLINT_LAYER_TEAR.get()), extraLayers, GlintTableMenu.SLOT_LAYER_TEAR); any = true; }
         // Simultaneous tears: one per simultaneous layer in the whole trim (committed + active).
         int simTears = simTearCost();
         if (simTears > 0) {
-            reqLine(lines, ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance().getHoverName().getString(),
-                    simTears, GlintTableMenu.SLOT_TEAR); any = true;
+            reqLine(lines, itemName(ModItems.GLINT_TEAR_SIMULTANEOUS.get()), simTears, GlintTableMenu.SLOT_TEAR);
+            any = true;
         }
         // Sequential tear only when reverting a simultaneous source layer back to sequential.
         if (activeSourceSim && !tearSimultaneous) {
-            reqLine(lines, ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance().getHoverName().getString(),
-                    1, GlintTableMenu.SLOT_TEAR_SEQ);
+            reqLine(lines, itemName(ModItems.GLINT_TEAR_SEQUENTIAL.get()), 1, GlintTableMenu.SLOT_TEAR_SEQ);
             any = true;
         }
-        if (!any) lines.add(Component.literal("Nothing").withStyle(ChatFormatting.DARK_GRAY));
+        if (!any) lines.add(Component.translatable("screen.customglint.glint_table.nothing").withStyle(ChatFormatting.DARK_GRAY));
         return lines;
     }
 
     /** One material line for {@link #printTooltip}: name + amount, green when the slot holds enough. */
-    private void reqLine(List<Component> lines, String name, int need, int slotConst) {
+    private void reqLine(List<Component> lines, Component name, int need, int slotConst) {
         int have = menu.slots.get(slotConst).getItem().getCount();
-        lines.add(Component.literal(name + " ×" + need)
+        lines.add(Component.translatable("screen.customglint.glint_table.consume_line", name, need)
                 .withStyle(have >= need ? ChatFormatting.GREEN : ChatFormatting.RED));
     }
 
@@ -1640,38 +1655,39 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         Slot tear = menu.slots.get(GlintTableMenu.SLOT_TEAR);
 
         addRenderableWidget(new BevelButton(leftPos + SKIN_BTN_X, topPos + SKIN_BTN_Y, SKIN_BTN_W, SKIN_BTN_H, 2, true,
-                () -> skin.name, () -> LABEL_HDR, () -> GUI_FACE, b -> cycleSkin(b == 1 ? -1 : 1)));
+                () -> Component.translatable("screen.customglint.skin." + skin.name.toLowerCase(Locale.ROOT)).getString(),
+                () -> LABEL_HDR, () -> GUI_FACE, b -> cycleSkin(b == 1 ? -1 : 1)));
 
         addRenderableWidget(new BevelButton(leftPos + SKIN_BTN_X - SND_BTN_W - 2, topPos + SKIN_BTN_Y, SND_BTN_W, SKIN_BTN_H, 2, false,
                 () -> "♪", () -> GlintClientConfig.glintTableSound() ? LABEL_HDR : COST_BAD, () -> GUI_FACE,
                 b -> GlintClientConfig.setGlintTableSound(!GlintClientConfig.glintTableSound())));
 
         printBtn = addRenderableWidget(new BevelButton(leftPos + PRINT_X, topPos + PRINT_Y, PRINT_W, PRINT_H, 3, false,
-                () -> "Print Trim", () -> canPrint() ? LABEL_HDR : COST_BAD, () -> canPrint() ? GUI_FACE : BTN_DISABLED,
+                () -> Component.translatable("screen.customglint.glint_table.print").getString(), () -> canPrint() ? LABEL_HDR : COST_BAD, () -> canPrint() ? GUI_FACE : BTN_DISABLED,
                 b -> { if (canPrint()) onPrint(); }));
 
         addRenderableWidget(new BevelButton(leftPos + INTERP_X, topPos + INTERP_Y, INTERP_W, INTERP_H, 2, false,
-                () -> "Interpolation: " + (modInterpolate ? "True" : "False"), () -> modInterpolate ? COST_OK : LABEL_HDR,
+                () -> Component.translatable("screen.customglint.glint_table.interpolation", boolLabel(modInterpolate)).getString(), () -> modInterpolate ? COST_OK : LABEL_HDR,
                 () -> GUI_FACE, b -> modInterpolate = !modInterpolate));
 
         addRenderableWidget(new BevelButton(leftPos + SCROLL_X, topPos + SCROLL_Y, SCROLL_W, SCROLL_H, 2, false,
-                () -> "Scroll: " + GlintTrimItem.scrollName(modScrollDir), () -> LABEL_HDR, () -> GUI_FACE,
+                () -> Component.translatable("screen.customglint.glint_table.scroll", GlintTrimItem.scrollLabel(modScrollDir)).getString(), () -> LABEL_HDR, () -> GUI_FACE,
                 b -> modScrollDir = (modScrollDir + 1) % 9));
 
         addRenderableWidget(new BevelButton(tearToggleCx() - 15, topPos + tear.y + 26, 30, 11, 2, false,
-                () -> tearSimultaneous ? "Sim" : "Seq", () -> LABEL_HDR, () -> GUI_FACE,
+                () -> Component.translatable(tearSimultaneous ? "screen.customglint.glint_table.sim" : "screen.customglint.glint_table.seq").getString(), () -> LABEL_HDR, () -> GUI_FACE,
                 b -> tearSimultaneous = !tearSimultaneous));
 
         glowModeBtn = addRenderableWidget(new BevelButton(leftPos + GLOW_MODE_X, topPos + GLOW_MODE_Y, GLOW_MODE_W, GLOW_MODE_H, 2, false,
                 this::glowModeLabel, this::glowModeColor, () -> GUI_FACE, b -> glowAuto = !glowAuto));
 
         glowToggleBtn = addRenderableWidget(new BevelButton(leftPos + glow.x - 7, topPos + glow.y + 26, 30, 11, 2, false,
-                () -> toggleAvailable(GlintTableMenu.SLOT_GLOWSTONE) ? (modGlow ? "True" : "False") : "N/A",
+                () -> toggleAvailable(GlintTableMenu.SLOT_GLOWSTONE) ? boolLabel(modGlow).getString() : naLabel(),
                 () -> !toggleAvailable(GlintTableMenu.SLOT_GLOWSTONE) ? COST_BAD : (modGlow ? COST_OK : LABEL_HDR),
                 () -> GUI_FACE, b -> modGlow = !modGlow));
 
         nameToggleBtn = addRenderableWidget(new BevelButton(leftPos + nameS.x - 7, topPos + nameS.y + 26, 30, 11, 2, false,
-                () -> toggleAvailable(GlintTableMenu.SLOT_NAMETAG) ? (modNamed ? "True" : "False") : "N/A",
+                () -> toggleAvailable(GlintTableMenu.SLOT_NAMETAG) ? boolLabel(modNamed).getString() : naLabel(),
                 () -> !toggleAvailable(GlintTableMenu.SLOT_NAMETAG) ? COST_BAD : (modNamed ? COST_OK : LABEL_HDR),
                 () -> GUI_FACE, b -> modNamed = !modNamed));
 
@@ -1708,9 +1724,25 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private String glowModeLabel() {
-        if (glowTrimMain()) return "N/A";
-        if (!modGlow) return "Glow: N/A";
-        return glowAuto ? "Glow: Auto" : "Glow: Manual";
+        if (glowTrimMain()) return naLabel();
+        if (!modGlow) return Component.translatable("screen.customglint.glint_table.glow_off").getString();
+        return Component.translatable(glowAuto
+                ? "screen.customglint.glint_table.glow_auto" : "screen.customglint.glint_table.glow_manual").getString();
+    }
+
+    /** Localized "True"/"False" for the boolean toggle buttons. */
+    private static Component boolLabel(boolean value) {
+        return Component.translatable(value ? "screen.customglint.glint_table.true" : "screen.customglint.glint_table.false");
+    }
+
+    /** Localized "N/A" shown when a toggle is unavailable. */
+    private static String naLabel() {
+        return Component.translatable("screen.customglint.glint_table.na").getString();
+    }
+
+    /** Resolved text for a {@code screen.customglint.glint_table.<suffix>} caption key. */
+    private static String label(String suffix) {
+        return Component.translatable("screen.customglint.glint_table." + suffix).getString();
     }
 
     private int glowModeColor() {
@@ -1756,11 +1788,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     /** Label + value + [-]/[+] under the speed / opacity / scale slots, plus plain labels under the
      *  glow / name / tear slots (always shown). */
     private void drawModifierControls(GuiGraphicsExtractor g) {
-        drawModControl(g, GlintTableMenu.SLOT_REDSTONE, "Speed");
-        drawModControl(g, GlintTableMenu.SLOT_GLASS,    "Opacity");
-        drawModControl(g, GlintTableMenu.SLOT_SLIME,    "Scale");
-        drawControlLabel(g, GlintTableMenu.SLOT_GLOWSTONE, "Glow");
-        drawControlLabel(g, GlintTableMenu.SLOT_NAMETAG,   "Name");
+        drawModControl(g, GlintTableMenu.SLOT_REDSTONE, label("speed"));
+        drawModControl(g, GlintTableMenu.SLOT_GLASS,    label("opacity"));
+        drawModControl(g, GlintTableMenu.SLOT_SLIME,    label("scale"));
+        drawControlLabel(g, GlintTableMenu.SLOT_GLOWSTONE, label("glow"));
+        drawControlLabel(g, GlintTableMenu.SLOT_NAMETAG,   label("name_label"));
         drawTearLabel(g);
         // The static-offset value sits between its −/+ stepper widgets, shown only while on Static.
         if (modScrollDir == CustomGlint.SCROLL_STATIC) {
@@ -1813,7 +1845,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
      *  itself is a widget. */
     private void drawTearLabel(GuiGraphicsExtractor g) {
         int cx = tearToggleCx(), top = topPos + menu.slots.get(GlintTableMenu.SLOT_TEAR).y;
-        smallLabel(g, "Type", cx, top + 19, LABEL_HDR);
+        smallLabel(g, label("type"), cx, top + 19, LABEL_HDR);
         Slot off = menu.slots.get(tearSimultaneous ? GlintTableMenu.SLOT_TEAR_SEQ : GlintTableMenu.SLOT_TEAR);
         int dx = leftPos + off.x - 1, dy = topPos + off.y - 1;
         g.fill(dx, dy, dx + 18, dy + 18, DIM_GHOST);
@@ -1829,13 +1861,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private void drawSectionLabels(GuiGraphicsExtractor g) {
         int x = leftPos, y = topPos;
-        g.text(font, "Empty Trims", x + LGRID_X, y + GRID_Y - 11, LABEL_HDR, false);
-        g.text(font, "Printed",     x + RGRID_X, y + GRID_Y - 11, LABEL_HDR, false);
+        g.text(font, label("empty_trims"), x + LGRID_X, y + GRID_Y - 11, LABEL_HDR, false);
+        g.text(font, label("printed"),     x + RGRID_X, y + GRID_Y - 11, LABEL_HDR, false);
 
         // Labels beneath the three top-row trim slots (main / layer-tear / layered).
-        topSlotLabel(g, GlintTableMenu.SLOT_TRIM,       "Main");
-        topSlotLabel(g, GlintTableMenu.SLOT_LAYER_TEAR, "Layer");
-        topSlotLabel(g, GlintTableMenu.SLOT_TRIM_B,     "Merge");
+        topSlotLabel(g, GlintTableMenu.SLOT_TRIM,       label("main"));
+        topSlotLabel(g, GlintTableMenu.SLOT_LAYER_TEAR, label("layer"));
+        topSlotLabel(g, GlintTableMenu.SLOT_TRIM_B,     label("merge"));
     }
 
     private void topSlotLabel(GuiGraphicsExtractor g, int slotConst, String label) {

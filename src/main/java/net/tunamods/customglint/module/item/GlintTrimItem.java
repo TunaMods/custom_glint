@@ -327,6 +327,12 @@ public class GlintTrimItem extends Item {
         };
     }
 
+    /** Localized direction name for a {@code SCROLL_*} value, for GUI labels. Keyed on the stable
+     *  {@link #scrollName} code so the lang key and the command/parse name stay in lockstep. */
+    public static Component scrollLabel(int scroll) {
+        return Component.translatable("screen.customglint.scroll." + scrollName(scroll));
+    }
+
     /** Inverse of {@link #scrollName}: parses a direction name to a {@code SCROLL_*} value (default East). */
     public static int scrollFromName(String name) {
         return switch (name.toLowerCase()) {

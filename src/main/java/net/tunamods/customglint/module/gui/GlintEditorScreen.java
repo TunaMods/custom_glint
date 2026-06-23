@@ -36,6 +36,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
@@ -366,7 +367,8 @@ public class GlintEditorScreen extends Screen {
 
         // Skin cycle (left-click next, right-click previous) + button-sound toggle, bottom of the left column.
         skinBtn = addRenderableWidget(new BevelButton(px + 8, py + 232, 62, 14, 3, true,
-                () -> skin.name, () -> skin.labelHdr, () -> skin.guiFace, b -> cycleSkin(b == 1 ? -1 : 1)));
+                () -> Component.translatable("screen.customglint.skin." + skin.name.toLowerCase(Locale.ROOT)).getString(),
+                () -> skin.labelHdr, () -> skin.guiFace, b -> cycleSkin(b == 1 ? -1 : 1)));
         soundBtn = addRenderableWidget(new BevelButton(px + 72, py + 232, 14, 14, 3, false,
                 () -> "♪", () -> GlintClientConfig.glintTableSound() ? skin.costOk : skin.costBad,
                 () -> skin.guiFace, b -> GlintClientConfig.setGlintTableSound(!GlintClientConfig.glintTableSound())));
@@ -411,7 +413,7 @@ public class GlintEditorScreen extends Screen {
         });
 
         // Hex EditBox
-        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 68, 58, 12, Component.literal("Hex")));
+        hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 68, 58, 12, Component.translatable("screen.customglint.glint_editor.hex_field")));
         hexBox.setMaxLength(6);
         hexBox.setValue(String.format("%06X", (editR << 16) | (editG << 8) | editB));
         hexBox.setResponder(this::onHexChanged);
@@ -479,7 +481,8 @@ public class GlintEditorScreen extends Screen {
         // stepper appears/disappears with the mode.
         int sd = layerScrollDirs.get(selectedLayer);
         bevel(px + 100, py + 202, 90, 14,
-                () -> "Scroll: " + GlintTrimItem.scrollName(layerScrollDirs.get(selectedLayer)),
+                () -> Component.translatable("screen.customglint.glint_editor.scroll",
+                        GlintTrimItem.scrollLabel(layerScrollDirs.get(selectedLayer))).getString(),
                 () -> { layerScrollDirs.set(selectedLayer, (layerScrollDirs.get(selectedLayer) + 1) % 9); refreshPreview(); rebuildWidgets(); });
 
         // Static UV offset stepper, only shown (and only meaningful) when the layer is STATIC.
@@ -618,7 +621,7 @@ public class GlintEditorScreen extends Screen {
             });
 
             // Glow color hex input, fixed to the right of the toggle button
-            glowHexBox = addRenderableWidget(new EditBox(font, px + 248, py + 220, 46, 12, Component.literal("Glow hex")));
+            glowHexBox = addRenderableWidget(new EditBox(font, px + 248, py + 220, 46, 12, Component.translatable("screen.customglint.glint_editor.glow_hex")));
             glowHexBox.setMaxLength(6);
             syncGlowHexBox();
 
