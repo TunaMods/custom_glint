@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModComponents;
@@ -32,7 +32,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
-            if (s.getItem() == CustomGlintMod.GLINT_BLACK_TEAR.get()) {
+            if (s.getItem() == ModItems.GLINT_BLACK_TEAR.get()) {
                 if (hasTear) return false;
                 hasTear = true;
             } else if (CustomGlint.has(s)) {
@@ -50,7 +50,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
         ItemStack glinted = ItemStack.EMPTY;
         for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
-            if (!s.isEmpty() && s.getItem() != CustomGlintMod.GLINT_BLACK_TEAR.get() && CustomGlint.has(s)) {
+            if (!s.isEmpty() && s.getItem() != ModItems.GLINT_BLACK_TEAR.get() && CustomGlint.has(s)) {
                 glinted = s;
                 break;
             }
@@ -73,12 +73,9 @@ public class GlintBlackTearRecipe extends CustomRecipe {
         return result;
     }
 
-    
     @Override
     public boolean isSpecial() { return true; }
 
-    
-    
     @Override
     public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;

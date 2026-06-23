@@ -1,6 +1,5 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.ItemStack;
@@ -45,12 +44,9 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
         return result;
     }
 
-    
     @Override
     public boolean isSpecial() { return true; }
 
-    
-    
     @Override
     public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;

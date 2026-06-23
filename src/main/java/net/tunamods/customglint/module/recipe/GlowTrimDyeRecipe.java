@@ -1,6 +1,5 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.minecraft.core.component.DataComponents;
@@ -69,12 +68,9 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
         return result;
     }
 
-    
     @Override
     public boolean isSpecial() { return true; }
 
-    
-    
     @Override
     public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;

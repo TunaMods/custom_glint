@@ -48,7 +48,9 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
         return result;
     }
 
-    
+    @Override
+    public boolean isSpecial() { return true; }
+
     @Override
     public RecipeSerializer<? extends CustomRecipe> getSerializer() {
         return SERIALIZER;

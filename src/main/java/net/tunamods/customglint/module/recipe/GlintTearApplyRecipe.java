@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import com.mojang.serialization.MapCodec;
@@ -29,8 +29,8 @@ public class GlintTearApplyRecipe extends CustomRecipe {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
-            if (s.getItem() == CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get()
-                    || s.getItem() == CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get()) {
+            if (s.getItem() == ModItems.GLINT_TEAR_SIMULTANEOUS.get()
+                    || s.getItem() == ModItems.GLINT_TEAR_SEQUENTIAL.get()) {
                 if (hasTear) return false;
                 hasTear = true;
             } else if (CustomGlint.has(s) && !(s.getItem() instanceof GlintTrimItem && GlintTrimItem.getColors(s).length == 0)) {
@@ -50,8 +50,8 @@ public class GlintTearApplyRecipe extends CustomRecipe {
         for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
-            if (s.getItem() == CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get()) simultaneous = true;
-            else if (s.getItem() == CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get()) simultaneous = false;
+            if (s.getItem() == ModItems.GLINT_TEAR_SIMULTANEOUS.get()) simultaneous = true;
+            else if (s.getItem() == ModItems.GLINT_TEAR_SEQUENTIAL.get()) simultaneous = false;
             else if (CustomGlint.has(s)) glinted = s;
         }
         if (glinted.isEmpty() || simultaneous == null) return ItemStack.EMPTY;
@@ -62,7 +62,7 @@ public class GlintTearApplyRecipe extends CustomRecipe {
         CustomGlint.Layer[] src = data.layers();
         CustomGlint.Layer[] newLayers = new CustomGlint.Layer[src.length];
         for (int i = 0; i < src.length; i++)
-            newLayers[i] = new CustomGlint.Layer(src[i].design(), src[i].colors(), src[i].speed(), src[i].interpolate(), src[i].patternScale(), simultaneous);
+            newLayers[i] = new CustomGlint.Layer(src[i].design(), src[i].colors(), src[i].speed(), src[i].interpolate(), src[i].patternScale(), simultaneous, src[i].scrollDir(), src[i].scrollOffset(), src[i].seed());
         CustomGlint.write(result, newLayers);
         return result;
     }

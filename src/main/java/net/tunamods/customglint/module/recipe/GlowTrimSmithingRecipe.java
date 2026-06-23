@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -22,7 +22,7 @@ import net.minecraft.world.level.Level;
 /**
  * Smithing: Glow Trim (template) + base item + Glowstone Dust -> base item with
  * glowColors+glowing applied via {@link CustomGlint#setGlowColors}. Does NOT touch any
- * existing glint Data on the base — Glow Trim is strictly a glow-only application.
+ * existing glint Data on the base, Glow Trim is strictly a glow-only application.
  *
  * 26.1.2: predicate {@code matches} override (NBT-based), ingredient accessors for display only.
  */
@@ -73,7 +73,7 @@ public class GlowTrimSmithingRecipe extends SimpleSmithingRecipe {
 
     @Override
     public Optional<Ingredient> templateIngredient() {
-        return Optional.of(Ingredient.of(CustomGlintMod.GLOW_TRIM.get()));
+        return Optional.of(Ingredient.of(ModItems.GLOW_TRIM.get()));
     }
 
     @Override

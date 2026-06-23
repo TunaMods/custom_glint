@@ -1,6 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -77,7 +77,8 @@ public class GlintTrimSmithingRecipe extends SimpleSmithingRecipe {
         if (preview != null && preview.layers().length > 1) {
             CustomGlint.write(result, preview.layers());
         } else {
-            CustomGlint.write(result, pattern, colors, speed, interpolate, GlintTrimItem.getScale(template), simultaneous);
+            CustomGlint.write(result, pattern, colors, speed, interpolate, GlintTrimItem.getScale(template), simultaneous,
+                    GlintTrimItem.getScrollDir(template), GlintTrimItem.getScrollOffset(template), GlintTrimItem.getSeed(template));
         }
         if (GlintTrimItem.isGlowing(template)) CustomGlint.setGlowing(result, true);
         return result;
@@ -85,7 +86,7 @@ public class GlintTrimSmithingRecipe extends SimpleSmithingRecipe {
 
     @Override
     public Optional<Ingredient> templateIngredient() {
-        return Optional.of(Ingredient.of(CustomGlintMod.GLINT_TRIM.get()));
+        return Optional.of(Ingredient.of(ModItems.GLINT_TRIM.get()));
     }
 
     @Override
