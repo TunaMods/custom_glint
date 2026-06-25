@@ -106,12 +106,16 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private String selectPattern(LootContext context) {
-        // Get biome category to weight pattern selection
-        var origin = context.getParam(LootContextParams.ORIGIN);
-        var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
-        String biomeName = biome.unwrapKey()
-            .map(key -> key.location().getPath())
-            .orElse("plains");
+        // Get biome category to weight pattern selection. ORIGIN is absent on some data-pack /
+        // modded chest tables, so fall back to a neutral biome rather than throwing.
+        var origin = context.getParamOrNull(LootContextParams.ORIGIN);
+        String biomeName = "plains";
+        if (origin != null) {
+            var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
+            biomeName = biome.unwrapKey()
+                .map(key -> key.location().getPath())
+                .orElse("plains");
+        }
 
         // Category-based selection bonus
         float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
