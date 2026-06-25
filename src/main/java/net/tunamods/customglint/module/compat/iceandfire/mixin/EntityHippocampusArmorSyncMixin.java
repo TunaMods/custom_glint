@@ -12,19 +12,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * See {@link EntityHippogryphArmorSyncMixin}. Hippocampus inventory field is `inventory`, and
- * IaF reacts to inventory changes by overriding ContainerListener.containerChanged (vanilla
- * m_5757_) directly rather than exposing a custom refreshInventory. Dual SRG/named injection
- * because containerChanged IS a vanilla method (remapped between obf production and deobf dev),
- * even though the class itself is remap=false.
+ * IaF reacts to inventory changes by overriding ContainerListener.containerChanged directly
+ * rather than exposing a custom refreshInventory.
  */
 @Pseudo
 @Mixin(targets = "com.iafenvoy.iceandfire.entity.HippocampusEntity", remap = false)
 public class EntityHippocampusArmorSyncMixin {
-
-    @Inject(method = "m_5757_(Lnet/minecraft/world/Container;)V", at = @At("RETURN"), require = 0)
-    private void cg_sync_srg(Container container, CallbackInfo ci) {
-        cg_doSync();
-    }
 
     @Inject(method = "containerChanged(Lnet/minecraft/world/Container;)V", at = @At("RETURN"), require = 0)
     private void cg_sync_named(Container container, CallbackInfo ci) {

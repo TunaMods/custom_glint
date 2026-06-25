@@ -7,18 +7,19 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLEnvironment;
 
 /**
  * Standalone-only Ice & Fire compat. Renderer-touching configuration (BEWLR outline offsets /
- * textures) is registered from a client-only side class via {@code DistExecutor}; event listeners
- * for the mount-armor sync (hippogryph/hippocampus) are registered unconditionally because the
- * server side initiates the sync packet when a player begins tracking the mount.
+ * textures) is registered from a client-only side class, gated on {@code FMLEnvironment.dist};
+ * event listeners for the mount-armor sync (hippogryph/hippocampus) are registered on both sides
+ * because the server initiates the sync packet when a player begins tracking the mount.
  *
  * Split was required for dedicated-server compatibility: the renderer maps live on
  * {@code CustomGlintRenderer}, which extends {@code RenderStateShard} (client-only) and so
- * cannot load on a dedicated server. {@code DistExecutor.safeRunWhenOn} only invokes the
- * supplier on the matching dist, so the client side-class is never resolved on the server.
+ * cannot load on a dedicated server. The {@code FMLEnvironment.dist == Dist.CLIENT} guard keeps
+ * the client side-class off the server's class path.
  */
 public final class IceAndFireCompat {
     private IceAndFireCompat() {}
@@ -27,6 +28,8 @@ public final class IceAndFireCompat {
     static final String HIPPOCAMPUS_CLASS = "com.iafenvoy.iceandfire.entity.HippocampusEntity";
 
     public static void register() {
+        if (!ModList.get().isLoaded("iceandfire")) return;
+
         // Renderer overrides — client-only.
         if (FMLEnvironment.dist == Dist.CLIENT) IceAndFireClientCompat.run();
 
@@ -50,13 +53,16 @@ public final class IceAndFireCompat {
         MountArmorSync.sendTo(sp, target, stack);
     }
 
-    /** Drop client-side cache entries when the entity unloads or dies. No-op on server. */
+    /** Drop cache entries when the entity unloads or dies: client render cache and the server-side
+     *  change-detection map (the latter would otherwise grow for the life of the server). */
     private static void onEntityLeave(EntityLeaveLevelEvent event) {
-        if (!event.getLevel().isClientSide) return;
         Entity e = event.getEntity();
         String cls = e.getClass().getName();
-        if (cls.equals(HIPPOGRYPH_CLASS) || cls.equals(HIPPOCAMPUS_CLASS)) {
+        if (!cls.equals(HIPPOGRYPH_CLASS) && !cls.equals(HIPPOCAMPUS_CLASS)) return;
+        if (event.getLevel().isClientSide) {
             MountArmorCache.remove(e.getId());
+        } else {
+            MountArmorSync.forget(e.getId());
         }
     }
 }
