@@ -148,7 +148,13 @@ public class GlintApplyPacket implements CustomPacketPayload {
                     applyName(pkt, wand);
                 }
             } else {
-                Item item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(pkt.itemId)).orElse(null);
+                // Item-grant path: only honored when the player actually holds the wand that opens
+                // the editor. Without this gate any client could request the server spawn arbitrary
+                // items into their inventory.
+                if (!wandIsWand && !player.hasPermissions(2)) return;
+                ResourceLocation itemRl = ResourceLocation.tryParse(pkt.itemId);
+                if (itemRl == null) return;
+                Item item = BuiltInRegistries.ITEM.getOptional(itemRl).orElse(null);
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, pkt.layers);
