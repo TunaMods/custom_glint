@@ -350,11 +350,8 @@ public class GlintCommand {
             return 0;
         }
 
-        if (enabled && !CustomGlint.has(stack)) {
-            source.sendFailure(Component.literal("Item has no custom glint — apply a glint first"));
-            return 0;
-        }
-
+        // No glint required — glow is independent of glint Data. A glow-only item (no glowColors, no
+        // glint) outlines in white by default; if a glint is present the outline picks up its colour.
         CustomGlint.setGlowing(stack, enabled);
         source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
         return 1;
