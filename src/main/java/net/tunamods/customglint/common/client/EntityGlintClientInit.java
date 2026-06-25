@@ -4,6 +4,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.tunamods.customglint.common.CustomGlint;
 
 import java.util.UUID;
@@ -42,5 +43,17 @@ public final class EntityGlintClientInit {
     @SubscribeEvent
     public static void onLeaveLevel(ClientPlayerNetworkEvent.LoggingOut event) {
         EntityGlintCache.clear();
+    }
+
+    /**
+     * Evict a single entity's cache entry when it leaves the client level (death, despawn, or
+     * streamed out of view). Without this the cache grows monotonically for the whole session,
+     * since the fallback resolver re-populates it for every glinted entity it renders.
+     */
+    @SubscribeEvent
+    public static void onEntityLeave(EntityLeaveLevelEvent event) {
+        if (event.getLevel().isClientSide()) {
+            EntityGlintCache.remove(event.getEntity().getUUID());
+        }
     }
 }
