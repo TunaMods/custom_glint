@@ -103,6 +103,7 @@ public class GlintEditorScreen extends Screen {
 
     // ── Glint import overlay ──────────────────────────────────────────────────
     private boolean      showImportPicker = false;
+    private final List<String> allGlints   = new ArrayList<>();
     private List<String> availableGlints  = new ArrayList<>();
     private int          importScroll     = 0;
     private EditBox      importSearchBox;
@@ -614,7 +615,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void scanGlintConfigs() {
-        availableGlints.clear();
+        allGlints.clear();
         try {
             Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
             if (Files.exists(configDir)) {
@@ -622,11 +623,13 @@ public class GlintEditorScreen extends Screen {
                     .filter(p -> p.toString().endsWith(".json"))
                     .map(p -> p.getFileName().toString().replace(".json", ""))
                     .sorted()
-                    .forEach(availableGlints::add);
+                    .forEach(allGlints::add);
             }
         } catch (Exception e) {
             // Silently fail if config dir doesn't exist
         }
+        availableGlints = new ArrayList<>(allGlints);
+        importScroll = 0;
     }
 
     private void loadGlintFromConfig(String name) {
@@ -674,6 +677,8 @@ public class GlintEditorScreen extends Screen {
             }
 
             selectedLayer = 0;
+            editingColorIdx = 0;
+            editingGlowColorIdx = 0;
 
             if (obj.has("glowing")) glowEnabled = obj.get("glowing").getAsBoolean();
 
@@ -793,7 +798,7 @@ public class GlintEditorScreen extends Screen {
 
         int previewColor = (editingGlowColor && editingGlowColorIdx < glowOverrideColors.size())
                 ? glowOverrideColors.get(editingGlowColorIdx)
-                : (colors.isEmpty() ? 0 : colors.get(editingColorIdx));
+                : (colors.isEmpty() ? 0 : colors.get(Math.min(editingColorIdx, colors.size() - 1)));
         g.fill(px + 120, py + 68, px + 132, py + 80, 0xFF000000 | (previewColor & 0xFFFFFF));
 
         // Glow override swatches
@@ -909,9 +914,16 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void filterGlints(String query) {
-        // Simple prefix filter
-        String lq = query.toLowerCase();
-        // Already have all glints in availableGlints, which are sorted
+        String lq = query == null ? "" : query.toLowerCase();
+        if (lq.isEmpty()) {
+            availableGlints = new ArrayList<>(allGlints);
+        } else {
+            availableGlints = new ArrayList<>();
+            for (String g : allGlints) {
+                if (g.toLowerCase().contains(lq)) availableGlints.add(g);
+            }
+        }
+        importScroll = 0;
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────
@@ -988,17 +1000,17 @@ public class GlintEditorScreen extends Screen {
         if (showImportPicker) {
             int ox = ipX(), oy = ipY();
 
-            if (mx >= ox + 2 && mx < ox + DPW - 2 && my >= oy + 3 && my < oy + 17) {
+            if (mx >= ox + 2 && mx < ox + IPW - 2 && my >= oy + 3 && my < oy + 17) {
                 if (importSearchBox != null) importSearchBox.mouseClicked(mx, my, btn);
             }
 
-            if (mx < ox || mx >= ox + DPW || my < oy || my >= oy + DPH) {
+            if (mx < ox || mx >= ox + IPW || my < oy || my >= oy + IPH) {
                 showImportPicker = false;
                 return true;
             }
 
             int listY = oy + 20;
-            if (my >= listY && mx < ox + DPW - 5) {
+            if (my >= listY && mx < ox + IPW - 5) {
                 int row = (int)(my - listY) / IMPORT_ROW_H;
                 int idx = importScroll + row;
                 if (row < IMPORT_ROWS && idx < availableGlints.size()) {
