@@ -93,7 +93,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
             return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0], "", 0xFFFFFFFF, wandOnly);
         }
         int layerCount = Math.min(buf.readVarInt(), 8);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
+        java.util.List<CustomGlint.Layer> parsed = new java.util.ArrayList<>(layerCount);
         for (int i = 0; i < layerCount; i++) {
             String design = buf.readUtf();
             int colorLen = Math.min(buf.readVarInt(), 8);
@@ -104,8 +104,11 @@ public class GlintApplyPacket implements CustomPacketPayload {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(ResourceLocation.parse(design), colors, speed, interp, scale, simultaneous);
+            ResourceLocation designRl = ResourceLocation.tryParse(design);
+            if (designRl == null || colors.length == 0) continue;
+            parsed.add(new CustomGlint.Layer(designRl, colors, speed, interp, scale, simultaneous));
         }
+        CustomGlint.Layer[] layers = parsed.toArray(new CustomGlint.Layer[0]);
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
         int gcLen = Math.min(buf.readVarInt(), 8);

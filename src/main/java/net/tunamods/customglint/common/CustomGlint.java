@@ -216,7 +216,9 @@ public final class CustomGlint {
                 float patternScale = lt.contains(SCALE_KEY) ? lt.getFloat(SCALE_KEY) : globalScale;
                 if (patternScale <= 0) patternScale = 1.0f;
                 boolean simultaneous = lt.contains(SIMULTANEOUS_KEY) ? lt.getBoolean(SIMULTANEOUS_KEY) : globalSimultaneous;
-                layers[i] = new Layer(ResourceLocation.parse(design), colors, speed, interpolate, patternScale, simultaneous);
+                ResourceLocation designRl = ResourceLocation.tryParse(design);
+                if (designRl == null) return null;
+                layers[i] = new Layer(designRl, colors, speed, interpolate, patternScale, simultaneous);
             }
         } else {
             // backward compat: old single-layer format
@@ -225,7 +227,9 @@ public final class CustomGlint {
             if (!tag.contains(COLORS_KEY)) return null;
             int[] colors = tag.getIntArray(COLORS_KEY);
             if (colors.length == 0) return null;
-            layers = new Layer[]{ new Layer(ResourceLocation.parse(design), colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
+            ResourceLocation designRl = ResourceLocation.tryParse(design);
+            if (designRl == null) return null;
+            layers = new Layer[]{ new Layer(designRl, colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
         }
 
         return new Data(layers);

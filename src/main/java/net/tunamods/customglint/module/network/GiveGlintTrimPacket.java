@@ -63,7 +63,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static GiveGlintTrimPacket decode(FriendlyByteBuf buf) {
         int layerCount = Math.min(buf.readVarInt(), 8);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
+        java.util.List<CustomGlint.Layer> parsed = new java.util.ArrayList<>(layerCount);
         for (int i = 0; i < layerCount; i++) {
             String design = buf.readUtf();
             int colorLen = Math.min(buf.readVarInt(), 8);
@@ -74,8 +74,11 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(ResourceLocation.parse(design), colors, speed, interp, scale, simultaneous);
+            ResourceLocation designRl = ResourceLocation.tryParse(design);
+            if (designRl == null || colors.length == 0) continue;
+            parsed.add(new CustomGlint.Layer(designRl, colors, speed, interp, scale, simultaneous));
         }
+        CustomGlint.Layer[] layers = parsed.toArray(new CustomGlint.Layer[0]);
         boolean glowing = buf.readBoolean();
         int gcLen = Math.min(buf.readVarInt(), 8);
         int[] glowColors = new int[gcLen];
