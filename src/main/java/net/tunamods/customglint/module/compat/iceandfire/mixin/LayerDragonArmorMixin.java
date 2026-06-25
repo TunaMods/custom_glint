@@ -39,11 +39,13 @@ import java.util.List;
  * outline bled over the entire dragon.
  *
  * <p><b>Fix.</b> We {@link Redirect} each part's {@code EntityModel.renderToBuffer} call, draw the
- * base part unchanged, then run the stencil-mask + glint and the outline against THAT part's
- * texture ({@code CG_TEX}, side-channelled from the {@code entityCutoutNoCull} redirect that fires
- * immediately before each part draw). Masking is identical to the horse/mount path: the body shares
- * the dragon model, so an EQUAL-depth glint would cover every face — the mask writes stencil bit
- * {@code 0x80} only at the armor texture's opaque texels and the glint tests EQUAL {@code 0x80}.
+ * base part unchanged, then run the glint and the outline against THAT part's texture
+ * ({@code CG_TEX}, side-channelled from the {@code entityCutoutNoCull} redirect that fires
+ * immediately before each part draw). The body shares the dragon model, so an EQUAL-depth glint
+ * would cover every face — instead the glint uses {@link CustomGlintRenderer#forArmorGlint},
+ * which masks to each part's armor texture cutout via EQUAL depth against the armorCutoutNoCull
+ * base draw (no stencil). The outline is the generic post-process silhouette from
+ * {@link CustomGlintRenderer#doModelOutline}.
  *
  * <p>Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET — first stack with a custom glint
  * wins, resolved once at HEAD and reused for every part (the per-part texture mask is what keeps
@@ -61,16 +63,6 @@ public class LayerDragonArmorMixin {
     };
 
     // ── Capture each part's armor texture passed to entityCutoutNoCull, just before its draw. ──
-    // Dual SRG/named pair; the SRG name targets the original's entityTranslucent and no-ops on CE.
-
-    @Redirect(method = "m_117386_",
-            at = @At(value = "INVOKE",
-                     target = "Lnet/minecraft/client/renderer/RenderType;m_110458_(Lnet/minecraft/resources/ResourceLocation;)Lnet/minecraft/client/renderer/RenderType;"),
-            require = 0)
-    private RenderType cg_capTex_srg(ResourceLocation loc) {
-        CG_TEX.set(loc);
-        return RenderType.entityCutoutNoCull(loc);
-    }
 
     @Redirect(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/DragonBaseEntity;FFFFFF)V",
             at = @At(value = "INVOKE",
@@ -97,7 +89,7 @@ public class LayerDragonArmorMixin {
         }
     }
 
-    // ── Per-part: draw the base armor part, then mask + glint + outline against THAT part's texture. ──
+    // ── Per-part: draw the base armor part, then glint + outline against THAT part's texture. ──
 
     @Redirect(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/DragonBaseEntity;FFFFFF)V",
             at = @At(value = "INVOKE",
@@ -105,7 +97,7 @@ public class LayerDragonArmorMixin {
             require = 0)
     private void cg_drawPart(EntityModel<?> model, PoseStack pose, VertexConsumer consumer, int light, int overlay, int color,
             @Local(argsOnly = true) MultiBufferSource buffer) {
-        // Unwrap once: used both to draw the base part and to flush our stencil RTs through the real
+        // Unwrap once: used both to draw the base part and to flush our glint RTs through the real
         // BufferSource.
         MultiBufferSource flush = EntityGlintRender.unwrap(buffer);
         ResourceLocation tex = CG_TEX.get();   // this part's armor texture (set by the redirect above)
@@ -135,8 +127,8 @@ public class LayerDragonArmorMixin {
             // forArmorGlint masks by EQUAL depth against the armorCutoutNoCull base drawn above:
             // the base alpha-discards to opaque armor texels (so depth exists only there) at the
             // armor's offset depth, so the glint lands only on this part's armor AND sits in front of
-            // the dragon's body glint. No stencil pass needed — the per-part armor texture cutout is
-            // the mask. Routed through the unwrapped `flush` so the wrapper can't re-fan it.
+            // the dragon's body glint. The per-part armor texture cutout is the mask. Routed through
+            // the unwrapped `flush` so the wrapper can't re-fan it.
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
@@ -170,15 +162,6 @@ public class LayerDragonArmorMixin {
             }
         }
 
-        if (CustomGlint.isGlowing(active)) {
-            // doModelOutline (slot==null) stamps the FULL body silhouette into its stencil slot, so
-            // the back-side armor ring is suppressed even across the dragon's transparent gaps (wing
-            // membranes, scale gaps). No depth pre-fill is used, so nothing is written into the world
-            // depth buffer at those gaps — water/clouds/ice behind the wings and the dragon's own
-            // far-side glint stay visible (the depth pre-fill used to leave invisible occluder planes
-            // there). Trace this part's armor outline via its texture.
-            CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, active, null);
-        }
     }
 
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/DragonBaseEntity;FFFFFF)V",

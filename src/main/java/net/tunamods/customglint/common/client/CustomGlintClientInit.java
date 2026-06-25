@@ -6,6 +6,7 @@ import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.tunamods.customglint.common.CustomGlintApiMod;
 
@@ -19,22 +20,28 @@ public final class CustomGlintClientInit {
 
     /** Invoked from the API mod constructor on client only, with the mod event bus. */
     public static void run(IEventBus modEventBus) {
-        // Vanilla trident BEWLR outline texture: use the real trident texture so the outline
-        // shader alpha-discards transparent texels instead of filling model cubes opaquely.
-        CustomGlintRenderer.BEWLR_OUTLINE_TEXTURES.put(
-                "net.minecraft.world.item.TridentItem",
-                ResourceLocation.fromNamespaceAndPath("minecraft", "textures/entity/trident.png"));
-
         modEventBus.addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
+        // Glow-outline core shaders (silhouette + composite) — mod-bus event, client only.
+        modEventBus.addListener(GlowOutlineRenderer::registerShaders);
 
-        // Once-per-frame stencil-clear gate reset. See pendingFrameStencilClear's javadoc
-        // in CustomGlintRenderer for the multi-outline / FullyBuffered drain interaction
-        // this prevents. RenderFrameEvent.Pre fires once per rendered frame regardless of
-        // shader pack or batched-render plumbing, which is what we need.
+        // Once-per-frame stencil-clear gate reset, consumed by the compat stencil RTs
+        // (IaF mount armor, EK decorations) that still use pendingFrameStencilClear.
+        // RenderFrameEvent.Pre fires once per rendered frame regardless of shader pack or
+        // batched-render plumbing, which is what we need. Also resets the glow-outline
+        // per-frame capture queue + id counter.
         NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> {
             CustomGlintRenderer.pendingFrameStencilClear = true;
-            CustomGlintRenderer.shaderOutlinedThisFrame.clear();
             CustomGlintRenderer.resetStencilSlots();
+            GlowOutlineRenderer.beginFrame();
+        });
+
+        // Drain world-space item glow outlines after weather, where the live world projection /
+        // modelview still match what the items were drawn with (the camera modelview hasn't been
+        // popped yet) and the opaque scene depth is committed for the occlusion test.
+        NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
+            if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+                GlowOutlineRenderer.drainWorld();
+            }
         });
     }
 

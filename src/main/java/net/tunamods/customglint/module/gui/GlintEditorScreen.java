@@ -776,14 +776,17 @@ public class GlintEditorScreen extends Screen {
             r.render(g, mx, my, dt);
         }
 
-        // Item preview
+        // Item preview. Scissor to the preview panel so the glow outline (which the item-render hook draws
+        // around the icon) clips to these bounds instead of spilling into the surrounding controls.
         if (!previewStack.isEmpty()) {
+            g.enableScissor(bx, by, bx + PREVIEW_SZ, by + PREVIEW_SZ);
             var pose = g.pose();
             pose.pushPose();
             pose.translate(bx + PREVIEW_SZ / 2f, by + PREVIEW_SZ / 2f, 200);
             pose.scale(5.0f, 5.0f, 1.0f);
             g.renderItem(previewStack, -8, -8);
             pose.popPose();
+            g.disableScissor();
         }
 
         // Color swatches

@@ -1,29 +1,20 @@
 package net.tunamods.customglint.common.client;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.entity.LivingEntityRenderer;
-import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.tunamods.customglint.common.CustomGlint;
-
-import org.joml.Matrix3f;
-import org.joml.Matrix4f;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Client-only entity glint draw. Called from {@link
- * net.tunamods.customglint.common.mixin.LivingEntityRendererMixin} at the point just before
- * the renderer's outer popPose, so the pose stack is still in entity-local space (matches the
- * vantage of armor/layer renderers).
+ * Client-only entity glint draw. Wraps the renderer's {@link MultiBufferSource} so every
+ * {@code entity_*} RenderType requested during an entity render (base model + every RenderLayer)
+ * gets a glint overlay fan-out.
  *
  * Resolution order: per-instance via the registered {@link InstanceResolver} (standalone module
  * installs one that reads from EntityGlintCache), then {@link CustomGlint#ENTITY_GLINTS} type
@@ -75,9 +66,8 @@ public final class EntityGlintRender {
      * Called from {@link net.tunamods.customglint.common.mixin.LivingEntityRendererMixin} at HEAD.
      */
     public static MultiBufferSource wrapForEntity(LivingEntity entity, MultiBufferSource original) {
-        // Idempotent: in dev workspaces where mixin.env.remapRefMap=true, BOTH the SRG and
-        // named ModifyVariable hooks resolve and fire on the same arg, which would otherwise
-        // wrap twice and break body-builder vertex routing.
+        // Idempotent: never wrap an already-wrapped source (would double-wrap and break
+        // body-builder vertex routing).
         if (original instanceof GlintWrappingBufferSource) return original;
         CustomGlint.Data data = resolveData(entity);
         if (data == null) return original;
@@ -89,104 +79,12 @@ public final class EntityGlintRender {
      * that must {@code endBatch} a specific RenderType to order passes (the stencil-mask-before-glint
      * sequence on mount/dragon armor) need the real BufferSource: during entity rendering the layer
      * receives {@link GlintWrappingBufferSource}, which is NOT a BufferSource, so a raw
-     * {@code instanceof BufferSource} check silently skips the flush and the mask never commits
-     * before the glint. That only bites when the entity ALSO carries its own glint (so the wrapper
-     * is installed) — e.g. a glinted dragon wearing glinted armor; the body part's glint then bled
-     * across the whole dragon.
+     * {@code instanceof BufferSource} check silently skips the flush. That only bites when the entity
+     * ALSO carries its own glint (so the wrapper is installed) — e.g. a glinted dragon wearing glinted
+     * armor; the body part's glint then bled across the whole dragon.
      */
     public static MultiBufferSource unwrap(MultiBufferSource buffer) {
         return buffer instanceof GlintWrappingBufferSource w ? w.delegate : buffer;
-    }
-
-    /**
-     * Captured (model, texture, pose snapshot, light) for one render-layer surface, queued by
-     * {@link net.tunamods.customglint.common.mixin.RenderLayerMixin} during the entity render and
-     * drained at popPose by {@link #renderOutline}. Pose snapshot is taken because each layer
-     * may have applied its own intermediate transforms onto the PoseStack before invoking the
-     * shared static helpers in {@code RenderLayer}.
-     */
-    public static final class PendingOutline {
-        public final EntityModel<?> model;
-        public final ResourceLocation texture;
-        public final Matrix4f pose;
-        public final Matrix3f normal;
-        public final int light;
-        PendingOutline(EntityModel<?> m, ResourceLocation t, Matrix4f p, Matrix3f n, int l) {
-            this.model = m; this.texture = t; this.pose = p; this.normal = n; this.light = l;
-        }
-    }
-
-    /** Per-thread overlay queue. Cleared at the start of every entity outline drain so a
-     *  non-glowing entity's queued (but never drained) entries don't leak into the next one. */
-    private static final ThreadLocal<List<PendingOutline>> PENDING =
-            ThreadLocal.withInitial(ArrayList::new);
-
-    /**
-     * Cheap-gate version of glow lookup used by the layer mixin before snapshotting pose.
-     * Returns true iff the entity has a glow/glowColors signal that would trigger an outline.
-     */
-    private static boolean entityHasGlow(LivingEntity entity) {
-        Resolution r = instanceResolver.resolve(entity);
-        if (r == null) return false;
-        return r.glowing || r.glowColors.length > 0;
-    }
-
-    /**
-     * Called from {@link net.tunamods.customglint.common.mixin.RenderLayerMixin} at the RETURN of
-     * the two shared static helpers in {@code RenderLayer} (coloredCutoutModelCopyLayerRender
-     * and renderColoredCutoutModel). Snapshots the current pose and queues the overlay for
-     * outline rendering at popPose-time, where it shares a single stencil slot with the base
-     * body and every other overlay so the union of all silhouettes is stamped before any
-     * dilated TEST pass runs. Without this union approach, an early layer's TEST ring would
-     * spill into the area that a later overlay covers (e.g. stray's body outline visible
-     * inside the clothing outline).
-     */
-    public static void queueLayerOutline(LivingEntity entity, EntityModel<?> model,
-                                         ResourceLocation texture, PoseStack pose,
-                                         int packedLight) {
-        if (entity == null || model == null || texture == null) return;
-        if (!entityHasGlow(entity)) return;
-        PENDING.get().add(new PendingOutline(model, texture,
-                new Matrix4f(pose.last().pose()), new Matrix3f(pose.last().normal()), packedLight));
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    public static void renderOutline(LivingEntityRenderer renderer, LivingEntity entity,
-                                     PoseStack pose, MultiBufferSource buffer, int packedLight) {
-        List<PendingOutline> pending = PENDING.get();
-        CustomGlint.Data data;
-        boolean glowing;
-        int[] glowColors;
-        Resolution r = instanceResolver.resolve(entity);
-        if (r != null) {
-            data = r.data;
-            glowing = r.glowing;
-            glowColors = r.glowColors;
-        } else {
-            data = CustomGlint.getEntityGlint(entity.getType());
-            glowing = false;
-            glowColors = new int[0];
-        }
-        if (!glowing && glowColors.length == 0) {
-            // Stale entries left over if a layer queued without our glow gate matching
-            // (shouldn't happen, but defensively clear).
-            pending.clear();
-            return;
-        }
-        int color = resolveOutlineColor(data, glowColors);
-        EntityModel model = renderer.getModel();
-        ResourceLocation texture = renderer.getTextureLocation(entity);
-
-        List<PendingOutline> all = new ArrayList<>(pending.size() + 1);
-        all.add(new PendingOutline(model, texture,
-                new Matrix4f(pose.last().pose()), new Matrix3f(pose.last().normal()), packedLight));
-        all.addAll(pending);
-        pending.clear();
-
-        // Unwrap so the outline's stencil RTs flow into the real buffer source (the wrap
-        // re-fans entity_* RTs to glint, which would corrupt the stencil pass).
-        MultiBufferSource raw = buffer instanceof GlintWrappingBufferSource w ? w.delegate : buffer;
-        CustomGlintRenderer.doMultiModelOutline(pose, raw, color, all);
     }
 
     @Nullable
@@ -204,17 +102,10 @@ public final class EntityGlintRender {
         buf[3] = 1.0f;
     }
 
-    private static int resolveOutlineColor(@Nullable CustomGlint.Data data, int[] glowColors) {
-        if (glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(glowColors);
-        if (data != null) return CustomGlintRenderer.computeAnimatedColor(data, 0);
-        return 0xFFFFFFFF;
-    }
-
     /**
      * MultiBufferSource wrapper that auto-fans every entity-* RenderType request through the
-     * glint render-types of all configured layers. The strategy mirrors what
-     * {@link CustomGlintRenderer#applyGlint(...)} (well, ItemRendererMixin's getFoilBuffer path)
-     * does for items: a VertexMultiConsumer of {base, glint_layer0, glint_layer1, …}.
+     * glint render-types of all configured layers. The strategy mirrors what ItemRendererMixin's
+     * getFoilBuffer path does for items: a VertexMultiConsumer of {base, glint_layer0, glint_layer1, …}.
      *
      * RenderType filter: only RTs whose toString begins with "entity_" get wrapped. That covers
      * entityCutoutNoCull / entitySolid / entityTranslucent / itemEntityTranslucentCull / etc.
@@ -249,9 +140,8 @@ public final class EntityGlintRender {
             // away from it, which in vanilla BufferSource.getBuffer ends the previous non-fixed
             // builder — i.e. flushes the body builder while it's still empty and leaves it in a
             // non-building state. Subsequent vertex writes to `base` then drop on the floor and
-            // the body renders invisible (the dilated outline ring still appears because its
-            // stencil-write pass re-renders the model into its own dedicated fixed builder).
-            // Acquiring `base` last leaves it as the current active builder when the model writes.
+            // the body renders invisible. Acquiring `base` last leaves it as the current active
+            // builder when the model writes.
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);

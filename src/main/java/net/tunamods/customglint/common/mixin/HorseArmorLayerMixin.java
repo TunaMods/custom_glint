@@ -23,22 +23,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Intercepts HorseArmorLayer.render at RETURN to draw custom glint and (if glowing) stencil outline on horse armor. Dual SRG/named targets, require=0 on both. */
+/** Intercepts HorseArmorLayer.render at RETURN to draw custom glint (stencil-masked to the layered armor shape) and, if glowing, capture the silhouette for the post-process outline. */
 @Mixin(HorseArmorLayer.class)
 public class HorseArmorLayerMixin {
 
-    @Shadow(aliases = {"f_117017_"}) private HorseModel<Horse> model;
+    @Shadow private HorseModel<Horse> model;
 
-    /** SRG target: injects at RETURN of render in obfuscated environments. */
-    @Inject(method = "m_6494_", at = @At("RETURN"), require = 0)
-    private void cg_horseArmorGlint_srg(PoseStack poseStack, MultiBufferSource buffer,
-            int packedLight, Horse entity, float limbSwing, float limbSwingAmount,
-            float partialTick, float ageInTicks, float netHeadYaw, float headPitch,
-            CallbackInfo ci) {
-        applyHorseArmorGlint(poseStack, buffer, packedLight, entity, this.model);
-    }
-
-    /** Named target: injects at RETURN of render in dev/deobf environments. */
+    /** Injects at RETURN of render. */
     @Inject(
         method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/animal/horse/Horse;FFFFFF)V",
         at = @At("RETURN"), require = 0, remap = false
@@ -124,8 +115,6 @@ public class HorseArmorLayerMixin {
                 for (RenderType rt : glintTypes) bs2.endBatch(rt);
             }
         }
-        if (glowing)
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, model, tex, stack, null);
     }
 
 }

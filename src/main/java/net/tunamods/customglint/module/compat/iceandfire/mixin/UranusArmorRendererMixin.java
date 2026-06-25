@@ -99,13 +99,6 @@ public interface UranusArmorRendererMixin {
                 armorModel.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
         }
-
-        if (glowing) {
-            ResourceLocation tex = Tex.get(this, stack, entity, slot);
-            if (tex != null) {
-                CustomGlintRenderer.doModelOutline(pose, buffer, light, (EntityModel<?>) armorModel, tex, stack, slot);
-            }
-        }
     }
 
     /** Holder for the reflective {@code getArmorTexture} lookup — interface mixins can't have mutable static fields. */

@@ -33,8 +33,9 @@ import java.util.List;
  * by entity.getArmor() (1/2/3 = iron/gold/diamond), source the actual ItemStack from the
  * client-synced cache.
  *
- * Mask + glint mechanics identical to the dragon/hippogryph variants. See
- * {@link LayerDragonArmorMixin} for the stencil rationale.
+ * Glint mechanics identical to the dragon/hippogryph variants: glint via forArmorGlint (armor
+ * texture cutout mask, no stencil), outline via the generic post-process doModelOutline. See
+ * {@link LayerDragonArmorMixin} for the full rationale.
  *
  * Armor ItemStack source: {@link MountArmorCache} (synced by EntityHippocampusArmorSyncMixin +
  * StartTracking listener — IaF's SimpleContainer doesn't sync to clients on its own).
@@ -113,12 +114,12 @@ public class LayerHippocampusArmorMixin {
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
         // forArmorGlint — the same fix that LayerDragonArmorMixin uses. Hippocampus armor reuses the
-        // body model at the SAME depth, so the EQUAL-depth body glint drew over the armor and the
-        // stencil mask never pushed it off (the armor glint then read as covering the whole entity).
-        // armorCutoutNoCull's polygon offset nudges the armor in front of the body so the body glint
-        // is depth-occluded there, and forArmorGlint (EQUAL + the matching offset, masked by the
-        // armor texture's own alpha cutout) lands only on this armor's opaque texels. Routed through
-        // the unwrapped buffer so the wrapper can't re-fan the body glint onto the armor.
+        // body model at the SAME depth, so the EQUAL-depth body glint drew over the armor (the armor
+        // glint then read as covering the whole entity). armorCutoutNoCull's polygon offset nudges
+        // the armor in front of the body so the body glint is depth-occluded there, and forArmorGlint
+        // (EQUAL + the matching offset, masked by the armor texture's own alpha cutout) lands only on
+        // this armor's opaque texels. Routed through the unwrapped buffer so the wrapper can't re-fan
+        // the body glint onto the armor.
         MultiBufferSource flush = EntityGlintRender.unwrap(buffer);
         model.renderToBuffer(pose, flush.getBuffer(RenderType.armorCutoutNoCull(tex)),
                 light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
@@ -155,14 +156,5 @@ public class LayerHippocampusArmorMixin {
             model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
 
-        if (CustomGlint.isGlowing(stack)) {
-            // Full-silhouette stencil WRITE (default slot==null path): stamp the whole body
-            // silhouette so the back-side armor ring is suppressed across the hippocampus's
-            // transparent gaps (tail / fins) — otherwise that far-side ring leaks through the front.
-            // Trade-off: the ring then follows the body outline rather than hugging the armor.
-            // No depth pre-fill, so nothing occludes the world or the mount's own far-side glint.
-            // Stack overload so glowColors NBT drives the outline color.
-            CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, stack, null);
-        }
     }
 }

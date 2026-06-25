@@ -36,10 +36,12 @@ import java.util.List;
  * ctor. We resolve the texture directly from getArmor() rather than redirecting — the mapping is
  * stable and the texture paths are part of IaF's published assets.
  *
- * Mask + glint mechanics identical to {@link LayerDragonArmorMixin}: the armor texture's opaque
- * regions stamp stencil bit 0x80, and the glint RT only renders where bit 0x80 is set. See that
- * mixin for the full rationale (the parent body model shares depth with the armor mesh, so an
- * EQUAL_DEPTH glint without a stencil mask would paint glint onto the bare hippogryph too).
+ * Glint mechanics identical to {@link LayerDragonArmorMixin}: the glint uses
+ * {@link CustomGlintRenderer#forArmorGlint}, which masks to the armor texture's opaque texels via
+ * EQUAL depth against the armorCutoutNoCull base draw (no stencil). See that mixin for the full
+ * rationale (the parent body model shares depth with the armor mesh, so an EQUAL_DEPTH glint
+ * without that cutout mask would paint glint onto the bare hippogryph too). The outline is the
+ * generic post-process silhouette via {@link CustomGlintRenderer#doModelOutline}.
  *
  * Armor ItemStack source: {@link MountArmorCache}. IaF's hippogryphInventory SimpleContainer
  * doesn't sync to clients (only the armor tier int does), so we sync the stack ourselves via
@@ -51,9 +53,9 @@ import java.util.List;
 public class LayerHippogryphArmorMixin {
 
     // CE armor textures live under textures/entity/hippogryph/, NOT textures/models/. A wrong path
-    // resolves to the missing-texture placeholder, which is fully opaque — the stencil mask then
-    // stamps the entire model and the glint covers the whole hippogryph instead of just the armor.
-    // Confirmed via unzip -l on iceandfire-2.0-beta.17.jar.
+    // resolves to the missing-texture placeholder, which is fully opaque — forArmorGlint's cutout
+    // mask then passes over the entire model and the glint covers the whole hippogryph instead of
+    // just the armor. Confirmed via unzip -l on iceandfire-2.0-beta.17.jar.
     private static final ResourceLocation CG_TEX_IRON =
             ResourceLocation.fromNamespaceAndPath("iceandfire", "textures/entity/hippogryph/armor_iron.png");
     private static final ResourceLocation CG_TEX_GOLD =
@@ -167,13 +169,5 @@ public class LayerHippogryphArmorMixin {
             model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
 
-        if (CustomGlint.isGlowing(stack)) {
-            // doModelOutline (slot==null) stamps the FULL body silhouette into its stencil slot, so
-            // the back-side armor ring is suppressed across transparent body regions (feathers,
-            // gaps) — no depth pre-fill, so nothing occludes the world or the mount's own far-side
-            // glint behind the gaps. See LayerDragonArmorMixin for the full rationale.
-            // Stack overload (not Data) so glowColors NBT drives the outline color when set.
-            CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, stack, null);
-        }
     }
 }

@@ -25,8 +25,8 @@ import java.util.List;
  * Standalone-only compat: BackpackItemStackRenderer (BEWLR) iterates renderPasses from its
  * BakedModel and calls MultiBufferSource.getBuffer(RenderType) directly per pass, bypassing
  * ItemRenderer.getFoilBuffer — so ItemRendererMixin never wraps the consumer with our glint
- * layers. The outline already works because that's a stencil pass driven from ItemRenderer.render
- * at the BEWLR boundary, independent of getFoilBuffer.
+ * layers. The outline already works because it's the generic post-process silhouette driven from
+ * ItemRenderer.render at the BEWLR boundary, independent of getFoilBuffer.
  *
  * At RETURN of renderByItem we re-resolve the baked model the same way SB did and submit it
  * to ItemRenderer.renderModelLists with a VertexMultiConsumer of our glint render types. SB

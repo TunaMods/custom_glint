@@ -24,25 +24,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Intercepts ElytraLayer.render at RETURN to draw custom glint and (if glowing) stencil outline on the elytra model.
+ * Intercepts ElytraLayer.render at RETURN to draw custom glint and (if glowing) capture the elytra silhouette for the post-process outline.
  * Elytra uses armorCutoutNoCull (VIEW_OFFSET_Z_LAYERING), so forArmorGlint works correctly here.
  * Vanilla pops the pose before returning, so the inject re-applies the (0, 0, 0.125) elytra offset.
  */
 @Mixin(ElytraLayer.class)
 public class ElytraLayerMixin {
 
-    @Shadow(aliases = {"f_116935_"}) private ElytraModel<?> elytraModel;
+    @Shadow private ElytraModel<?> elytraModel;
 
-    /** SRG target: injects at RETURN of render in obfuscated environments. */
-    @Inject(method = "m_6494_", at = @At("RETURN"), require = 0)
-    private void cg_elytraGlint_srg(PoseStack poseStack, MultiBufferSource buffer,
-            int packedLight, LivingEntity entity, float limbSwing, float limbSwingAmount,
-            float partialTick, float ageInTicks, float netHeadYaw, float headPitch,
-            CallbackInfo ci) {
-        applyElytraGlint((ElytraLayer<LivingEntity, ?>)(Object)this, poseStack, buffer, packedLight, entity, this.elytraModel);
-    }
-
-    /** Named target: injects at RETURN of render in dev/deobf environments. */
+    /** Injects at RETURN of render. */
     @Inject(
         method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFF)V",
         at = @At("RETURN"), require = 0, remap = false
@@ -102,21 +93,11 @@ public class ElytraLayerMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             }
         }
-        if (combined == null && !glowing) return;
+        if (combined == null) return;
         // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset.
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        if (combined != null)
-            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-        if (glowing) {
-            ResourceLocation tex;
-            try {
-                tex = ((ElytraLayer)self).getElytraTexture(stack, entity);
-            } catch (Throwable t) {
-                tex = ResourceLocation.withDefaultNamespace("textures/entity/elytra.png");
-            }
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, elytraModel, tex, stack, null);
-        }
+        elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         poseStack.popPose();
     }
 
