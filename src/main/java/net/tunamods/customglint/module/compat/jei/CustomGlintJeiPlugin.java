@@ -43,6 +43,8 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     public void registerRecipes(IRecipeRegistration registration) {
         registration.addIngredientInfo(new ItemStack(ModItems.GLINT_WAND.get()), VanillaTypes.ITEM_STACK,
             Component.literal("Right-click to open the Glint Editor and paint animated enchantment glints onto any item."));
+        registration.addIngredientInfo(new ItemStack(ModItems.GLINT_TABLE_ITEM.get()), VanillaTypes.ITEM_STACK,
+            Component.literal("Place it down and right-click to open the slot-based trim builder. Store designs, paint them with dyes, set brightness and animation, then print finished Glint Trims to apply at a smithing table."));
 
         List<ItemStack> trimVariants = new ArrayList<>();
         for (String patternName : GlintTrimItem.PATTERNS) {
