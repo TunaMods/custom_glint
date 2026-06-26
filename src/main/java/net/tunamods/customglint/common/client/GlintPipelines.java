@@ -35,8 +35,8 @@ import net.tunamods.customglint.common.CustomGlint;
  * and finalized with {@link RenderType#create(String, RenderSetup)}. Per-RenderType setup runnables
  * (the old {@code setShaderColor}/{@code setTextureMatrix} hooks) no longer exist, color rides the
  * vertex color (custom {@code customglint:core/glint_color} shader, POSITION_TEX_COLOR), animation
- * rides a per-draw {@link TextureTransform} supplier, and stencil state is baked into the pipeline as
- * a {@link StencilTest}.
+ * rides a per-draw {@link TextureTransform} supplier, and per-call-site depth state is set via
+ * {@link DepthStencilState} (the stencil two-pass was removed).
  */
 public final class GlintPipelines {
     private GlintPipelines() {}

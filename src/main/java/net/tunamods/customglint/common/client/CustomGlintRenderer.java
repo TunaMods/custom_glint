@@ -59,7 +59,7 @@ import net.tunamods.customglint.common.CustomGlint.Layer;
  * {@link CustomGlint}.
  *
  * <p>On 26.1 the GPU state is built on {@link GlintPipelines} (immutable RenderPipeline /
- * RenderSetup / StencilTest) instead of the 1.20-era {@code RenderStateShard}/{@code CompositeState}
+ * RenderSetup) instead of the 1.20-era {@code RenderStateShard}/{@code CompositeState}
  * model. Per-RenderType color rides the vertex color (callers inject it via a color-overriding
  * VertexConsumer); animation rides a {@link net.minecraft.client.renderer.rendertype.TextureTransform}
  * supplier.
@@ -893,7 +893,7 @@ public final class CustomGlintRenderer {
     /**
      * Glint for a block-model entity layer (mooshroom mushrooms, snow-golem pumpkin). Mirrors
      * {@link #forGlint}'s flat-item path, block parts carry block-atlas UVs, so the same atlas-calibrated
-     * scale applies, but builds on {@link GlintPipelines#GLINT_OVERLAY} (LEQUAL depth) + VIEW_OFFSET_Z. The
+     * scale applies, but builds on {@link GlintPipelines#GLINT_BLOCK} (LEQUAL depth) + VIEW_OFFSET_Z. The
      * block is drawn by a DIFFERENT pipeline, so EQUAL would flicker against its depth; LEQUAL + a toward-camera
      * bias sits the glint just in front instead. Emitted via {@code submitCustomGeometry} by
      * {@link EntityGlintRender#submitBlockLayerGlintGlow}.
