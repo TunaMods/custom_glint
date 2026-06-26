@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "I": "minecraft:iron_block",
+    "C": "minecraft:crafting_table",
+    "G": "customglint:glint_trim",
+    "S": "minecraft:smithing_table"
+  },
+  "pattern": [
+    "III",
+    "CGS",
+    "III"
+  ],
+  "result": {
+    "id": "customglint:glint_table"
+  }
+}
