@@ -110,13 +110,20 @@ public class GlintTrimItem extends Item {
         int seed = c.seed();
         if (CustomGlint.isChromatic(pattern) && seed == 0) seed = rollSeed();
         setCfg(stack, new ModComponents.TrimConfig(Optional.of(pattern), c.colors(), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), seed));
+        applyModelData(stack, pattern);
+        int[] colors = getColors(stack);
+        CustomGlint.write(stack, pattern, writeColors(pattern, colors), getSpeed(stack), true, getScale(stack), false, getScrollDir(stack), getScrollOffset(stack), seed);
+    }
+
+    /** Sets the vanilla CustomModelData index from the trim's design + current glowing flag (the glowing
+     *  variant sits at +1000). Shared by {@link #setPattern} and {@link #setGlowing}'s multi-layer branch,
+     *  which must update the model index WITHOUT rewriting the (possibly multi-layer) preview glint Data. */
+    private static void applyModelData(ItemStack stack, Identifier pattern) {
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
         if (idx >= 0) stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(
                 List.of((float) ((isGlowing(stack) ? 1000 : 0) + idx + 1)),
                 List.of(), List.of(), List.of()));
-        int[] colors = getColors(stack);
-        CustomGlint.write(stack, pattern, writeColors(pattern, colors), getSpeed(stack), true, getScale(stack), false, getScrollDir(stack), getScrollOffset(stack), seed);
     }
 
     public static int[] getColors(ItemStack stack) {
@@ -191,7 +198,16 @@ public class GlintTrimItem extends Item {
         ModComponents.TrimConfig c = cfg(stack);
         setCfg(stack, new ModComponents.TrimConfig(c.pattern(), c.colors(), c.speed(), c.scale(), c.scroll(), c.offset(), glowing, c.seed()));
         Identifier pattern = getPattern(stack);
-        if (pattern != null) setPattern(stack, pattern);
+        if (pattern == null) return;
+        CustomGlint.Data preview = CustomGlint.read(stack);
+        if (preview == null || preview.layers().length <= 1) {
+            setPattern(stack, pattern); // single-layer: full rewrite (model index + preview Data)
+        } else {
+            // Multi-layer preview (e.g. /glint extract then a glow-craft): only flip the model index. A full
+            // setPattern would single-layer-rewrite the glint Data and silently drop layers 1..n; mirror the
+            // preview.layers().length <= 1 guard that setSpeed/setScale/setScrollDir/setScrollOffset use.
+            applyModelData(stack, pattern);
+        }
     }
 
     public static float getScale(ItemStack stack) {
