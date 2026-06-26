@@ -5,8 +5,8 @@ NBT-driven per-item animated enchantment glints. Source lives on a branch per ga
 | MC | Loader | Branch | Maven (`mcmodsrepo`) | Changelog |
 |---|---|---|---|---|
 | 1.20.1 | Forge 47.x | [`1.20.1`](https://github.com/TunaMods/custom_glint/tree/1.20.1) | `.../custom_glint/1.20.1/mcmodsrepo` | [changelog-1.20.1.txt](changelog-1.20.1.txt) |
-| 1.21.1 | NeoForge 21.x | [`1.21.1`](https://github.com/TunaMods/custom_glint/tree/1.21.1) | `.../custom_glint/1.21.1/mcmodsrepo` | [changelog-1.21.1.txt](changelog-1.21.1.txt) |
-| 26.1.2 | NeoForge 26.1.x | [`26.1.2`](https://github.com/TunaMods/custom_glint/tree/26.1.2) | `.../custom_glint/26.1.2/mcmodsrepo` | [changelog-26.1.2.txt](changelog-26.1.2.txt) |
+| 1.21.1 | NeoForge 21.1.233 | [`1.21.1`](https://github.com/TunaMods/custom_glint/tree/1.21.1) | `.../custom_glint/1.21.1/mcmodsrepo` | [changelog-1.21.1.txt](changelog-1.21.1.txt) |
+| 26.1.2 | NeoForge 26.1.2.76 | [`26.1.2`](https://github.com/TunaMods/custom_glint/tree/26.1.2) | `.../custom_glint/26.1.2/mcmodsrepo` | [changelog-26.1.2.txt](changelog-26.1.2.txt) |
 
 Maven base: `https://raw.githubusercontent.com/TunaMods/custom_glint/<branch>/mcmodsrepo`
 
