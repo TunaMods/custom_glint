@@ -4,10 +4,13 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.constants.VanillaTypes;
+import mezz.jei.api.gui.builder.IIngredientAcceptor;
+import mezz.jei.api.recipe.category.extensions.vanilla.smithing.ISmithingCategoryExtension;
 import mezz.jei.api.recipe.vanilla.IJeiShapedRecipeBuilder;
 import mezz.jei.api.recipe.vanilla.IVanillaRecipeFactory;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
+import mezz.jei.api.registration.IVanillaCategoryExtensionRegistration;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -57,6 +60,13 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
+    }
+
+    @Override
+    public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
+        // JEI's smithing category fills its slots from the recipe's item-only Ingredients, so the template
+        // slot would show an undesigned trim. This extension feeds the actual colored trim and glinted result.
+        registration.getSmithingCategory().addExtension(GlintSmithingDisplay.class, new GlintSmithingExtension());
     }
 
     @Override
@@ -153,8 +163,10 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     private void addTear(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                          boolean simultaneous, Identifier design, int[] colors) {
+        // A tear flips the render mode: the simultaneous tear takes a sequential trim and outputs a
+        // simultaneous one (and vice versa). Input is the opposite mode, output is the tear's mode.
         ItemStack tear = (simultaneous ? ModItems.GLINT_TEAR_SIMULTANEOUS : ModItems.GLINT_TEAR_SEQUENTIAL).get().getDefaultInstance();
-        craft(out, f, id, trim(design, colors), tear, trim(design, colors));
+        craft(out, f, id, trimMode(design, colors, simultaneous), tear, trimMode(design, colors, !simultaneous));
     }
 
     private void addDye(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
@@ -171,20 +183,34 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     private void addDuplicate(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                               Identifier design, int color) {
-        ItemStack result = trim(design, new int[]{color});
+        // Mirrors GlintTrimDuplicateRecipe: trim in the center, glowstone dust below it, diamonds elsewhere.
+        ItemStack trim = trim(design, new int[]{color});
+        ItemStack result = trim.copy();
         result.setCount(2);
-        craft(out, f, id, result, trim(design, new int[]{color}));
+        ItemStack d = new ItemStack(Items.DIAMOND);
+        ItemStack g = new ItemStack(Items.GLOWSTONE_DUST);
+        craft(out, f, id, result, d, d, d, d, trim, d, d, g, d);
     }
 
     private void addLayer(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                           Identifier d1, int c1, Identifier d2, int c2) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, d1);
-        CustomGlint.write(result, new CustomGlint.Layer[]{
-            new CustomGlint.Layer(d1, new int[]{c1}, 1.0f, true, 1.0f, false, 0, 0.0f),
-            new CustomGlint.Layer(d2, new int[]{c2}, 1.0f, true, 1.0f, false, 0, 0.0f)
-        });
-        craft(out, f, id, result, ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance(), trim(d1, new int[]{c1}), trim(d2, new int[]{c2}));
+        // Mirrors GlintLayerTearRecipe.assemble: copy the first trim (keeping its config/colors/tooltip) and
+        // overwrite its glint Data with both trims' layers combined. Building a bare trim instead leaves an
+        // empty TrimConfig, which renders static and tooltips as "no color or data".
+        ItemStack trim1 = trim(d1, new int[]{c1});
+        ItemStack trim2 = trim(d2, new int[]{c2});
+        CustomGlint.Data data1 = CustomGlint.read(trim1);
+        CustomGlint.Data data2 = CustomGlint.read(trim2);
+        int total = Math.min(data1.layers().length + data2.layers().length, 8);
+        CustomGlint.Layer[] combined = new CustomGlint.Layer[total];
+        int fromD1 = Math.min(data1.layers().length, total);
+        System.arraycopy(data1.layers(), 0, combined, 0, fromD1);
+        int fromD2 = total - fromD1;
+        if (fromD2 > 0) System.arraycopy(data2.layers(), 0, combined, fromD1, fromD2);
+        ItemStack result = trim1.copy();
+        result.setCount(1);
+        CustomGlint.write(result, combined);
+        craft(out, f, id, result, ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance(), trim1, trim2);
     }
 
     private void addBlackTear(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
@@ -213,15 +239,56 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     private void addSmithing(List<RecipeHolder<SmithingRecipe>> out, String id,
                              Identifier design, int[] colors, Item base, boolean simultaneous) {
+        ItemStack trim = trim(design, colors);
         ItemStack result = new ItemStack(base);
         CustomGlint.write(result, design, colors, 1.0f, true, 1.0f, simultaneous);
-        SmithingTransformRecipe recipe = new SmithingTransformRecipe(
-            new Recipe.CommonInfo(true),
-            Optional.of(Ingredient.of(ModItems.GLINT_TRIM.get())),
-            Ingredient.of(base),
-            Optional.of(Ingredient.of(Items.GLOWSTONE_DUST)),
-            ItemStackTemplate.fromNonEmptyStack(result));
-        out.add(new RecipeHolder<SmithingRecipe>(key(id), recipe));
+        out.add(new RecipeHolder<SmithingRecipe>(key(id), new GlintSmithingDisplay(trim, base, result)));
+    }
+
+    /**
+     * Smithing display carrying the colored trim and glinted result for the {@link GlintSmithingExtension}
+     * to render. It is a real {@link SmithingTransformRecipe} so JEI routes it through the smithing category;
+     * the extension overrides the slots, since the category otherwise fills them from item-only Ingredients.
+     */
+    private static final class GlintSmithingDisplay extends SmithingTransformRecipe {
+        private final ItemStack trimStack;
+        private final Item baseItem;
+        private final ItemStack resultStack;
+
+        GlintSmithingDisplay(ItemStack trimStack, Item baseItem, ItemStack resultStack) {
+            super(new Recipe.CommonInfo(true),
+                Optional.of(Ingredient.of(ModItems.GLINT_TRIM.get())),
+                Ingredient.of(baseItem),
+                Optional.of(Ingredient.of(Items.GLOWSTONE_DUST)),
+                ItemStackTemplate.fromNonEmptyStack(resultStack));
+            this.trimStack = trimStack;
+            this.baseItem = baseItem;
+            this.resultStack = resultStack;
+        }
+    }
+
+    /** Feeds the colored trim into the template slot and the glinted item into the output slot, instead of
+     *  the item-only Ingredients the default smithing category would render. */
+    private static final class GlintSmithingExtension implements ISmithingCategoryExtension<GlintSmithingDisplay> {
+        @Override
+        public <T extends IIngredientAcceptor<T>> void setTemplate(GlintSmithingDisplay recipe, T acceptor) {
+            acceptor.add(recipe.trimStack);
+        }
+
+        @Override
+        public <T extends IIngredientAcceptor<T>> void setBase(GlintSmithingDisplay recipe, T acceptor) {
+            acceptor.add(new ItemStack(recipe.baseItem));
+        }
+
+        @Override
+        public <T extends IIngredientAcceptor<T>> void setAddition(GlintSmithingDisplay recipe, T acceptor) {
+            acceptor.add(new ItemStack(Items.GLOWSTONE_DUST));
+        }
+
+        @Override
+        public <T extends IIngredientAcceptor<T>> void setOutput(GlintSmithingDisplay recipe, T acceptor) {
+            acceptor.add(recipe.resultStack);
+        }
     }
 
     // ---- helpers --------------------------------------------------------------------------------
@@ -231,6 +298,24 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ItemStack s = new ItemStack(ModItems.GLINT_TRIM.get());
         GlintTrimItem.setPattern(s, design);
         if (colors.length > 0) GlintTrimItem.setColors(s, colors);
+        return s;
+    }
+
+    /** A Glint Trim in the given render mode. Mirrors GlintTearApplyRecipe: build a (sequential) trim, then
+     *  rewrite its layers with the requested simultaneous flag, which the standard setters never set true. */
+    private static ItemStack trimMode(Identifier design, int[] colors, boolean simultaneous) {
+        ItemStack s = trim(design, colors);
+        CustomGlint.Data data = CustomGlint.read(s);
+        if (data != null) {
+            CustomGlint.Layer[] src = data.layers();
+            CustomGlint.Layer[] out = new CustomGlint.Layer[src.length];
+            for (int i = 0; i < src.length; i++) {
+                CustomGlint.Layer l = src[i];
+                out[i] = new CustomGlint.Layer(l.design(), l.colors(), l.speed(), l.interpolate(), l.patternScale(),
+                    simultaneous, l.scrollDir(), l.scrollOffset(), l.seed());
+            }
+            CustomGlint.write(s, out);
+        }
         return s;
     }
 
