@@ -12,6 +12,8 @@
 - Fixed the wand editor's glint-import search box not filtering the list
 - The 16 named glint colors now match Minecraft's dye colors exactly
 - The Glint Table and wand editor are now fully translatable, with Spanish included
+- Fixed making a multi-layer trim glow dropping all but its first glint layer
+- Depositing a trim into the Glint Table no longer destroys it when the design or print is already in your library or the library is full
 
 [Compat]
 - Compatible with Iris Shaders
