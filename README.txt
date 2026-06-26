@@ -5,7 +5,7 @@ Minecraft 26.1.2 / NeoForge 26.1.2 - MIT license (attribution required)
 Per-item animated enchantment glint with color, timing, and scale control. Works
 on held items, armor, elytra, horse armor, and any LivingEntity. Glints can also
 project a colored glow outline through the "glowing" flag. Component-driven;
-57 built-in designs (including a procedural chromatic one), extensible via data
+56 built-in designs (including a procedural chromatic one), extensible via data
 packs.
 
 
@@ -201,12 +201,12 @@ PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK. Custom hex via
 CustomGlint.color("FFD700"). The alpha byte is a brightness multiplier
 (0xFF full, 0x00 invisible); blend mode is additive.
 
-Designs: 57 Identifier constants on CustomGlint (e.g. WAVE, SPARKLE, AURORA),
+Designs: 56 Identifier constants on CustomGlint (e.g. WAVE, SPARKLE, AURORA),
 including CHROMATIC - a procedural animated oil-slick that blends up to 8 colors
 in-shader (give it a colors array like any other design). Iterate with
 CustomGlint.PATTERNS.
 
-Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (57).
+Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (56).
 
 
 ================================================================================
