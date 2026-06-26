@@ -179,11 +179,13 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return false;
     }
 
-    /** Records one finished painted trim into the player's printed library (deduped, capped at 128) + syncs. */
-    private static void storePrinted(ServerPlayer sp, ItemStack trim) {
+    /** Records one finished painted trim into the player's printed library (deduped, capped at 128) + syncs.
+     *  Returns true only if it actually stored: false on a dedup hit or at the cap, so deposit callers can
+     *  leave the physical trim in place instead of consuming it for nothing. */
+    private static boolean storePrinted(ServerPlayer sp, ItemStack trim) {
         List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
-        for (ItemStack s : list) if (ItemStack.isSameItemSameComponents(s, trim)) return; // already have this config
-        if (list.size() >= 128) return;
+        for (ItemStack s : list) if (ItemStack.isSameItemSameComponents(s, trim)) return false; // already have this config
+        if (list.size() >= 128) return false;
         ItemStack one = trim.copy();
         one.setCount(1);
         List<ItemStack> updated = new ArrayList<>();
@@ -191,6 +193,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         updated.add(one);
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
+        return true;
     }
 
     /**
@@ -427,14 +430,15 @@ public class GlintTableMenu extends AbstractContainerMenu {
     private static final int MAX_STORED_DESIGNS = 128;
 
     /** Records a single design into the player's storage library (the scrollable grid) and syncs it. */
-    private static void storeDesign(ServerPlayer sp, String name) {
+    private static boolean storeDesign(ServerPlayer sp, String name) {
         List<String> stored = sp.getData(ModAttachments.STORED_DESIGNS.get());
-        if (stored.contains(name) || stored.size() >= MAX_STORED_DESIGNS) return;
+        if (stored.contains(name) || stored.size() >= MAX_STORED_DESIGNS) return false;
         // Copy before mutating, the decoded attachment list is immutable (see slotsChanged).
         List<String> updated = new ArrayList<>(stored);
         updated.add(name);
         sp.setData(ModAttachments.STORED_DESIGNS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+        return true;
     }
 
     /** Mod-palette RGB (no alpha) for a dye, or -1 for none. DyeColor is a non-extensible vanilla enum with
@@ -525,9 +529,11 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (!(player instanceof ServerPlayer sp)) return;
         ItemStack carried = getCarried();
         if (carried.isEmpty() || !isAnyTrim(carried)) return;
-        if (isPainted(carried)) storePrinted(sp, carried);
-        else if (designName(carried) != null) storeDesign(sp, designName(carried));
+        boolean stored;
+        if (isPainted(carried)) stored = storePrinted(sp, carried);
+        else if (designName(carried) != null) stored = storeDesign(sp, designName(carried));
         else return;
+        if (!stored) return; // already in the library (or library full): keep the trim, don't consume it
         carried.shrink(1);
         setCarried(carried);
     }
@@ -590,10 +596,13 @@ public class GlintTableMenu extends AbstractContainerMenu {
             // Player inventory -> library: a painted (colored/glow) trim deposits its full config into
             // the right "printed" library; an empty (colorless) trim deposits its design into the left
             // palette. Either way one trim is consumed; this bypasses the build slots.
+            // Consume the physical trim ONLY if the bank actually recorded it; a dedup hit or a full library
+            // leaves the trim in the player's inventory instead of destroying it.
+            boolean stored = true;
             if (player instanceof ServerPlayer sp) {
-                if (isPainted(stack)) storePrinted(sp, stack);
-                else storeDesign(sp, designName(stack));
+                stored = isPainted(stack) ? storePrinted(sp, stack) : storeDesign(sp, designName(stack));
             }
+            if (!stored) return ItemStack.EMPTY; // leave the trim, no consumption
             stack.shrink(1);
             if (stack.isEmpty()) slot.set(ItemStack.EMPTY);
             else slot.setChanged();
