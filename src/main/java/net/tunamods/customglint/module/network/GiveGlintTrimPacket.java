@@ -3,6 +3,7 @@ package net.tunamods.customglint.module.network;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlintWandItem;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -61,6 +62,15 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
     public static void handle(GiveGlintTrimPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer player)) return;
+            // Server-authoritative gate. The give-trim button is reached only through the wand editor, and
+            // the wand is creative/command-only (no recipe). The packet is client-sent, so re-verify the
+            // player actually holds the wand before minting a finished trim; without this a modified client
+            // could send the packet with no wand and get free painted trims. (Mirrors GlintApplyPacket's
+            // gate; that path also requires creative because it can spawn ARBITRARY items, while this one
+            // only ever produces a craftable Glint Trim.)
+            boolean holdingWand = player.getMainHandItem().getItem() instanceof GlintWandItem
+                    || player.getOffhandItem().getItem() instanceof GlintWandItem;
+            if (!holdingWand) return;
 
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
