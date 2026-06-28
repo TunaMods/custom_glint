@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "customglint:block/glint_table_forge_front",
+    "down": "customglint:block/glint_table_forge_bottom",
+    "up": "customglint:block/glint_table_forge_top",
+    "north": "customglint:block/glint_table_forge_front",
+    "east": "customglint:block/glint_table_forge_side",
+    "south": "customglint:block/glint_table_forge_side",
+    "west": "customglint:block/glint_table_forge_side"
+  }
+}
