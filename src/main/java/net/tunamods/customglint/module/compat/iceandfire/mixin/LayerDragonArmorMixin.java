@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import com.llamalad7.mixinextras.sugar.Local;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -44,8 +45,9 @@ import java.util.List;
  * immediately before each part draw). The body shares the dragon model, so an EQUAL-depth glint
  * would cover every face — instead the glint uses {@link CustomGlintRenderer#forArmorGlint},
  * which masks to each part's armor texture cutout via EQUAL depth against the armorCutoutNoCull
- * base draw (no stencil). The outline is the generic post-process silhouette from
- * {@link CustomGlintRenderer#doModelOutline}.
+ * base draw (no stencil). The glow outline is teed here per part: CE's DragonArmorFeatureRenderer
+ * renders outside any vanilla layer, so the generic in-phase tee never reaches it and we capture the
+ * silhouette explicitly.
  *
  * <p>Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET — first stack with a custom glint
  * wins, resolved once at HEAD and reused for every part (the per-part texture mask is what keeps
@@ -58,6 +60,8 @@ public class LayerDragonArmorMixin {
     private static final ThreadLocal<ResourceLocation> CG_TEX = new ThreadLocal<>();
     private static final ThreadLocal<CustomGlint.Data> CG_GLINT = new ThreadLocal<>();
     private static final ThreadLocal<ItemStack> CG_ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<LivingEntity> CG_ENTITY = new ThreadLocal<>();
+    private static final ThreadLocal<Integer> CG_GLOW = new ThreadLocal<>(); // null = no glow; else ARGB
     private static final EquipmentSlot[] CG_SLOTS = {
             EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
     };
@@ -81,11 +85,19 @@ public class LayerDragonArmorMixin {
             @Coerce LivingEntity entity, float a, float b, float c, float d, float e, float f, CallbackInfo ci) {
         CG_GLINT.remove();
         CG_ACTIVE.remove();
+        CG_ENTITY.remove();
+        CG_GLOW.remove();
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
+        CG_ENTITY.set(entity);
         for (EquipmentSlot s : CG_SLOTS) {
             ItemStack stack = entity.getItemBySlot(s);
-            CustomGlint.Data dat = CustomGlint.read(stack);
-            if (dat != null) { CG_ACTIVE.set(stack); CG_GLINT.set(dat); break; }
+            if (CG_GLINT.get() == null) {
+                CustomGlint.Data dat = CustomGlint.read(stack);
+                if (dat != null) { CG_ACTIVE.set(stack); CG_GLINT.set(dat); }
+            }
+            if (CG_GLOW.get() == null && CustomGlint.hasGlowEffect(stack)) {
+                CG_GLOW.set(CustomGlintRenderer.resolveGlowColor(stack));
+            }
         }
     }
 
@@ -115,10 +127,26 @@ public class LayerDragonArmorMixin {
         // texture's own alpha cutout) instead of the stencil mask. Non-glinted dragons: flush ==
         // buffer and the offset is sub-pixel, so this is visually identical to before.
         VertexConsumer base = (tex != null) ? flush.getBuffer(RenderType.armorCutoutNoCull(tex)) : consumer;
-        model.renderToBuffer(pose, base, light, overlay, color);
+
+        // Glow outline: tee THIS part's base draw so the silhouette is captured in the SAME model walk that
+        // draws it (alpha-discard against the part's own texture → only this part's texels). Keyed CAT_ARMOR
+        // + the dragon's id so every part + the dragon body compose as ONE ring. CE's DragonArmorFeatureRenderer
+        // renders outside any vanilla layer, so the generic tee never reaches it. The tee (not a second
+        // renderToBuffer) is required: IaF dragon models re-evaluate their animation during the draw walk, so a
+        // separate re-render lands on a slightly different pose and the ring lags the body's animation.
+        EntityGlintRender.OutlineSpec spec = null;
+        if (tex != null && !CustomGlintRenderer.IN_OUTLINE.get()) {
+            Integer glowColor = CG_GLOW.get();
+            LivingEntity ent = CG_ENTITY.get();
+            if (glowColor != null && ent != null) {
+                spec = new EntityGlintRender.OutlineSpec(ent, tex, glowColor, GlowOutlineRenderer.CAT_ARMOR, 0);
+            }
+        }
+        EntityGlintRender.teeOutline5(model, pose, base, light, overlay, color, spec);
 
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
         if (tex == null) return;
+
         ItemStack active = CG_ACTIVE.get();
         if (active == null) return;
         CustomGlint.Data glint = CG_GLINT.get();
@@ -133,7 +161,7 @@ public class LayerDragonArmorMixin {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
-                int[] colors = layers[li].colors();
+                int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
                 if (layers[li].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;
@@ -171,5 +199,7 @@ public class LayerDragonArmorMixin {
         CG_TEX.remove();
         CG_GLINT.remove();
         CG_ACTIVE.remove();
+        CG_ENTITY.remove();
+        CG_GLOW.remove();
     }
 }

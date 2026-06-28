@@ -14,26 +14,59 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Intercepts ElytraLayer.render at RETURN to draw custom glint and (if glowing) capture the elytra silhouette for the post-process outline.
- * Elytra uses armorCutoutNoCull (VIEW_OFFSET_Z_LAYERING), so forArmorGlint works correctly here.
- * Vanilla pops the pose before returning, so the inject re-applies the (0, 0, 0.125) elytra offset.
+ * Two hooks on {@code ElytraLayer.render}:
+ *  1. {@link Redirect} on the vanilla elytra {@code renderToBuffer} — the IN-PHASE glow TEE. The elytra
+ *     wings are drawn once by vanilla (inside its {@code translate(0,0,0.125)} push/pop); we route that
+ *     single walk through a recording consumer to capture the glow silhouette in place, instead of a second
+ *     re-render. Keyed by the elytra STACK so it keeps its own ring. No-op capture when not glowing.
+ *  2. {@link Inject} at RETURN — draws the custom GLINT (vanilla doesn't), re-applying the 0.125 offset.
+ * Both honor vanilla's {@code shouldRender} so a Mekanism-style subclass layer doesn't double-draw.
  */
 @Mixin(ElytraLayer.class)
 public class ElytraLayerMixin {
 
     @Shadow private ElytraModel<?> elytraModel;
 
-    /** Injects at RETURN of render. */
+    // ── in-phase glow tee on the vanilla elytra draw ──────────────────────────
+
+    @Redirect(
+        method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFF)V",
+        at = @At(value = "INVOKE",
+                 target = "Lnet/minecraft/client/model/ElytraModel;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;II)V"),
+        require = 0, remap = false
+    )
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void cg_teeElytraOutline_named(ElytraModel model, PoseStack pose, VertexConsumer vc, int light,
+            int overlay, PoseStack pose2, MultiBufferSource buffer, int packedLight, LivingEntity entity,
+            float limbSwing, float limbSwingAmount, float partialTick, float ageInTicks, float netHeadYaw,
+            float headPitch) {
+        EntityGlintRender.OutlineSpec spec = null;
+        ItemStack stack = entity.getItemBySlot(EquipmentSlot.CHEST);
+        if (!entity.isInvisible() && !stack.isEmpty() && CustomGlint.hasGlowEffect(stack)) {
+            ResourceLocation tex = ((ElytraLayer) (Object) this).getElytraTexture(stack, entity);
+            if (tex != null) {
+                spec = new EntityGlintRender.OutlineSpec(stack, tex, CustomGlintRenderer.resolveGlowColor(stack),
+                        GlowOutlineRenderer.CAT_ARMOR, 1);
+            }
+        }
+        EntityGlintRender.teeOutline4(model, pose, vc, light, overlay, spec);
+    }
+
+    // ── custom glint draw at RETURN ───────────────────────────────────────────
+
     @Inject(
         method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/LivingEntity;FFFFFF)V",
         at = @At("RETURN"), require = 0, remap = false
@@ -53,47 +86,46 @@ public class ElytraLayerMixin {
         ItemStack stack = entity.getItemBySlot(EquipmentSlot.CHEST);
         if (stack.isEmpty()) return;
         // Honor the layer's own shouldRender so subclass layers (e.g. Mekanism's MekanismElytraLayer,
-        // which only renders HDPE elytra) don't double-draw glint/outline on a vanilla elytra.
+        // which only renders HDPE elytra) don't double-draw glint on a vanilla elytra.
         if (!((ElytraLayer)self).shouldRender(stack, entity)) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
-        boolean glowing = CustomGlint.isGlowing(stack);
-        if (glint == null && !glowing) return;
+        if (glint == null) return; // glow outline is captured by the in-phase tee redirect above
 
-        VertexConsumer combined = null;
-        if (glint != null) {
-            CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+        CustomGlint.Layer[] layers = glint.layers();
+        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
-            List<VertexConsumer> list = new ArrayList<>();
-            for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                int[] colors = layers[layerIdx].colors();
-                if (layers[layerIdx].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
-                    }
-                } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
+        List<VertexConsumer> list = new ArrayList<>();
+        for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+            if (CustomGlint.isChromatic(layers[layerIdx])) {
+                RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                if (crt != null) list.add(buffer.getBuffer(crt));
+                continue;
+            }
+            int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
+            if (layers[layerIdx].simultaneous()) {
+                for (int i = 0; i < colors.length; i++) {
+                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
+                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
+                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
-            }
-            if (!list.isEmpty()) {
-                combined = list.size() == 1 ? list.get(0)
-                        : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+            } else {
+                int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                float a = ((color >> 24) & 0xFF) / 255.0f;
+                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+                buf[2] = ( color        & 0xFF) / 255.0f * a;
+                buf[3] = 1.0f;
+                RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }
-        if (combined == null) return;
+        if (list.isEmpty()) return;
+        VertexConsumer combined = list.size() == 1 ? list.get(0)
+                : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
         // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset.
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);

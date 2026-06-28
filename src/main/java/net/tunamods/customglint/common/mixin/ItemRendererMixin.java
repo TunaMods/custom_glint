@@ -3,12 +3,14 @@ package net.tunamods.customglint.common.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import java.util.ArrayList;
-import java.util.List;
-import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.entity.ItemRenderer;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
@@ -17,11 +19,15 @@ import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Intercepts render() to capture item stack + trigger glowing outline; intercepts getFoilBuffer/getFoilBufferDirect to inject custom per-item glint. */
 @Mixin(ItemRenderer.class)
@@ -40,11 +46,9 @@ public class ItemRendererMixin {
         cg_onRenderHead(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pCombinedOverlay, pModel);
     }
 
-    /** HEAD logic: capture the stack, and for glowing GUI items inject the 4-direction halo BEFORE
-     *  the actual item renders so the real item naturally overdraws the overlap and only the +/- 1
-     *  GUI-pixel ring remains. The recursive renders run through this mixin again and will clear
-     *  CURRENT_ITEM_STACK on each inner RETURN; re-set it after so the outer body's getFoilBuffer
-     *  (for glint) still sees the stack. */
+    /** HEAD logic: capture the stack being rendered so the getFoilBuffer intercepts below can read its
+     *  glint Data. The matching RETURN inject clears it. (The glow-outline capture happens at RETURN in
+     *  cg_captureGlowOutline, not here.) */
     private static void cg_onRenderHead(ItemStack stack, ItemDisplayContext ctx, boolean lh,
             PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
         CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
@@ -98,9 +102,9 @@ public class ItemRendererMixin {
 
     /** Returns a VertexMultiConsumer combining all glint layers + base renderType, or null if no glint. */
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
-        // During our stencil/translate outline passes, route all foil requests to the bare base
-        // buffer. Otherwise vanilla's getFoilBuffer returns a VertexMultiConsumer of (glint, base)
-        // — and because our outline MultiBufferSource lambdas redirect every RenderType to the
+        // During our record-only glow-outline capture re-render, route all foil requests to the
+        // bare base buffer. Otherwise vanilla's getFoilBuffer returns a VertexMultiConsumer of
+        // (glint, base) — and because the capturing buffer source redirects every RenderType to the
         // same underlying builder, the two delegates would share one builder and tear its vertex
         // state (vertex,vertex,color,color,...,endVertex,endVertex). Items that hardcode
         // isFoil()=true (e.g. Ice & Fire's ItemAlchemySword — dragonbone_sword_fire/ice/lightning)
@@ -116,7 +120,17 @@ public class ItemRendererMixin {
 
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-            int[] colors = layers[layerIdx].colors();
+            // Procedural chromatic: one shader-driven draw (the palette + seed ride the RenderType), no
+            // per-colour fan-out and no texture sampling.
+            if (CustomGlint.isChromatic(layers[layerIdx])) {
+                RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
+                if (crt != null) list.add(buffer.getBuffer(crt));
+                continue;
+            }
+            // An undyed (empty-palette) non-chromatic layer renders white so the design stays visible without
+            // any dye being stored. The animated branch already returns white for empty; default here for the
+            // simultaneous fan-out so it draws one white pass instead of nothing.
+            int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
@@ -140,32 +154,50 @@ public class ItemRendererMixin {
         }
         if (list.isEmpty()) return null;
         list.add(buffer.getBuffer(renderType));
-        return VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+        // De-dupe delegates by identity. Some buffer sources — notably the GUI immediate source under Sodium,
+        // hit by the multi-layer Glint Table preview — hand back the SAME builder for more than one of our
+        // RenderTypes, and VertexMultiConsumer rejects duplicate delegates ("Duplicate delegates" crash).
+        // One builder can't be multiplexed against itself anyway, so collapsing duplicates is correct; the
+        // world path returns distinct fixed buffers, so this is a no-op there.
+        List<VertexConsumer> distinct = new ArrayList<>(list.size());
+        for (VertexConsumer vc : list) {
+            boolean dup = false;
+            for (VertexConsumer seen : distinct) if (seen == vc) { dup = true; break; }
+            if (!dup) distinct.add(vc);
+        }
+        return distinct.size() == 1 ? distinct.get(0)
+                : VertexMultiConsumer.create(distinct.toArray(new VertexConsumer[0]));
     }
 
     // ── Glow-outline capture ─────────────────────────────────────────────────
-    // For glowing items rendered in the world (third-person held, dropped, frames, other players),
-    // snapshot the item's silhouette (its baked quads + camera-relative pose + light + animated glow
-    // colour) so GlowOutlineRenderer can replay it into the mask and ring it at AFTER_WEATHER. GUI flat
-    // icons, the first-person hand (separate hand-FOV projection), and BEWLR items (trident/shield) are
-    // not wired in this milestone.
+    // For glowing items, snapshot the item's silhouette (its baked quads + camera-relative pose + light +
+    // animated glow colour) so GlowOutlineRenderer can replay it into the mask and ring it. World items
+    // (third-person held, dropped, frames, other players) queue for the AFTER_WEATHER drain; the
+    // first-person held item queues for the hand-pass drain (drainHeldFp). GUI / inventory / HUD icons are
+    // captured in GUI screen space and drained immediately (drainGui) while the GUI ortho matrices are live.
     private static void cg_captureGlowOutline(ItemStack stack, ItemDisplayContext ctx, boolean leftHand,
             PoseStack pose, int light, BakedModel model) {
-        if (ctx == ItemDisplayContext.GUI
-                || ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
-                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND) {
-            return;
-        }
-        if (model == null || model.isCustomRenderer()) return;
-        if (!CustomGlint.isGlowing(stack) && !CustomGlint.hasGlowColors(stack)) return;
+        // Guard against re-entry from our own special-item re-render (renderStatic below runs render()
+        // again, whose RETURN re-enters this method).
+        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
+        boolean gui = ctx == ItemDisplayContext.GUI;
+        boolean firstPerson = ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
+        if (model == null) return;
+        if (!CustomGlint.hasGlowEffect(stack)) return;
 
-        int color;
-        int[] glowColors = CustomGlint.getGlowColors(stack);
-        if (glowColors.length > 0) {
-            color = CustomGlintRenderer.computeAnimatedGlowColor(glowColors);
-        } else {
-            CustomGlint.Data glint = CustomGlint.read(stack);
-            color = glint != null ? CustomGlintRenderer.computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
+        int color = CustomGlintRenderer.resolveGlowColor(stack);
+        // GUI-only icon anchor (slot centre + on-screen size + texture resolution) for the drain's ring
+        // sizing + slot clamp; null for world / first-person (they scissor by silhouette bounds).
+        float[] guiAnchor = gui ? cg_guiAnchor(pose, model) : null;
+
+        // Special / 3D BEWLR items (trident, shield, any isCustomRenderer item) have no baked quads.
+        // Re-render the whole item through renderStatic into a record-only buffer (IN_OUTLINE guards
+        // recursion + suppresses the glint fan-out), capturing its animated, already-transformed
+        // geometry — the proven approach from the pre-purge doItemOutline/doBewlrOutline path.
+        if (model.isCustomRenderer()) {
+            cg_captureSpecialOutline(stack, ctx, leftHand, pose, light, color, guiAnchor);
+            return;
         }
 
         // render() pushed the pose, applied the item's display transform (handleCameraTransforms ->
@@ -186,7 +218,65 @@ public class ItemRendererMixin {
         List<BakedQuad> quads = cg_collectQuads(rendered, null);
         if (quads.isEmpty()) return;
 
-        GlowOutlineRenderer.queueWorldItem(quads, tp.last().copy(), light, color);
+        if (gui) {
+            // Capture in GUI screen space; the ring is drained at GuiGraphics.flush() RETURN (GuiGraphicsMixin)
+            // so it composites AFTER the icon + its slot background are flushed to the main target, while
+            // RenderSystem still holds the GUI ortho projection / modelview the icon was drawn under. The
+            // OUTER pose translation is the icon's slot centre (GuiGraphics translated to it before the
+            // display transform), and its x-axis scale is the icon's on-screen size (16 GUI px in a slot,
+            // 5x that in the wand preview). Pass both so the drain sizes + clamps the ring to the real icon.
+            GlowOutlineRenderer.queueGuiItem(quads, tp.last().copy(), light, color, guiAnchor);
+        } else if (firstPerson) {
+            GlowOutlineRenderer.queueHeldFpItem(quads, tp.last().copy(), light, color);
+        } else {
+            GlowOutlineRenderer.queueWorldItem(quads, tp.last().copy(), light, color);
+        }
+    }
+
+    /** Capture a special / 3D BEWLR item's silhouette by re-rendering it through renderStatic into a
+     *  record-only buffer. {@code pose} is the OUTER pose at render() RETURN; renderStatic re-applies the
+     *  display transform, so the recorded positions are camera-relative and already include the item's
+     *  animation (it lives in the pose the model draws under). IN_OUTLINE prevents recursion and makes
+     *  applyGlint route to the bare (recording) buffer instead of fanning out glint layers.
+     *
+     *  <p>The capture buckets vertices by the texture each RenderType draws through, so the silhouette traces
+     *  the item's REAL shape via that texture's alpha (a trident traces the trident, not its square model
+     *  hull; an EK/IaF custom item traces its sprite, not the no-texture model parts). Textureless RTs fall
+     *  back to a white fill. queueGroups routes each bucket to the world / FP / GUI drain by {@code ctx}. */
+    private static void cg_captureSpecialOutline(ItemStack stack, ItemDisplayContext ctx, boolean leftHand,
+            PoseStack pose, int light, int color, float[] guiAnchor) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+        PoseStack tp = new PoseStack();
+        tp.last().pose().set(pose.last().pose());
+        tp.last().normal().set(pose.last().normal());
+        GlowOutlineRenderer.CapturingBufferSource cap = new GlowOutlineRenderer.CapturingBufferSource(null);
+        CustomGlintRenderer.IN_OUTLINE.set(true);
+        try {
+            mc.getItemRenderer().renderStatic(mc.player, stack, ctx, leftHand, tp, cap, mc.level,
+                    LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 0);
+        } finally {
+            CustomGlintRenderer.IN_OUTLINE.set(false);
+        }
+        cap.queueGroups(color, ctx, guiAnchor);
+    }
+
+    /** Icon anchor for the GUI glow drain: {@code [x,y,z]} = the OUTER pose translation (the slot/preview
+     *  centre, before the model's display transform), {@code [3]} = the icon's nominal half-size in GUI px
+     *  (½ the pose x-axis scale; 8 for a 16-px slot, 40 for the 5x wand preview), {@code [4]} = the item
+     *  texture's resolution in px (16 / 32 / 64…), read from the model's particle sprite. The drain sizes the
+     *  ring per TEXTURE pixel, so a 32x32 or 64x64 item doesn't get a ring twice/four times too thick. */
+    private static float[] cg_guiAnchor(PoseStack pose, BakedModel model) {
+        Matrix4f m = pose.last().pose();
+        float sx = (float) Math.sqrt(m.m00() * m.m00() + m.m01() * m.m01() + m.m02() * m.m02());
+        float texRes = 16.0f;
+        try {
+            TextureAtlasSprite sp = model.getParticleIcon();
+            if (sp != null && sp.contents() != null && sp.contents().width() > 0) texRes = sp.contents().width();
+        } catch (Throwable ignored) {
+            // Some modded models throw from the no-data getParticleIcon(); fall back to 16.
+        }
+        return new float[]{ m.m30(), m.m31(), m.m32(), sx * 0.5f, texRes };
     }
 
     /** Collects a model's item quads. If {@code onlyDir} is non-null, keeps only quads whose face is that

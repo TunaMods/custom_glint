@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.compat.iceandfire;
 
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.level.LevelEvent;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 /**
@@ -17,7 +19,11 @@ public final class IceAndFireClientCompat {
     private IceAndFireClientCompat() {}
 
     public static void run() {
-        // Nothing to wire on the client today; kept as the Dist.CLIENT entry point in case
-        // future IaF render compat needs client-only setup.
+        // Bulk-clear the client mount-armor cache on world unload. Per-entity eviction runs on
+        // EntityLeaveLevelEvent, but entity ids are reused across world loads, so a stale entry could
+        // briefly mis-resolve hippogryph/hippocampus armor on a reused id without this.
+        NeoForge.EVENT_BUS.addListener((LevelEvent.Unload e) -> {
+            if (e.getLevel().isClientSide()) MountArmorCache.clear();
+        });
     }
 }

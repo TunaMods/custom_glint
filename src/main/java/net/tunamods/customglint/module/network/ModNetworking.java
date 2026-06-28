@@ -23,5 +23,19 @@ public class ModNetworking {
         registrar.playToClient(GlintMountArmorSyncPacket.TYPE, GlintMountArmorSyncPacket.STREAM_CODEC, GlintMountArmorSyncPacket::handle);
         // GiveGlintTrimPacket  C→S  gives a GlintTrimItem with current editor settings
         registrar.playToServer(GiveGlintTrimPacket.TYPE, GiveGlintTrimPacket.STREAM_CODEC, GiveGlintTrimPacket::handle);
+
+        // ── Glint Table ──────────────────────────────────────────────────────
+        // GlintPrintPacket        C→S  the table's Print button builds + outputs a finished trim
+        registrar.playToServer(GlintPrintPacket.TYPE, GlintPrintPacket.STREAM_CODEC, GlintPrintPacket::handle);
+        // GlintGiveDesignPacket   C→S  shift-click a palette design → free blank trim
+        registrar.playToServer(GlintGiveDesignPacket.TYPE, GlintGiveDesignPacket.STREAM_CODEC, GlintGiveDesignPacket::handle);
+        // GlintDepositPacket      C→S  drop a cursor-held trim onto a table grid → library
+        registrar.playToServer(GlintDepositPacket.TYPE, GlintDepositPacket.STREAM_CODEC, GlintDepositPacket::handle);
+        // GlintWithdrawPacket     C→S  shift-click a printed trim → pull into inventory
+        registrar.playToServer(GlintWithdrawPacket.TYPE, GlintWithdrawPacket.STREAM_CODEC, GlintWithdrawPacket::handle);
+        // GlintStoredSyncPacket   S→C  per-player stored design set (drives grid ghosting)
+        registrar.playToClient(GlintStoredSyncPacket.TYPE, GlintStoredSyncPacket.STREAM_CODEC, GlintStoredSyncPacket::handle);
+        // GlintPrintedSyncPacket  S→C  per-player printed-trim library (drives the right grid)
+        registrar.playToClient(GlintPrintedSyncPacket.TYPE, GlintPrintedSyncPacket.STREAM_CODEC, GlintPrintedSyncPacket::handle);
     }
 }

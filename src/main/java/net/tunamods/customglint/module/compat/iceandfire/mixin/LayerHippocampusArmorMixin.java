@@ -8,12 +8,12 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -34,7 +34,8 @@ import java.util.List;
  * client-synced cache.
  *
  * Glint mechanics identical to the dragon/hippogryph variants: glint via forArmorGlint (armor
- * texture cutout mask, no stencil), outline via the generic post-process doModelOutline. See
+ * texture cutout mask, no stencil), glow outline captured here by re-rendering the parent model
+ * against the armor texture (the generic in-phase tee never reaches IaF mount armor). See
  * {@link LayerDragonArmorMixin} for the full rationale.
  *
  * Armor ItemStack source: {@link MountArmorCache} (synced by EntityHippocampusArmorSyncMixin +
@@ -106,11 +107,22 @@ public class LayerHippocampusArmorMixin {
         }
 
         ItemStack stack = MountArmorCache.get(entity.getId());
+        boolean glow = CustomGlint.hasGlowEffect(stack);
         CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
+        if (glint == null && !glow) return;
 
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
+
+        // Glow outline: re-render the parent model traced against the armor texture (alpha-discard →
+        // only the armored texels), keyed CAT_ARMOR + the mount's id so it folds into the mount's body
+        // ring when both glow. The IaF mount armor doesn't render through any vanilla layer, so the
+        // generic in-phase tee never captures it — this is the only capture point for it.
+        if (glow) {
+            EntityGlintRender.captureModelSilhouette(entity, entity, model, tex, pose, light,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
+        }
+        if (glint == null) return;
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
         // forArmorGlint — the same fix that LayerDragonArmorMixin uses. Hippocampus armor reuses the
@@ -128,7 +140,7 @@ public class LayerHippocampusArmorMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
+            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;

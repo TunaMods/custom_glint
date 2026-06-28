@@ -4,22 +4,22 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.fml.ModList;
-import net.neoforged.fml.loading.FMLEnvironment;
 
 /**
- * Standalone-only Ice & Fire compat. Renderer-touching configuration (BEWLR outline offsets /
- * textures) is registered from a client-only side class, gated on {@code FMLEnvironment.dist};
- * event listeners for the mount-armor sync (hippogryph/hippocampus) are registered on both sides
- * because the server initiates the sync packet when a player begins tracking the mount.
+ * Standalone-only Ice & Fire compat. The client-only side class ({@link IceAndFireClientCompat})
+ * clears the mount-armor cache on world unload and is gated on {@code FMLEnvironment.dist}; event
+ * listeners for the mount-armor sync (hippogryph/hippocampus) are registered on both sides because
+ * the server initiates the sync packet when a player begins tracking the mount.
  *
- * Split was required for dedicated-server compatibility: the renderer maps live on
- * {@code CustomGlintRenderer}, which extends {@code RenderStateShard} (client-only) and so
- * cannot load on a dedicated server. The {@code FMLEnvironment.dist == Dist.CLIENT} guard keeps
- * the client side-class off the server's class path.
+ * Split was required for dedicated-server compatibility: {@link IceAndFireClientCompat} touches
+ * {@code CustomGlintRenderer}, which extends {@code RenderStateShard} (client-only) and so cannot
+ * load on a dedicated server. The {@code FMLEnvironment.dist == Dist.CLIENT} guard keeps the client
+ * side-class off the server's class path.
  */
 public final class IceAndFireCompat {
     private IceAndFireCompat() {}
@@ -30,7 +30,7 @@ public final class IceAndFireCompat {
     public static void register() {
         if (!ModList.get().isLoaded("iceandfire")) return;
 
-        // Renderer overrides — client-only.
+        // Client-only mount-armor cache cleanup wiring.
         if (FMLEnvironment.dist == Dist.CLIENT) IceAndFireClientCompat.run();
 
         // Mount armor sync (hippogryph / hippocampus) — needed on the server to push armor stacks

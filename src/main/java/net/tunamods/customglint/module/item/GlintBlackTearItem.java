@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.item;
 
-import net.tunamods.customglint.common.CustomGlint;
+import java.util.List;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
@@ -10,9 +11,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.tunamods.customglint.common.entity.EntityGlintEvents;
-
-import java.util.List;
+import net.tunamods.customglint.common.CustomGlint;
 
 public class GlintBlackTearItem extends Item {
 
@@ -33,8 +32,8 @@ public class GlintBlackTearItem extends Item {
      * data set via {@link CustomGlint#writeEntity}/{@link CustomGlint#setEntityGlowColors}/
      * {@link CustomGlint#setEntityGlowing}). Does not touch the mob's equipment. Consumes one tear
      * per successful cleanup. Returns PASS when nothing was changed so the tear isn't wasted and
-     * other interaction handlers can run. Server-side mutates and broadcasts; client returns
-     * SUCCESS for the swing animation.
+     * other interaction handlers can run. Server-side mutates the synced attachment (NeoForge auto-syncs
+     * it to trackers); client returns SUCCESS for the swing animation.
      */
     @Override
     public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity entity, InteractionHand hand) {
@@ -43,7 +42,6 @@ public class GlintBlackTearItem extends Item {
         }
         if (!CustomGlint.hasEntity(entity)) return InteractionResult.PASS;
         CustomGlint.removeEntity(entity);
-        EntityGlintEvents.broadcast(entity);
         if (!player.getAbilities().instabuild) stack.shrink(1);
         return InteractionResult.CONSUME;
     }

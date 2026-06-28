@@ -1,15 +1,13 @@
 package net.tunamods.customglint.module.network;
 
+import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
-
-import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
  * S→C: pushes an IaF mount's current armor ItemStack (slot 2 of its internal SimpleContainer)
@@ -20,7 +18,7 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 public record GlintMountArmorSyncPacket(int entityId, ItemStack stack) implements CustomPacketPayload {
 
     public static final Type<GlintMountArmorSyncPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "mount_armor_sync"));
+            new Type<>(CustomGlint.res("mount_armor_sync"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, GlintMountArmorSyncPacket> STREAM_CODEC =
             StreamCodec.composite(

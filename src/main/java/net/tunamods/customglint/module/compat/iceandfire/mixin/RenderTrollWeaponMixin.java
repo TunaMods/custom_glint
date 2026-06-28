@@ -28,12 +28,10 @@ import java.util.List;
  * troll-weapon model with our glint render types, re-applying the {@code (0.5, -0.75, 0.5)} translate
  * IaF uses (inside a pushPose/popPose, so it's already unwound at RETURN).
  *
- * Outline is NOT drawn here. Uranus dispatches through the vanilla BlockEntityWithoutLevelRenderer,
- * so these items read as {@code isCustomRenderer()==true} and the core {@code doItemOutline} /
- * {@code doGuiItemOutline} 3D-BEWLR path already draws their glow outline. The old per-texture
- * {@code doBewlrOutline} + {@code CUSTOM_OUTLINE_BEWLRS} coordination relied on
- * {@code getCustomRenderer()} returning this class, which CE/uranus no longer does (it returns the
- * shared vanilla BEWLR), so registering it would double-draw against doItemOutline.
+ * Glow outline is NOT drawn here: these items read as {@code isCustomRenderer()==true}, so the generic
+ * texture-aware special-BEWLR capture in {@code ItemRendererMixin} re-renders them and traces each
+ * weapon's real shape against its bound texture (the troll model holds every weapon's geometry; the
+ * texture alpha carves which one shows). Only the glint is drawn here.
  *
  * CE's model is a non-static instance field {@code model} (was a static {@code MODEL}); we read it
  * reflectively from the renderer instance and cache the value (a single renderer instance exists).
@@ -63,16 +61,17 @@ public class RenderTrollWeaponMixin {
     private void cg_apply(ItemStack stack, ItemDisplayContext ctx, PoseStack pose,
             MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
-        CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
         Model model = cg_getModel(this, "model");
         if (model == null) return;
+
+        CustomGlint.Data glint = CustomGlint.read(stack);
+        if (glint == null) return;
 
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
+            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float a = ((colors[i] >> 24) & 0xFF) / 255.0f;

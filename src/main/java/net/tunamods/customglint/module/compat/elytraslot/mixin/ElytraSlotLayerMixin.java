@@ -12,6 +12,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Shadow;
@@ -74,7 +76,7 @@ public class ElytraSlotLayerMixin {
         if (stack == null || stack.isEmpty()) return;
 
         CustomGlint.Data glint = CustomGlint.read(stack);
-        boolean glowing = CustomGlint.isGlowing(stack);
+        boolean glowing = CustomGlint.hasGlowEffect(stack);
         if (glint == null && !glowing) return;
 
         VertexConsumer combined = null;
@@ -83,7 +85,7 @@ public class ElytraSlotLayerMixin {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                int[] colors = layers[layerIdx].colors();
+                int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
@@ -110,13 +112,21 @@ public class ElytraSlotLayerMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             }
         }
-        if (combined == null) return;
-
-        // Lambda popped the pose before returning, so re-apply ElytraSlot's (0, 0, 0.125) offset.
-        // elytraModel's setupAnim from the prior render call is preserved (model state, not pose).
+        // Lambda popped the pose before returning, so re-apply ElytraSlot's (0, 0, 0.125) offset for both
+        // the glint draw and the glow-outline capture. elytraModel's setupAnim from the prior render call is
+        // preserved (model state, not pose), so the re-rendered silhouette matches the drawn wings.
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        if (combined != null) {
+            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        }
+        // Vanilla's ElytraLayer captures the glow outline via an in-phase tee; ElytraSlot's own layer never
+        // does, so a Curios-slot elytra had no ring. Capture it here (record-only re-render), keyed by the
+        // elytra STACK like the vanilla path so it keeps its own CAT_ARMOR ring.
+        if (glowing && tex != null) {
+            EntityGlintRender.captureModelSilhouette(entity, stack, elytraModel, tex, poseStack, packedLight,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 1);
+        }
         poseStack.popPose();
     }
 }

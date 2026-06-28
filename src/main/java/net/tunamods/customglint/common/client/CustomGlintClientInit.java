@@ -1,6 +1,5 @@
 package net.tunamods.customglint.common.client;
 
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.neoforged.bus.api.IEventBus;
@@ -23,6 +22,12 @@ public final class CustomGlintClientInit {
         modEventBus.addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
         // Glow-outline core shaders (silhouette + composite) — mod-bus event, client only.
         modEventBus.addListener(GlowOutlineRenderer::registerShaders);
+        // Procedural chromatic glint core shader — mod-bus event, client only.
+        modEventBus.addListener(CustomGlintRenderer::registerShaders);
+
+        // Release the glow-outline offscreen targets + silhouette RT caches on resource reload, so
+        // they aren't pinned for the whole session.
+        CustomGlintRenderer.additionalReloadCleanup.add(GlowOutlineRenderer::release);
 
         // Once-per-frame stencil-clear gate reset, consumed by the compat stencil RTs
         // (IaF mount armor, EK decorations) that still use pendingFrameStencilClear.
@@ -38,9 +43,15 @@ public final class CustomGlintClientInit {
         // Drain world-space item glow outlines after weather, where the live world projection /
         // modelview still match what the items were drawn with (the camera modelview hasn't been
         // popped yet) and the opaque scene depth is committed for the occlusion test.
+        //
+        // Under an Iris/Oculus shader pack the pack's own scene composite runs AFTER this stage and would
+        // overwrite a ring drawn here, so only ACCUMULATE the mask now and defer the composite to
+        // LevelRenderer.renderLevel TAIL (LevelRendererMixin → compositeWorld), after the pack composites
+        // to the main target. Off-pack, do the whole drain immediately as before.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
-                GlowOutlineRenderer.drainWorld();
+                if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.accumulateWorld();
+                else GlowOutlineRenderer.drainWorld();
             }
         });
     }

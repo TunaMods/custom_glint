@@ -44,12 +44,6 @@ public class BackpackItemStackRendererMixin {
     // constant locally so the design still tiles relative to their NBT setting.
     private static final float CG_BACKPACK_PATTERN_SCALE = 32.0f;
 
-    @Inject(method = "m_108829_", at = @At("RETURN"), require = 0)
-    private void cg_apply_srg(ItemStack stack, ItemDisplayContext ctx, PoseStack pose,
-            MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
-        cg_apply(stack, pose, buffer, light, overlay);
-    }
-
     @Inject(method = "renderByItem(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
             at = @At("RETURN"), require = 0)
     private void cg_apply_named(ItemStack stack, ItemDisplayContext ctx, PoseStack pose,
@@ -78,7 +72,7 @@ public class BackpackItemStackRendererMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
+            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float a = ((colors[i] >> 24) & 0xFF) / 255.0f;

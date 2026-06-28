@@ -6,7 +6,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.module.network.GlintMountArmorSyncPacket;
-import net.tunamods.customglint.module.network.ModNetworking;
 
 import java.lang.reflect.Field;
 import java.util.concurrent.ConcurrentHashMap;

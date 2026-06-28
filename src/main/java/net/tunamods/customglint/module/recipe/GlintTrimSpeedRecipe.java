@@ -1,19 +1,20 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 public class GlintTrimSpeedRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimSpeedRecipe> SERIALIZER =
@@ -61,8 +62,8 @@ public class GlintTrimSpeedRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
         GlintTrimItem.setSpeed(result, 4.0f);
         return result;
@@ -74,8 +75,8 @@ public class GlintTrimSpeedRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.REDSTONE));

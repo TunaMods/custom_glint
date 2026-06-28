@@ -11,9 +11,9 @@ public final class FirstPersonClientCompat {
     private FirstPersonClientCompat() {}
 
     public static void wireRenderer() {
-        // The old fpmPresent / fpmRenderingPlayerGate gates fed the removed shader-pack item-outline
-        // sprite branch and no longer exist. The only remaining FPM hook is
-        // CustomGlintRenderer.outlineSuppressor, which FirstPersonCompat currently leaves unset on
-        // purpose (see the note in FirstPersonCompat.register). Nothing to wire here today.
+        // The old fpmPresent / fpmRenderingPlayerGate / outlineSuppressor gates fed the previous
+        // stencil/shader outline's shader-pack item-outline sprite branch, which was replaced by the
+        // post-process GlowOutlineRenderer. That renderer skips first-person capture entirely today
+        // (first-person hand is a deferred milestone), so FPM needs no gate. Nothing to wire here.
     }
 }

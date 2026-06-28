@@ -1,8 +1,6 @@
 package net.tunamods.customglint.module.compat.epicknights;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -10,27 +8,27 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.SortedMap;
-import java.util.SequencedMap;
 
 /**
  * Compat-local render pipeline for Epic Knights armor decorations.
@@ -55,73 +53,6 @@ import java.util.SequencedMap;
 public final class EpicKnightsGlintRT extends RenderStateShard {
     private EpicKnightsGlintRT() { super("", () -> {}, () -> {}); }
 
-    private static final Map<String, RenderType> CACHE  = new HashMap<>();
-    private static final Map<String, float[]>    COLORS = new HashMap<>();
-
-    /** Glint render type for the stencil-masked second pass. LEQUAL is safe because stencil masks to opaque pixels. */
-    public static RenderType forDecorationGlint(CustomGlint.Data glint, int layerIdx, float[] frameColor, int colorIdx) {
-        CustomGlint.Layer layer = glint.layers()[layerIdx];
-        if (CustomGlintRenderer.getTexture(layer.design()) == null) return null;
-        String key = "ek-deco|" + layer.design() + "|" + Arrays.toString(layer.colors())
-                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
-        float[] holder = COLORS.computeIfAbsent(key, k -> new float[4]);
-        System.arraycopy(frameColor, 0, holder, 0, 4);
-        RenderType cached = CACHE.computeIfAbsent(key, k -> {
-            ResourceLocation tex = layer.design();
-            RenderType rt = RenderType.create(
-                    "customglint:ek_decoration_glint|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_TEX,
-                    VertexFormat.Mode.QUADS,
-                    256,
-                    false,
-                    false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
-                            .setTextureState(new TextureStateShard(tex, false, false) {
-                                @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
-                                }
-                                @Override public void clearRenderState() {
-                                    super.clearRenderState();
-                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-                                }
-                            })
-                            .setWriteMaskState(COLOR_WRITE)
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            .setLayeringState(VIEW_OFFSET_Z_LAYERING)
-                            .setTransparencyState(GLINT_TRANSPARENCY)
-                            .setTexturingState(new TexturingStateShard("customglint:ek_decoration_glint_texturing", () -> {
-                                float phase = (float) colorIdx / Math.max(1, layer.colors().length);
-                                long t = (long) (Util.getMillis() * 8.0 * layer.speed());
-                                float f  = (float) (t % 110000L) / 110000.0F + phase;
-                                float f1 = (float) (t % 30000L)  /  30000.0F;
-                                Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, -f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, f1, 0.0F);
-                                m.scale(8.0f * layer.patternScale());
-                                RenderSystem.setTextureMatrix(m);
-                            }, RenderSystem::resetTextureMatrix))
-                            .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-            return rt;
-        });
-        CustomGlintRenderer.registerLiveFixedBuffer(cached);
-        // Tag for shader-pack late-render bucket so under an active pack the glint flushes after
-        // the main scene depth is committed (mirrors what every forShader* RT in CustomGlintRenderer
-        // does). Without this, under an active pack the deferred FullyBuffered flush orders the
-        // glint draw before the decoration's depth lands → glint either fails the LEQUAL test
-        // against unwritten depth (clear value) or draws before the pack's gbuffers_entities pass.
-        CustomGlintRenderer.tagAsLateRenderForShaders(cached);
-        return cached;
-    }
-
     private static final RenderStateShard.WriteMaskStateShard EK_NO_WRITE =
             new RenderStateShard.WriteMaskStateShard(false, false);
 
@@ -141,10 +72,35 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     // GLINT tests EQUAL V (this decoration only). Multiple decorations per frame don't
     // cross-contaminate.
 
+    /** Bound shared by the per-slot/shader decoration RT caches. The per-frame stencil slot (1..255)
+     *  is baked into each RT's layering closure, so a fixed decoration spawns a distinct entry per slot
+     *  it lands on across frames; design/colours/speed/scale are user-controllable on top of that.
+     *  Without a cap these maps grow until resource reload, each entry pinning a native ByteBufferBuilder
+     *  in fixedBuffers — exactly what CustomGlintRenderer's RtCache (cap 256) already prevents for the
+     *  core caches. The cap sits well above the distinct (slot,config) draws possible in one frame, so
+     *  the LRU never evicts an entry still needed in the current frame. */
+    private static final int EK_CACHE_CAP = 512;
+
+    /** Access-order LRU mirroring {@link CustomGlintRenderer}'s RtCache: past {@link #EK_CACHE_CAP} it
+     *  evicts the eldest RT (closing its native fixed buffer via {@link CustomGlintRenderer#evictRt})
+     *  and, when paired, drops its colour holder so the two maps stay in lockstep. */
+    private static final class EkRtCache extends LinkedHashMap<String, RenderType> {
+        private final Map<String, float[]> colors;
+        EkRtCache(Map<String, float[]> colors) { super(64, 0.75f, true); this.colors = colors; }
+        @Override protected boolean removeEldestEntry(Map.Entry<String, RenderType> e) {
+            if (size() > EK_CACHE_CAP) {
+                CustomGlintRenderer.evictRt(e.getValue());
+                if (colors != null) colors.remove(e.getKey());
+                return true;
+            }
+            return false;
+        }
+    }
+
     /** Per-slot WRITE RT cache, keyed by (slot, tex). Each entry's TextureStateShard closes
      *  over a stable texture, so multiple textures in one slot don't clobber each other's
      *  binding under FullyBuffered's deferred flush. */
-    private static final Map<String, RenderType> SLOT_WRITE_CACHE = new HashMap<>();
+    private static final Map<String, RenderType> SLOT_WRITE_CACHE = new EkRtCache(null);
 
     /** Depth-correct per-slot WRITE shard. dpfail=KEEP (no back-plane bleed). Honors the once-
      *  per-frame {@code pendingFrameStencilClear} gate from CustomGlintRenderer so the stencil
@@ -192,8 +148,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setWriteMaskState(EK_NO_WRITE)
                             .setLayeringState(ekStencilWriteLayeringSlot(v))
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(created, new ByteBufferBuilder(created.bufferSize()));
+            CustomGlintRenderer.putCapturedFixedBuffer(created);
             return created;
         });
         CustomGlintRenderer.registerLiveFixedBuffer(rt);
@@ -221,8 +176,8 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     }
 
     /** Per-slot glint RT cache, keyed by (slot, design, colors, speed, scale, colorIdx). */
-    private static final Map<String, RenderType> SLOT_GLINT_CACHE = new HashMap<>();
     private static final Map<String, float[]> SLOT_GLINT_COLORS = new HashMap<>();
+    private static final Map<String, RenderType> SLOT_GLINT_CACHE = new EkRtCache(SLOT_GLINT_COLORS);
 
     public static RenderType forDecorationGlintSlot(int slot, CustomGlint.Data glint, int layerIdx,
             float[] frameColor, int colorIdx) {
@@ -272,8 +227,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                                 RenderSystem.setTextureMatrix(m);
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            CustomGlintRenderer.putCapturedFixedBuffer(rt);
             return rt;
         });
         CustomGlintRenderer.registerLiveFixedBuffer(cached);
@@ -333,6 +287,25 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * reworked onto the single LEQUAL + texture-cutout mask the core armor glint uses (would drop this branch
      * and the last {@code isShaderPackActive} glint check).
      */
+    /**
+     * Capture the decoration's glow-outline silhouette. EK decorations draw via {@code ModelPart.render} +
+     * {@code getArmorFoilBuffer}, so the generic entity/armor outline tees never see them and a glowing
+     * decoration got no ring. Trace the parts against the decoration texture (union with the sibling overlay,
+     * since dyeable decorations split their shape across base+overlay — crowns put the band in the overlay),
+     * keyed by the wearing ENTITY so the decoration ring merges with the body + base-armor ring.
+     */
+    public static void captureDecorationOutline(LivingEntity entity, PoseStack pose, int light,
+            ModelPart[] parts, ResourceLocation decorationTexture, int color) {
+        ResourceLocation sibling = siblingTexture(decorationTexture);
+        ResourceLocation[] textures = sibling != null
+                ? new ResourceLocation[]{decorationTexture, sibling}
+                : new ResourceLocation[]{decorationTexture};
+        for (ResourceLocation tex : textures) {
+            EntityGlintRender.captureModelPartsSilhouette(entity, entity, parts, tex, pose, light,
+                    color, GlowOutlineRenderer.CAT_ARMOR, 0);
+        }
+    }
+
     public static void applyDecorationGlint(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
             boolean glowing, ItemStack stack) {
@@ -549,8 +522,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
                             .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            CustomGlintRenderer.putCapturedFixedBuffer(rt);
             CustomGlintRenderer.registerLiveFixedBuffer(rt);
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
@@ -575,8 +547,8 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * depth lands. Otherwise FullyBuffered ordering could schedule the glint first and EQUAL
      * compares against clear-depth → invisible.
      */
-    private static final Map<String, RenderType> SHADER_GLINT_CACHE = new HashMap<>();
     private static final Map<String, float[]> SHADER_GLINT_COLORS = new HashMap<>();
+    private static final Map<String, RenderType> SHADER_GLINT_CACHE = new EkRtCache(SHADER_GLINT_COLORS);
     public static RenderType forDecorationGlintShader(CustomGlint.Data glint, int layerIdx,
             float[] frameColor, int colorIdx) {
         CustomGlint.Layer layer = glint.layers()[layerIdx];
@@ -626,8 +598,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                                 RenderSystem.setTextureMatrix(m);
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new ByteBufferBuilder(rt.bufferSize()));
+            CustomGlintRenderer.putCapturedFixedBuffer(rt);
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -642,12 +613,10 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * leak. Registered into {@link CustomGlintRenderer#additionalReloadCleanup} by EK client wiring.
      */
     public static void releaseCaches() {
-        for (RenderType rt : CACHE.values())             CustomGlintRenderer.evictRt(rt);
         for (RenderType rt : SLOT_WRITE_CACHE.values())  CustomGlintRenderer.evictRt(rt);
         for (RenderType rt : SLOT_GLINT_CACHE.values())  CustomGlintRenderer.evictRt(rt);
         for (RenderType rt : DEPTH_PREWRITE_CACHE.values()) CustomGlintRenderer.evictRt(rt);
         for (RenderType rt : SHADER_GLINT_CACHE.values())   CustomGlintRenderer.evictRt(rt);
-        CACHE.clear();             COLORS.clear();
         SLOT_WRITE_CACHE.clear();
         SLOT_GLINT_CACHE.clear();  SLOT_GLINT_COLORS.clear();
         DEPTH_PREWRITE_CACHE.clear();

@@ -8,12 +8,12 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -31,8 +31,8 @@ import java.util.List;
  * Only the armor branch (entity.getArmor() != 0) is interesting for glint — it picks one of three
  * solid textures (iron/gold/diamond) and draws the parent hippogryph model with that texture.
  *
- * Unlike dragon armor (one layered texture composed at runtime, captured via @Redirect on
- * entityTranslucent), hippogryph armor uses three pre-built RenderTypes built in the layer's
+ * Unlike dragon armor (per-part textures resolved at runtime, captured via @Redirect on
+ * entityCutoutNoCull), hippogryph armor uses three pre-built RenderTypes built in the layer's
  * ctor. We resolve the texture directly from getArmor() rather than redirecting — the mapping is
  * stable and the texture paths are part of IaF's published assets.
  *
@@ -40,13 +40,14 @@ import java.util.List;
  * {@link CustomGlintRenderer#forArmorGlint}, which masks to the armor texture's opaque texels via
  * EQUAL depth against the armorCutoutNoCull base draw (no stencil). See that mixin for the full
  * rationale (the parent body model shares depth with the armor mesh, so an EQUAL_DEPTH glint
- * without that cutout mask would paint glint onto the bare hippogryph too). The outline is the
- * generic post-process silhouette via {@link CustomGlintRenderer#doModelOutline}.
+ * without that cutout mask would paint glint onto the bare hippogryph too). The glow outline is
+ * captured here by re-rendering the parent model against the armor texture: the IaF mount armor
+ * renders through no vanilla layer, so the generic in-phase tee never reaches it.
  *
  * Armor ItemStack source: {@link MountArmorCache}. IaF's hippogryphInventory SimpleContainer
  * doesn't sync to clients (only the armor tier int does), so we sync the stack ourselves via
- * GlintMountArmorSyncPacket (server trigger: EntityHippogryphArmorSyncMixin on refreshInventory
- * + StartTracking listener in IceAndFireCompat).
+ * GlintMountArmorSyncPacket (server trigger: EntityHippogryphArmorSyncMixin from tick() with
+ * change detection + StartTracking listener in IceAndFireCompat).
  */
 @Pseudo
 @Mixin(targets = "com.iafenvoy.iceandfire.render.entity.HippogryphEntityRenderer$LayerHippogriffSaddle", remap = false)
@@ -118,11 +119,22 @@ public class LayerHippogryphArmorMixin {
         }
 
         ItemStack stack = MountArmorCache.get(entity.getId());
+        boolean glow = CustomGlint.hasGlowEffect(stack);
         CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
+        if (glint == null && !glow) return;
 
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
+
+        // Glow outline: re-render the parent model traced against the armor texture (alpha-discard →
+        // only the armored texels), keyed CAT_ARMOR + the mount's id so it folds into the mount's body
+        // ring when both glow. The IaF mount armor doesn't render through any vanilla layer, so the
+        // generic in-phase tee never captures it — this is the only capture point for it.
+        if (glow) {
+            EntityGlintRender.captureModelSilhouette(entity, entity, model, tex, pose, light,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
+        }
+        if (glint == null) return;
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
         // forArmorGlint — the same fix LayerDragonArmorMixin / LayerHippocampusArmorMixin use.
@@ -141,7 +153,7 @@ public class LayerHippogryphArmorMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
+            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;
