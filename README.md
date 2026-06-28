@@ -35,8 +35,8 @@ repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/custom_
 dependencies {
     jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
         version {
-            strictly "[1.5.0,2.0)"
-            prefer "1.5.0"
+            strictly "[1.6.0,2.0)"
+            prefer "1.6.0"
         }
     }
 }
