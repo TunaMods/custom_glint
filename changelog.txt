@@ -1,20 +1,18 @@
 [1.6.0]
 
-Added:
-- Glint Table: a craftable workstation for building trims a layer at a time. Store your designs
-  in it, print finished trims, and pick from three table skins (default, dark, forge).
-- Chromatic glint: a procedural design that animates a shifting oil-slick sheen across as many as
-  eight colors.
-- Rainbow dye: applies the chromatic design to a trim.
-- Trims can now set per-layer transparency.
-- Glow outlines now show in the inventory, the hotbar, and on the first-person hand, not only in
-  the world.
+- Added the Glint Table: a block for building and printing trims with a slot-based editor, crafted from iron blocks, a crafting table, a smithing table, and a Glint Trim
+- Added the Chromatic design, a procedural animated oil-slick that blends up to 8 colors
+- Added eight scroll directions and a manual offset for the glint animation
+- Added a Rainbow Dye item
+- Added crafting to set a trim's glint brightness
 
-Altered:
-- Glints now drift in a direction you choose per layer, with an adjustable offset, replacing the
-  spinning scroll that every glint used before.
-- Glint and glow data now live in the customglint:glint item component. Give-command syntax
-  changed to match it; the README has the new examples.
+- Glint Trim chest loot can now also drop Rainbow Dye and the layer and black tears
+- Fixed the wand editor's glint-import search box not filtering the list
+- The 16 named glint colors now match Minecraft's dye colors exactly
+- The Glint Table and wand editor are now fully translatable, with Spanish included
+
+[Compat]
+- Compatible with Iris Shaders
 
 
 [1.5.0]
