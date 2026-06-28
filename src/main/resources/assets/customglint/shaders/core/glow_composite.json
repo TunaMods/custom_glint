@@ -2,10 +2,19 @@
     "vertex": "customglint:glow_composite",
     "fragment": "customglint:glow_composite",
     "samplers": [
-        { "name": "Sampler0" }
+        { "name": "Sampler0" },
+        { "name": "Sampler1" }
     ],
     "uniforms": [
         { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
-        { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] }
+        { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
+        { "name": "SearchRadius", "type": "int", "count": 1, "values": [ 3 ] },
+        { "name": "ThicknessScale", "type": "float", "count": 1, "values": [ 1.0 ] },
+        { "name": "ProjA", "type": "float", "count": 1, "values": [ 1.0 ] },
+        { "name": "ProjB", "type": "float", "count": 1, "values": [ 1.0 ] },
+        { "name": "TargetId", "type": "int", "count": 1, "values": [ -1 ] },
+        { "name": "GuiMode", "type": "int", "count": 1, "values": [ 0 ] },
+        { "name": "SoloTarget", "type": "int", "count": 1, "values": [ 0 ] },
+        { "name": "EdgeBleed", "type": "int", "count": 1, "values": [ 0 ] }
     ]
 }
