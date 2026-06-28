@@ -177,6 +177,10 @@ def modMetadataDir = layout.buildDirectory.dir("generated/sources/modMetadata/ME
 
 def apiJarTask = tasks.register('apiJar', Jar) {
     archiveBaseName = 'custom-glint-api'
+    // Tag the built file with the MC version to tell it apart from the 26.1.2 build locally. This is
+    // only the build/libs filename; the maven publication and the jarjar nesting both rename it back
+    // to custom-glint-api-${mod_version}.jar, so the published coordinate stays the bare version.
+    archiveVersion = "${mod_version}-${minecraft_version}"
     archiveClassifier = ''
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn 'classes', 'processResources', generateModMetadata
