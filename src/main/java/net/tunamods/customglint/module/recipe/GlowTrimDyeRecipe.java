@@ -1,24 +1,21 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.tunamods.customglint.common.CustomGlint;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 /** Glow Trim + Dye → Glow Trim with one more color appended (cap 8). Mirrors GlintTrimDyeRecipe. */
 public class GlowTrimDyeRecipe extends CustomRecipe {
@@ -69,14 +66,13 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
         int[] next = new int[current.length + 1];
         System.arraycopy(current, 0, next, 0, current.length);
         next[current.length] = GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()];
-        CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlowTrimItem.COLORS_TAG, next));
-        CustomGlint.setGlowColors(result, next);
+        GlowTrimItem.setColors(result, next);
         return result;
     }
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(result, 0xFFFF0000);
         return result;
     }
@@ -87,7 +83,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(new ItemStack(CustomGlintMod.GLOW_TRIM.get())));
+        list.add(Ingredient.of(new ItemStack(ModItems.GLOW_TRIM.get())));
         list.add(Ingredient.of(
             Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
             Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,

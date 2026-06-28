@@ -3,50 +3,91 @@ package net.tunamods.customglint.common.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import net.minecraft.client.renderer.RenderType;
-
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.Model;
-import net.minecraft.client.model.EntityModel;
-import net.minecraft.client.model.geom.ModelPart;
-import java.util.ArrayList;
-import java.util.List;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ArmorItem;
-import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.ClientHooks;
 import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Intercepts renderArmorPiece at RETURN to draw custom glint and (if glowing) stencil outline on vanilla + modded armor. Dual SRG/named targets, require=0 on both. */
+import java.util.ArrayList;
+import java.util.List;
+
+/** Intercepts HumanoidArmorLayer: a HEAD context + a {@code renderModel} {@link Redirect} tee the vanilla
+ *  base-armor draw to capture the glow silhouette in-phase (no re-render, eliminating up to 4 extra model
+ *  walks per armored entity per frame), and the RETURN {@link Inject} draws the custom glint, on vanilla +
+ *  modded armor. */
 @Mixin(HumanoidArmorLayer.class)
 public class HumanoidArmorLayerMixin {
 
-    /** SRG target: injects at RETURN of renderArmorPiece in obfuscated environments. */
-    @Inject(method = "m_117118_", at = @At("RETURN"), require = 0)
-    private void cg_armorGlint_srg(PoseStack pPoseStack, MultiBufferSource pBuffer,
-            LivingEntity pLivingEntity, EquipmentSlot pSlot, int pPackedLight,
-            HumanoidModel pModel, CallbackInfo ci) {
-        applyArmorGlint((HumanoidArmorLayer<?, ?, ?>) (Object) this,
-                pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
+    // Per-piece glow capture context, set at renderArmorPiece HEAD and consumed by the renderModel tee
+    // (which fires once per material layer — we tee only the first = the base shape layer 0). Render-thread
+    // only; renderArmorPiece calls renderModel synchronously so the threadlocal handoff is safe.
+    private static final ThreadLocal<EntityGlintRender.OutlineSpec> CG_ARMOR_SPEC = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> CG_ARMOR_RECORDED = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    /** HEAD of renderArmorPiece (12-arg overload — the one render() invokes per slot): resolve the glow
+     *  capture spec for this piece (or null when it doesn't glow) so the renderModel tee below knows whether
+     *  to record. */
+    @Inject(
+        method = "renderArmorPiece(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/entity/EquipmentSlot;ILnet/minecraft/client/model/HumanoidModel;FFFFFF)V",
+        at = @At("HEAD"), require = 0, remap = false
+    )
+    private void cg_armorOutlineCtx_named(PoseStack pPoseStack, MultiBufferSource pBuffer,
+            LivingEntity entity, EquipmentSlot slot, int pPackedLight, HumanoidModel pModel,
+            float limbSwing, float limbSwingAmount, float partialTick, float ageInTicks,
+            float netHeadYaw, float headPitch, CallbackInfo ci) {
+        CG_ARMOR_RECORDED.set(Boolean.FALSE);
+        CG_ARMOR_SPEC.set(null);
+        if (entity.isInvisible()) return;
+        ItemStack stack = entity.getItemBySlot(slot);
+        if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem) || !CustomGlint.hasGlowEffect(stack)) return;
+        ResourceLocation tex = cg_armorTexture(entity, stack, slot);
+        if (tex != null) {
+            CG_ARMOR_SPEC.set(new EntityGlintRender.OutlineSpec(entity, tex,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0));
+        }
+    }
+
+    /** Tee the base-armor draw inside renderModel (the Model-typed overload that actually draws). Forwards
+     *  every layer; records only the FIRST drawn layer (= material layer 0, the base shape whose texture the
+     *  spec uses). Captures the glow silhouette in the same walk vanilla draws the armor with. */
+    @Redirect(
+        method = "renderModel(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/client/model/Model;ILnet/minecraft/resources/ResourceLocation;)V",
+        at = @At(value = "INVOKE",
+                 target = "Lnet/minecraft/client/model/Model;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V"),
+        require = 0, remap = false
+    )
+    private void cg_teeArmorBaseOutline_named(Model model, PoseStack pose, VertexConsumer vc,
+            int light, int overlay, int color) {
+        EntityGlintRender.OutlineSpec spec = CG_ARMOR_SPEC.get();
+        if (spec == null || CG_ARMOR_RECORDED.get()) {
+            model.renderToBuffer(pose, vc, light, overlay, color);
+            return;
+        }
+        CG_ARMOR_RECORDED.set(Boolean.TRUE);
+        EntityGlintRender.teeOutline5(model, pose, vc, light, overlay, color, spec);
     }
 
     /**
-     * Named target: RETURN of renderArmorPiece. NeoForge 1.21.1 runs on Mojang mappings, so
-     * this (remap=false) is the inject that actually fires. Targets the 12-arg overload — the
-     * one HumanoidArmorLayer.render() invokes per slot. The 6-arg overload is a @Deprecated
+     * RETURN of renderArmorPiece. Targets the 12-arg overload — the one
+     * HumanoidArmorLayer.render() invokes per slot. The 6-arg overload is a @Deprecated
      * Neo back-compat shim that vanilla never calls; injecting there silently no-ops, which is
      * why armor showed no glint or glow while items rendered fine.
      */
@@ -60,6 +101,9 @@ public class HumanoidArmorLayerMixin {
             float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
         applyArmorGlint((HumanoidArmorLayer<?, ?, ?>) (Object) this,
                 pPoseStack, pBuffer, pLivingEntity, pSlot, pPackedLight, pModel);
+        // Drop the per-piece capture context so it doesn't pin the entity reference between renders.
+        CG_ARMOR_SPEC.remove();
+        CG_ARMOR_RECORDED.remove();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -70,18 +114,24 @@ public class HumanoidArmorLayerMixin {
         ItemStack stack = entity.getItemBySlot(slot);
         if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
-        boolean glowing = CustomGlint.isGlowing(stack);
-        // Bail only if there is nothing to render — no glint AND no glow.
-        if (glint == null && !glowing) return;
+        if (glint == null) return; // glow outline is captured by the renderModel tee above
 
         Model rendererModel = IClientItemExtensions.of(stack).getGenericArmorModel(entity, stack, slot, model);
+        // A buggy/non-standard IClientItemExtensions can return null here; fall back to the vanilla
+        // model passed in rather than NPE out of the inject into HumanoidArmorLayer.render (hard crash).
+        if (rendererModel == null) rendererModel = model;
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
             List<VertexConsumer> list = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                int[] colors = layers[layerIdx].colors();
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(buffer.getBuffer(crt));
+                    continue;
+                }
+                int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
@@ -108,82 +158,21 @@ public class HumanoidArmorLayerMixin {
                 rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
         }
-        if (glowing) {
-            // 1.21 armor textures come from the material's layer list (base plus any
-            // overlay/dyeable layers). ClientHooks.getArmorTexture resolves each, handling
-            // namespaced material names (e.g. EK's "magistuarmory:wingedhussarchestplate")
-            // that a raw ResourceLocation would choke on — building the path ourselves and
-            // calling fromNamespaceAndPath would throw on the embedded colon and fall back to
-            // SOLID, whose alpha-discard then misses and stamps the full cuboid (giant-rectangle
-            // outline on EK WingedHussar wings). We outline every layer texture so dyeable/overlay
-            // coverage (EK crusader sleeves living in the overlay layer) is included too,
-            // replacing the old base + getArmorResource("overlay") special-case.
-            java.util.List<ResourceLocation> outlineTextures = new ArrayList<>();
-            try {
-                ArmorMaterial mat = ((ArmorItem) stack.getItem()).getMaterial().value();
-                boolean innerModel = slot == EquipmentSlot.LEGS;
-                for (ArmorMaterial.Layer matLayer : mat.layers()) {
-                    ResourceLocation t = ClientHooks.getArmorTexture(entity, stack, matLayer, innerModel, slot);
-                    if (t != null) outlineTextures.add(t);
-                }
-            } catch (Exception ignored) {}
-            if (outlineTextures.isEmpty()) outlineTextures.add(CustomGlint.SOLID);
-            ResourceLocation armorTex = outlineTextures.get(0);
-            EntityModel<?> outlineModel = rendererModel instanceof EntityModel<?> em ? em : model;
 
-            // EK halfarmor chestplate: arm cuboids in EK's model sample opaque pixels in the
-            // halfarmor chest texture even though no arm armor is visually intended, so the
-            // stencil outline pass forms a ring around the entire arm. EK compat installs
-            // chestArmorHidesArmsInOutline keyed on texture path; when true, hide arm parts
-            // for the outline call only. Other EK chests have legitimate sleeve coverage and
-            // fall through unchanged.
-            HumanoidModel<?> armHideModel = null;
-            boolean savedRightArm = false, savedLeftArm = false;
-            if (slot == EquipmentSlot.CHEST
-                    && outlineModel instanceof HumanoidModel<?> hm
-                    && CustomGlintRenderer.chestArmorHidesArmsInOutline.test(armorTex)) {
-                armHideModel = hm;
-                savedRightArm = hm.rightArm.visible;
-                savedLeftArm  = hm.leftArm.visible;
-                hm.rightArm.visible = false;
-                hm.leftArm.visible  = false;
-            }
+        // Glow outline is captured by the renderModel tee above (no re-render here). All armor pieces on one
+        // wearer share the wearer's outline id (glowKeyFor identity = entity), and the body outline shares it
+        // too, so the figure composes as ONE ring.
+    }
 
-            // Parts that should be excluded from the outline entirely (EK WingedHussar wings:
-            // flat 0×32×14 planes too far from the chest pivot — the 1.04× dilation produces
-            // a ghost feather offset from the original, and the per-part pixel-translate
-            // approach can't honor depth between overlapping wings either. Compat installs the
-            // hook to nominate parts; mixin hides them for doModelOutline and restores after,
-            // so the broken dilation never draws on them and they simply have no outline).
-            ModelPart[] hiddenParts = null;
-            boolean[] savedHiddenVisible = null;
-            if (slot == EquipmentSlot.CHEST && outlineModel instanceof HumanoidModel<?> hmx) {
-                hiddenParts = CustomGlintRenderer.armorExtraOutlineParts.apply(hmx, armorTex);
-                if (hiddenParts != null && hiddenParts.length > 0) {
-                    savedHiddenVisible = new boolean[hiddenParts.length];
-                    for (int i = 0; i < hiddenParts.length; i++) {
-                        savedHiddenVisible[i] = hiddenParts[i].visible;
-                        hiddenParts[i].visible = false;
-                    }
-                }
-            }
-
-            try {
-                for (ResourceLocation tex : outlineTextures) {
-                    CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, outlineModel, tex, stack, slot);
-                }
-            } finally {
-                if (armHideModel != null) {
-                    armHideModel.rightArm.visible = savedRightArm;
-                    armHideModel.leftArm.visible  = savedLeftArm;
-                }
-                if (hiddenParts != null && savedHiddenVisible != null) {
-                    for (int i = 0; i < hiddenParts.length; i++) {
-                        hiddenParts[i].visible = savedHiddenVisible[i];
-                    }
-                }
-            }
-        }
+    /** The base armor-layer texture for this piece (layer 0 defines the full shape), resolved through the
+     *  Forge hook so modded armor textures work. Its alpha drives the silhouette's alpha-discard so the
+     *  ring follows the real armor, not the model's bounding boxes. */
+    private static ResourceLocation cg_armorTexture(LivingEntity entity, ItemStack stack, EquipmentSlot slot) {
+        if (!(stack.getItem() instanceof ArmorItem armorItem)) return null;
+        var layers = armorItem.getMaterial().value().layers();
+        if (layers.isEmpty()) return null;
+        boolean inner = slot == EquipmentSlot.LEGS; // matches HumanoidArmorLayer.usesInnerModel
+        return ClientHooks.getArmorTexture(entity, stack, layers.get(0), inner, slot);
     }
 
 }

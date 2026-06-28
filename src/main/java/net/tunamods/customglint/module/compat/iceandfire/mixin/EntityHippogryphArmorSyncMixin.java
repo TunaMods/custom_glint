@@ -9,9 +9,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
  * Server-side sync trigger. IaF stores hippogryph armor in a {@code SimpleContainer}
  * ({@code hippogryphInventory}) that doesn't sync to clients. The 1.20.1 build hooked
@@ -26,16 +23,12 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mixin(targets = "com.iafenvoy.iceandfire.entity.HippogryphEntity", remap = false)
 public class EntityHippogryphArmorSyncMixin {
 
-    private static final Map<Integer, ItemStack> CG_LAST = new ConcurrentHashMap<>();
-
     @Inject(method = "tick", at = @At("RETURN"), require = 0)
     private void cg_sync(CallbackInfo ci) {
         Entity self = (Entity) (Object) this;
         if (self.level().isClientSide) return;
         ItemStack stack = MountArmorSync.readArmorStack(self, "hippogryphInventory");
-        ItemStack last = CG_LAST.get(self.getId());
-        if (last != null && ItemStack.matches(last, stack)) return;
-        CG_LAST.put(self.getId(), stack.copy());
+        if (!MountArmorSync.changedSinceLast(self.getId(), stack)) return;
         MountArmorSync.broadcast(self, stack);
     }
 }

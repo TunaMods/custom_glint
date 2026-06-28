@@ -3,18 +3,19 @@
   "minVersion": "0.8",
   "package": "net.tunamods.customglint.common.mixin",
   "compatibilityLevel": "JAVA_17",
-  "refmap": "custom_glint.mixins.refmap.json",
   "client": [
-    "CompositeRenderTypeAccessor",
-    "CompositeStateAccessor",
     "ElytraLayerMixin",
+    "GuiGraphicsMixin",
     "HorseArmorLayerMixin",
     "HumanoidArmorLayerMixin",
+    "ItemInHandRendererMixin",
     "ItemRendererMixin",
+    "LevelRendererMixin",
     "LivingEntityRendererMixin",
+    "MushroomCowMushroomLayerMixin",
     "RenderBuffersMixin",
     "RenderLayerMixin",
-    "TextureStateShardAccessor"
+    "SlimeOuterLayerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "customglint:block/glint_table_forge_north" },
+    "facing=east":  { "model": "customglint:block/glint_table_forge_east" },
+    "facing=south": { "model": "customglint:block/glint_table_forge_south" },
+    "facing=west":  { "model": "customglint:block/glint_table_forge_west" }
+  }
+}

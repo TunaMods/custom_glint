@@ -1,5 +1,13 @@
 package net.tunamods.customglint.module.command;
 
+import java.io.BufferedWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -9,13 +17,11 @@ import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.entity.EntityGlintEvents;
-import net.tunamods.customglint.module.item.GlintTrimItem;
+
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
@@ -24,17 +30,11 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.CustomModelData;
 
-import java.io.BufferedWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 public class GlintCommand {
 
@@ -208,15 +208,9 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = ResourceLocation.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
-        }
+        // Resolve via the shared helper: handles the vanilla/chromatic sentinels and namespace:name forms,
+        // and uses tryParse (not the throwing factory) so a malformed data-pack design name can't crash the tick.
+        ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
         int[] colors = new int[parts.length];
@@ -232,14 +226,13 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
+        CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
 
         int count = 0;
         for (Entity e : targets) {
             if (!(e instanceof LivingEntity le)) continue;
             CustomGlint.writeEntity(le, layers);
             CustomGlint.setEntityGlowing(le, glowing);
-            EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
@@ -257,7 +250,6 @@ public class GlintCommand {
             if (!(e instanceof LivingEntity le)) continue;
             if (!CustomGlint.hasEntity(le)) continue;
             CustomGlint.removeEntity(le);
-            EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
@@ -275,7 +267,6 @@ public class GlintCommand {
             if (!(e instanceof LivingEntity le)) continue;
             if (enabled && !CustomGlint.hasEntity(le)) continue;
             CustomGlint.setEntityGlowing(le, enabled);
-            EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
@@ -303,15 +294,9 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = ResourceLocation.fromNamespaceAndPath(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/" + key + ".png");
-        }
+        // Resolve via the shared helper: handles the vanilla/chromatic sentinels and namespace:name forms,
+        // and uses tryParse (not the throwing factory) so a malformed data-pack design name can't crash the tick.
+        ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
         int[] colors = new int[parts.length];
@@ -332,7 +317,8 @@ public class GlintCommand {
             return 0;
         }
 
-        CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.write(stack, CustomGlint.ensureChromaticSeeds(
+                new CustomGlint.Layer[]{ new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous) }));
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
     }
@@ -350,11 +336,8 @@ public class GlintCommand {
             return 0;
         }
 
-        if (enabled && !CustomGlint.has(stack)) {
-            source.sendFailure(Component.literal("Item has no custom glint — apply a glint first"));
-            return 0;
-        }
-
+        // No glint required — glow is independent of glint Data. A glow-only item (no glowColors, no
+        // glint) outlines in white by default; if a glint is present the outline picks up its colour.
         CustomGlint.setGlowing(stack, enabled);
         source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
         return 1;
@@ -403,26 +386,26 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer[] layers = data.layers();
-        ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
         if (layers.length == 1) {
             CustomGlint.Layer layer = layers[0];
             for (int color : layer.colors()) GlintTrimItem.addColor(trim, color);
             GlintTrimItem.setSpeed(trim, layer.speed());
             GlintTrimItem.setScale(trim, layer.patternScale());
+            GlintTrimItem.setScrollDir(trim, layer.scrollDir());
+            GlintTrimItem.setScrollOffset(trim, layer.scrollOffset());
             GlintTrimItem.setPattern(trim, layer.design());
             GlintTrimItem.setGlowing(trim, CustomGlint.isGlowing(held));
         } else {
-            // Multi-layer: set flat tags from layer 0 for display, then copy the full glint tag verbatim
+            // Multi-layer: set the display config from layer 0, then copy the full glint tag verbatim.
             CustomGlint.Layer layer0 = layers[0];
             for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
             boolean glowing = CustomGlint.isGlowing(held);
-            CustomData.update(DataComponents.CUSTOM_DATA, trim, t -> {
-                t.putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
-                t.putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
-                t.putString(GlintTrimItem.PATTERN_TAG, layer0.design().toString());
-                t.putBoolean(GlintTrimItem.GLOWING_TAG, glowing);
-            });
+            // setConfig sets the trim's display config WITHOUT rewriting the single-layer preview glint, so
+            // the multi-layer tag copied below isn't clobbered.
+            GlintTrimItem.setConfig(trim, layer0.design(), layer0.speed(), layer0.patternScale(),
+                    layer0.scrollDir(), layer0.scrollOffset(), glowing);
             // Copy the full multi-layer glint tag verbatim from the held item.
             CustomGlint.writeItemTag(trim, CustomGlint.itemGlintTag(held));
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
@@ -462,6 +445,12 @@ public class GlintCommand {
             JsonObject root = new JsonObject();
             root.addProperty("name", name);
             root.addProperty("glowing", CustomGlint.isGlowing(held));
+            int[] glowCols = CustomGlint.getGlowColors(held);
+            if (glowCols.length > 0) {
+                JsonArray glowArray = new JsonArray();
+                for (int c : glowCols) glowArray.add(String.format("0x%08X", c));
+                root.add("glowColors", glowArray);
+            }
 
             if (held.has(DataComponents.CUSTOM_NAME)) {
                 Component hover = held.getHoverName();
@@ -487,6 +476,8 @@ public class GlintCommand {
                 layerObj.addProperty("interpolate", layer.interpolate());
                 layerObj.addProperty("patternScale", layer.patternScale());
                 layerObj.addProperty("simultaneous", layer.simultaneous());
+                layerObj.addProperty("scroll", layer.scrollDir());
+                layerObj.addProperty("offset", layer.scrollOffset());
 
                 layersArray.add(layerObj);
             }

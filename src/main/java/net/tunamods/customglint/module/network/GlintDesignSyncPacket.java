@@ -1,21 +1,19 @@
 package net.tunamods.customglint.module.network;
 
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
-import net.neoforged.neoforge.network.handling.IPayloadContext;
-
 import java.util.ArrayList;
 import java.util.List;
 
-import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 
 public record GlintDesignSyncPacket(List<String> designs) implements CustomPacketPayload {
 
     public static final Type<GlintDesignSyncPacket> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(MOD_ID, "glint_design_sync"));
+            new Type<>(CustomGlint.res("glint_design_sync"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintDesignSyncPacket> STREAM_CODEC =
             StreamCodec.of(
@@ -25,7 +23,10 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
                     },
                     buf -> {
                         int count = buf.readVarInt();
-                        List<String> designs = new ArrayList<>(count);
+                        // Clamp the pre-sized capacity: a crafted server sending count≈MAX_VALUE would
+                        // otherwise allocate a multi-GB backing array before any string is read. The loop
+                        // still drains the real count and throws cleanly on buffer underflow if it's fake.
+                        List<String> designs = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
                         for (int i = 0; i < count; i++) designs.add(buf.readUtf());
                         return new GlintDesignSyncPacket(designs);
                     }

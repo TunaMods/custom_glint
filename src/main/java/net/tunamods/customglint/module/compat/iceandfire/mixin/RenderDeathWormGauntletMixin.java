@@ -28,10 +28,10 @@ import java.util.List;
  * re-render the gauntlet model with our glint render types, re-applying the {@code (0.5, 0.5, 0.5)}
  * translate IaF uses (inside a pushPose/popPose, already unwound at RETURN).
  *
- * Outline is delegated to the core {@code doItemOutline} / {@code doGuiItemOutline} 3D-BEWLR path:
- * uranus dispatches through the vanilla BlockEntityWithoutLevelRenderer, so the item reads as
- * {@code isCustomRenderer()==true} and gets the standard glow outline. See RenderTrollWeaponMixin
- * for why the old doBewlrOutline + CUSTOM_OUTLINE_BEWLRS path no longer applies under CE/uranus.
+ * Outline is handled by the post-process {@link net.tunamods.customglint.common.client.GlowOutlineRenderer}
+ * at the ItemRenderer.render BEWLR boundary, independent of this glint re-render: uranus dispatches
+ * through the vanilla BlockEntityWithoutLevelRenderer, so the item reads as {@code isCustomRenderer()==true}
+ * and gets the standard glow silhouette.
  *
  * The model stays a static {@code MODEL} field in CE; {@code f.get(renderer)} reads it regardless.
  */
@@ -68,7 +68,7 @@ public class RenderDeathWormGauntletMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
+            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float a = ((colors[i] >> 24) & 0xFF) / 255.0f;

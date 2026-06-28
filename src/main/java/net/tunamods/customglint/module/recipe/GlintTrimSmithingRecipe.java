@@ -1,10 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.mojang.serialization.MapCodec;
+
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -17,6 +14,11 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.level.Level;
+
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();
@@ -62,11 +64,16 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         boolean interpolate  = preview == null || preview.layers().length == 0 || preview.layers()[0].interpolate();
         ItemStack result = base.copy();
         result.setCount(1);
-        if (preview != null && preview.layers().length > 1) {
-            CustomGlint.write(result, preview.layers());
-        } else {
-            CustomGlint.write(result, pattern, colors, speed, interpolate, GlintTrimItem.getScale(template), simultaneous);
-        }
+        // Reuse the trim's preview layers whenever it has any, so each layer's scrollDir/scrollOffset/seed
+        // carry onto the smithed item. Only fall back to a freshly-built layer when the preview is absent.
+        CustomGlint.Layer[] layers = (preview != null && preview.layers().length >= 1)
+                ? preview.layers()
+                : new CustomGlint.Layer[]{ new CustomGlint.Layer(pattern, colors, speed, interpolate,
+                        GlintTrimItem.getScale(template), simultaneous) };
+        // Commit a stable oil-slick seed into any unseeded chromatic layer here (the trim/preview carry seed 0).
+        // Smithing recomputes the result only when the input slots change, so this is a one-shot commit — the
+        // table's print-time equivalent — not a per-frame re-roll that would flicker the pattern.
+        CustomGlint.write(result, CustomGlint.ensureChromaticSeeds(layers));
         if (GlintTrimItem.isGlowing(template)) CustomGlint.setGlowing(result, true);
         return result;
     }
@@ -74,8 +81,8 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
@@ -90,7 +97,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        return CustomGlint.glinted(Items.DIAMOND_SWORD, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000});
+        return CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.res("textures/glint/wave.png"), new int[]{0xFFFF0000});
     }
 
     @Override

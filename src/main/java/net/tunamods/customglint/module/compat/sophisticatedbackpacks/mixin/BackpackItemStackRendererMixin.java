@@ -25,8 +25,8 @@ import java.util.List;
  * Standalone-only compat: BackpackItemStackRenderer (BEWLR) iterates renderPasses from its
  * BakedModel and calls MultiBufferSource.getBuffer(RenderType) directly per pass, bypassing
  * ItemRenderer.getFoilBuffer — so ItemRendererMixin never wraps the consumer with our glint
- * layers. The outline already works because that's a stencil pass driven from ItemRenderer.render
- * at the BEWLR boundary, independent of getFoilBuffer.
+ * layers. The outline already works because it's the generic post-process silhouette driven from
+ * ItemRenderer.render at the BEWLR boundary, independent of getFoilBuffer.
  *
  * At RETURN of renderByItem we re-resolve the baked model the same way SB did and submit it
  * to ItemRenderer.renderModelLists with a VertexMultiConsumer of our glint render types. SB
@@ -43,12 +43,6 @@ public class BackpackItemStackRendererMixin {
     // scale (1.0) makes each design tile look huge. Multiply the user's patternScale by this
     // constant locally so the design still tiles relative to their NBT setting.
     private static final float CG_BACKPACK_PATTERN_SCALE = 32.0f;
-
-    @Inject(method = "m_108829_", at = @At("RETURN"), require = 0)
-    private void cg_apply_srg(ItemStack stack, ItemDisplayContext ctx, PoseStack pose,
-            MultiBufferSource buffer, int light, int overlay, CallbackInfo ci) {
-        cg_apply(stack, pose, buffer, light, overlay);
-    }
 
     @Inject(method = "renderByItem(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;II)V",
             at = @At("RETURN"), require = 0)
@@ -78,7 +72,7 @@ public class BackpackItemStackRendererMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
+            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     float a = ((colors[i] >> 24) & 0xFF) / 255.0f;

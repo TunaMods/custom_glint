@@ -1,16 +1,13 @@
 package net.tunamods.customglint.module.item;
 
-import net.tunamods.customglint.common.CustomGlint;
+import java.util.List;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.level.Level;
-
-import javax.annotation.Nullable;
-import java.util.List;
+import net.tunamods.customglint.common.CustomGlint;
 
 public class GlintTearItem extends Item {
     private final boolean simultaneous;
@@ -24,7 +21,7 @@ public class GlintTearItem extends Item {
     public ItemStack getDefaultInstance() {
         ItemStack stack = new ItemStack(this);
         CustomGlint.write(stack,
-            ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"),
+            CustomGlint.res("textures/glint/wave.png"),
             new int[]{ 0xFFFF0000, 0xFF00FF00, 0xFF0000FF },
             1.0f, true, 1.0f, simultaneous);
         return stack;

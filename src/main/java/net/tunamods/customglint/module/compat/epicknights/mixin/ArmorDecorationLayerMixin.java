@@ -8,6 +8,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.compat.epicknights.EpicKnightsGlintRT;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -25,17 +26,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@code renderDecoration} call can look up its glint data without referencing EK's internal
  * {@code ArmorDecorationItem.DecorationInfo} type (not on our compile classpath).
  *
- * Uses {@link EpicKnightsGlintRT#forDecorationGlint} (LEQUAL depth) rather than
- * {@code CustomGlint.forArmorGlint} (EQUAL): EK's decoration pass writes depth that doesn't
- * exactly match the EQUAL test of the vanilla-style armor glint, leaving the glint invisible.
- * LEQUAL is safe here because decoration meshes are dense (no transparent cutouts to bleed
- * through, unlike vanilla armor layer 1/2 textures).
+ * Uses the stencil-masked decoration glint render types ({@code EpicKnightsGlintRT#forDecorationGlintSlot}
+ * off-pack / {@code forDecorationGlintShader} under a shader pack) rather than
+ * {@code CustomGlintRenderer.forArmorGlint} (EQUAL): EK's decoration pass writes depth that doesn't exactly match
+ * the EQUAL test of the vanilla-style armor glint, leaving the glint invisible. The stencil mask constrains
+ * the glint to opaque decoration texels so it doesn't bleed through transparent cutouts.
  */
 @Pseudo
 @Mixin(targets = "com.magistuarmory.client.render.entity.layer.ArmorDecorationLayer", remap = false)
 public class ArmorDecorationLayerMixin {
 
     private static final ThreadLocal<ItemStack> CG_STACK = new ThreadLocal<>();
+    private static final ThreadLocal<LivingEntity> CG_ENTITY = new ThreadLocal<>();
 
     /**
      * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
@@ -57,6 +59,7 @@ public class ArmorDecorationLayerMixin {
     private void cg_capStack(PoseStack pose, MultiBufferSource buf, LivingEntity entity,
             EquipmentSlot slot, int light, CallbackInfo ci) {
         CG_STACK.set(entity.getItemBySlot(slot));
+        CG_ENTITY.set(entity);
         CG_LAST_PARTS.remove();
     }
 
@@ -65,6 +68,7 @@ public class ArmorDecorationLayerMixin {
     private void cg_clearStack(PoseStack pose, MultiBufferSource buf, LivingEntity entity,
             EquipmentSlot slot, int light, CallbackInfo ci) {
         CG_STACK.remove();
+        CG_ENTITY.remove();
         CG_LAST_PARTS.remove();
     }
 
@@ -78,8 +82,18 @@ public class ArmorDecorationLayerMixin {
         ItemStack stack = CG_STACK.get();
         if (stack == null || stack.isEmpty()) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
-        EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint,
-                CustomGlint.isGlowing(stack), stack);
+        boolean glowing = CustomGlint.hasGlowEffect(stack);
+        if (glint == null && !glowing) return;
+        // Capture the glow-outline silhouette for the decoration (no generic tee reaches EK's
+        // ModelPart-based draw); runs for a glow-only decoration too, not just glinted ones.
+        LivingEntity entity = CG_ENTITY.get();
+        if (glowing && entity != null) {
+            EpicKnightsGlintRT.captureDecorationOutline(entity, pose, light, parts, texture,
+                    CustomGlintRenderer.resolveGlowColor(stack));
+        }
+        if (glint != null) {
+            EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint,
+                    glowing, stack);
+        }
     }
 }

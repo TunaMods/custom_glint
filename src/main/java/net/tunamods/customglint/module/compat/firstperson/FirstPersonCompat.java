@@ -1,22 +1,22 @@
 package net.tunamods.customglint.module.compat.firstperson;
 
 import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLEnvironment;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 
 /**
- * Standalone-only First Person Mod compat. When FPM ({@code firstperson} by tr7zw) renders the
- * local player body in its 3.5D view, items are at near-1P camera distance (~0.7 eye-space Z)
- * even though the display context is THIRD_PERSON_*. The shader-pack item outline path's eye-space
- * Z push ({@code dz = 0.03}) is calibrated for vanilla 3P distance (~3.0 Z); at FPM's close range
- * the same value causes ~4× more perspective shrinkage in XY — the 4 translated sprite copies
- * drift toward screen-center and shift as the camera rotates. {@link FirstPersonClientCompat}
- * installs a {@code fpmRenderingPlayerGate} on {@code CustomGlintRenderer} that causes the
- * shader-pack path to use {@code dz = 0.0} when FPM is rendering the player.
+ * Standalone-only First Person Mod compat. This existed to correct the previous stencil/shader
+ * outline under FPM ({@code firstperson} by tr7zw): when FPM renders the local player body in its
+ * 3.5D view, items sit at near-1P camera distance (~0.7 eye-space Z) while the display context is
+ * still THIRD_PERSON_*, which distorted that outline's shader-pack sprite push. The outline was
+ * since rebuilt as the post-process {@link net.tunamods.customglint.common.client.GlowOutlineRenderer},
+ * which has no shader-pack sprite branch and skips first-person capture today, so there is nothing
+ * to correct — {@link FirstPersonClientCompat#wireRenderer()} is a no-op. The reflective
+ * {@code isRenderingPlayer} handle is kept for when the deferred first-person hand milestone needs it.
  *
  * Reflective binding (no compileOnly dep on FPM) — silently no-ops when FPM is absent.
  */
@@ -37,11 +37,9 @@ public final class FirstPersonCompat {
         } catch (ReflectiveOperationException e) {
             return;
         }
-        // Wire fpmRenderingPlayerGate on client side (CustomGlintRenderer is client-only —
+        // Client-side wiring is a no-op for the post-process outline (FirstPersonClientCompat is
         // kept out of this class's imports so dedicated servers never resolve it transitively).
         if (FMLEnvironment.dist == Dist.CLIENT) FirstPersonClientCompat.wireRenderer();
-        // Temporarily disabled to inspect current outline behavior under FPM 3.5D.
-        // CustomGlintRenderer.outlineSuppressor = FirstPersonCompat::shouldSuppress;
     }
 
     static boolean shouldSuppress() {

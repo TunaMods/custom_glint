@@ -3,18 +3,19 @@ package net.tunamods.customglint.module.compat.iceandfire.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import com.llamalad7.mixinextras.sugar.Local;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -22,7 +23,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,13 +38,12 @@ import java.util.List;
  * IaF's concrete renderers (BasicArmorRenderer / ScaleArmorRenderer) only implement
  * {@code getHumanoidArmorModel}; neither overrides {@code render}, so the interface default is the
  * single render path and the right injection target. We @Inject at its RETURN — by then uranus has
- * already drawn the base armor through {@code armorCutoutNoCull}, so we just overlay glint + outline,
- * reproducing HumanoidArmorLayerMixin's logic.
+ * already drawn the base armor through {@code armorCutoutNoCull}, so we just overlay the glint,
+ * reproducing HumanoidArmorLayerMixin's glint logic.
  *
  * This mixin MUST be declared as an {@code interface}: the target is an interface, and a normal class
  * mixin fails to apply with "{@code @Mixin target type mismatch: …IArmorRendererBase is an interface …
- * SubType$Standard}" (verified in the launch log). Interface mixins can't hold mutable static fields,
- * so the reflective armor-texture lookup is cached in the nested {@link Tex} holder.
+ * SubType$Standard}" (verified in the launch log).
  *
  * The model matters: {@code render}'s argument {@code defaultModel} (LVT slot 7) is the all-visible
  * base humanoid, while the local {@code armorModel} (LVT slot 8, from {@code getHumanoidArmorModel})
@@ -63,15 +62,28 @@ public interface UranusArmorRendererMixin {
             @Local(ordinal = 1) HumanoidModel armorModel) {
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
-        boolean glowing = CustomGlint.isGlowing(stack);
-        if (glint == null && !glowing) return;
+        boolean glow = CustomGlint.hasGlowEffect(stack);
+        if (glint == null && !glow) return;
+
+        // Glow outline: uranus cancels the vanilla HumanoidArmorLayer path, so the generic in-phase tee
+        // never captures IaF player armor. Re-render the configured armorModel (per-slot visibility already
+        // applied) traced against the armor texture uranus draws — its getArmorTexture default is the raw
+        // material layer-0 texture (IaF's concrete renderers only override getHumanoidArmorModel). Keyed
+        // CAT_ARMOR + the wearer's id so all pieces + the body compose as one ring.
+        if (glow) {
+            ResourceLocation tex = cg_uranusArmorTexture(stack, slot == EquipmentSlot.LEGS);
+            if (tex != null) {
+                EntityGlintRender.captureModelSilhouette(entity, entity, armorModel, tex, pose, light,
+                        CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
+            }
+        }
 
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
-                int[] colors = layers[li].colors();
+                int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
                 if (layers[li].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
@@ -99,35 +111,16 @@ public interface UranusArmorRendererMixin {
                 armorModel.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
         }
-
-        if (glowing) {
-            ResourceLocation tex = Tex.get(this, stack, entity, slot);
-            if (tex != null) {
-                CustomGlintRenderer.doModelOutline(pose, buffer, light, (EntityModel<?>) armorModel, tex, stack, slot);
-            }
-        }
     }
 
-    /** Holder for the reflective {@code getArmorTexture} lookup — interface mixins can't have mutable static fields. */
-    final class Tex {
-        private static final String IFACE = "com.iafenvoy.uranus.client.render.armor.IArmorRendererBase";
-        private static volatile Method GET_TEX;
-
-        private Tex() {}
-
-        static ResourceLocation get(Object self, ItemStack stack, LivingEntity entity, EquipmentSlot slot) {
-            try {
-                Method m = GET_TEX;
-                if (m == null) {
-                    m = Class.forName(IFACE).getMethod("getArmorTexture",
-                            ItemStack.class, Entity.class, EquipmentSlot.class);
-                    m.setAccessible(true);
-                    GET_TEX = m;
-                }
-                return (ResourceLocation) m.invoke(self, stack, entity, slot);
-            } catch (Throwable t) {
-                return null;
-            }
-        }
+    /** The armor texture uranus's {@code IArmorRendererBase.getArmorTexture} default resolves to: the raw
+     *  material layer-0 texture (inner variant for leggings). Used to trace the glow silhouette against the
+     *  real armor shape via alpha-discard. Returns null when the item has no armor material layers (uranus
+     *  would fall back to the opaque "missingno" placeholder, which we skip rather than ring the whole body). */
+    private static ResourceLocation cg_uranusArmorTexture(ItemStack stack, boolean inner) {
+        if (!(stack.getItem() instanceof ArmorItem armor)) return null;
+        var layers = armor.getMaterial().value().layers();
+        if (layers.isEmpty()) return null;
+        return layers.get(0).texture(inner);
     }
 }

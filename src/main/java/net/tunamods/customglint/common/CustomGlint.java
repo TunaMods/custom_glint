@@ -1,28 +1,36 @@
 package net.tunamods.customglint.common;
 
-import net.minecraft.core.component.DataComponents;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.CustomData;
-import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
  * Server-safe data API for Custom Glints. NBT read/write, color and design constants, and the
- * auto-apply registries live here. The rendering pipeline lives in {@link CustomGlintRenderer},
- * which is client-only and references this class for {@link Layer}/{@link Data} types and NBT.
+ * auto-apply registries live here. The rendering pipeline lives in
+ * {@link net.tunamods.customglint.common.client.CustomGlintRenderer}, which is client-only and
+ * references this class for {@link Layer}/{@link Data} types and NBT.
  *
  * Split was required because the previous unified class extended {@code RenderStateShard} (a
  * client-only base class) and imported {@code Minecraft}/{@code RenderType}/etc., so any
@@ -32,97 +40,280 @@ public final class CustomGlint {
 
     private CustomGlint() {}
 
+    // ── Scroll directions ──────────────────────────────────────────────────────
+
+    /** {@link Layer#scrollDir} values: the direction the animated glint drifts. {@code STATIC} freezes the
+     *  animation and uses {@link Layer#scrollOffset} as a manual position instead. The eight compass values
+     *  go counter-clockwise from East. Default is {@code E} (the historical horizontal scroll). */
+    public static final int SCROLL_STATIC = 0, SCROLL_E = 1, SCROLL_NE = 2, SCROLL_N = 3, SCROLL_NW = 4,
+            SCROLL_W = 5, SCROLL_SW = 6, SCROLL_S = 7, SCROLL_SE = 8;
+
+    /** A glint never cycles more than this many colors per layer (the renderer fans out one draw per color
+     *  and loops); every input path (wand editor, dye/merge recipes, packets) enforces it. */
+    public static final int MAX_COLORS_PER_LAYER = 8;
+
     // ── Layer ─────────────────────────────────────────────────────────────────
 
-    public record Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {}
+    public record Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                        float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        /** Back-compat constructor: defaults the procedural-chromatic {@link #seed} to 0 (only
+         *  {@link #CHROMATIC} layers use it), so the 8-arg call sites keep compiling unchanged. */
+        public Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                     float patternScale, boolean simultaneous, int scrollDir, float scrollOffset) {
+            this(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, 0);
+        }
+        /** Back-compat constructor: defaults to the historical East scroll with no static offset, so every
+         *  existing call site (auto-apply registries, commands, packets) keeps compiling unchanged. */
+        public Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                     float patternScale, boolean simultaneous) {
+            this(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f, 0);
+        }
+
+        public static final Codec<Layer> CODEC = RecordCodecBuilder.create(i -> i.group(
+                ResourceLocation.CODEC.fieldOf("design").forGetter(Layer::design),
+                Codec.INT.listOf().xmap(
+                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
+                        arr -> Arrays.stream(arr).boxed().toList()
+                ).fieldOf("colors").forGetter(Layer::colors),
+                Codec.FLOAT.optionalFieldOf("speed", 1.0f).forGetter(Layer::speed),
+                Codec.BOOL.optionalFieldOf("interpolate", true).forGetter(Layer::interpolate),
+                Codec.FLOAT.optionalFieldOf("scale", 1.0f).forGetter(Layer::patternScale),
+                Codec.BOOL.optionalFieldOf("simultaneous", true).forGetter(Layer::simultaneous),
+                Codec.INT.optionalFieldOf("scroll", SCROLL_E).forGetter(Layer::scrollDir),
+                Codec.FLOAT.optionalFieldOf("offset", 0.0f).forGetter(Layer::scrollOffset),
+                Codec.INT.optionalFieldOf("seed", 0).forGetter(Layer::seed)
+        ).apply(i, Layer::new));
+
+        // Value equality (the record default compares the int[] by identity, which would break item
+        // stacking / ItemStack.matches / recipe matching — the old NBT was value-equal).
+        @Override public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Layer l)) return false;
+            return Float.compare(speed, l.speed) == 0 && interpolate == l.interpolate
+                    && Float.compare(patternScale, l.patternScale) == 0 && simultaneous == l.simultaneous
+                    && scrollDir == l.scrollDir && Float.compare(scrollOffset, l.scrollOffset) == 0
+                    && seed == l.seed
+                    && Objects.equals(design, l.design) && Arrays.equals(colors, l.colors);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(design, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) * 31
+                    + Arrays.hashCode(colors);
+        }
+    }
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
-    public record Data(Layer[] layers) {}
+    public record Data(Layer[] layers) {
+        public static final Codec<Data> CODEC = Layer.CODEC.listOf().xmap(
+                list -> new Data(list.toArray(new Layer[0])),
+                data -> List.of(data.layers())
+        ).fieldOf("layers").codec();
+
+        @Override public boolean equals(Object o) {
+            return this == o || (o instanceof Data d && Arrays.equals(layers, d.layers));
+        }
+        @Override public int hashCode() { return Arrays.hashCode(layers); }
+    }
+
+    // ── GlintState ─────────────────────────────────────────────────────────────
+
+    /**
+     * The payload of the {@link CustomGlintComponents#GLINT} item data component: the glint {@link Data}
+     * (nullable — a glow-only stack has none) plus the two independent glow fields. Codec-serialized for
+     * both persistence and network sync.
+     */
+    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors) {
+        public static final GlintState EMPTY = new GlintState(null, false, new int[0]);
+
+        public boolean isEmpty() {
+            return data == null && !glowing && glowColors.length == 0;
+        }
+
+        public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Data.CODEC.optionalFieldOf("glint").forGetter(s -> Optional.ofNullable(s.data())),
+                Codec.BOOL.optionalFieldOf("glowing", false).forGetter(GlintState::glowing),
+                Codec.INT.listOf().xmap(
+                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
+                        arr -> Arrays.stream(arr).boxed().toList()
+                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors)
+        ).apply(i, (glint, glowing, colors) -> new GlintState(glint.orElse(null), glowing, colors)));
+
+        public static final Codec<GlintState> CODEC = MAP_CODEC.codec();
+        public static final StreamCodec<ByteBuf, GlintState> STREAM_CODEC = ByteBufCodecs.fromCodec(CODEC);
+
+        @Override public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GlintState g)) return false;
+            return glowing == g.glowing && Objects.equals(data, g.data) && Arrays.equals(glowColors, g.glowColors);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(data, glowing) * 31 + Arrays.hashCode(glowColors);
+        }
+    }
 
     // ── Colors ────────────────────────────────────────────────────────────────
 
+    /** Parses a {@code "RRGGBB"} / {@code "#RRGGBB"} hex string to an opaque ARGB int. For string color
+     *  sources, commands, data packs, the config, where the value isn't a compile-time constant. The
+     *  named constants below come from {@link DyeColor}; only external string input flows through here. */
     public static int color(String hex) {
         return Integer.parseUnsignedInt(hex.startsWith("#") ? hex.substring(1) : hex, 16) | 0xFF000000;
     }
 
-    public static final int RED        = color("FF0000");
-    public static final int ORANGE     = color("FF6600");
-    public static final int YELLOW     = color("FFFF00");
-    public static final int LIME       = color("00FF00");
-    public static final int GREEN      = color("008000");
-    public static final int CYAN       = color("00FFFF");
-    public static final int LIGHT_BLUE = color("00BFFF");
-    public static final int BLUE       = color("0000FF");
-    public static final int PURPLE     = color("8800FF");
-    public static final int MAGENTA    = color("FF00FF");
-    public static final int PINK       = color("FF69B4");
-    public static final int BROWN      = color("8B4513");
-    public static final int WHITE      = color("FFFFFF");
-    public static final int LIGHT_GRAY = color("C0C0C0");
-    public static final int GRAY       = color("808080");
-    public static final int BLACK      = color("000000");
+    // The 16 named glint colors ARE Minecraft's dye colors, sourced from DyeColor.getTextColor()
+    // (the vivid per-dye colour, already opaque ARGB) so they track vanilla instead of drifting.
+    public static final int RED        = DyeColor.RED.getTextColor();
+    public static final int ORANGE     = DyeColor.ORANGE.getTextColor();
+    public static final int YELLOW     = DyeColor.YELLOW.getTextColor();
+    public static final int LIME       = DyeColor.LIME.getTextColor();
+    public static final int GREEN      = DyeColor.GREEN.getTextColor();
+    public static final int CYAN       = DyeColor.CYAN.getTextColor();
+    public static final int LIGHT_BLUE = DyeColor.LIGHT_BLUE.getTextColor();
+    public static final int BLUE       = DyeColor.BLUE.getTextColor();
+    public static final int PURPLE     = DyeColor.PURPLE.getTextColor();
+    public static final int MAGENTA    = DyeColor.MAGENTA.getTextColor();
+    public static final int PINK       = DyeColor.PINK.getTextColor();
+    public static final int BROWN      = DyeColor.BROWN.getTextColor();
+    public static final int WHITE      = DyeColor.WHITE.getTextColor();
+    public static final int LIGHT_GRAY = DyeColor.LIGHT_GRAY.getTextColor();
+    public static final int GRAY       = DyeColor.GRAY.getTextColor();
+    public static final int BLACK      = DyeColor.BLACK.getTextColor();
 
     // ── Designs ───────────────────────────────────────────────────────────────
 
+    /** {@code customglint:<path>} resource location helper. */
+    public static ResourceLocation res(String path) {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID, path);
+    }
+
+    /** Resolves a design <em>name</em> (as stored on a Trim / typed in a command / shown in the picker) to
+     *  its design {@link ResourceLocation}. Handles the {@code vanilla} sentinel and {@code namespace:name}
+     *  qualified names; everything else maps to {@code <ns>:textures/glint/<name>.png}. Uses tryParse (not the
+     *  throwing factory) so a malformed remote name falls back to vanilla instead of crashing the server tick. */
+    public static ResourceLocation designFromName(String name) {
+        if (name == null) return VANILLA;
+        if ("vanilla".equals(name)) return VANILLA;
+        if ("chromatic".equals(name)) return CHROMATIC;
+        ResourceLocation id;
+        if (name.indexOf(':') >= 0) {
+            int c = name.indexOf(':');
+            id = ResourceLocation.tryParse(name.substring(0, c) + ":textures/glint/" + name.substring(c + 1) + ".png");
+        } else {
+            id = ResourceLocation.tryParse(MOD_ID + ":textures/glint/" + name + ".png");
+        }
+        return id != null ? id : VANILLA;
+    }
+
+    /** A fresh nonzero seed for a new {@link #CHROMATIC} layer (0 means "no seed / not chromatic"), so two
+     *  chromatic glints never share an oil-slick pattern. */
+    public static int randomChromaticSeed() {
+        int s;
+        do { s = ThreadLocalRandom.current().nextInt(); } while (s == 0);
+        return s;
+    }
+
+    public static boolean isChromatic(ResourceLocation design) { return CHROMATIC.equals(design); }
+    public static boolean isChromatic(Layer layer) { return layer != null && CHROMATIC.equals(layer.design()); }
+
+    /** Re-uses the seed already stored on {@code existing} for any incoming unseeded chromatic layer at the
+     *  same index, so re-writing an item (a trim colour/speed edit, a no-op refresh) keeps its oil-slick
+     *  pattern instead of dropping the seed. Does NOT roll fresh seeds — that happens once at commit
+     *  ({@link #ensureChromaticSeeds}) so editor/table PREVIEWS (which re-build their stack every frame from
+     *  unseeded layers) stay seed-stable and don't flicker. */
+    private static Layer[] carryChromaticSeeds(Layer[] layers, @Nullable GlintState existing) {
+        if (existing == null || existing.data() == null) return layers;
+        Layer[] oldL = existing.data().layers();
+        Layer[] out = layers;
+        for (int i = 0; i < layers.length && i < oldL.length; i++) {
+            Layer l = layers[i];
+            if (isChromatic(l) && l.seed() == 0 && isChromatic(oldL[i]) && oldL[i].seed() != 0) {
+                if (out == layers) out = layers.clone();
+                out[i] = new Layer(l.design(), l.colors(), l.speed(), l.interpolate(), l.patternScale(),
+                        l.simultaneous(), l.scrollDir(), l.scrollOffset(), oldL[i].seed());
+            }
+        }
+        return out;
+    }
+
+    /** Returns {@code layers} with a fresh nonzero {@link Layer#seed} rolled into every {@link #CHROMATIC}
+     *  layer that arrives unseeded (seed 0). Non-chromatic layers and already-seeded chromatic layers pass
+     *  through unchanged. Call this server-side where layers are committed (packet handlers, command) so wire
+     *  paths that build layers without rolling a seed still get unique patterns. */
+    public static Layer[] ensureChromaticSeeds(Layer[] layers) {
+        Layer[] out = layers;
+        for (int i = 0; i < layers.length; i++) {
+            Layer l = layers[i];
+            if (isChromatic(l) && l.seed() == 0) {
+                if (out == layers) out = layers.clone();
+                out[i] = new Layer(l.design(), l.colors(), l.speed(), l.interpolate(), l.patternScale(),
+                        l.simultaneous(), l.scrollDir(), l.scrollOffset(), randomChromaticSeed());
+            }
+        }
+        return out;
+    }
+
     public static final ResourceLocation VANILLA    = ResourceLocation.fromNamespaceAndPath("minecraft", "textures/misc/enchanted_glint_item.png");
-    public static final ResourceLocation ARCS      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/arcs.png");
-    public static final ResourceLocation AURORA    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/aurora.png");
-    public static final ResourceLocation BLOBS     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/blobs.png");
-    public static final ResourceLocation CASCADE   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/cascade.png");
-    public static final ResourceLocation CHECKER   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/checker.png");
-    public static final ResourceLocation CHEVRON   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/chevron.png");
-    public static final ResourceLocation CORAL     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/coral.png");
-    public static final ResourceLocation CRACKS    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/cracks.png");
-    public static final ResourceLocation CROSSHATCH = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/crosshatch.png");
-    public static final ResourceLocation CRYSTAL   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/crystal.png");
-    public static final ResourceLocation DEBRIS    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/debris.png");
-    public static final ResourceLocation DIAMONDS  = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/diamonds.png");
-    public static final ResourceLocation DUNES     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/dunes.png");
-    public static final ResourceLocation EMBER     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/ember.png");
-    public static final ResourceLocation FEATHER   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/feather.png");
-    public static final ResourceLocation FIRE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/fire.png");
-    public static final ResourceLocation FROST     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/frost.png");
-    public static final ResourceLocation GLITCH    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/glitch.png");
-    public static final ResourceLocation GLOW      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/glow.png");
-    public static final ResourceLocation GRID      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/grid.png");
-    public static final ResourceLocation HALO      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/halo.png");
-    public static final ResourceLocation HEXAGON   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/hexagon.png");
-    public static final ResourceLocation LIGHTNING = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/lightning.png");
-    public static final ResourceLocation MARBLE    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/marble.png");
-    public static final ResourceLocation MATRIX    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/matrix.png");
-    public static final ResourceLocation MESH      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/mesh.png");
-    public static final ResourceLocation MOSAIC    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/mosaic.png");
-    public static final ResourceLocation NET       = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/net.png");
-    public static final ResourceLocation OIL       = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/oil.png");
-    public static final ResourceLocation PETAL     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/petal.png");
-    public static final ResourceLocation PLASMA    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/plasma.png");
-    public static final ResourceLocation PLATE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/plate.png");
-    public static final ResourceLocation PRISM     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/prism.png");
-    public static final ResourceLocation PULSE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/pulse.png");
-    public static final ResourceLocation RIPPLE    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/ripple.png");
-    public static final ResourceLocation SAND      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/sand.png");
-    public static final ResourceLocation SCALES    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/scales.png");
-    public static final ResourceLocation SHEEN     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/sheen.png");
-    public static final ResourceLocation SHIMMER   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/shimmer.png");
-    public static final ResourceLocation SILK      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/silk.png");
-    public static final ResourceLocation SLASH     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/slash.png");
-    public static final ResourceLocation SMOKE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/smoke.png");
-    public static final ResourceLocation SOLID     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/solid.png");
-    public static final ResourceLocation SPARKLE   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/sparkle.png");
-    public static final ResourceLocation STARS     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/stars.png");
-    public static final ResourceLocation STATIC    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/static.png");
-    public static final ResourceLocation STRIPES   = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/stripes.png");
-    public static final ResourceLocation SWIRL     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/swirl.png");
-    public static final ResourceLocation TIDE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/tide.png");
-    public static final ResourceLocation TILE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/tile.png");
-    public static final ResourceLocation VEIN      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/vein.png");
-    public static final ResourceLocation WAVE      = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/wave.png");
-    public static final ResourceLocation WEAVE     = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/weave.png");
-    public static final ResourceLocation ZIGZAG    = ResourceLocation.fromNamespaceAndPath(MOD_ID,"textures/glint/zigzag.png");
+    /** Procedural chromatic "design": it has NO PNG. Each {@link Layer} carries a random {@link Layer#seed};
+     *  the chromatic shader synthesises per-seed oil-slick noise tinted by the layer's colours (or a rainbow
+     *  hue fallback when none are set). Resolved by name via {@link #designFromName} ("chromatic" sentinel). */
+    public static final ResourceLocation CHROMATIC  = res("chromatic");
+    public static final ResourceLocation ARCS      = res("textures/glint/arcs.png");
+    public static final ResourceLocation AURORA    = res("textures/glint/aurora.png");
+    public static final ResourceLocation BLOBS     = res("textures/glint/blobs.png");
+    public static final ResourceLocation CASCADE   = res("textures/glint/cascade.png");
+    public static final ResourceLocation CHECKER   = res("textures/glint/checker.png");
+    public static final ResourceLocation CHEVRON   = res("textures/glint/chevron.png");
+    public static final ResourceLocation CORAL     = res("textures/glint/coral.png");
+    public static final ResourceLocation CRACKS    = res("textures/glint/cracks.png");
+    public static final ResourceLocation CROSSHATCH = res("textures/glint/crosshatch.png");
+    public static final ResourceLocation CRYSTAL   = res("textures/glint/crystal.png");
+    public static final ResourceLocation DEBRIS    = res("textures/glint/debris.png");
+    public static final ResourceLocation DIAMONDS  = res("textures/glint/diamonds.png");
+    public static final ResourceLocation DUNES     = res("textures/glint/dunes.png");
+    public static final ResourceLocation EMBER     = res("textures/glint/ember.png");
+    public static final ResourceLocation FEATHER   = res("textures/glint/feather.png");
+    public static final ResourceLocation FIRE      = res("textures/glint/fire.png");
+    public static final ResourceLocation FROST     = res("textures/glint/frost.png");
+    public static final ResourceLocation GLITCH    = res("textures/glint/glitch.png");
+    public static final ResourceLocation GLOW      = res("textures/glint/glow.png");
+    public static final ResourceLocation GRID      = res("textures/glint/grid.png");
+    public static final ResourceLocation HALO      = res("textures/glint/halo.png");
+    public static final ResourceLocation HEXAGON   = res("textures/glint/hexagon.png");
+    public static final ResourceLocation LIGHTNING = res("textures/glint/lightning.png");
+    public static final ResourceLocation MARBLE    = res("textures/glint/marble.png");
+    public static final ResourceLocation MATRIX    = res("textures/glint/matrix.png");
+    public static final ResourceLocation MESH      = res("textures/glint/mesh.png");
+    public static final ResourceLocation MOSAIC    = res("textures/glint/mosaic.png");
+    public static final ResourceLocation NET       = res("textures/glint/net.png");
+    public static final ResourceLocation OIL       = res("textures/glint/oil.png");
+    public static final ResourceLocation PETAL     = res("textures/glint/petal.png");
+    public static final ResourceLocation PLASMA    = res("textures/glint/plasma.png");
+    public static final ResourceLocation PLATE     = res("textures/glint/plate.png");
+    public static final ResourceLocation PRISM     = res("textures/glint/prism.png");
+    public static final ResourceLocation PULSE     = res("textures/glint/pulse.png");
+    public static final ResourceLocation RIPPLE    = res("textures/glint/ripple.png");
+    public static final ResourceLocation SAND      = res("textures/glint/sand.png");
+    public static final ResourceLocation SCALES    = res("textures/glint/scales.png");
+    public static final ResourceLocation SHEEN     = res("textures/glint/sheen.png");
+    public static final ResourceLocation SHIMMER   = res("textures/glint/shimmer.png");
+    public static final ResourceLocation SILK      = res("textures/glint/silk.png");
+    public static final ResourceLocation SLASH     = res("textures/glint/slash.png");
+    public static final ResourceLocation SMOKE     = res("textures/glint/smoke.png");
+    public static final ResourceLocation SOLID     = res("textures/glint/solid.png");
+    public static final ResourceLocation SPARKLE   = res("textures/glint/sparkle.png");
+    public static final ResourceLocation STARS     = res("textures/glint/stars.png");
+    public static final ResourceLocation STATIC    = res("textures/glint/static.png");
+    public static final ResourceLocation STRIPES   = res("textures/glint/stripes.png");
+    public static final ResourceLocation SWIRL     = res("textures/glint/swirl.png");
+    public static final ResourceLocation TIDE      = res("textures/glint/tide.png");
+    public static final ResourceLocation TILE      = res("textures/glint/tile.png");
+    public static final ResourceLocation VEIN      = res("textures/glint/vein.png");
+    public static final ResourceLocation WAVE      = res("textures/glint/wave.png");
+    public static final ResourceLocation WEAVE     = res("textures/glint/weave.png");
+    public static final ResourceLocation ZIGZAG    = res("textures/glint/zigzag.png");
 
     public static final ResourceLocation[] PATTERNS = {
-            VANILLA,
+            VANILLA, CHROMATIC,
             ARCS, AURORA, BLOBS, CASCADE, CHECKER, CHEVRON, CORAL, CRACKS,
             CROSSHATCH, CRYSTAL, DEBRIS, DIAMONDS, DUNES, EMBER, FEATHER, FIRE,
             FROST, GLITCH, GLOW, GRID, HALO, HEXAGON, LIGHTNING, MARBLE,
@@ -144,151 +335,103 @@ public final class CustomGlint {
     };
 
     // ── NBT ──────────────────────────────────────────────────────────────────
+    // All field names ("layers"/"glint"/"glowing"/"glowColors"/…) live in the codecs
+    // (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants.
 
-    private static final String TAG              = MOD_ID;
-    private static final String LAYERS_KEY       = "layers";
-    private static final String GLOWING_KEY      = "glowing";
-    private static final String GLOW_COLORS_KEY  = "glowColors";
-    private static final String DESIGN_KEY      = "design";
-    private static final String COLORS_KEY      = "colors";
-    private static final String SPEED_KEY       = "speed";
-    private static final String INTERPOLATE_KEY = "interpolate";
-    private static final String SCALE_KEY         = "scale";
-    private static final String SIMULTANEOUS_KEY  = "simultaneous";
-
-    // Item glint state lives in the CUSTOM_DATA component (the 1.20.5+ migration path for
-    // arbitrary item NBT). We keep the legacy schema — a CompoundTag stored under TAG inside the
-    // component's root — so the on-disk format and entity/item symmetry are unchanged.
-
-    /** The inner glint tag stored under TAG in the item's CUSTOM_DATA, or null if absent. */
-    @Nullable
-    private static CompoundTag glintTagOrNull(ItemStack stack) {
-        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
-        if (cd == null || !cd.contains(TAG)) return null;
-        return cd.copyTag().getCompound(TAG);
-    }
-
-    /** Overwrites the inner glint tag wholesale (other CUSTOM_DATA keys are preserved). */
-    private static void putGlintTag(ItemStack stack, CompoundTag glintTag) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.put(TAG, glintTag));
-    }
-
-    /** Mutates the inner glint tag in place, creating it if absent. */
-    private static void mutateGlintTag(ItemStack stack, Consumer<CompoundTag> mutator) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> {
-            CompoundTag glintTag = root.contains(TAG) ? root.getCompound(TAG) : new CompoundTag();
-            mutator.accept(glintTag);
-            root.put(TAG, glintTag);
-        });
-    }
+    // ── Item glint component ───────────────────────────────────────────────────
+    // Item glint state lives in the typed CustomGlintComponents.GLINT data component (a GlintState).
+    // The CompoundTag bridge helpers (itemGlintTag / writeItemTag / fromTag / toTag) round-trip that same
+    // GlintState through its codec + NbtOps (see stateToTag / stateFromTag below).
 
     @Nullable
     public static Data read(ItemStack stack) {
-        CompoundTag tag = glintTagOrNull(stack);
-        return tag == null ? null : decode(tag);
+        GlintState state = stack.get(CustomGlintComponents.GLINT.get());
+        return state == null ? null : state.data();
     }
 
-    /** Decodes an inner glint CompoundTag (the value stored under TAG) into Data, or null if invalid. */
-    @Nullable
-    private static Data decode(CompoundTag tag) {
-        float globalSpeed = tag.contains(SPEED_KEY) ? tag.getFloat(SPEED_KEY) : 1.0f;
-        if (globalSpeed <= 0) globalSpeed = 1.0f;
-        boolean globalInterpolate = !tag.contains(INTERPOLATE_KEY) || tag.getBoolean(INTERPOLATE_KEY);
-        float globalScale = tag.contains(SCALE_KEY) ? tag.getFloat(SCALE_KEY) : 1.0f;
-        if (globalScale <= 0) globalScale = 1.0f;
-        boolean globalSimultaneous = !tag.contains(SIMULTANEOUS_KEY) || tag.getBoolean(SIMULTANEOUS_KEY);
-
-        Layer[] layers;
-        if (tag.contains(LAYERS_KEY)) {
-            ListTag list = tag.getList(LAYERS_KEY, Tag.TAG_COMPOUND);
-            if (list.isEmpty()) return null;
-            layers = new Layer[list.size()];
-            for (int i = 0; i < list.size(); i++) {
-                CompoundTag lt = list.getCompound(i);
-                String design = lt.getString(DESIGN_KEY);
-                if (design.isEmpty()) return null;
-                if (!lt.contains(COLORS_KEY)) return null;
-                int[] colors = lt.getIntArray(COLORS_KEY);
-                if (colors.length == 0) return null;
-                float speed = lt.contains(SPEED_KEY) ? lt.getFloat(SPEED_KEY) : globalSpeed;
-                if (speed <= 0) speed = 1.0f;
-                boolean interpolate = lt.contains(INTERPOLATE_KEY) ? lt.getBoolean(INTERPOLATE_KEY) : globalInterpolate;
-                float patternScale = lt.contains(SCALE_KEY) ? lt.getFloat(SCALE_KEY) : globalScale;
-                if (patternScale <= 0) patternScale = 1.0f;
-                boolean simultaneous = lt.contains(SIMULTANEOUS_KEY) ? lt.getBoolean(SIMULTANEOUS_KEY) : globalSimultaneous;
-                layers[i] = new Layer(ResourceLocation.parse(design), colors, speed, interpolate, patternScale, simultaneous);
-            }
-        } else {
-            // backward compat: old single-layer format
-            String design = tag.getString(DESIGN_KEY);
-            if (design.isEmpty()) return null;
-            if (!tag.contains(COLORS_KEY)) return null;
-            int[] colors = tag.getIntArray(COLORS_KEY);
-            if (colors.length == 0) return null;
-            layers = new Layer[]{ new Layer(ResourceLocation.parse(design), colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
-        }
-
-        return new Data(layers);
+    private static GlintState stateOrEmpty(ItemStack stack) {
+        GlintState s = stack.get(CustomGlintComponents.GLINT.get());
+        return s == null ? GlintState.EMPTY : s;
     }
 
-    /** Encodes a Layer[] into a fresh inner glint CompoundTag (the value placed under TAG). */
-    private static CompoundTag encodeLayers(Layer[] layers) {
-        CompoundTag tag = new CompoundTag();
-        ListTag list = new ListTag();
-        for (Layer layer : layers) {
-            CompoundTag lt = new CompoundTag();
-            lt.putString(DESIGN_KEY, layer.design().toString());
-            lt.putIntArray(COLORS_KEY, layer.colors());
-            lt.putFloat(SPEED_KEY, layer.speed());
-            lt.putBoolean(INTERPOLATE_KEY, layer.interpolate());
-            lt.putFloat(SCALE_KEY, layer.patternScale());
-            lt.putBoolean(SIMULTANEOUS_KEY, layer.simultaneous());
-            list.add(lt);
-        }
-        tag.put(LAYERS_KEY, list);
-        return tag;
+    /** Sets the glint component, or removes it when the result is empty — so a cleared item carries no
+     *  component at all (matching the old "remove the tag" behaviour and keeping stacks value-equal). */
+    private static void setState(ItemStack stack, GlintState state) {
+        if (state.isEmpty()) stack.remove(CustomGlintComponents.GLINT.get());
+        else stack.set(CustomGlintComponents.GLINT.get(), state);
+    }
+
+    // ── CompoundTag bridge (serialized snapshot / restore) ────────────────────
+    // The GlintState codec driven through NbtOps, for the cases that genuinely need a serialized form:
+    // a stored snapshot, give NBT, /data, a custom packet. An item tag and an entity tag share one shape
+    // (same codec), so a mob's glint copies onto an item and back with no field-by-field translation.
+
+    private static CompoundTag stateToTag(GlintState state) {
+        if (state.isEmpty()) return new CompoundTag();
+        return (CompoundTag) GlintState.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+    }
+
+    private static GlintState stateFromTag(@Nullable CompoundTag tag) {
+        if (tag == null || tag.isEmpty()) return GlintState.EMPTY;
+        return GlintState.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(GlintState.EMPTY);
     }
 
     public static boolean has(ItemStack stack) {
-        CustomData cd = stack.get(DataComponents.CUSTOM_DATA);
-        return cd != null && cd.contains(TAG);
+        GlintState state = stack.get(CustomGlintComponents.GLINT.get());
+        return state != null && !state.isEmpty();
     }
 
     public static void write(ItemStack stack, Layer[] layers) {
-        CompoundTag existing = glintTagOrNull(stack);
-        CompoundTag tag = encodeLayers(layers);
-        if (existing != null && existing.contains(GLOWING_KEY))
-            tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
-        if (existing != null && existing.contains(GLOW_COLORS_KEY))
-            tag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
-        putGlintTag(stack, tag);
+        GlintState existing = stack.get(CustomGlintComponents.GLINT.get());
+        layers = carryChromaticSeeds(layers, existing);
+        // write() overwrites the glint layers but preserves any glow state already on the stack (glint and
+        // glow are independent — applying a new Glint Trim must not nuke a Glow Trim's colors).
+        boolean glowing = existing != null && existing.glowing();
+        int[] glowColors = existing != null ? existing.glowColors() : new int[0];
+        setState(stack, new GlintState(new Data(layers), glowing, glowColors));
     }
 
     public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
         write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) });
     }
 
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous, int scrollDir, float scrollOffset) {
+        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset) });
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) });
+    }
+
     public static void remove(ItemStack stack) {
-        if (!has(stack)) return;
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.remove(TAG));
+        stack.remove(CustomGlintComponents.GLINT.get());
     }
 
     public static boolean isGlowing(ItemStack stack) {
         if (stack.isEmpty()) return false;
-        CompoundTag tag = glintTagOrNull(stack);
-        return tag != null && tag.getBoolean(GLOWING_KEY);
+        GlintState state = stack.get(CustomGlintComponents.GLINT.get());
+        return state != null && state.glowing();
     }
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
-        mutateGlintTag(stack, t -> t.putBoolean(GLOWING_KEY, glowing));
+        GlintState s = stateOrEmpty(stack);
+        setState(stack, new GlintState(s.data(), glowing, s.glowColors()));
     }
+
+    /** True iff the stack would render a glow outline ({@code isGlowing || hasGlowColors}). */
+    public static boolean hasGlowEffect(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        GlintState state = stack.get(CustomGlintComponents.GLINT.get());
+        return state != null && (state.glowing() || state.glowColors().length > 0);
+    }
+
+    private static final int[] EMPTY_COLORS = new int[0];
 
     /** Glow Trim colors — drive the outline color animation independently of any glint Data. */
     public static int[] getGlowColors(ItemStack stack) {
-        if (stack.isEmpty()) return new int[0];
-        CompoundTag tag = glintTagOrNull(stack);
-        if (tag == null || !tag.contains(GLOW_COLORS_KEY)) return new int[0];
-        return tag.getIntArray(GLOW_COLORS_KEY);
+        if (stack.isEmpty()) return EMPTY_COLORS;
+        GlintState state = stack.get(CustomGlintComponents.GLINT.get());
+        return state == null ? EMPTY_COLORS : state.glowColors();
     }
 
     public static boolean hasGlowColors(ItemStack stack) {
@@ -297,16 +440,14 @@ public final class CustomGlint {
 
     /** Sets glowColors AND glowing=true. Independent of any glint Data on the stack. */
     public static void setGlowColors(ItemStack stack, int[] colors) {
-        mutateGlintTag(stack, t -> {
-            t.putIntArray(GLOW_COLORS_KEY, colors);
-            t.putBoolean(GLOWING_KEY, true);
-        });
+        GlintState s = stateOrEmpty(stack);
+        setState(stack, new GlintState(s.data(), true, colors));
     }
 
     public static void clearGlowColors(ItemStack stack) {
-        CompoundTag tag = glintTagOrNull(stack);
-        if (tag == null || !tag.contains(GLOW_COLORS_KEY)) return;
-        mutateGlintTag(stack, t -> t.remove(GLOW_COLORS_KEY));
+        GlintState s = stack.get(CustomGlintComponents.GLINT.get());
+        if (s == null || s.glowColors().length == 0) return;
+        setState(stack, new GlintState(s.data(), s.glowing(), new int[0]));
     }
 
     public static ItemStack glinted(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -383,13 +524,11 @@ public final class CustomGlint {
 
     // ── Entity glint API ──────────────────────────────────────────────────────
     //
-    // Per-instance: NBT lives in the LivingEntity's persistent data under TAG (same schema as
-    // items). Server writes; a client-side sync packet (GlintEntitySyncPacket) pushes the tag to
-    // tracking players and the client renderer (EntityGlintRender) reads from the cache.
+    // Per-instance state is the synced ENTITY_GLINT attachment (a GlintState). Writing it server-side
+    // auto-syncs to tracking clients and the renderer reads it directly — there is no manual sync packet.
     //
-    // Type-wide: ENTITY_GLINTS is a server-safe registry; the client renderer falls back to it
-    // when no per-instance NBT exists, so all entities of the type render with the same glint
-    // with no per-entity storage or sync.
+    // Type-wide: ENTITY_GLINTS is a server-safe registry; the renderer falls back to it when an entity
+    // has no per-instance state, so all entities of the type render the same glint with no storage/sync.
 
     public static final Map<EntityType<?>, Data> ENTITY_GLINTS = new HashMap<>();
 
@@ -406,131 +545,112 @@ public final class CustomGlint {
         return ENTITY_GLINTS.get(type);
     }
 
-    /** Reads the per-instance entity glint tag (server: from persistentData; client: caller passes the synced tag). */
+    private static GlintState entityState(LivingEntity entity) {
+        GlintState s = entity.getExistingDataOrNull(CustomGlintComponents.ENTITY_GLINT);
+        return s == null ? GlintState.EMPTY : s;
+    }
+
+    /** Stores the state, or removes the attachment when empty. Either path auto-syncs to trackers. */
+    private static void setEntityState(LivingEntity entity, GlintState state) {
+        if (state.isEmpty()) entity.removeData(CustomGlintComponents.ENTITY_GLINT);
+        else entity.setData(CustomGlintComponents.ENTITY_GLINT, state);
+    }
+
+    /** The per-instance entity glint Data (null if none). */
     @Nullable
     public static Data readEntity(LivingEntity entity) {
-        CompoundTag pd = entity.getPersistentData();
-        if (!pd.contains(TAG)) return null;
-        return fromTag(pd.getCompound(TAG));
+        return entityState(entity).data();
     }
 
     public static boolean hasEntity(LivingEntity entity) {
-        return entity.getPersistentData().contains(TAG);
+        return !entityState(entity).isEmpty();
     }
 
+    /** Sets the glint layers, preserving the entity's existing glow flags. Auto-syncs to trackers. */
     public static void writeEntity(LivingEntity entity, Layer[] layers) {
-        CompoundTag pd = entity.getPersistentData();
-        CompoundTag existing = pd.contains(TAG) ? pd.getCompound(TAG) : null;
-        CompoundTag glintTag = toTag(layers);
-        if (existing != null && existing.contains(GLOWING_KEY))
-            glintTag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
-        if (existing != null && existing.contains(GLOW_COLORS_KEY))
-            glintTag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
-        pd.put(TAG, glintTag);
+        GlintState cur = entityState(entity);
+        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors()));
     }
 
     public static void removeEntity(LivingEntity entity) {
-        entity.getPersistentData().remove(TAG);
+        entity.removeData(CustomGlintComponents.ENTITY_GLINT);
     }
 
     public static boolean isEntityGlowing(LivingEntity entity) {
-        CompoundTag pd = entity.getPersistentData();
-        if (!pd.contains(TAG)) return false;
-        return pd.getCompound(TAG).getBoolean(GLOWING_KEY);
+        return entityState(entity).glowing();
     }
 
     public static void setEntityGlowing(LivingEntity entity, boolean glowing) {
-        CompoundTag pd = entity.getPersistentData();
-        CompoundTag glintTag = pd.contains(TAG) ? pd.getCompound(TAG) : new CompoundTag();
-        glintTag.putBoolean(GLOWING_KEY, glowing);
-        pd.put(TAG, glintTag);
+        GlintState cur = entityState(entity);
+        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors()));
     }
 
     /** Per-entity Glow Trim colors — drive the outline color animation independently of any
      *  glint Data, identical semantics to {@link #getGlowColors(ItemStack)} but on a mob. */
     public static int[] getEntityGlowColors(LivingEntity entity) {
-        CompoundTag pd = entity.getPersistentData();
-        if (!pd.contains(TAG)) return new int[0];
-        CompoundTag tag = pd.getCompound(TAG);
-        if (!tag.contains(GLOW_COLORS_KEY)) return new int[0];
-        return tag.getIntArray(GLOW_COLORS_KEY);
+        return entityState(entity).glowColors();
     }
 
     public static boolean hasEntityGlowColors(LivingEntity entity) {
         return getEntityGlowColors(entity).length > 0;
     }
 
-    /** Sets glowColors AND glowing=true on the entity. Call
-     *  {@code EntityGlintEvents.broadcast(entity)} afterwards to push the change to tracking
-     *  clients (the api jar registers the sync channel — no extra wiring needed). */
+    /** Sets glowColors AND glowing=true on the entity. Auto-syncs to tracking clients (no manual broadcast). */
     public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
-        CompoundTag pd = entity.getPersistentData();
-        CompoundTag glintTag = pd.contains(TAG) ? pd.getCompound(TAG) : new CompoundTag();
-        glintTag.putIntArray(GLOW_COLORS_KEY, colors);
-        glintTag.putBoolean(GLOWING_KEY, true);
-        pd.put(TAG, glintTag);
+        GlintState cur = entityState(entity);
+        setEntityState(entity, new GlintState(cur.data(), true, colors));
     }
 
     public static void clearEntityGlowColors(LivingEntity entity) {
-        CompoundTag pd = entity.getPersistentData();
-        if (!pd.contains(TAG)) return;
-        CompoundTag tag = pd.getCompound(TAG);
-        tag.remove(GLOW_COLORS_KEY);
+        GlintState cur = entityState(entity);
+        if (cur.glowColors().length == 0) return;
+        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0]));
     }
 
-    /** Returns the raw inner glint tag stored on an ItemStack (or empty CompoundTag if none). */
+    /** The stack's glint state as a CompoundTag (empty if none) — the bridge format shared with entity
+     *  NBT, so a mob's glint can be copied onto an item and vice-versa. */
     public static CompoundTag itemGlintTag(ItemStack stack) {
-        CompoundTag tag = glintTagOrNull(stack);
-        return tag == null ? new CompoundTag() : tag.copy();
+        return stateToTag(stateOrEmpty(stack));
     }
 
-    /** Returns the raw inner glint tag for sync packets (or empty CompoundTag if none). */
+    /** The entity's glint state as a CompoundTag (empty if none). Same shape as {@link #itemGlintTag}. */
     public static CompoundTag entityGlintTag(LivingEntity entity) {
-        CompoundTag pd = entity.getPersistentData();
-        return pd.contains(TAG) ? pd.getCompound(TAG).copy() : new CompoundTag();
+        return stateToTag(entityState(entity));
     }
 
-    /** Replaces the per-instance entity glint tag in one shot (used by the sync packet handler on the server side and by full overwrites). */
+    /** Replaces the per-instance entity glint state in one shot (empty/null clears it). Auto-syncs. */
     public static void writeEntityTag(LivingEntity entity, CompoundTag glintTag) {
-        if (glintTag == null || glintTag.isEmpty()) entity.getPersistentData().remove(TAG);
-        else entity.getPersistentData().put(TAG, glintTag.copy());
+        setEntityState(entity, stateFromTag(glintTag));
     }
 
-    /** Replaces the per-item glint tag in one shot. Symmetric with {@link #writeEntityTag} —
-     *  useful for transferring glint state between item and entity (e.g. capturing a mob's
-     *  glint onto an item via {@code writeItemTag(stack, entityGlintTag(entity))}) or
-     *  restoring from a stored tag in bulk. Empty/null tag clears the glint. */
+    /** Replaces the per-item glint state in one shot. Symmetric with {@link #writeEntityTag} — useful for
+     *  transferring glint between item and entity (e.g. {@code writeItemTag(stack, entityGlintTag(entity))})
+     *  or restoring from a stored tag in bulk. Empty/null tag clears the glint. */
     public static void writeItemTag(ItemStack stack, CompoundTag glintTag) {
-        if (glintTag == null || glintTag.isEmpty()) {
-            remove(stack);
-            return;
-        }
-        putGlintTag(stack, glintTag.copy());
+        setState(stack, stateFromTag(glintTag));
     }
 
-    // ── NBT serialization helpers (decoupled from ItemStack) ──────────────────
+    // ── Tag inspectors (pull fields out of a glint CompoundTag) ───────────────
 
-    /** Decodes the inner glint CompoundTag (the value stored under TAG) into a Data record, or null if invalid/missing. */
+    /** The glint {@link Data} from a glint tag, or null if none. */
     @Nullable
     public static Data fromTag(@Nullable CompoundTag glintTag) {
-        if (glintTag == null || glintTag.isEmpty()) return null;
-        return decode(glintTag);
+        return stateFromTag(glintTag).data();
     }
 
-    /** Returns true if the inner glint tag has glowing=true. */
+    /** True if the glint tag has glowing=true. */
     public static boolean tagGlowing(@Nullable CompoundTag glintTag) {
-        return glintTag != null && glintTag.getBoolean(GLOWING_KEY);
+        return stateFromTag(glintTag).glowing();
     }
 
-    /** Returns the glowColors int[] from the inner glint tag (empty if absent). */
+    /** The glowColors int[] from the glint tag (empty if absent). */
     public static int[] tagGlowColors(@Nullable CompoundTag glintTag) {
-        if (glintTag == null || !glintTag.contains(GLOW_COLORS_KEY)) return new int[0];
-        return glintTag.getIntArray(GLOW_COLORS_KEY);
+        return stateFromTag(glintTag).glowColors();
     }
 
-    /** Encodes a Layer[] into a fresh inner glint CompoundTag (the value placed under TAG). */
+    /** A glint tag holding just these layers (no glow flags). */
     public static CompoundTag toTag(Layer[] layers) {
-        return encodeLayers(layers);
+        return stateToTag(new GlintState(new Data(layers), false, new int[0]));
     }
 
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();

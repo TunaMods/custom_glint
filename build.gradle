@@ -186,6 +186,9 @@ def apiJarTask = tasks.register('apiJar', Jar) {
         include 'META-INF/accesstransformer.cfg'
         include 'custom_glint.mixins.json'
         include 'assets/customglint/textures/glint/**'
+        // Core shaders pair with the common/client rendering backend (glow outline + chromatic glint);
+        // bundle them so an api-only embedder gets a self-sufficient renderer.
+        include 'assets/customglint/shaders/**'
         include 'customglint.png'
         include 'pack.mcmeta'
     }
@@ -223,6 +226,11 @@ def generateApiJarJarMetadata = tasks.register('generateApiJarJarMetadata') {
 tasks.named('jar', Jar).configure {
     dependsOn generateModMetadata
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // Tag the standalone download with the MC version so it doesn't collide with the
+    // 26.1.2 build, which shares the same mod_version. The nested api jar keeps the plain
+    // version (embedders pin it by maven coordinate).
+    archiveVersion = "${mod_version}-${minecraft_version}"
 
     // Api content lives inside the nested api jar only — drop it from the full jar so classes
     // aren't loaded twice when a downstream mod's bundled jarJar copy also resolves.

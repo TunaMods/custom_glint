@@ -1,18 +1,19 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 public class GlintTrimMergeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimMergeRecipe> SERIALIZER =
@@ -42,7 +43,7 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
         for (int i = 0; i < pInv.size(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
-            if (result.isEmpty()) { result = s; continue; }
+            if (result.isEmpty()) { result = s.copy(); continue; }
             result = GlintTrimItem.mergeColors(result, s);
         }
         return result;
@@ -50,8 +51,8 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
         GlintTrimItem.addColor(result, 0xFF00AAFF);
         return result;
@@ -63,11 +64,11 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trim1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim1, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack trim1 = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trim1, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim2, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/sparkle.png"));
+        ItemStack trim2 = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trim2, CustomGlint.res("textures/glint/sparkle.png"));
         GlintTrimItem.addColor(trim2, 0xFF00AAFF);
         list.add(Ingredient.of(trim1));
         list.add(Ingredient.of(trim2));

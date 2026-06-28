@@ -42,3 +42,4 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+/claude_26.md

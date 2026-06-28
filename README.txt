@@ -271,10 +271,11 @@ list on join and /reload.
   NBT format
 ================================================================================
 
-Item glint lives in the minecraft:custom_data component, under the "customglint"
-key. With the 1.20.5+ component syntax:
+Item glint lives in the customglint:glint data component, a codec-typed GlintState:
+the glint layers (under "glint") plus the two glow fields ("glowing", "glowColors").
+With the 1.20.5+ component syntax:
 
-  /give @p <item>[minecraft:custom_data={customglint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
+  /give @p <item>[customglint:glint={glint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536,-16711936,-16776961],speed:0.5f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
 
 speed: 1.0 = 20 ticks / color. interpolate: 1b = smooth. simultaneous: 1b = all
 colors at once. Alpha byte of each color int = brightness.
@@ -284,12 +285,18 @@ every full-brightness color) is negative in this form; the leading 0xFF makes
 it exceed Integer.MAX_VALUE unsigned. Use the named constants from Java code,
 the color names from /glint apply, or a hex-to-signed-int converter.
 
-Add glowing:1b alongside layers for the colored outline:
+Add glowing:1b (and optionally glowColors:[I;...]) as siblings of the glint block
+for the colored outline. glowColors drives the outline tint independently of the
+glint layers; with glowing:1b and no glowColors the outline tracks glint layer 0:
 
-  /give @p minecraft:diamond_sword[minecraft:custom_data={customglint:{glowing:1b,layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
+  /give @p minecraft:diamond_sword[customglint:glint={glowing:1b,glint:{layers:[{design:"customglint:textures/glint/wave.png",colors:[I;-65536],speed:1.0f,interpolate:1b,scale:1.0f,simultaneous:0b}]}}] 1
+
+A glow-only item (outline, no animated glint) needs no glint block at all:
+
+  /give @p minecraft:diamond_sword[customglint:glint={glowing:1b,glowColors:[I;-65536,-1]}] 1
 
 Remove the glint from a held item with the mod command:
 
   /glint remove
 
-Or hand out a clean item by dropping the whole component: <item>[!minecraft:custom_data].
+Or hand out a clean item by dropping the whole component: <item>[!customglint:glint].

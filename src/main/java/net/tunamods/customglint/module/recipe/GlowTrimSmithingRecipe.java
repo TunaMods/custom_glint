@@ -1,10 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.mojang.serialization.MapCodec;
+
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -16,6 +13,11 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.level.Level;
+
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 /**
  * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with
@@ -68,7 +70,7 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        ItemStack trimExample = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));

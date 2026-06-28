@@ -1,23 +1,21 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.HolderLookup;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.component.CustomData;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
+import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 public class GlintTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
@@ -46,7 +44,8 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
                 return false;
             }
         }
-        return filled == 2 && !trim.isEmpty() && !dye.isEmpty();
+        return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
+                && GlintTrimItem.getColors(trim).length < 8;
     }
 
     @Override
@@ -62,17 +61,20 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        int[] colors = new int[]{ GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()] };
-        CustomData.update(DataComponents.CUSTOM_DATA, result, t -> t.putIntArray(GlintTrimItem.COLORS_TAG, colors));
-        ResourceLocation pattern = GlintTrimItem.getPattern(result);
-        if (pattern != null) CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
+        // Append the dye's color (cap 8), matching GlowTrimDyeRecipe — dyeing a multi-color trim must not
+        // discard its existing colors.
+        int[] current = GlintTrimItem.getColors(result);
+        int[] next = new int[current.length + 1];
+        System.arraycopy(current, 0, next, 0, current.length);
+        next[current.length] = GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()];
+        GlintTrimItem.setColors(result, next);
         return result;
     }
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(result, 0xFFFF0000);
         return result;
     }
@@ -83,8 +85,8 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, ResourceLocation.fromNamespaceAndPath("customglint", "textures/glint/wave.png"));
+        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(
