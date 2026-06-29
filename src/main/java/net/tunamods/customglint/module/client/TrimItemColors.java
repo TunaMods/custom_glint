@@ -15,15 +15,18 @@ public final class TrimItemColors {
 
     @SubscribeEvent
     public static void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
+        // Only the white outline (layer1 / tintindex 1 — texture glow_glint_trim_edge) is recoloured; the
+        // grey body (layer0 / tintindex 0) stays untinted. A single multiply over the whole sprite would
+        // darken the grey body toward the glow colour, which is wrong.
         event.register((stack, tintIndex) -> {
-            if (tintIndex != 0) return 0xFFFFFFFF;
+            if (tintIndex != 1) return 0xFFFFFFFF;
             int[] colors = GlowTrimItem.getColors(stack);
             if (colors.length == 0) return 0xFFFFFFFF;
             return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
         }, CustomGlintMod.GLOW_TRIM.get());
 
         event.register((stack, tintIndex) -> {
-            if (tintIndex != 0) return 0xFFFFFFFF;
+            if (tintIndex != 1) return 0xFFFFFFFF;
             if (!GlintTrimItem.isGlowing(stack)) return 0xFFFFFFFF;
             int[] colors = GlintTrimItem.getColors(stack);
             if (colors.length == 0) return 0xFFFFFFFF;

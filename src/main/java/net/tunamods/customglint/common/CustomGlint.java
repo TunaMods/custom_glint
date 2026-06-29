@@ -12,8 +12,11 @@ import net.minecraft.world.item.Items;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
@@ -30,13 +33,60 @@ public final class CustomGlint {
 
     private CustomGlint() {}
 
+    // ── Scroll directions ──────────────────────────────────────────────────────
+
+    /** {@link Layer#scrollDir} values: the direction the animated glint drifts. {@code STATIC} freezes the
+     *  animation and uses {@link Layer#scrollOffset} as a manual position instead. The eight compass values
+     *  go counter-clockwise from East. Default is {@code E} (the historical horizontal scroll). */
+    public static final int SCROLL_STATIC = 0, SCROLL_E = 1, SCROLL_NE = 2, SCROLL_N = 3, SCROLL_NW = 4,
+            SCROLL_W = 5, SCROLL_SW = 6, SCROLL_S = 7, SCROLL_SE = 8;
+
+    /** A glint never cycles more than this many colors per layer (the renderer fans out one draw per color
+     *  and loops); every input path (wand editor, dye/merge recipes, packets) enforces it. */
+    public static final int MAX_COLORS_PER_LAYER = 8;
+
     // ── Layer ─────────────────────────────────────────────────────────────────
 
-    public record Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {}
+    public record Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                        float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        /** Back-compat constructor: defaults the procedural-chromatic {@link #seed} to 0 (only
+         *  {@link #CHROMATIC} layers use it), so the 8-arg call sites keep compiling unchanged. */
+        public Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                     float patternScale, boolean simultaneous, int scrollDir, float scrollOffset) {
+            this(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, 0);
+        }
+        /** Back-compat constructor: defaults to the historical East scroll with no static offset, so every
+         *  existing call site (auto-apply registries, commands, packets) keeps compiling unchanged. */
+        public Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                     float patternScale, boolean simultaneous) {
+            this(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f, 0);
+        }
+
+        // Value equality (the record default compares the int[] by identity, which would break
+        // renderer cache keys / recipe matching — every other field is value-equal).
+        @Override public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Layer l)) return false;
+            return Float.compare(speed, l.speed) == 0 && interpolate == l.interpolate
+                    && Float.compare(patternScale, l.patternScale) == 0 && simultaneous == l.simultaneous
+                    && scrollDir == l.scrollDir && Float.compare(scrollOffset, l.scrollOffset) == 0
+                    && seed == l.seed
+                    && Objects.equals(design, l.design) && Arrays.equals(colors, l.colors);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(design, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) * 31
+                    + Arrays.hashCode(colors);
+        }
+    }
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
-    public record Data(Layer[] layers) {}
+    public record Data(Layer[] layers) {
+        @Override public boolean equals(Object o) {
+            return this == o || (o instanceof Data d && Arrays.equals(layers, d.layers));
+        }
+        @Override public int hashCode() { return Arrays.hashCode(layers); }
+    }
 
     // ── Colors ────────────────────────────────────────────────────────────────
 
@@ -63,7 +113,16 @@ public final class CustomGlint {
 
     // ── Designs ───────────────────────────────────────────────────────────────
 
+    /** {@code customglint:<path>} resource location helper. */
+    public static ResourceLocation res(String path) {
+        return new ResourceLocation(MOD_ID, path);
+    }
+
     public static final ResourceLocation VANILLA    = new ResourceLocation("minecraft", "textures/misc/enchanted_glint_item.png");
+    /** Procedural chromatic "design": it has NO PNG. Each {@link Layer} carries a random {@link Layer#seed};
+     *  the chromatic shader synthesises per-seed oil-slick noise tinted by the layer's colours (or a rainbow
+     *  hue fallback when none are set). Resolved by name via {@link #designFromName} ("chromatic" sentinel). */
+    public static final ResourceLocation CHROMATIC  = res("chromatic");
     public static final ResourceLocation ARCS      = new ResourceLocation(MOD_ID, "textures/glint/arcs.png");
     public static final ResourceLocation AURORA    = new ResourceLocation(MOD_ID, "textures/glint/aurora.png");
     public static final ResourceLocation BLOBS     = new ResourceLocation(MOD_ID, "textures/glint/blobs.png");
@@ -120,7 +179,7 @@ public final class CustomGlint {
     public static final ResourceLocation ZIGZAG    = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
 
     public static final ResourceLocation[] PATTERNS = {
-            VANILLA,
+            VANILLA, CHROMATIC,
             ARCS, AURORA, BLOBS, CASCADE, CHECKER, CHEVRON, CORAL, CRACKS,
             CROSSHATCH, CRYSTAL, DEBRIS, DIAMONDS, DUNES, EMBER, FEATHER, FIRE,
             FROST, GLITCH, GLOW, GRID, HALO, HEXAGON, LIGHTNING, MARBLE,
@@ -129,6 +188,73 @@ public final class CustomGlint {
             SLASH, SMOKE, SOLID, SPARKLE, STARS, STATIC, STRIPES, SWIRL,
             TIDE, TILE, VEIN, WAVE, WEAVE, ZIGZAG
     };
+
+    /** Resolves a design <em>name</em> (as stored on a Trim / typed in a command / shown in the picker) to
+     *  its design {@link ResourceLocation}. Handles the {@code vanilla} sentinel and {@code chromatic}
+     *  sentinel and {@code namespace:name} qualified names; everything else maps to
+     *  {@code <ns>:textures/glint/<name>.png}. */
+    public static ResourceLocation designFromName(String name) {
+        if (name == null) return VANILLA;
+        if ("vanilla".equals(name)) return VANILLA;
+        if ("chromatic".equals(name)) return CHROMATIC;
+        try {
+            if (name.indexOf(':') >= 0) {
+                int c = name.indexOf(':');
+                return new ResourceLocation(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
+            }
+            return new ResourceLocation(MOD_ID, "textures/glint/" + name + ".png");
+        } catch (Exception e) {
+            return VANILLA;
+        }
+    }
+
+    /** A fresh nonzero seed for a new {@link #CHROMATIC} layer (0 means "no seed / not chromatic"), so two
+     *  chromatic glints never share an oil-slick pattern. */
+    public static int randomChromaticSeed() {
+        int s;
+        do { s = ThreadLocalRandom.current().nextInt(); } while (s == 0);
+        return s;
+    }
+
+    public static boolean isChromatic(ResourceLocation design) { return CHROMATIC.equals(design); }
+    public static boolean isChromatic(Layer layer) { return layer != null && CHROMATIC.equals(layer.design()); }
+
+    /** Re-uses the seed already stored on {@code existing} for any incoming unseeded chromatic layer at the
+     *  same index, so re-writing an item (a trim colour/speed edit, a no-op refresh) keeps its oil-slick
+     *  pattern instead of dropping the seed. Does NOT roll fresh seeds — that happens once at commit
+     *  ({@link #ensureChromaticSeeds}) so editor/table PREVIEWS (which re-build their stack every frame from
+     *  unseeded layers) stay seed-stable and don't flicker. */
+    private static Layer[] carryChromaticSeeds(Layer[] layers, @Nullable Data existing) {
+        if (existing == null) return layers;
+        Layer[] oldL = existing.layers();
+        Layer[] out = layers;
+        for (int i = 0; i < layers.length && i < oldL.length; i++) {
+            Layer l = layers[i];
+            if (isChromatic(l) && l.seed() == 0 && isChromatic(oldL[i]) && oldL[i].seed() != 0) {
+                if (out == layers) out = layers.clone();
+                out[i] = new Layer(l.design(), l.colors(), l.speed(), l.interpolate(), l.patternScale(),
+                        l.simultaneous(), l.scrollDir(), l.scrollOffset(), oldL[i].seed());
+            }
+        }
+        return out;
+    }
+
+    /** Returns {@code layers} with a fresh nonzero {@link Layer#seed} rolled into every {@link #CHROMATIC}
+     *  layer that arrives unseeded (seed 0). Non-chromatic layers and already-seeded chromatic layers pass
+     *  through unchanged. Call this server-side where layers are committed (packet handlers, command) so wire
+     *  paths that build layers without rolling a seed still get unique patterns. */
+    public static Layer[] ensureChromaticSeeds(Layer[] layers) {
+        Layer[] out = layers;
+        for (int i = 0; i < layers.length; i++) {
+            Layer l = layers[i];
+            if (isChromatic(l) && l.seed() == 0) {
+                if (out == layers) out = layers.clone();
+                out[i] = new Layer(l.design(), l.colors(), l.speed(), l.interpolate(), l.patternScale(),
+                        l.simultaneous(), l.scrollDir(), l.scrollOffset(), randomChromaticSeed());
+            }
+        }
+        return out;
+    }
 
     /** Saturated colors only — used by JEI plugin and trim creative tab for preset display. */
     public static final int[] VIBRANT_COLORS = {
@@ -153,6 +279,9 @@ public final class CustomGlint {
     private static final String INTERPOLATE_KEY = "interpolate";
     private static final String SCALE_KEY         = "scale";
     private static final String SIMULTANEOUS_KEY  = "simultaneous";
+    private static final String SCROLL_KEY        = "scroll";
+    private static final String OFFSET_KEY        = "offset";
+    private static final String SEED_KEY          = "seed";
 
     @Nullable
     public static Data read(ItemStack stack) {
@@ -177,16 +306,22 @@ public final class CustomGlint {
                 CompoundTag lt = list.getCompound(i);
                 String design = lt.getString(DESIGN_KEY);
                 if (design.isEmpty()) return null;
-                if (!lt.contains(COLORS_KEY)) return null;
+                ResourceLocation designRl = new ResourceLocation(design);
+                boolean chromatic = isChromatic(designRl);
                 int[] colors = lt.getIntArray(COLORS_KEY);
-                if (colors.length == 0) return null;
+                // Chromatic layers are allowed to carry an empty palette (the shader falls back to a
+                // greyscale slick); every other design needs at least one color.
+                if (colors.length == 0 && !chromatic) return null;
                 float speed = lt.contains(SPEED_KEY) ? lt.getFloat(SPEED_KEY) : globalSpeed;
                 if (speed <= 0) speed = 1.0f;
                 boolean interpolate = lt.contains(INTERPOLATE_KEY) ? lt.getBoolean(INTERPOLATE_KEY) : globalInterpolate;
                 float patternScale = lt.contains(SCALE_KEY) ? lt.getFloat(SCALE_KEY) : globalScale;
                 if (patternScale <= 0) patternScale = 1.0f;
                 boolean simultaneous = lt.contains(SIMULTANEOUS_KEY) ? lt.getBoolean(SIMULTANEOUS_KEY) : globalSimultaneous;
-                layers[i] = new Layer(new ResourceLocation(design), colors, speed, interpolate, patternScale, simultaneous);
+                int scrollDir = lt.contains(SCROLL_KEY) ? lt.getInt(SCROLL_KEY) : SCROLL_E;
+                float scrollOffset = lt.contains(OFFSET_KEY) ? lt.getFloat(OFFSET_KEY) : 0.0f;
+                int seed = lt.contains(SEED_KEY) ? lt.getInt(SEED_KEY) : 0;
+                layers[i] = new Layer(designRl, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed);
             }
         } else {
             // backward compat: old single-layer format
@@ -206,6 +341,7 @@ public final class CustomGlint {
     }
 
     public static void write(ItemStack stack, Layer[] layers) {
+        layers = carryChromaticSeeds(layers, read(stack));
         CompoundTag tag = new CompoundTag();
         CompoundTag existing = stack.hasTag() ? stack.getTag().getCompound(TAG) : null;
         if (existing != null && existing.contains(GLOWING_KEY))
@@ -221,6 +357,9 @@ public final class CustomGlint {
             lt.putBoolean(INTERPOLATE_KEY, layer.interpolate());
             lt.putFloat(SCALE_KEY, layer.patternScale());
             lt.putBoolean(SIMULTANEOUS_KEY, layer.simultaneous());
+            lt.putInt(SCROLL_KEY, layer.scrollDir());
+            lt.putFloat(OFFSET_KEY, layer.scrollOffset());
+            if (layer.seed() != 0) lt.putInt(SEED_KEY, layer.seed());
             list.add(lt);
         }
         tag.put(LAYERS_KEY, list);
@@ -229,6 +368,14 @@ public final class CustomGlint {
 
     public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
         write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) });
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous, int scrollDir, float scrollOffset) {
+        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset) });
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) });
     }
 
     public static void remove(ItemStack stack) {

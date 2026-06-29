@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.ElytraModel;
+import net.minecraft.client.model.Model;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.layers.ElytraLayer;
@@ -14,6 +15,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -75,6 +78,11 @@ public class ElytraLayerMixin {
 
             List<VertexConsumer> list = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(buffer.getBuffer(crt));
+                    continue;
+                }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
@@ -106,16 +114,16 @@ public class ElytraLayerMixin {
         // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset.
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        if (combined != null)
+        if (combined != null) {
             elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        // Glow outline: re-render the elytra model into the glow mask under this offset pose, traced against
+        // the vanilla elytra texture. Keyed on the elytra ItemStack (NOT the wearer) so the elytra gets its
+        // OWN ring distinct from the body/armor ring, rather than merging into the figure's one ring.
         if (glowing) {
-            ResourceLocation tex;
-            try {
-                tex = ((ElytraLayer)self).getElytraTexture(stack, entity);
-            } catch (Throwable t) {
-                tex = new ResourceLocation("minecraft", "textures/entity/elytra.png");
-            }
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, elytraModel, tex, stack, null);
+            ResourceLocation tex = new ResourceLocation("minecraft", "textures/entity/elytra.png");
+            EntityGlintRender.captureModelSilhouette(stack, (Model) elytraModel, tex, poseStack, packedLight,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR);
         }
         poseStack.popPose();
     }

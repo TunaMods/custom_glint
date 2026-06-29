@@ -140,7 +140,6 @@ public class LayerDragonArmorMixin {
         CG_TEX.remove();
         // No tex captured ⇒ IaF early-exited (no armor / dragon type unsupported) ⇒ nothing to glint.
         if (tex == null) return;
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
 
         ItemStack active = null;
         CustomGlint.Data glint = null;
@@ -195,31 +194,6 @@ public class LayerDragonArmorMixin {
                 VertexConsumer combined = list.size() == 1 ? list.get(0)
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
                 model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-            }
-        }
-
-        if (CustomGlint.isGlowing(active)) {
-            // No body depth pre-fill. It wrote depth at EVERY model fragment — transparent wing
-            // membranes and scale gaps included — with no color, leaving invisible occluder planes
-            // that hid water, clouds, ice and the dragon's own far-side glint seen through those gaps
-            // (only on glow armor, the path that filled). Removing it also drops the body-glint bleed
-            // it caused, so the pre-drain that guarded against that is gone too.
-            //
-            // slot=null routes through doModelOutline's AABB-centroid scale branch — non-humanoid
-            // mount models need symmetric centroid dilation, not the chest-height humanoid pivot.
-            // Pass the active stack (not just the Data) so outline color resolution prefers glowColors
-            // NBT when set via Glow Trim or the wand editor (the Data overload only reads glint layer 0).
-            //
-            // OUTLINE_FULL_SILHOUETTE: stamp the whole dragon silhouette into the outline stencil so
-            // the back-side armor ring is suppressed across the transparent wing membranes / scale
-            // gaps. Replaces the removed depth pre-fill (which did this in the depth buffer and left
-            // invisible world-occluding planes); the stencil WRITE touches no depth, so the world
-            // stays visible. The dragon's barding covers the full body, so the ring still hugs it.
-            CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(true);
-            try {
-                CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, active, null);
-            } finally {
-                CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(false);
             }
         }
     }

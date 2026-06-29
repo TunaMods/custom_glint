@@ -205,15 +205,7 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
-        }
+        ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
         int[] colors = new int[parts.length];
@@ -229,7 +221,7 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
+        CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
 
         int count = 0;
         for (Entity e : targets) {
@@ -300,15 +292,7 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
-        }
+        ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
         int[] colors = new int[parts.length];
@@ -329,7 +313,8 @@ public class GlintCommand {
             return 0;
         }
 
-        CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.write(stack, CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer }));
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
     }

@@ -39,6 +39,8 @@ public class GiveGlintTrimPacket {
             buf.writeBoolean(layer.interpolate());
             buf.writeFloat(layer.patternScale());
             buf.writeBoolean(layer.simultaneous());
+            buf.writeVarInt(layer.scrollDir());
+            buf.writeFloat(layer.scrollOffset());
         }
         buf.writeBoolean(pkt.glowing);
         buf.writeVarInt(pkt.glowColors.length);
@@ -60,7 +62,9 @@ public class GiveGlintTrimPacket {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous);
+            int scrollDir = buf.readVarInt();
+            float scrollOffset = buf.readFloat();
+            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous, scrollDir, scrollOffset);
         }
         boolean glowing = buf.readBoolean();
         int gcLen = Math.min(buf.readVarInt(), 8);
@@ -83,6 +87,8 @@ public class GiveGlintTrimPacket {
                 for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
                 trim.getOrCreateTag().putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
                 trim.getOrCreateTag().putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
+                trim.getOrCreateTag().putInt(GlintTrimItem.SCROLL_TAG, layer0.scrollDir());
+                trim.getOrCreateTag().putFloat(GlintTrimItem.OFFSET_TAG, layer0.scrollOffset());
                 GlintTrimItem.setPattern(trim, layer0.design());
                 GlintTrimItem.setGlowing(trim, pkt.glowing);
                 CustomGlint.setGlowing(trim, pkt.glowing);
@@ -91,7 +97,7 @@ public class GiveGlintTrimPacket {
                     if (trim.hasTag() && trim.getTag().contains(CustomGlintMod.MOD_ID)) {
                         trim.getTag().remove(CustomGlintMod.MOD_ID);
                     }
-                    CustomGlint.write(trim, pkt.layers);
+                    CustomGlint.write(trim, CustomGlint.ensureChromaticSeeds(pkt.layers));
                     CustomGlint.setGlowing(trim, pkt.glowing);
                 }
             }

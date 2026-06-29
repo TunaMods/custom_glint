@@ -101,7 +101,6 @@ public class LayerHippogryphArmorMixin {
             CallbackInfo ci) {
         int armor = cg_getArmor(entity);
         if (armor == 0) return;
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
 
         ResourceLocation tex;
         switch (armor) {
@@ -160,20 +159,6 @@ public class LayerHippogryphArmorMixin {
             VertexConsumer combined = list.size() == 1 ? list.get(0)
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-        }
-
-        if (CustomGlint.isGlowing(stack)) {
-            // No depth pre-fill: it wrote colorless depth into the body's transparent gaps (feathers),
-            // leaving invisible world-occluding planes. OUTLINE_FULL_SILHOUETTE instead stamps the
-            // whole body silhouette into the outline stencil so the back-side armor ring is suppressed
-            // across those gaps without touching world depth. Matches 1.21.1. slot=null → AABB-centroid
-            // scale. Stack overload so glowColors NBT drives the outline color when set.
-            CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(true);
-            try {
-                CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, stack, null);
-            } finally {
-                CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(false);
-            }
         }
     }
 }

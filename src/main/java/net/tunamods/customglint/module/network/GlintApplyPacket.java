@@ -60,6 +60,8 @@ public class GlintApplyPacket {
                 buf.writeBoolean(layer.interpolate());
                 buf.writeFloat(layer.patternScale());
                 buf.writeBoolean(layer.simultaneous());
+                buf.writeVarInt(layer.scrollDir());
+                buf.writeFloat(layer.scrollOffset());
             }
             buf.writeUtf(pkt.itemId);
             buf.writeBoolean(pkt.glowing);
@@ -90,7 +92,9 @@ public class GlintApplyPacket {
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
             boolean simultaneous = buf.readBoolean();
-            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous);
+            int scrollDir = buf.readVarInt();
+            float scrollOffset = buf.readFloat();
+            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous, scrollDir, scrollOffset);
         }
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
@@ -101,6 +105,52 @@ public class GlintApplyPacket {
         int trimNameColor = buf.readInt();
         boolean wandOnly = buf.readBoolean();
         return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
+    }
+
+    /** Hard cap on a layer-array length on the wire (anti-DoS), shared by the Glint Table print packet. */
+    public static final int MAX_WIRE_COUNT = 256;
+
+    /** Serializes a Layer[] (design, colors, speed, interpolate, scale, simultaneous, scrollDir, scrollOffset)
+     *  — the shared wire format used by the editor packets and the Glint Table print packet. */
+    public static void writeLayers(FriendlyByteBuf buf, CustomGlint.Layer[] layers) {
+        buf.writeVarInt(layers.length);
+        for (CustomGlint.Layer l : layers) {
+            buf.writeUtf(l.design().toString());
+            buf.writeVarInt(l.colors().length);
+            for (int c : l.colors()) buf.writeInt(c);
+            buf.writeFloat(l.speed());
+            buf.writeBoolean(l.interpolate());
+            buf.writeFloat(l.patternScale());
+            buf.writeBoolean(l.simultaneous());
+            buf.writeVarInt(l.scrollDir());
+            buf.writeFloat(l.scrollOffset());
+        }
+    }
+
+    /** Inverse of {@link #writeLayers}. Reads the full sent array (draining the buffer cleanly) but keeps at
+     *  most {@code cap} layers; throws on a bogus count. */
+    public static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
+        int n = buf.readVarInt();
+        if (n < 0 || n > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad layer count: " + n);
+        int keep = Math.max(0, Math.min(n, cap));
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[keep];
+        for (int i = 0; i < n; i++) {
+            String design = buf.readUtf();
+            int sentLen = buf.readVarInt();
+            if (sentLen < 0 || sentLen > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad color count: " + sentLen);
+            int keepLen = Math.min(sentLen, 8);
+            int[] colors = new int[keepLen];
+            for (int j = 0; j < sentLen; j++) { int c = buf.readInt(); if (j < keepLen) colors[j] = c; }
+            float speed = buf.readFloat();
+            if (speed <= 0) speed = 1.0f;
+            boolean interp = buf.readBoolean();
+            float scale = buf.readFloat();
+            boolean sim = buf.readBoolean();
+            int scrollDir = buf.readVarInt();
+            float scrollOffset = buf.readFloat();
+            if (i < keep) layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, sim, scrollDir, scrollOffset);
+        }
+        return layers;
     }
 
     public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
@@ -118,29 +168,33 @@ public class GlintApplyPacket {
                 }
                 if (wandIsWand) CustomGlint.remove(wand);
             } else if (pkt.itemId.isEmpty()) {
+                // Roll fresh per-trim seeds once at commit (the editor doesn't track them) so the wand and
+                // the target item share the same chromatic pattern.
+                CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(pkt.layers);
                 if (!pkt.wandOnly) {
                     ItemStack target = player.getItemInHand(otherHand);
                     if (!target.isEmpty()) {
-                        CustomGlint.write(target, pkt.layers);
+                        CustomGlint.write(target, layers);
                         applyGlow(pkt, target);
                         applyName(pkt, target);
                     }
                 }
                 if (wandIsWand) {
-                    CustomGlint.write(wand, pkt.layers);
+                    CustomGlint.write(wand, layers);
                     applyGlow(pkt, wand);
                     applyName(pkt, wand);
                 }
             } else {
+                CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(pkt.layers);
                 Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(pkt.itemId));
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
-                CustomGlint.write(given, pkt.layers);
+                CustomGlint.write(given, layers);
                 applyGlow(pkt, given);
                 applyName(pkt, given);
                 player.addItem(given);
                 if (wandIsWand) {
-                    CustomGlint.write(wand, pkt.layers);
+                    CustomGlint.write(wand, layers);
                     applyGlow(pkt, wand);
                     applyName(pkt, wand);
                 }

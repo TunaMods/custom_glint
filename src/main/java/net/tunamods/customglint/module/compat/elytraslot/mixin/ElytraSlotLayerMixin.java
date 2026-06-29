@@ -110,18 +110,13 @@ public class ElytraSlotLayerMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             }
         }
-        if (combined == null && !glowing) return;
+        if (combined == null) return;
 
         // Lambda popped the pose before returning, so re-apply ElytraSlot's (0, 0, 0.125) offset.
         // elytraModel's setupAnim from the prior render call is preserved (model state, not pose).
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        if (combined != null)
-            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-        if (glowing) {
-            ResourceLocation outlineTex = tex != null ? tex : new ResourceLocation("minecraft", "textures/entity/elytra.png");
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, elytraModel, outlineTex, stack, null);
-        }
+        elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
         poseStack.popPose();
     }
 }

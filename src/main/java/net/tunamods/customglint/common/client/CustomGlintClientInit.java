@@ -1,9 +1,9 @@
 package net.tunamods.customglint.common.client;
 
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -20,23 +20,34 @@ public final class CustomGlintClientInit {
 
     /** Invoked via {@code () -> CustomGlintClientInit::run} from the API mod constructor on client only. */
     public static void run() {
-        // Vanilla trident BEWLR outline texture: use the real trident texture so the outline
-        // shader alpha-discards transparent texels instead of filling model cubes opaquely.
-        CustomGlintRenderer.BEWLR_OUTLINE_TEXTURES.put(
-                "net.minecraft.world.item.TridentItem",
-                new ResourceLocation("minecraft", "textures/entity/trident.png"));
-
         FMLJavaModLoadingContext.get().getModEventBus().addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
+        // Glow-outline core shaders (silhouette + composite) — mod-bus event, client only.
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(GlowOutlineRenderer::registerShaders);
+        // Procedural chromatic glint core shader — mod-bus event, client only.
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(CustomGlintRenderer::registerShaders);
 
-        // Once-per-frame stencil-clear gate reset. See pendingFrameStencilClear's javadoc
-        // in CustomGlintRenderer for the multi-outline / FullyBuffered drain interaction
-        // this prevents. RenderTickEvent.START fires once per rendered frame regardless of
-        // shader pack or batched-render plumbing, which is what we need.
+        // Release the glow-outline offscreen target on resource reload so it isn't pinned for the session.
+        CustomGlintRenderer.additionalReloadCleanup.add(GlowOutlineRenderer::release);
+
+        // Once-per-frame reset. Arms the glint stencil masks (mount-armor glint via
+        // forMountArmorStencilMask, Epic Knights decoration glint via the per-slot stencil pool) and
+        // clears the glow-outline per-frame capture queue. RenderTickEvent.START fires once per rendered
+        // frame regardless of shader pack or batched-render plumbing.
         MinecraftForge.EVENT_BUS.addListener((TickEvent.RenderTickEvent event) -> {
             if (event.phase == TickEvent.Phase.START) {
                 CustomGlintRenderer.pendingFrameStencilClear = true;
-                CustomGlintRenderer.shaderOutlinedThisFrame.clear();
                 CustomGlintRenderer.resetStencilSlots();
+                GlowOutlineRenderer.beginFrame();
+            }
+        });
+
+        // Drain world-space item glow outlines after weather, where the live world projection / modelview
+        // still match what the items were drawn with and the opaque scene depth is committed for the
+        // occlusion test. (Under a shader pack the pack's later scene composite can overwrite the ring —
+        // the shader-pack-deferred path is a later increment.)
+        MinecraftForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
+            if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+                GlowOutlineRenderer.drainWorld();
             }
         });
     }

@@ -234,10 +234,9 @@ public class GlintTrimLootModifier extends LootModifier {
         for (int t = 0; t < trimCount; t++) {
             String pattern = selectPattern(context);
             ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-            ResourceLocation patternLoc = pattern.equals("vanilla")
-                ? CustomGlint.VANILLA
-                : new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
-            GlintTrimItem.setPattern(trim, patternLoc);
+            // designFromName maps "vanilla"→VANILLA and "chromatic"→the CHROMATIC sentinel (no PNG); setPattern
+            // then rolls a chromatic seed. Building the RL inline would mint a dead chromatic.png path.
+            GlintTrimItem.setPattern(trim, CustomGlint.designFromName(pattern));
             if (context.getRandom().nextFloat() < 0.25f) {
                 int colorCount = 1 + context.getRandom().nextInt(3);
                 for (int i = 0; i < colorCount; i++)
@@ -300,6 +299,16 @@ public class GlintTrimLootModifier extends LootModifier {
                 generatedLoot.add(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance());
                 if (context.getRandom().nextFloat() < 0.05f)
                     generatedLoot.add(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance());
+            }
+        }
+
+        // Rainbow Dye: same 20% / 10% / 5% cascade as the tears
+        if (context.getRandom().nextFloat() < 0.20f) {
+            generatedLoot.add(CustomGlintMod.RAINBOW_DYE.get().getDefaultInstance());
+            if (context.getRandom().nextFloat() < 0.10f) {
+                generatedLoot.add(CustomGlintMod.RAINBOW_DYE.get().getDefaultInstance());
+                if (context.getRandom().nextFloat() < 0.05f)
+                    generatedLoot.add(CustomGlintMod.RAINBOW_DYE.get().getDefaultInstance());
             }
         }
 

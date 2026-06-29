@@ -102,6 +102,15 @@ public class CustomGlintMod {
     public static final RegistryObject<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.register("glint_black_tear",
             () -> new GlintBlackTearItem(new Item.Properties().stacksTo(16)));
 
+    public static final RegistryObject<net.tunamods.customglint.module.item.RainbowDyeItem> RAINBOW_DYE = ITEMS.register("rainbow_dye",
+            () -> new net.tunamods.customglint.module.item.RainbowDyeItem(new Item.Properties()));
+
+    public static final RegistryObject<net.minecraft.world.item.BlockItem> GLINT_TABLE_ITEM = ITEMS.register("glint_table",
+            () -> new net.minecraft.world.item.BlockItem(net.tunamods.customglint.module.block.ModBlocks.GLINT_TABLE_BLOCK.get(), new Item.Properties()));
+
+    public static final RegistryObject<RecipeSerializer<net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe>> GLINT_TRIM_ALPHA_SERIALIZER =
+            RECIPE_SERIALIZERS.register("glint_trim_alpha", () -> net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe.SERIALIZER);
+
     public static final RegistryObject<RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
             RECIPE_SERIALIZERS.register("glint_tear_apply", () -> GlintTearApplyRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
@@ -137,7 +146,7 @@ public class CustomGlintMod {
     public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.customglint.glint_tab"))
             .icon(() -> {
-                ItemStack icon = new ItemStack(Items.ENCHANTED_BOOK);
+                ItemStack icon = new ItemStack(Items.WOODEN_AXE);
                 CustomGlint.write(icon,
                         new ResourceLocation("customglint", "textures/glint/wave.png"),
                         new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
@@ -150,19 +159,12 @@ public class CustomGlintMod {
                 output.accept(GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 output.accept(GLINT_LAYER_TEAR.get().getDefaultInstance());
                 output.accept(GLINT_BLACK_TEAR.get().getDefaultInstance());
+                output.accept(RAINBOW_DYE.get().getDefaultInstance());
+                output.accept(new ItemStack(GLINT_TABLE_ITEM.get()));
                 output.accept(new ItemStack(GLOW_TRIM.get()));
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(GLINT_TRIM.get());
-                    ResourceLocation loc;
-                    if (pattern.equals("vanilla")) {
-                        loc = CustomGlint.VANILLA;
-                    } else if (pattern.contains(":")) {
-                        int c = pattern.indexOf(':');
-                        loc = new ResourceLocation(pattern.substring(0, c), "textures/glint/" + pattern.substring(c + 1) + ".png");
-                    } else {
-                        loc = new ResourceLocation("customglint", "textures/glint/" + pattern + ".png");
-                    }
-                    GlintTrimItem.setPattern(trim, loc);
+                    GlintTrimItem.setPattern(trim, CustomGlint.designFromName(pattern));
                     output.accept(trim);
                 }
             })
@@ -178,6 +180,13 @@ public class CustomGlintMod {
         CREATIVE_MODE_TABS.register(modEventBus);
         LOOT_MODIFIER_SERIALIZERS.register(modEventBus);
         RECIPE_SERIALIZERS.register(modEventBus);
+        net.tunamods.customglint.module.block.ModBlocks.register(modEventBus);
+        net.tunamods.customglint.module.block.ModBlockEntities.register(modEventBus);
+        net.tunamods.customglint.module.menu.ModMenuTypes.register(modEventBus);
+
+        // Client-only: bind the Glint Table menu to its screen. Class-loaded on the client only.
+        net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
+                () -> () -> net.tunamods.customglint.module.client.GlintTableClientInit.register(modEventBus));
 
         ModNetworking.register();
         IceAndFireCompat.register();

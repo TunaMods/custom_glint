@@ -59,7 +59,6 @@ public class BackpackItemStackRendererMixin {
 
     private static void cg_apply(ItemStack stack, PoseStack pose, MultiBufferSource buffer,
             int light, int overlay) {
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return;
 
