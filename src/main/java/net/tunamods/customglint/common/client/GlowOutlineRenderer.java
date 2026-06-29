@@ -1,5 +1,7 @@
 package net.tunamods.customglint.common.client;
 
+import net.tunamods.customglint.common.CustomGlint;
+
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
@@ -103,7 +105,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         try {
             event.registerShader(
                     new ShaderInstance(event.getResourceProvider(),
-                            new ResourceLocation("customglint", "glow_silhouette"),
+                            CustomGlint.res("glow_silhouette"),
                             DefaultVertexFormat.NEW_ENTITY),
                     shader -> {
                         silhouetteShader = shader;
@@ -111,7 +113,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                     });
             event.registerShader(
                     new ShaderInstance(event.getResourceProvider(),
-                            new ResourceLocation("customglint", "glow_composite"),
+                            CustomGlint.res("glow_composite"),
                             DefaultVertexFormat.POSITION_TEX),
                     shader -> {
                         compositeShader = shader;

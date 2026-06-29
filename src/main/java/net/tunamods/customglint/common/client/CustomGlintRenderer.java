@@ -160,7 +160,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
 
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
-        ResourceLocation loc = new ResourceLocation(MOD_ID, "glint/" + safePath);
+        ResourceLocation loc = CustomGlint.res("glint/" + safePath);
         DynamicTexture dt = new DynamicTexture(gray);
         mc.getTextureManager().register(loc, dt);
         dt.bind();

@@ -24,7 +24,7 @@ public class GlintTearItem extends Item {
     public ItemStack getDefaultInstance() {
         ItemStack stack = new ItemStack(this);
         CustomGlint.write(stack,
-            new ResourceLocation("customglint", "textures/glint/wave.png"),
+            CustomGlint.WAVE,
             new int[]{ 0xFFFF0000, 0xFF00FF00, 0xFF0000FF },
             1.0f, true, 1.0f, simultaneous);
         return stack;

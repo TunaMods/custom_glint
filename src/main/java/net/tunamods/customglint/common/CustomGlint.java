@@ -6,6 +6,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -90,26 +91,34 @@ public final class CustomGlint {
 
     // ── Colors ────────────────────────────────────────────────────────────────
 
+    /** Parses a {@code "RRGGBB"} / {@code "#RRGGBB"} hex string to an opaque ARGB int. For string color
+     *  sources, commands, data packs, the config, where the value isn't a compile-time constant. The
+     *  named constants below come from {@link DyeColor}; only external string input flows through here. */
     public static int color(String hex) {
         return Integer.parseUnsignedInt(hex.startsWith("#") ? hex.substring(1) : hex, 16) | 0xFF000000;
     }
 
-    public static final int RED        = color("FF0000");
-    public static final int ORANGE     = color("FF6600");
-    public static final int YELLOW     = color("FFFF00");
-    public static final int LIME       = color("00FF00");
-    public static final int GREEN      = color("008000");
-    public static final int CYAN       = color("00FFFF");
-    public static final int LIGHT_BLUE = color("00BFFF");
-    public static final int BLUE       = color("0000FF");
-    public static final int PURPLE     = color("8800FF");
-    public static final int MAGENTA    = color("FF00FF");
-    public static final int PINK       = color("FF69B4");
-    public static final int BROWN      = color("8B4513");
-    public static final int WHITE      = color("FFFFFF");
-    public static final int LIGHT_GRAY = color("C0C0C0");
-    public static final int GRAY       = color("808080");
-    public static final int BLACK      = color("000000");
+    /** The 16 named glint colors ARE Minecraft's dye colors, sourced from {@link DyeColor#getTextColor()}
+     *  (the vivid per-dye colour) so they track vanilla instead of drifting. 1.20.1's {@code getTextColor()}
+     *  returns {@code 0x00RRGGBB} with no alpha byte, so OR in opaque alpha (1.21.1+ already returns ARGB). */
+    private static int dye(DyeColor c) { return 0xFF000000 | c.getTextColor(); }
+
+    public static final int RED        = dye(DyeColor.RED);
+    public static final int ORANGE     = dye(DyeColor.ORANGE);
+    public static final int YELLOW     = dye(DyeColor.YELLOW);
+    public static final int LIME       = dye(DyeColor.LIME);
+    public static final int GREEN      = dye(DyeColor.GREEN);
+    public static final int CYAN       = dye(DyeColor.CYAN);
+    public static final int LIGHT_BLUE = dye(DyeColor.LIGHT_BLUE);
+    public static final int BLUE       = dye(DyeColor.BLUE);
+    public static final int PURPLE     = dye(DyeColor.PURPLE);
+    public static final int MAGENTA    = dye(DyeColor.MAGENTA);
+    public static final int PINK       = dye(DyeColor.PINK);
+    public static final int BROWN      = dye(DyeColor.BROWN);
+    public static final int WHITE      = dye(DyeColor.WHITE);
+    public static final int LIGHT_GRAY = dye(DyeColor.LIGHT_GRAY);
+    public static final int GRAY       = dye(DyeColor.GRAY);
+    public static final int BLACK      = 0xFF000000;
 
     // ── Designs ───────────────────────────────────────────────────────────────
 
@@ -123,60 +132,60 @@ public final class CustomGlint {
      *  the chromatic shader synthesises per-seed oil-slick noise tinted by the layer's colours (or a rainbow
      *  hue fallback when none are set). Resolved by name via {@link #designFromName} ("chromatic" sentinel). */
     public static final ResourceLocation CHROMATIC  = res("chromatic");
-    public static final ResourceLocation ARCS      = new ResourceLocation(MOD_ID, "textures/glint/arcs.png");
-    public static final ResourceLocation AURORA    = new ResourceLocation(MOD_ID, "textures/glint/aurora.png");
-    public static final ResourceLocation BLOBS     = new ResourceLocation(MOD_ID, "textures/glint/blobs.png");
-    public static final ResourceLocation CASCADE   = new ResourceLocation(MOD_ID, "textures/glint/cascade.png");
-    public static final ResourceLocation CHECKER   = new ResourceLocation(MOD_ID, "textures/glint/checker.png");
-    public static final ResourceLocation CHEVRON   = new ResourceLocation(MOD_ID, "textures/glint/chevron.png");
-    public static final ResourceLocation CORAL     = new ResourceLocation(MOD_ID, "textures/glint/coral.png");
-    public static final ResourceLocation CRACKS    = new ResourceLocation(MOD_ID, "textures/glint/cracks.png");
-    public static final ResourceLocation CROSSHATCH = new ResourceLocation(MOD_ID, "textures/glint/crosshatch.png");
-    public static final ResourceLocation CRYSTAL   = new ResourceLocation(MOD_ID, "textures/glint/crystal.png");
-    public static final ResourceLocation DEBRIS    = new ResourceLocation(MOD_ID, "textures/glint/debris.png");
-    public static final ResourceLocation DIAMONDS  = new ResourceLocation(MOD_ID, "textures/glint/diamonds.png");
-    public static final ResourceLocation DUNES     = new ResourceLocation(MOD_ID, "textures/glint/dunes.png");
-    public static final ResourceLocation EMBER     = new ResourceLocation(MOD_ID, "textures/glint/ember.png");
-    public static final ResourceLocation FEATHER   = new ResourceLocation(MOD_ID, "textures/glint/feather.png");
-    public static final ResourceLocation FIRE      = new ResourceLocation(MOD_ID, "textures/glint/fire.png");
-    public static final ResourceLocation FROST     = new ResourceLocation(MOD_ID, "textures/glint/frost.png");
-    public static final ResourceLocation GLITCH    = new ResourceLocation(MOD_ID, "textures/glint/glitch.png");
-    public static final ResourceLocation GLOW      = new ResourceLocation(MOD_ID, "textures/glint/glow.png");
-    public static final ResourceLocation GRID      = new ResourceLocation(MOD_ID, "textures/glint/grid.png");
-    public static final ResourceLocation HALO      = new ResourceLocation(MOD_ID, "textures/glint/halo.png");
-    public static final ResourceLocation HEXAGON   = new ResourceLocation(MOD_ID, "textures/glint/hexagon.png");
-    public static final ResourceLocation LIGHTNING = new ResourceLocation(MOD_ID, "textures/glint/lightning.png");
-    public static final ResourceLocation MARBLE    = new ResourceLocation(MOD_ID, "textures/glint/marble.png");
-    public static final ResourceLocation MATRIX    = new ResourceLocation(MOD_ID, "textures/glint/matrix.png");
-    public static final ResourceLocation MESH      = new ResourceLocation(MOD_ID, "textures/glint/mesh.png");
-    public static final ResourceLocation MOSAIC    = new ResourceLocation(MOD_ID, "textures/glint/mosaic.png");
-    public static final ResourceLocation NET       = new ResourceLocation(MOD_ID, "textures/glint/net.png");
-    public static final ResourceLocation OIL       = new ResourceLocation(MOD_ID, "textures/glint/oil.png");
-    public static final ResourceLocation PETAL     = new ResourceLocation(MOD_ID, "textures/glint/petal.png");
-    public static final ResourceLocation PLASMA    = new ResourceLocation(MOD_ID, "textures/glint/plasma.png");
-    public static final ResourceLocation PLATE     = new ResourceLocation(MOD_ID, "textures/glint/plate.png");
-    public static final ResourceLocation PRISM     = new ResourceLocation(MOD_ID, "textures/glint/prism.png");
-    public static final ResourceLocation PULSE     = new ResourceLocation(MOD_ID, "textures/glint/pulse.png");
-    public static final ResourceLocation RIPPLE    = new ResourceLocation(MOD_ID, "textures/glint/ripple.png");
-    public static final ResourceLocation SAND      = new ResourceLocation(MOD_ID, "textures/glint/sand.png");
-    public static final ResourceLocation SCALES    = new ResourceLocation(MOD_ID, "textures/glint/scales.png");
-    public static final ResourceLocation SHEEN     = new ResourceLocation(MOD_ID, "textures/glint/sheen.png");
-    public static final ResourceLocation SHIMMER   = new ResourceLocation(MOD_ID, "textures/glint/shimmer.png");
-    public static final ResourceLocation SILK      = new ResourceLocation(MOD_ID, "textures/glint/silk.png");
-    public static final ResourceLocation SLASH     = new ResourceLocation(MOD_ID, "textures/glint/slash.png");
-    public static final ResourceLocation SMOKE     = new ResourceLocation(MOD_ID, "textures/glint/smoke.png");
-    public static final ResourceLocation SOLID     = new ResourceLocation(MOD_ID, "textures/glint/solid.png");
-    public static final ResourceLocation SPARKLE   = new ResourceLocation(MOD_ID, "textures/glint/sparkle.png");
-    public static final ResourceLocation STARS     = new ResourceLocation(MOD_ID, "textures/glint/stars.png");
-    public static final ResourceLocation STATIC    = new ResourceLocation(MOD_ID, "textures/glint/static.png");
-    public static final ResourceLocation STRIPES   = new ResourceLocation(MOD_ID, "textures/glint/stripes.png");
-    public static final ResourceLocation SWIRL     = new ResourceLocation(MOD_ID, "textures/glint/swirl.png");
-    public static final ResourceLocation TIDE      = new ResourceLocation(MOD_ID, "textures/glint/tide.png");
-    public static final ResourceLocation TILE      = new ResourceLocation(MOD_ID, "textures/glint/tile.png");
-    public static final ResourceLocation VEIN      = new ResourceLocation(MOD_ID, "textures/glint/vein.png");
-    public static final ResourceLocation WAVE      = new ResourceLocation(MOD_ID, "textures/glint/wave.png");
-    public static final ResourceLocation WEAVE     = new ResourceLocation(MOD_ID, "textures/glint/weave.png");
-    public static final ResourceLocation ZIGZAG    = new ResourceLocation(MOD_ID, "textures/glint/zigzag.png");
+    public static final ResourceLocation ARCS      = res("textures/glint/arcs.png");
+    public static final ResourceLocation AURORA    = res("textures/glint/aurora.png");
+    public static final ResourceLocation BLOBS     = res("textures/glint/blobs.png");
+    public static final ResourceLocation CASCADE   = res("textures/glint/cascade.png");
+    public static final ResourceLocation CHECKER   = res("textures/glint/checker.png");
+    public static final ResourceLocation CHEVRON   = res("textures/glint/chevron.png");
+    public static final ResourceLocation CORAL     = res("textures/glint/coral.png");
+    public static final ResourceLocation CRACKS    = res("textures/glint/cracks.png");
+    public static final ResourceLocation CROSSHATCH = res("textures/glint/crosshatch.png");
+    public static final ResourceLocation CRYSTAL   = res("textures/glint/crystal.png");
+    public static final ResourceLocation DEBRIS    = res("textures/glint/debris.png");
+    public static final ResourceLocation DIAMONDS  = res("textures/glint/diamonds.png");
+    public static final ResourceLocation DUNES     = res("textures/glint/dunes.png");
+    public static final ResourceLocation EMBER     = res("textures/glint/ember.png");
+    public static final ResourceLocation FEATHER   = res("textures/glint/feather.png");
+    public static final ResourceLocation FIRE      = res("textures/glint/fire.png");
+    public static final ResourceLocation FROST     = res("textures/glint/frost.png");
+    public static final ResourceLocation GLITCH    = res("textures/glint/glitch.png");
+    public static final ResourceLocation GLOW      = res("textures/glint/glow.png");
+    public static final ResourceLocation GRID      = res("textures/glint/grid.png");
+    public static final ResourceLocation HALO      = res("textures/glint/halo.png");
+    public static final ResourceLocation HEXAGON   = res("textures/glint/hexagon.png");
+    public static final ResourceLocation LIGHTNING = res("textures/glint/lightning.png");
+    public static final ResourceLocation MARBLE    = res("textures/glint/marble.png");
+    public static final ResourceLocation MATRIX    = res("textures/glint/matrix.png");
+    public static final ResourceLocation MESH      = res("textures/glint/mesh.png");
+    public static final ResourceLocation MOSAIC    = res("textures/glint/mosaic.png");
+    public static final ResourceLocation NET       = res("textures/glint/net.png");
+    public static final ResourceLocation OIL       = res("textures/glint/oil.png");
+    public static final ResourceLocation PETAL     = res("textures/glint/petal.png");
+    public static final ResourceLocation PLASMA    = res("textures/glint/plasma.png");
+    public static final ResourceLocation PLATE     = res("textures/glint/plate.png");
+    public static final ResourceLocation PRISM     = res("textures/glint/prism.png");
+    public static final ResourceLocation PULSE     = res("textures/glint/pulse.png");
+    public static final ResourceLocation RIPPLE    = res("textures/glint/ripple.png");
+    public static final ResourceLocation SAND      = res("textures/glint/sand.png");
+    public static final ResourceLocation SCALES    = res("textures/glint/scales.png");
+    public static final ResourceLocation SHEEN     = res("textures/glint/sheen.png");
+    public static final ResourceLocation SHIMMER   = res("textures/glint/shimmer.png");
+    public static final ResourceLocation SILK      = res("textures/glint/silk.png");
+    public static final ResourceLocation SLASH     = res("textures/glint/slash.png");
+    public static final ResourceLocation SMOKE     = res("textures/glint/smoke.png");
+    public static final ResourceLocation SOLID     = res("textures/glint/solid.png");
+    public static final ResourceLocation SPARKLE   = res("textures/glint/sparkle.png");
+    public static final ResourceLocation STARS     = res("textures/glint/stars.png");
+    public static final ResourceLocation STATIC    = res("textures/glint/static.png");
+    public static final ResourceLocation STRIPES   = res("textures/glint/stripes.png");
+    public static final ResourceLocation SWIRL     = res("textures/glint/swirl.png");
+    public static final ResourceLocation TIDE      = res("textures/glint/tide.png");
+    public static final ResourceLocation TILE      = res("textures/glint/tile.png");
+    public static final ResourceLocation VEIN      = res("textures/glint/vein.png");
+    public static final ResourceLocation WAVE      = res("textures/glint/wave.png");
+    public static final ResourceLocation WEAVE     = res("textures/glint/weave.png");
+    public static final ResourceLocation ZIGZAG    = res("textures/glint/zigzag.png");
 
     public static final ResourceLocation[] PATTERNS = {
             VANILLA, CHROMATIC,
@@ -202,7 +211,7 @@ public final class CustomGlint {
                 int c = name.indexOf(':');
                 return new ResourceLocation(name.substring(0, c), "textures/glint/" + name.substring(c + 1) + ".png");
             }
-            return new ResourceLocation(MOD_ID, "textures/glint/" + name + ".png");
+            return res("textures/glint/" + name + ".png");
         } catch (Exception e) {
             return VANILLA;
         }
