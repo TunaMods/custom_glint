@@ -216,6 +216,8 @@ tasks.register('apiJar', Jar) {
         include 'custom_glint.mixins.json'
         include 'custom_glint.mixins.refmap.json'
         include 'assets/customglint/textures/glint/**'
+        // Core shaders pair with the common/client rendering backend (glow outline post-process).
+        include 'assets/customglint/shaders/**'
         include 'customglint.png'
         include 'pack.mcmeta'
     }
