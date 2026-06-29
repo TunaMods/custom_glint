@@ -26,6 +26,10 @@ import java.util.List;
 public class GlowTrimItem extends Item {
     public static final String COLORS_TAG = "colors";
 
+    /** Library key for the Glint Table's design palette — a Glow Trim has no glint pattern, so it stores
+     *  under this sentinel name instead of a design name. */
+    public static final String STORAGE_KEY = "glow_trim";
+
     public GlowTrimItem(Properties pProperties) {
         super(pProperties);
     }
