@@ -5,6 +5,20 @@ Added:
   or change the preview item, so the wand in your hand always matches what is in the editor.
 - Saved trim files now remember a custom display name and its color: /glint export writes them,
   and the wand's Import picker restores them when you load the trim back.
+- Glint Table: a craftable, placeable block with a full trim builder. Pick a design, stack
+  multiple layers, mix color shards, tune speed, scale, opacity, scroll and glow, then print
+  the finished trim. The table keeps a library of the designs you have unlocked and the trims
+  you have printed.
+- Glints can now scroll in a chosen direction instead of the old fixed shimmer. Set any of the
+  eight compass directions (or hold it static) per layer, with an adjustable starting offset.
+- Chromatic design: a procedural oil-slick glint that flows through up to eight colors with a
+  per-trim random pattern, so no two chromatic trims look alike.
+- Rainbow Dye: a dye that sets an exact custom color (hex) for a glint or glow shard.
+- Trims can now have their glint opacity lowered with glass, for softer, more translucent glints.
+- Glowing items now show a clean glow outline traced to the item's real shape while held in hand
+  and in inventory slots.
+- The wand editor window and the Glint Table both come in three skins (default, dark, forge);
+  the placed table block matches the skin you choose.
 
 [Compat]
 - Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
