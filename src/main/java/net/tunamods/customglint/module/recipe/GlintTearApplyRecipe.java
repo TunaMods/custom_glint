@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
@@ -33,8 +34,8 @@ public class GlintTearApplyRecipe extends CustomRecipe {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
-            if (s.getItem() == CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get()
-                    || s.getItem() == CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get()) {
+            if (s.getItem() == ModItems.GLINT_TEAR_SIMULTANEOUS.get()
+                    || s.getItem() == ModItems.GLINT_TEAR_SEQUENTIAL.get()) {
                 if (hasTear) return false;
                 hasTear = true;
             } else if (CustomGlint.has(s) && !(s.getItem() instanceof GlintTrimItem && GlintTrimItem.getColors(s).length == 0)) {
@@ -54,8 +55,8 @@ public class GlintTearApplyRecipe extends CustomRecipe {
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
-            if (s.getItem() == CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get()) simultaneous = true;
-            else if (s.getItem() == CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get()) simultaneous = false;
+            if (s.getItem() == ModItems.GLINT_TEAR_SIMULTANEOUS.get()) simultaneous = true;
+            else if (s.getItem() == ModItems.GLINT_TEAR_SEQUENTIAL.get()) simultaneous = false;
             else if (CustomGlint.has(s)) glinted = s;
         }
         if (glinted.isEmpty() || simultaneous == null) return ItemStack.EMPTY;
@@ -73,11 +74,11 @@ public class GlintTearApplyRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
         GlintTrimItem.addColor(result, 0xFFFF0000);
         GlintTrimItem.addColor(result, 0xFF0000FF);
-        CustomGlint.write(result, new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000, 0xFF0000FF}, 1.0f, true, 1.0f, true);
+        CustomGlint.write(result, CustomGlint.WAVE, new int[]{0xFFFF0000, 0xFF0000FF}, 1.0f, true, 1.0f, true);
         return result;
     }
 
@@ -88,21 +89,21 @@ public class GlintTearApplyRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         list.add(Ingredient.of(
-            CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance(),
-            CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance()
+            ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance(),
+            ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance()
         ));
-        ItemStack trimRed = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimRed, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack trimRed = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimRed, CustomGlint.WAVE);
         GlintTrimItem.addColor(trimRed, 0xFFFF0000);
-        ItemStack trimBlue = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimBlue, new ResourceLocation("customglint", "textures/glint/sparkle.png"));
+        ItemStack trimBlue = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimBlue, CustomGlint.SPARKLE);
         GlintTrimItem.addColor(trimBlue, 0xFF0000FF);
-        ItemStack trimRedBlue = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimRedBlue, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack trimRedBlue = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimRedBlue, CustomGlint.WAVE);
         GlintTrimItem.addColor(trimRedBlue, 0xFFFF0000);
         GlintTrimItem.addColor(trimRedBlue, 0xFF0000FF);
-        ItemStack trimGold = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimGold, new ResourceLocation("customglint", "textures/glint/stars.png"));
+        ItemStack trimGold = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimGold, CustomGlint.STARS);
         GlintTrimItem.addColor(trimGold, 0xFFFFAA00);
         list.add(Ingredient.of(trimRed, trimBlue, trimRedBlue, trimGold));
         return list;

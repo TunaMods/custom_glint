@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.command;
 
+import net.tunamods.customglint.module.item.ModItems;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -385,7 +387,7 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer[] layers = data.layers();
-        ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
         if (layers.length == 1) {
             CustomGlint.Layer layer = layers[0];

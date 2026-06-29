@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.menu;
 
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
@@ -19,7 +21,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.network.PacketDistributor;
-import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.block.ModBlocks;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
@@ -263,7 +264,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
             trim = base.copy();
             trim.setCount(1);
         } else {
-            trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            trim = new ItemStack(ModItems.GLINT_TRIM.get());
         }
         for (int c : newColors) GlintTrimItem.addColor(trim, c);
         for (int c : donorColors) GlintTrimItem.addColor(trim, c);
@@ -415,15 +416,15 @@ public class GlintTableMenu extends AbstractContainerMenu {
     }
 
     private static boolean isSimTear(ItemStack stack) {
-        return stack.getItem() == CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get();
+        return stack.getItem() == ModItems.GLINT_TEAR_SIMULTANEOUS.get();
     }
 
     private static boolean isSeqTear(ItemStack stack) {
-        return stack.getItem() == CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get();
+        return stack.getItem() == ModItems.GLINT_TEAR_SEQUENTIAL.get();
     }
 
     private static boolean isRainbowDye(ItemStack stack) {
-        return stack.getItem() == CustomGlintMod.RAINBOW_DYE.get();
+        return stack.getItem() == ModItems.RAINBOW_DYE.get();
     }
 
     private static boolean isLayerTear(ItemStack stack) {
@@ -484,9 +485,9 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (!(player instanceof ServerPlayer sp)) return;
         ItemStack stack;
         if (GlowTrimItem.STORAGE_KEY.equals(name)) {
-            stack = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+            stack = new ItemStack(ModItems.GLOW_TRIM.get());
         } else {
-            stack = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            stack = new ItemStack(ModItems.GLINT_TRIM.get());
             GlintTrimItem.setPattern(stack, CustomGlint.designFromName(name));
         }
         sp.addItem(stack);

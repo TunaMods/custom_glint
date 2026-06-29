@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -79,11 +80,11 @@ public class GlintLayerTearRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
         GlintTrimItem.addColor(result, 0xFFFF0000);
-        CustomGlint.Layer layer1 = new CustomGlint.Layer(new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000}, 1.0f, true, 1.0f, false);
-        CustomGlint.Layer layer2 = new CustomGlint.Layer(new ResourceLocation("customglint", "textures/glint/sparkle.png"), new int[]{0xFF00AAFF}, 1.0f, true, 1.0f, false);
+        CustomGlint.Layer layer1 = new CustomGlint.Layer(CustomGlint.WAVE, new int[]{0xFFFF0000}, 1.0f, true, 1.0f, false);
+        CustomGlint.Layer layer2 = new CustomGlint.Layer(CustomGlint.SPARKLE, new int[]{0xFF00AAFF}, 1.0f, true, 1.0f, false);
         CustomGlint.write(result, new CustomGlint.Layer[]{layer1, layer2});
         return result;
     }
@@ -94,12 +95,12 @@ public class GlintLayerTearRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(CustomGlintMod.GLINT_LAYER_TEAR.get().getDefaultInstance()));
-        ItemStack trim1 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim1, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        list.add(Ingredient.of(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance()));
+        ItemStack trim1 = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trim1, CustomGlint.WAVE);
         GlintTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim2, new ResourceLocation("customglint", "textures/glint/sparkle.png"));
+        ItemStack trim2 = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trim2, CustomGlint.SPARKLE);
         GlintTrimItem.addColor(trim2, 0xFF00AAFF);
         list.add(Ingredient.of(trim1));
         list.add(Ingredient.of(trim2));

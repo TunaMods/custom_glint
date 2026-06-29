@@ -1,6 +1,9 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.common.CustomGlint;
+
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
@@ -56,8 +59,8 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get(), 2);
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get(), 2);
+        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
         return result;
     }
 
@@ -67,8 +70,8 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimExample, CustomGlint.WAVE);
         for (int i = 0; i < 9; i++) {
             if (i == 4) list.set(i, Ingredient.of(trimExample));
             else if (i == 7) list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));

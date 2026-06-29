@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.client;
 
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -23,7 +25,7 @@ public final class TrimItemColors {
             int[] colors = GlowTrimItem.getColors(stack);
             if (colors.length == 0) return 0xFFFFFFFF;
             return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
-        }, CustomGlintMod.GLOW_TRIM.get());
+        }, ModItems.GLOW_TRIM.get());
 
         event.register((stack, tintIndex) -> {
             if (tintIndex != 1) return 0xFFFFFFFF;
@@ -31,6 +33,6 @@ public final class TrimItemColors {
             int[] colors = GlintTrimItem.getColors(stack);
             if (colors.length == 0) return 0xFFFFFFFF;
             return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
-        }, CustomGlintMod.GLINT_TRIM.get());
+        }, ModItems.GLINT_TRIM.get());
     }
 }

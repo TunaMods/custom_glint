@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
@@ -50,7 +51,7 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(result, 0xFFFF0000);
         GlowTrimItem.addColor(result, 0xFF00AAFF);
         return result;
@@ -62,9 +63,9 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trim1 = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        ItemStack trim1 = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        ItemStack trim2 = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(trim2, 0xFF00AAFF);
         list.add(Ingredient.of(trim1));
         list.add(Ingredient.of(trim2));

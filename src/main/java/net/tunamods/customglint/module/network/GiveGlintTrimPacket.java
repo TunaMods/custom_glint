@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.network;
 
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -80,7 +82,7 @@ public class GiveGlintTrimPacket {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
 
-            ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
             if (pkt.layers.length > 0) {
                 CustomGlint.Layer layer0 = pkt.layers[0];

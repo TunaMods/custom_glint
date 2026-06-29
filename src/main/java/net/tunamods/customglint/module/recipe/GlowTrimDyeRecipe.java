@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.common.CustomGlint;
@@ -75,7 +76,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLOW_TRIM.get());
+        ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(result, 0xFFFF0000);
         return result;
     }
@@ -86,7 +87,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(new ItemStack(CustomGlintMod.GLOW_TRIM.get())));
+        list.add(Ingredient.of(new ItemStack(ModItems.GLOW_TRIM.get())));
         list.add(Ingredient.of(
             Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
             Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,

@@ -1,34 +1,16 @@
 package net.tunamods.customglint;
 
-import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlintWandItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.tunamods.customglint.module.loot.GlintLootModifier;
-import net.tunamods.customglint.module.loot.GlintTrimLootModifier;
+import net.tunamods.customglint.module.item.ModCreativeTabs;
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.loot.ModLootModifiers;
+import net.tunamods.customglint.module.recipe.ModRecipes;
 import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
 import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
 import net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
-import net.tunamods.customglint.module.item.GlintTearItem;
-import net.tunamods.customglint.module.item.GlintLayerTearItem;
-import net.tunamods.customglint.module.item.GlintBlackTearItem;
-import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
-import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
-import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimBlankDuplicateRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimSmithingRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
-import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
-import net.tunamods.customglint.module.recipe.GlowTrimDyeRecipe;
-import net.tunamods.customglint.module.recipe.GlowTrimMergeRecipe;
-import net.tunamods.customglint.module.recipe.GlowTrimSmithingRecipe;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -44,131 +26,22 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import com.mojang.serialization.Codec;
-import net.minecraftforge.common.loot.IGlobalLootModifier;
-import net.minecraftforge.registries.ForgeRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.CreativeModeTab;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.RegistryObject;
 
+/**
+ * Full standalone mod entry. Registry content (items, creative tab, recipes, loot modifiers, blocks, block
+ * entities, menus) lives in the {@code Mod*} holder classes under the matching module packages — see
+ * {@link ModItems}, {@link ModCreativeTabs}, {@link ModRecipes}, {@link ModLootModifiers}, etc. This class
+ * only wires their {@code register(bus)} hooks and owns the data-pack design reload/sync.
+ */
 @Mod(CustomGlintMod.MOD_ID)
 public class CustomGlintMod {
     public static final String MOD_ID = "customglint";
-
-    public static final DeferredRegister<Item> ITEMS =
-            DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
-    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
-            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
-    public static final DeferredRegister<Codec<? extends IGlobalLootModifier>> LOOT_MODIFIER_SERIALIZERS =
-            DeferredRegister.create(ForgeRegistries.Keys.GLOBAL_LOOT_MODIFIER_SERIALIZERS, MOD_ID);
-    public static final DeferredRegister<RecipeSerializer<?>> RECIPE_SERIALIZERS =
-            DeferredRegister.create(ForgeRegistries.RECIPE_SERIALIZERS, MOD_ID);
-
-    public static final RegistryObject<Codec<GlintLootModifier>> GLINT_LOOT_MODIFIER =
-            LOOT_MODIFIER_SERIALIZERS.register("glint_loot_modifier", GlintLootModifier.CODEC);
-    public static final RegistryObject<Codec<GlintTrimLootModifier>> GLINT_TRIM_LOOT_MODIFIER =
-            LOOT_MODIFIER_SERIALIZERS.register("glint_trim_loot_modifier", GlintTrimLootModifier.CODEC);
-
-    public static final RegistryObject<GlintWandItem> GLINT_WAND = ITEMS.register("glint_wand",
-            () -> new GlintWandItem(new Item.Properties().stacksTo(1)));
-
-    public static final RegistryObject<GlintTrimItem> GLINT_TRIM = ITEMS.register("glint_trim",
-            () -> new GlintTrimItem(new Item.Properties().stacksTo(16)));
-
-    public static final RegistryObject<GlowTrimItem> GLOW_TRIM = ITEMS.register("glow_trim",
-            () -> new GlowTrimItem(new Item.Properties().stacksTo(16)));
-
-    public static final RegistryObject<GlintTearItem> GLINT_TEAR_SIMULTANEOUS = ITEMS.register("glint_tear_simultaneous",
-            () -> new GlintTearItem(new Item.Properties().stacksTo(16), true));
-
-    public static final RegistryObject<GlintTearItem> GLINT_TEAR_SEQUENTIAL = ITEMS.register("glint_tear_sequential",
-            () -> new GlintTearItem(new Item.Properties().stacksTo(16), false));
-
-    public static final RegistryObject<GlintLayerTearItem> GLINT_LAYER_TEAR = ITEMS.register("glint_layer_tear",
-            () -> new GlintLayerTearItem(new Item.Properties().stacksTo(16)));
-
-    public static final RegistryObject<GlintBlackTearItem> GLINT_BLACK_TEAR = ITEMS.register("glint_black_tear",
-            () -> new GlintBlackTearItem(new Item.Properties().stacksTo(16)));
-
-    public static final RegistryObject<net.tunamods.customglint.module.item.RainbowDyeItem> RAINBOW_DYE = ITEMS.register("rainbow_dye",
-            () -> new net.tunamods.customglint.module.item.RainbowDyeItem(new Item.Properties()));
-
-    public static final RegistryObject<net.minecraft.world.item.BlockItem> GLINT_TABLE_ITEM = ITEMS.register("glint_table",
-            () -> new net.minecraft.world.item.BlockItem(net.tunamods.customglint.module.block.ModBlocks.GLINT_TABLE_BLOCK.get(), new Item.Properties()));
-
-    public static final RegistryObject<RecipeSerializer<net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe>> GLINT_TRIM_ALPHA_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_alpha", () -> net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe.SERIALIZER);
-
-    public static final RegistryObject<RecipeSerializer<GlintTearApplyRecipe>> GLINT_TEAR_APPLY_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_tear_apply", () -> GlintTearApplyRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimDyeRecipe>> GLINT_TRIM_DYE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_dye", () -> GlintTrimDyeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimDuplicateRecipe>> GLINT_TRIM_DUPLICATE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_duplicate", () -> GlintTrimDuplicateRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimBlankDuplicateRecipe>> GLINT_TRIM_BLANK_DUPLICATE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_blank_duplicate", () -> GlintTrimBlankDuplicateRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimMergeRecipe>> GLINT_TRIM_MERGE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_merge", () -> GlintTrimMergeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimSmithingRecipe>> GLINT_TRIM_SMITHING_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_smithing", () -> GlintTrimSmithingRecipe.SERIALIZER);
-
-    public static final RegistryObject<RecipeSerializer<GlintLayerTearRecipe>> GLINT_LAYER_TEAR_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_layer_tear", () -> GlintLayerTearRecipe.SERIALIZER);
-
-    public static final RegistryObject<RecipeSerializer<GlintBlackTearRecipe>> GLINT_BLACK_TEAR_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_black_tear", () -> GlintBlackTearRecipe.SERIALIZER);
-
-    public static final RegistryObject<RecipeSerializer<GlintTrimSpeedRecipe>> GLINT_TRIM_SPEED_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_speed", () -> GlintTrimSpeedRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintTrimScaleRecipe>> GLINT_TRIM_SCALE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_trim_scale", () -> GlintTrimScaleRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlintGlowTrimRecipe>> GLINT_GLOW_TRIM_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glint_glow_trim", () -> GlintGlowTrimRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlowTrimDyeRecipe>> GLOW_TRIM_DYE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glow_trim_dye", () -> GlowTrimDyeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlowTrimMergeRecipe>> GLOW_TRIM_MERGE_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glow_trim_merge", () -> GlowTrimMergeRecipe.SERIALIZER);
-    public static final RegistryObject<RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
-            RECIPE_SERIALIZERS.register("glow_trim_smithing", () -> GlowTrimSmithingRecipe.SERIALIZER);
-
-    public static final RegistryObject<CreativeModeTab> GLINT_TAB = CREATIVE_MODE_TABS.register("glint_tab", () -> CreativeModeTab.builder()
-            .title(Component.translatable("itemGroup.customglint.glint_tab"))
-            .icon(() -> {
-                ItemStack icon = new ItemStack(Items.WOODEN_AXE);
-                CustomGlint.write(icon,
-                        new ResourceLocation("customglint", "textures/glint/wave.png"),
-                        new int[]{0xFF8844EE, 0xFF00BBBB, 0xFFFFAA00},
-                        0.5f, true, 1.0f, true);
-                return icon;
-            })
-            .displayItems((parameters, output) -> {
-                output.accept(GLINT_WAND.get());
-                output.accept(GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-                output.accept(GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-                output.accept(GLINT_LAYER_TEAR.get().getDefaultInstance());
-                output.accept(GLINT_BLACK_TEAR.get().getDefaultInstance());
-                output.accept(RAINBOW_DYE.get().getDefaultInstance());
-                output.accept(new ItemStack(GLINT_TABLE_ITEM.get()));
-                output.accept(new ItemStack(GLOW_TRIM.get()));
-                for (String pattern : GlintTrimItem.PATTERNS) {
-                    ItemStack trim = new ItemStack(GLINT_TRIM.get());
-                    GlintTrimItem.setPattern(trim, CustomGlint.designFromName(pattern));
-                    output.accept(trim);
-                }
-            })
-            .build());
 
     private final List<String> dataPackDesigns = new ArrayList<>();
 
@@ -176,10 +49,11 @@ public class CustomGlintMod {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         modEventBus.addListener(this::commonSetup);
-        ITEMS.register(modEventBus);
-        CREATIVE_MODE_TABS.register(modEventBus);
-        LOOT_MODIFIER_SERIALIZERS.register(modEventBus);
-        RECIPE_SERIALIZERS.register(modEventBus);
+
+        ModItems.register(modEventBus);
+        ModCreativeTabs.register(modEventBus);
+        ModLootModifiers.register(modEventBus);
+        ModRecipes.register(modEventBus);
         net.tunamods.customglint.module.block.ModBlocks.register(modEventBus);
         net.tunamods.customglint.module.block.ModBlockEntities.register(modEventBus);
         net.tunamods.customglint.module.menu.ModMenuTypes.register(modEventBus);

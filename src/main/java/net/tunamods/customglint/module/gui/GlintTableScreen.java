@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.gui;
 
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
@@ -21,7 +23,6 @@ import net.minecraft.world.item.DyeItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.client.GlintGuiConfig;
 import net.tunamods.customglint.module.client.GlintTableModelClient;
@@ -174,7 +175,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private static ItemStack trimStack(String name) {
-        ItemStack s = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        ItemStack s = new ItemStack(ModItems.GLINT_TRIM.get());
         GlintTrimItem.setPattern(s, designRL(name));
         return s;
     }
@@ -194,7 +195,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             trims.addAll(GlintTrimItem.PATTERNS);
         }
         if (trimCache.isEmpty()) {
-            trimCache.put(GlowTrimItem.STORAGE_KEY, new ItemStack(CustomGlintMod.GLOW_TRIM.get()));
+            trimCache.put(GlowTrimItem.STORAGE_KEY, new ItemStack(ModItems.GLOW_TRIM.get()));
             for (String name : GlintTrimItem.PATTERNS) trimCache.put(name, trimStack(name));
         }
         this.titleLabelX = (this.imageWidth - this.font.width(this.title)) / 2;
@@ -385,7 +386,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         all.addAll(upperLayers);
         if (stackDonor) Collections.addAll(all, pending);
         if (all.isEmpty()) return active;
-        ItemStack carrier = activeValid ? active.copy() : new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        ItemStack carrier = activeValid ? active.copy() : new ItemStack(ModItems.GLINT_TRIM.get());
         if (!activeValid) GlintTrimItem.setPattern(carrier, all.get(0).design());
         CustomGlint.write(carrier, all.toArray(new CustomGlint.Layer[0]));
         return carrier;
@@ -760,10 +761,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             case GlintTableMenu.SLOT_GLASS     -> new ItemStack(Items.GLASS);
             case GlintTableMenu.SLOT_GLOWSTONE -> new ItemStack(Items.GLOWSTONE_DUST);
             case GlintTableMenu.SLOT_NAMETAG   -> new ItemStack(Items.NAME_TAG);
-            case GlintTableMenu.SLOT_TEAR      -> CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance();
-            case GlintTableMenu.SLOT_TEAR_SEQ  -> CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance();
-            case GlintTableMenu.SLOT_LAYER_TEAR -> CustomGlintMod.GLINT_LAYER_TEAR.get().getDefaultInstance();
-            case GlintTableMenu.SLOT_RAINBOW_DYE -> CustomGlintMod.RAINBOW_DYE.get().getDefaultInstance();
+            case GlintTableMenu.SLOT_TEAR      -> ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance();
+            case GlintTableMenu.SLOT_TEAR_SEQ  -> ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance();
+            case GlintTableMenu.SLOT_LAYER_TEAR -> ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance();
+            case GlintTableMenu.SLOT_RAINBOW_DYE -> ModItems.RAINBOW_DYE.get().getDefaultInstance();
             case GlintTableMenu.SLOT_NAME_DYE -> cyclingDyeGhost(0);
             case GlintTableMenu.SLOT_GLOW_DYE -> cyclingDyeGhost(8);
             default -> ItemStack.EMPTY;
@@ -923,7 +924,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private ItemStack layerIcon(CustomGlint.Layer l) {
         ItemStack cached = layerIconCache.get(l);
         if (cached != null) return cached;
-        ItemStack s = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        ItemStack s = new ItemStack(ModItems.GLINT_TRIM.get());
         GlintTrimItem.setPattern(s, l.design());
         CustomGlint.write(s, new CustomGlint.Layer[]{ l });
         layerIconCache.put(l, s);
@@ -937,7 +938,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (active == null) {
             result = activeTrim();
         } else {
-            result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+            result = new ItemStack(ModItems.GLINT_TRIM.get());
             GlintTrimItem.setPattern(result, active.design());
             CustomGlint.write(result, new CustomGlint.Layer[]{ active });
         }
@@ -982,7 +983,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             int rgb = mixRgb(shard);
             if (rgb < 0 && isCustomShard(shard)) {
                 g.fill(x, y, x + COLOR_ICON, y + COLOR_ICON, SLOT_DARK);
-                drawScaledIcon(g, CustomGlintMod.RAINBOW_DYE.get().getDefaultInstance(), x, y, COLOR_ICON);
+                drawScaledIcon(g, ModItems.RAINBOW_DYE.get().getDefaultInstance(), x, y, COLOR_ICON);
             } else {
                 g.fill(x, y, x + COLOR_ICON, y + COLOR_ICON, rgb < 0 ? COLOR_UNSET : 0xFF000000 | rgb);
             }
@@ -1073,7 +1074,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private boolean rainbowInSlot(int slotConst) {
-        return menu.slots.get(slotConst).getItem().getItem() == CustomGlintMod.RAINBOW_DYE.get();
+        return menu.slots.get(slotConst).getItem().getItem() == ModItems.RAINBOW_DYE.get();
     }
 
     /** The {@code +} layer shard is addable (white) whenever a trim is in the merge slot AND stacking it would
@@ -1296,11 +1297,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
         if (activeSourceSim && !tearSimultaneous && !menu.slots.get(GlintTableMenu.SLOT_TEAR_SEQ).hasItem())
             out.add(Component.translatable("screen.customglint.glint_table.issue.need_seq_tear",
-                    itemName(CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get())));
+                    itemName(ModItems.GLINT_TEAR_SEQUENTIAL.get())));
         int simNeed = committedSimLayers();
         if (menu.slots.get(GlintTableMenu.SLOT_TEAR).getItem().getCount() < simNeed)
             out.add(Component.translatable("screen.customglint.glint_table.issue.need_sim_tears",
-                    itemName(CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get()), simNeed));
+                    itemName(ModItems.GLINT_TEAR_SIMULTANEOUS.get()), simNeed));
 
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
         boolean baseHasGlowColors = fromBase && CustomGlint.getGlowColors(base).length > 0;
@@ -1345,10 +1346,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (cost[2] > 0)             { reqLine(lines, itemName(Items.GLASS), cost[2], GlintTableMenu.SLOT_GLASS); any = true; }
         if (modGlow && !baseGlowing) { reqLine(lines, itemName(Items.GLOWSTONE_DUST), 1, GlintTableMenu.SLOT_GLOWSTONE); any = true; }
         int extraLayers = lowerLayers.size() + upperLayers.size();
-        if (extraLayers > 0)         { reqLine(lines, itemName(CustomGlintMod.GLINT_LAYER_TEAR.get()), extraLayers, GlintTableMenu.SLOT_LAYER_TEAR); any = true; }
+        if (extraLayers > 0)         { reqLine(lines, itemName(ModItems.GLINT_LAYER_TEAR.get()), extraLayers, GlintTableMenu.SLOT_LAYER_TEAR); any = true; }
         int simTears = simTearCost();
-        if (simTears > 0)            { reqLine(lines, itemName(CustomGlintMod.GLINT_TEAR_SIMULTANEOUS.get()), simTears, GlintTableMenu.SLOT_TEAR); any = true; }
-        if (activeSourceSim && !tearSimultaneous) { reqLine(lines, itemName(CustomGlintMod.GLINT_TEAR_SEQUENTIAL.get()), 1, GlintTableMenu.SLOT_TEAR_SEQ); any = true; }
+        if (simTears > 0)            { reqLine(lines, itemName(ModItems.GLINT_TEAR_SIMULTANEOUS.get()), simTears, GlintTableMenu.SLOT_TEAR); any = true; }
+        if (activeSourceSim && !tearSimultaneous) { reqLine(lines, itemName(ModItems.GLINT_TEAR_SEQUENTIAL.get()), 1, GlintTableMenu.SLOT_TEAR_SEQ); any = true; }
         if (!any) lines.add(Component.translatable("screen.customglint.glint_table.nothing").withStyle(ChatFormatting.DARK_GRAY));
         return lines;
     }
