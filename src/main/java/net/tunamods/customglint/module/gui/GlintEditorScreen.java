@@ -971,10 +971,10 @@ public class GlintEditorScreen extends Screen {
                     .getModel(previewStack, this.minecraft.level, this.minecraft.player, 0).isCustomRenderer();
             float previewScale = preview3d ? 4.4f : 5.0f;
             pose.scale(previewScale, previewScale, 1.0f);
-            // GuiGraphics.renderItem self-flushes after drawing the item, so the glow-outline drain
-            // (GuiGraphics.flush RETURN → drainGui) fires here WHILE the preview scissor is still enabled —
-            // the recess box is the live GL scissor and clips the ring to the preview. The drain sizes the
-            // ring off the item's on-screen scale (the 5x/4.4x pose), so the preview ring wraps the whole item.
+            // GuiGraphics.renderItem queues the glowing icon's silhouette; the glow-outline drain runs later
+            // (ScreenEvent.Render.Post) but captures THIS scissor at queue time, so the recess box still clips
+            // the ring to the preview. The drain sizes the ring off the item's on-screen scale (the 5x/4.4x
+            // pose), so the preview ring wraps the whole item.
             g.renderItem(previewStack, -8, -8);
             pose.popPose();
             g.disableScissor();

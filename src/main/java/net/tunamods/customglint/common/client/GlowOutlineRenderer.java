@@ -293,13 +293,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // {@code anchor} = the GUI-space slot centre + size (the {@code cg_guiAnchor} tuple); null for
     // world / first-person jobs (they scissor by silhouette bounds, not a slot).
     private record ItemJob(List<BakedQuad> quads, PoseStack.Pose pose, Matrix4f modelView,
-                           int light, int color, int category, float[] anchor) {}
+                           int light, int color, int category, float[] anchor, int[] scissor) {}
 
     // Special / 3D BEWLR items: camera-relative {@code [x,y,z,u,v]} per vertex (QUADS order) captured by
     // re-rendering the item into a record-only buffer, traced against {@code tex}. All buckets of one item
     // share a {@code key} so the multi-texture item composes as ONE ring.
     private record ModelJob(float[] data, int len, ResourceLocation tex, Matrix4f modelView,
-                            int color, int key, int category, float[] anchor) {}
+                            int color, int key, int category, float[] anchor, int[] scissor) {}
 
     private static final List<ItemJob> worldJobs = new ArrayList<>();
     private static final List<ItemJob> heldFpJobs = new ArrayList<>();
@@ -308,9 +308,16 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private static final List<ModelJob> modelFpJobs = new ArrayList<>();
     private static final List<ModelJob> modelGuiJobs = new ArrayList<>();
 
-    // The GUI mask is cleared once per frame (see drainGui); this flag, reset in beginFrame, tracks whether
-    // the first GUI drain of the frame has done that clear yet.
-    private static boolean guiMaskCleared = false;
+    /** Snapshot the live GL scissor (lower-left, framebuffer pixels) at queue time so a GUI icon's ring can be
+     *  clipped to whatever clip was active when the icon drew (wand-preview recess, scroll viewport). The GUI
+     *  drain now runs once per context — after the screen's scissor has been popped — so it can no longer read
+     *  the icon's clip live. Returns null when no scissor is active (normal slots). */
+    private static int[] captureScissor() {
+        if (!GL11.glIsEnabled(GL11.GL_SCISSOR_TEST)) return null;
+        int[] box = new int[4];
+        GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, box);
+        return box;
+    }
 
     /** Queue a world-space glowing item (third-person held / dropped / frame / other player). {@code pose}
      *  is the item's camera-relative pose at its {@code ItemRenderer.render} RETURN; {@code modelView} is a
@@ -320,17 +327,18 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void queueWorldItem(List<BakedQuad> quads, PoseStack.Pose pose, Matrix4f modelView,
                                       int light, int color) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
-        worldJobs.add(new ItemJob(quads, pose, modelView, light, color, CAT_ITEM, null));
+        worldJobs.add(new ItemJob(quads, pose, modelView, light, color, CAT_ITEM, null, null));
     }
 
     /** Queue a glowing item rendered into a GUI / inventory / HUD slot ({@code ItemDisplayContext.GUI}).
      *  {@code pose} is the reproduced GUI transform, so the silhouette vertices are in GUI screen space; it
-     *  is drained at {@code GuiGraphics.flush()} RETURN (see {@link #drainGui()}) while the GUI ortho ProjMat /
-     *  ModelView are still live, projecting the silhouette exactly onto the drawn icon. {@code anchor} is the
-     *  icon's GUI-space slot centre + size so the drain can size + clamp the ring to the real icon. */
+     *  is drained once per GUI context (see {@link #drainGui()}) while the GUI ortho ProjMat / ModelView are
+     *  still live, projecting the silhouette exactly onto the drawn icon. {@code anchor} is the icon's
+     *  GUI-space slot centre + size so the drain can size + clamp the ring to the real icon; the live GL
+     *  scissor is captured here so the ring clips to whatever clip was active when the icon drew. */
     public static void queueGuiItem(List<BakedQuad> quads, PoseStack.Pose pose, int light, int color,
                                     float[] anchor) {
-        guiJobs.add(new ItemJob(quads, pose, null, light, color, CAT_ITEM, anchor));
+        guiJobs.add(new ItemJob(quads, pose, null, light, color, CAT_ITEM, anchor, captureScissor()));
     }
 
     /** Queue a first-person held item. {@code pose} is the item's pose at its render RETURN inside
@@ -340,7 +348,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void queueHeldFpItem(List<BakedQuad> quads, PoseStack.Pose pose, Matrix4f modelView,
                                        int light, int color) {
         if (CustomGlintRenderer.isInShadowPass()) return;
-        heldFpJobs.add(new ItemJob(quads, pose, modelView, light, color, CAT_HELD_FP, null));
+        heldFpJobs.add(new ItemJob(quads, pose, modelView, light, color, CAT_HELD_FP, null, null));
     }
 
     /** CAT_HELD_FP for a first-person hand item, else CAT_ITEM. */
@@ -362,7 +370,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         float[] copy = new float[len];
         System.arraycopy(data, 0, copy, 0, len);
         ModelJob job = new ModelJob(copy, len, tex, modelView, color, key, itemCategory(ctx),
-                ctx == ItemDisplayContext.GUI ? anchor : null);
+                ctx == ItemDisplayContext.GUI ? anchor : null, ctx == ItemDisplayContext.GUI ? captureScissor() : null);
         if (ctx == ItemDisplayContext.GUI) modelGuiJobs.add(job);
         else if (ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
                 || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND) modelFpJobs.add(job);
@@ -381,7 +389,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (len < 20 || tex == null) return;              // need at least one quad (4 verts * 5 floats)
         float[] copy = new float[len];
         System.arraycopy(data, 0, copy, 0, len);
-        modelWorldJobs.add(new ModelJob(copy, len, tex, modelView, color, key, category, null));
+        modelWorldJobs.add(new ModelJob(copy, len, tex, modelView, color, key, category, null, null));
     }
 
     /** Per-frame reset; called from the RenderTickEvent.START listener. */
@@ -394,7 +402,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         modelGuiJobs.clear();
         glowIdByIdentity.clear();
         glowIdCounter = 0;
-        guiMaskCleared = false;
     }
 
     // ── Drain ──────────────────────────────────────────────────────────────────
@@ -430,15 +437,19 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         drain(worldJobs, modelWorldJobs, WORLD_PROJ);
     }
 
-    /** Drain GUI / inventory / HUD item outlines. Called at the RETURN of {@code GuiGraphics.flush()}
-     *  (see {@code GuiGraphicsMixin}) — right after the icon batch (and its slot background) flush to the main
-     *  target, while the GUI ortho projection / modelview the icon was drawn under are still the live
-     *  RenderSystem matrices. So the captured GUI-space silhouette projects exactly onto the just-drawn icon
-     *  and the ring composites into the margin around it. Differs from {@link #drain}: (1) no captured-modelview
+    /** Drain GUI / inventory / HUD item outlines. Called ONCE per GUI context (container foreground, screen
+     *  post, HUD render post — see {@code CustomGlintClientInit}) rather than once per item flush, so all of a
+     *  frame's glowing icons composite in a single mask pass instead of N framebuffer ping-pongs. By the time
+     *  any of those hooks fire the icons (and their slot backgrounds) have already flushed to the main target,
+     *  and the GUI ortho projection / modelview they were drawn under are still the live RenderSystem matrices
+     *  (the per-icon slot position lives in the captured pose, not RS state, so the live base matrices are the
+     *  same at any point in the GUI render). So each captured GUI-space silhouette projects exactly onto its
+     *  drawn icon and the ring composites into the margin around it. Differs from {@link #drain}: (1) no captured-modelview
      *  replay — the live matrices ARE the draw matrices, so accumulate directly; (2) the scene-depth occlusion
      *  sampler is left UNBOUND (stale world depth would wrongly occlude every flat icon); (3) ring thickness is
-     *  driven by the icon's on-screen size (GUI_RING_ITEM_PIXELS) not camera distance; (4) the live GUI scissor
-     *  (e.g. the wand-preview box) is saved, intersected with each ring box, and restored. */
+     *  driven by the icon's on-screen size (GUI_RING_ITEM_PIXELS) not camera distance; (4) each ring box is
+     *  clipped to the GL scissor captured when that icon drew (wand-preview box, scroll viewport), so the
+     *  per-icon clip survives this drain running after the screen's scissor was popped. */
     public static void drainGui() {
         if (guiJobs.isEmpty() && modelGuiJobs.isEmpty()) return;
         if (silhouetteShader == null || compositeShader == null) { guiJobs.clear(); modelGuiJobs.clear(); return; }
@@ -450,23 +461,21 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // modelview (no captured-modelview push like the world drain).
         beginAccumulation(main.width, main.height, RenderSystem.getModelViewMatrix(), RenderSystem.getProjectionMatrix());
 
-        // Save the GUI's active GL scissor: each ring box is INTERSECTED with it (so a ring can't draw past
-        // the GUI's own clip — wand-preview box, scroll panel) and it is RESTORED afterwards (the composite
-        // toggles the GL scissor per box and would otherwise leave it disabled).
+        // Save/restore the live GL scissor for hygiene only — the composite toggles it per box and would
+        // otherwise leave it disabled. Per-icon clipping uses each job's OWN scissor (captured when the icon
+        // drew); the live scissor here is no longer the icon's clip, since this drain runs once per GUI
+        // context after the screen popped its scissor.
         boolean prevScissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
         int[] prevBox = new int[4];
         if (prevScissor) GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, prevBox);
 
-        // Clear the mask ONCE per frame, not once per icon: GuiGraphics flushes after every item it renders,
-        // so an inventory full of glowing items would otherwise do one full-screen clear per icon. Icon boxes
-        // are disjoint and each composite is scissored + TargetId-filtered to its own icon, so one clear at the
-        // first GUI drain is enough (it also wipes the world/FP drains' leftover silhouettes).
-        if (!guiMaskCleared) {
-            RenderSystem.depthMask(true);
-            RenderSystem.colorMask(true, true, true, true);
-            maskTarget.clear(Minecraft.ON_OSX);
-            guiMaskCleared = true;
-        }
+        // Clear the mask for this drain. The GUI now drains a few times per frame (once per GUI context —
+        // HUD post, container foreground, screen post) instead of once per item flush, so a per-drain clear is
+        // cheap and keeps each context's mask clean (a later dragged-item / tooltip drain can't pick up a
+        // stale silhouette from the slot pass that already composited).
+        RenderSystem.depthMask(true);
+        RenderSystem.colorMask(true, true, true, true);
+        maskTarget.clear(Minecraft.ON_OSX);
         maskTarget.bindWrite(true);
         RenderSystem.setShaderTexture(1, 0); // GUI: no scene-depth occlusion (stale world depth would erase icons)
         itemBoxes.clear();
@@ -481,7 +490,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 sc.putBulkData(job.pose, quad, 1.0f, 1.0f, 1.0f, job.light, OverlayTexture.NO_OVERLAY);
             }
             Box box = computeGuiBox(main.width, main.height, key & 31, false, job.anchor);
-            if (box != null && prevScissor) box = intersectBox(box, prevBox);
+            if (box != null && job.scissor() != null) box = intersectBox(box, job.scissor());
             if (box != null) itemBoxes.add(box);
         }
         for (ModelJob job : modelGuiJobs) {
@@ -491,7 +500,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             SilhouetteConsumer sc = new SilhouetteConsumer(tc, r, g, b, job.key);
             emitModel(sc, job);
             Box box = computeGuiBox(main.width, main.height, job.key & 31, true, job.anchor);
-            if (box != null && prevScissor) box = intersectBox(box, prevBox);
+            if (box != null && job.scissor() != null) box = intersectBox(box, job.scissor());
             if (box != null) itemBoxes.add(box);
         }
         MASK_BUFFERS.endBatch();

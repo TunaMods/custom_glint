@@ -24,6 +24,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.module.client.GlintGuiConfig;
 import net.tunamods.customglint.module.client.GlintTableModelClient;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -662,6 +663,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         } finally {
             frameMemo = false;
         }
+        // The custom panels above (trim/printed grids, previews) are drawn AFTER super.render, so any glowing
+        // icons among them queue their glow rings too late for the container Foreground drain (which already
+        // fired inside super.render). Drain them here, before our own tooltips, so the rings stay under the
+        // tooltip instead of compositing over it at the ScreenEvent.Render.Post drain (which fires after render).
+        GlowOutlineRenderer.drainGui();
         renderTableTooltip(g, mx, my);
     }
 

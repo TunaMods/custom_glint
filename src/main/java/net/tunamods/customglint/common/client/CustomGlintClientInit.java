@@ -2,8 +2,11 @@ package net.tunamods.customglint.common.client;
 
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
+import net.minecraftforge.client.event.ContainerScreenEvent;
 import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
+import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -55,6 +58,23 @@ public final class CustomGlintClientInit {
                 }
             }
         });
+
+        // GUI / inventory / HUD glow rings: drain ONCE per GUI context instead of once per item flush.
+        // ItemRendererMixin captures each glowing icon's silhouette (in GUI screen space) at its render
+        // RETURN; these hooks composite all of them together while the GUI ortho matrices are still live,
+        // collapsing what used to be N mask<->main framebuffer ping-pongs (one per glowing icon) into one.
+        // drainGui no-ops on an empty queue, so the three hooks never double-drain:
+        //   - container foreground fires before the screen's tooltips/dragged item, keeping the ring under
+        //     them; it drains the slot icons and clears the queue.
+        //   - screen post catches non-container screens (e.g. the wand editor preview) and anything queued
+        //     after the foreground (a dragged glowing item).
+        //   - render-gui post covers the in-game HUD hotbar when no screen is open.
+        MinecraftForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->
+                GlowOutlineRenderer.drainGui());
+        MinecraftForge.EVENT_BUS.addListener((ScreenEvent.Render.Post event) ->
+                GlowOutlineRenderer.drainGui());
+        MinecraftForge.EVENT_BUS.addListener((RenderGuiEvent.Post event) ->
+                GlowOutlineRenderer.drainGui());
     }
 
     private static void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {

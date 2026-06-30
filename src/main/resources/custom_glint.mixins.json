@@ -8,7 +8,6 @@
     "CompositeRenderTypeAccessor",
     "CompositeStateAccessor",
     "ElytraLayerMixin",
-    "GuiGraphicsMixin",
     "HorseArmorLayerMixin",
     "HumanoidArmorLayerMixin",
     "ItemInHandRendererMixin",
