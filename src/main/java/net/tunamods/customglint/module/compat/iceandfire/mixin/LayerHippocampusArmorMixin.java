@@ -33,8 +33,8 @@ import java.util.List;
  * by entity.getArmor() (1/2/3 = iron/gold/diamond), source the actual ItemStack from the
  * client-synced cache.
  *
- * Mask + glint mechanics identical to the dragon/hippogryph variants. See
- * {@link LayerDragonArmorMixin} for the stencil rationale.
+ * Glint + outline mechanics identical to the dragon/hippogryph variants (depth-offset
+ * armorCutoutNoCull, no stencil mask). See {@link LayerDragonArmorMixin} for the rationale.
  *
  * Armor ItemStack source: {@link MountArmorCache} (synced by EntityHippocampusArmorSyncMixin +
  * StartTracking listener — IaF's SimpleContainer doesn't sync to clients on its own).

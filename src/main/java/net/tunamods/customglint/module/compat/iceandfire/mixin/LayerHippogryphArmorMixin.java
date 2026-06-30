@@ -36,10 +36,10 @@ import java.util.List;
  * ctor. We resolve the texture directly from getArmor() rather than redirecting — the mapping is
  * stable and the texture paths are part of IaF's published assets.
  *
- * Mask + glint mechanics identical to {@link LayerDragonArmorMixin}: the armor texture's opaque
- * regions stamp stencil bit 0x80, and the glint RT only renders where bit 0x80 is set. See that
- * mixin for the full rationale (the parent body model shares depth with the armor mesh, so an
- * EQUAL_DEPTH glint without a stencil mask would paint glint onto the bare hippogryph too).
+ * Glint + outline mechanics identical to {@link LayerDragonArmorMixin}: no stencil mask — the base
+ * armor draws through the unwrapped buffer at an armorCutoutNoCull depth offset so the EQUAL-depth
+ * glint lines up with the armor mesh and the body glint is depth-occluded. See that mixin for the
+ * full rationale (the parent body model shares depth with the armor mesh, so the offset separates them).
  *
  * Armor ItemStack source: {@link MountArmorCache}. IaF's hippogryphInventory SimpleContainer
  * doesn't sync to clients (only the armor tier int does), so we sync the stack ourselves via

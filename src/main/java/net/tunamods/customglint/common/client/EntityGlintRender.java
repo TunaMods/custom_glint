@@ -28,7 +28,7 @@ import java.util.List;
  * the renderer's outer popPose, so the pose stack is still in entity-local space (matches the
  * vantage of armor/layer renderers).
  *
- * Resolution order: per-instance via the registered {@link InstanceResolver} (standalone module
+ * Resolution order: per-instance via the registered {@link InstanceResolver} (the api client init
  * installs one that reads from EntityGlintCache), then {@link CustomGlint#ENTITY_GLINTS} type
  * registry. Mods that bundle only the api jar without a resolver still get type-registry-based glints.
  */
@@ -50,7 +50,7 @@ public final class EntityGlintRender {
         }
     }
 
-    /** Default: no per-instance data — standalone module overrides this in client init. */
+    /** Default: no per-instance data — the api client init (EntityGlintClientInit) overrides this. */
     public static InstanceResolver instanceResolver = entity -> null;
 
     /**
@@ -276,9 +276,8 @@ public final class EntityGlintRender {
 
     /**
      * MultiBufferSource wrapper that auto-fans every entity-* RenderType request through the
-     * glint render-types of all configured layers. The strategy mirrors what
-     * {@link CustomGlintRenderer#applyGlint(...)} (well, ItemRendererMixin's getFoilBuffer path)
-     * does for items: a VertexMultiConsumer of {base, glint_layer0, glint_layer1, …}.
+     * glint render-types of all configured layers. The strategy mirrors what ItemRendererMixin's
+     * getFoilBuffer path does for items: a VertexMultiConsumer of {base, glint_layer0, glint_layer1, …}.
      *
      * RenderType filter: only RTs whose toString begins with "entity_" get wrapped. That covers
      * entityCutoutNoCull / entitySolid / entityTranslucent / itemEntityTranslucentCull / etc.
