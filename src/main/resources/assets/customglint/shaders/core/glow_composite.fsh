@@ -106,12 +106,14 @@ void main() {
 
     float ringDist = cg_eyeDist(texture(Sampler1, ctr).r); // this pixel's own silhouette depth (or far)
 
-    // Pick the NEAREST qualifying ring source rather than the first one hit, so where two objects' rings
-    // overlap the nearer object's ring layers ON TOP of the farther one's (the elytra ring over the helmet
-    // ring) instead of whichever the loop reached first making them look co-planar.
-    float bestDist = 1.0e30;
-    vec3  bestColor = vec3(0.0);
-    bool  found = false;
+    // RETURN ON FIRST qualifying source (matches the 26.1.2 composite). The drain runs ONE pass per outline
+    // id (TargetId filters sources to a single id), so every qualifying source in this pass carries that id's
+    // glow colour — the first valid source gives the IDENTICAL ring decision and colour as scanning the whole
+    // kernel for the nearest one did, just without the wasted taps. Inter-object layering (elytra over helmet)
+    // is already handled by the per-id far→near pass ORDER, not by a nearest-pick inside one pass. For a close
+    // / screen-filling entity this is the dominant win: a band pixel returns after its first hit instead of
+    // evaluating ~40 sources × the opening guard. The guard now runs only for the candidate about to ring, so
+    // the Sodium anti-speckle behaviour is preserved at a fraction of the cost.
 
     // GUI: clean silhouette (no Sodium speckle) → use a SQUARE (Chebyshev) reach bounded by SearchRadius
     // (skip the Euclidean cutoff, which would drop diagonal cells and notch corners) and SKIP the
@@ -139,10 +141,8 @@ void main() {
             float srcDist = cg_eyeDist(texture(Sampler1, srcUV).r);
             // Ring occlusion: skip this ring where the ring pixel's own silhouette is NEARER than the
             // source's by more than the bias — a different object is in front here, so the source's ring
-            // would wrongly paint around/over it (the armor ring behind an elytra). A source can never lose
-            // to a farther one already chosen, so also skip anything not nearer than the current best.
+            // would wrongly paint around/over it (the armor ring behind an elytra).
             if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;
-            if (found && srcDist >= bestDist) continue;
             if (!gui) {
                 // Reject isolated specks (morphological opening) — a lone stray "visible" texel (sub-pixel
                 // coverage flicker at a convex corner under Sodium's reduced immediate-mode vertex
@@ -165,11 +165,11 @@ void main() {
                     support += int(texture(Sampler0, srcUV + vec2(-step.x,  step.y)).a > 0.002);
                     support += int(texture(Sampler0, srcUV + vec2(-step.x, -step.y)).a > 0.002);
                 }
-                if (support < 2) continue;
+                if (support < 2) continue;            // speck → keep scanning for a real source
             }
-            bestDist = srcDist; bestColor = n.rgb; found = true;
+            fragColor = vec4(n.rgb, 1.0);             // first valid source rings this pixel
+            return;
         }
     }
-    if (found) { fragColor = vec4(bestColor, 1.0); return; }
     discard;
 }
