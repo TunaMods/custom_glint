@@ -52,6 +52,7 @@ public class ItemRendererMixin {
     private static void cg_onRenderHead(ItemStack stack, ItemDisplayContext ctx, boolean lh,
             PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
         CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
+        CustomGlintRenderer.CURRENT_CTX.set(ctx);
     }
 
     // ── Stack clear + item outline (RETURN) ─────────────────────────────────
@@ -66,6 +67,7 @@ public class ItemRendererMixin {
             int pCombinedLight, int pCombinedOverlay, BakedModel pModel, CallbackInfo ci) {
         cg_captureGlowOutline(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pCombinedLight, pModel);
         CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
+        CustomGlintRenderer.CURRENT_CTX.remove();
     }
 
     // ── getFoilBuffer intercepts ─────────────────────────────────────────────
@@ -100,6 +102,12 @@ public class ItemRendererMixin {
 
     // ─────────────────────────────────────────────────────────────────────────
 
+    /** Buffer for a glint layer RenderType: the batched HUD source when drawing a hotbar icon (so all
+     *  same-config glint accumulates and draws once at Gui.render TAIL), else the normal inline buffer. */
+    private static VertexConsumer cg_glintBuf(MultiBufferSource buffer, RenderType rt, boolean guiHud) {
+        return guiHud ? CustomGlintRenderer.guiGlintBuffer(rt) : buffer.getBuffer(rt);
+    }
+
     /** Returns a VertexMultiConsumer combining all glint layers + base renderType, or null if no glint. */
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
         // During our record-only glow-outline capture re-render, route all foil requests to the
@@ -115,6 +123,17 @@ public class ItemRendererMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return null;
 
+        // Route the glint into the batched source so every icon's glint accumulates and draws in ONE
+        // endBatch (drained once) instead of one flush per item — the per-item GuiGraphics.flush() is the
+        // dominant GUI cost with many glinted icons (e.g. the creative tab). Covers the HUD hotbar (drained
+        // at Gui.render TAIL) and container screens / inventory / creative (drained before the tooltip, see
+        // AbstractContainerScreenMixin). Other screen types keep the inline path (no batched drain hooks
+        // there), so they're unaffected.
+        net.minecraft.client.gui.screens.Screen cgScreen = Minecraft.getInstance().screen;
+        boolean guiHud = CustomGlintRenderer.CURRENT_CTX.get() == ItemDisplayContext.GUI
+                && (cgScreen == null
+                    || cgScreen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen);
+
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
@@ -124,7 +143,7 @@ public class ItemRendererMixin {
             // per-colour fan-out and no texture sampling.
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
-                if (crt != null) list.add(buffer.getBuffer(crt));
+                if (crt != null) list.add(cg_glintBuf(buffer, crt, guiHud));
                 continue;
             }
             // An undyed (empty-palette) non-chromatic layer renders white so the design stays visible without
@@ -139,7 +158,7 @@ public class ItemRendererMixin {
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, i);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
+                    if (rt != null) list.add(cg_glintBuf(buffer, rt, guiHud));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -149,7 +168,7 @@ public class ItemRendererMixin {
                 buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
                 RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
+                if (rt != null) list.add(cg_glintBuf(buffer, rt, guiHud));
             }
         }
         if (list.isEmpty()) return null;

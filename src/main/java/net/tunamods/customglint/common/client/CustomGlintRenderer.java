@@ -5,16 +5,19 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import net.tunamods.customglint.common.CustomGlint;
@@ -100,6 +103,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
         SHADER_TT_TAGGED.clear();
         // Drop the entity RenderType verdict cache too, so it doesn't pin RT singletons across reloads.
         EntityGlintRender.GlintWrappingBufferSource.clearRtVerdictCache();
+        // Free the private HUD-glint source's per-RenderType buffers; the forGlint RTs they key on were just
+        // evicted, so these native builders would dangle. The source + builders re-create lazily next HUD glint.
+        for (ByteBufferBuilder b : GUI_GLINT_FIXED.values()) { try { b.close(); } catch (Throwable ignored) {} }
+        GUI_GLINT_FIXED.clear();
+        if (guiGlintSpare != null) { try { guiGlintSpare.close(); } catch (Throwable ignored) {} guiGlintSpare = null; }
+        guiGlintSource = null;
         // Invalidate the cached block-atlas dimensions (the atlas restitches on resource reload).
         cachedAtlasW = 0;
         cachedAtlasH = 0;
@@ -171,7 +180,41 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Assigned by RenderBuffersMixin on RenderBuffers construction; null until then. */
     public static SequencedMap<RenderType, ByteBufferBuilder> fixedBufferRegistry;
     public static final ThreadLocal<ItemStack> CURRENT_ITEM_STACK = new ThreadLocal<>();
+    /** The display context of the item currently being rendered (set at ItemRenderer.render HEAD). Lets
+     *  {@code applyGlint} tell a HUD/GUI icon apart from a world/held item so the HUD glint can be routed
+     *  to the batched {@link #guiGlintBuffer} source instead of drawing inline per item. */
+    public static final ThreadLocal<ItemDisplayContext> CURRENT_CTX = new ThreadLocal<>();
     public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
+
+    // ── HUD glint batching ──────────────────────────────────────────────────────
+    // The HUD hotbar draws each item through GuiGraphics.renderItem, which calls GuiGraphics.flush() after
+    // EVERY icon — so inline glint draws one flush per item and same-design icons never batch. Route the HUD
+    // glint into this private source instead: vanilla's per-item flush never touches it, so every same-config
+    // glint accumulates into ONE RenderType buffer and draws in a single endBatch ({@link #drainGuiGlint},
+    // at Gui.render TAIL while the GUI ortho + the icons' depth are still committed). forGlint's color rides a
+    // per-(design,colors,…) holder, so same-key icons always resolve the same colour in a frame — deferring
+    // the draw is colour-safe. Open screens keep the inline path (they need per-item layering vs tooltips).
+    private static final SequencedMap<RenderType, ByteBufferBuilder> GUI_GLINT_FIXED = new LinkedHashMap<>();
+    private static MultiBufferSource.BufferSource guiGlintSource;
+    private static ByteBufferBuilder guiGlintSpare;
+
+    /** A glint-layer buffer in the private HUD source (each RenderType gets its own builder so layers/colours
+     *  accumulate without flushing one another). The base item RT still goes through the normal GUI source. */
+    public static VertexConsumer guiGlintBuffer(RenderType rt) {
+        GUI_GLINT_FIXED.computeIfAbsent(rt, k -> new ByteBufferBuilder(k.bufferSize()));
+        if (guiGlintSource == null) {
+            guiGlintSpare = new ByteBufferBuilder(256);
+            guiGlintSource = MultiBufferSource.immediateWithBuffers(GUI_GLINT_FIXED, guiGlintSpare);
+        }
+        return guiGlintSource.getBuffer(rt);
+    }
+
+    /** Draws all HUD glint accumulated this frame in one batch per RenderType. Called at Gui.render TAIL,
+     *  where the GUI ortho projection and the icons' committed depth (forGlint EQUAL-depth-tests against it)
+     *  are both still live. No-op until the first HUD glint creates the source. */
+    public static void drainGuiGlint() {
+        if (guiGlintSource != null) guiGlintSource.endBatch();
+    }
 
     /** Reused scroll matrix for the glint texturing shards. Each shard's setup→draw→clear is atomic
      *  per RenderType flush, so a single per-thread instance (reset via {@code translation(...)}) avoids
