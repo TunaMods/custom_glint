@@ -267,15 +267,12 @@ public class GlintCommand {
         int count = 0;
         for (Entity e : targets) {
             if (!(e instanceof LivingEntity le)) continue;
-            if (enabled && !CustomGlint.hasEntity(le)) continue;
             CustomGlint.setEntityGlowing(le, enabled);
             EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
-            source.sendFailure(Component.literal(enabled
-                ? "No matching living entities have a glint to glow"
-                : "No matching living entities"));
+            source.sendFailure(Component.literal("No matching living entities"));
             return 0;
         }
         final int n = count;
@@ -337,11 +334,6 @@ public class GlintCommand {
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty()) {
             source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
-
-        if (enabled && !CustomGlint.has(stack)) {
-            source.sendFailure(Component.literal("Item has no custom glint — apply a glint first"));
             return 0;
         }
 
