@@ -74,7 +74,10 @@ public class GlintApplyPacket {
     }
 
     public static GlintApplyPacket decode(FriendlyByteBuf buf) {
-        InteractionHand hand = buf.readEnum(InteractionHand.class);
+        // readEnum is values()[readVarInt()] with no bounds check — validate so a crafted packet can't AIOOBE.
+        int handOrd = buf.readVarInt();
+        InteractionHand[] hands = InteractionHand.values();
+        InteractionHand hand = (handOrd >= 0 && handOrd < hands.length) ? hands[handOrd] : InteractionHand.MAIN_HAND;
         boolean remove = buf.readBoolean();
         if (remove) {
             boolean wandOnly = buf.readBoolean();
