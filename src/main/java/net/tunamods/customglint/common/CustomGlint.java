@@ -468,13 +468,17 @@ public final class CustomGlint {
         root.put(TAG, glintTag);
     }
 
+    /** Shared empty result for the no-glow-colours path (the common case for a glint-only glowing item),
+     *  read per glowing surface per frame — avoids a fresh {@code new int[0]} each call. Never mutated. */
+    private static final int[] EMPTY_INT_ARRAY = new int[0];
+
     /** Glow Trim colors — drive the outline color animation independently of any glint Data. */
     public static int[] getGlowColors(ItemStack stack) {
-        if (stack.isEmpty() || !stack.hasTag()) return new int[0];
+        if (stack.isEmpty() || !stack.hasTag()) return EMPTY_INT_ARRAY;
         CompoundTag root = stack.getTag();
-        if (!root.contains(TAG)) return new int[0];
+        if (!root.contains(TAG)) return EMPTY_INT_ARRAY;
         CompoundTag tag = root.getCompound(TAG);
-        if (!tag.contains(GLOW_COLORS_KEY)) return new int[0];
+        if (!tag.contains(GLOW_COLORS_KEY)) return EMPTY_INT_ARRAY;
         return tag.getIntArray(GLOW_COLORS_KEY);
     }
 
@@ -639,9 +643,9 @@ public final class CustomGlint {
      *  glint Data, identical semantics to {@link #getGlowColors(ItemStack)} but on a mob. */
     public static int[] getEntityGlowColors(LivingEntity entity) {
         CompoundTag pd = entity.getPersistentData();
-        if (!pd.contains(TAG)) return new int[0];
+        if (!pd.contains(TAG)) return EMPTY_INT_ARRAY;
         CompoundTag tag = pd.getCompound(TAG);
-        if (!tag.contains(GLOW_COLORS_KEY)) return new int[0];
+        if (!tag.contains(GLOW_COLORS_KEY)) return EMPTY_INT_ARRAY;
         return tag.getIntArray(GLOW_COLORS_KEY);
     }
 
