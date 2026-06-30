@@ -272,7 +272,7 @@ public class ItemRendererMixin {
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
-        List<VertexConsumer> list = new ArrayList<>();
+        List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             // Procedural chromatic: one shader-driven draw (the palette + seed ride the RenderType), no
             // per-colour fan-out and no texture sampling.
@@ -305,7 +305,11 @@ public class ItemRendererMixin {
         }
         if (list.isEmpty()) return null;
         list.add(buffer.getBuffer(renderType));
-        return VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+        // Collapse duplicate delegates — Sodium/Embeddium's VertexMultiConsumer throws "Duplicate delegates"
+        // if the same buffer appears twice. In-place, no allocation when there are none (the common case).
+        for (int i = list.size() - 1; i > 0; i--)
+            if (list.indexOf(list.get(i)) != i) list.remove(i);
+        return list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
     }
 
 }

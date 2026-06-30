@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -72,15 +74,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 LOGGER.warn("[{}/CustomGlint] additional reload cleanup threw", MOD_ID, t);
             }
         }
-        if (fixedBufferRegistry != null) {
-            for (RenderType rt : BY_GLINT.values())             fixedBufferRegistry.remove(rt);
-            for (RenderType rt : BY_ARMOR_GLINT.values())       fixedBufferRegistry.remove(rt);
-            for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) fixedBufferRegistry.remove(rt);
-            for (RenderType rt : BY_MOUNT_ARMOR_GLINT.values()) fixedBufferRegistry.remove(rt);
-            for (RenderType rt : BY_MOUNT_ARMOR_MASK.values())  fixedBufferRegistry.remove(rt);
-            for (RenderType rt : BY_CHROMATIC.values())         fixedBufferRegistry.remove(rt);
-        }
+        for (RenderType rt : BY_GLINT.values())             unregisterFixedBuffer(rt);
+        for (RenderType rt : BY_ARMOR_GLINT.values())       unregisterFixedBuffer(rt);
+        for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) unregisterFixedBuffer(rt);
+        for (RenderType rt : BY_MOUNT_ARMOR_GLINT.values()) unregisterFixedBuffer(rt);
+        for (RenderType rt : BY_MOUNT_ARMOR_MASK.values())  unregisterFixedBuffer(rt);
+        for (RenderType rt : BY_CHROMATIC.values())         unregisterFixedBuffer(rt);
         BY_GLINT.clear();
+        GLINT_FAST.clear();
         BY_ARMOR_GLINT.clear();
         BY_HORSE_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_GLINT.clear();
@@ -154,6 +155,58 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final Map<String, RenderType> BY_HORSE_ARMOR_GLINT  = new HashMap<>();
     private static final Map<String, RenderType> BY_MOUNT_ARMOR_GLINT  = new HashMap<>();
     private static final Map<ResourceLocation, RenderType> BY_MOUNT_ARMOR_MASK = new HashMap<>();
+
+    // ── Fixed-buffer registration + builder recycling ───────────────────────────
+    // Each custom glint RenderType needs a dedicated BufferBuilder in the fixed-buffer map. In 1.20.1 a
+    // BufferBuilder's backing buffer is a raw MemoryUtil.memAlloc (no Cleaner, no close()), so simply dropping
+    // a builder when its RT is removed (chromatic LRU eviction, resource reload, EpicKnightsGlintRT) orphans
+    // that off-heap allocation. Recycle removed builders through this pool and hand them back on the next
+    // registration so native memory is bounded by the peak live RT count instead of growing for the session.
+    // Render-thread only (same as the BY_* maps), so no synchronization.
+    private static final ArrayDeque<BufferBuilder> RECYCLED_BUILDERS = new ArrayDeque<>();
+
+    private static BufferBuilder obtainBuilder(int size) {
+        BufferBuilder bb = RECYCLED_BUILDERS.poll();
+        if (bb == null) return new BufferBuilder(size);
+        bb.discard(); // clear any leftover state from its previous RT before reuse
+        return bb;
+    }
+
+    /** Register {@code rt}'s dedicated builder into the captured registry and the live fixed-buffer map
+     *  (usually the same instance), reusing a pooled builder when one is free. Idempotent. */
+    public static void registerFixedBuffer(RenderType rt) {
+        SortedMap<RenderType, BufferBuilder> live = null;
+        try { live = Minecraft.getInstance().renderBuffers().fixedBuffers; } catch (Throwable ignored) {}
+        if (fixedBufferRegistry != null && !fixedBufferRegistry.containsKey(rt))
+            fixedBufferRegistry.put(rt, obtainBuilder(rt.bufferSize()));
+        if (live != null && live != fixedBufferRegistry && !live.containsKey(rt))
+            live.put(rt, obtainBuilder(rt.bufferSize()));
+    }
+
+    /** Remove {@code rt} from the fixed-buffer map(s) and recycle its builder(s) rather than orphaning the
+     *  native buffer. Used by {@link #clearTextures}, the chromatic LRU eviction, and EpicKnightsGlintRT. */
+    public static void unregisterFixedBuffer(RenderType rt) {
+        if (fixedBufferRegistry != null) {
+            BufferBuilder bb = fixedBufferRegistry.remove(rt);
+            if (bb != null) RECYCLED_BUILDERS.offer(bb);
+        }
+        try {
+            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
+            if (live != null && live != fixedBufferRegistry) {
+                BufferBuilder bb = live.remove(rt);
+                if (bb != null) RECYCLED_BUILDERS.offer(bb);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /** Fast path for {@link #forGlint}: the resolved (RenderType, colour holder) memoised per immutable
+     *  {@link Layer}, indexed by (colorIdx, isItem). The steady state then skips rebuilding the ~10-part
+     *  String key (and its {@code Arrays.toString}) plus the map probes every frame for a cache that always
+     *  hits after warmup — it just refreshes the holder the RT's shader closure reads. {@code readCached}
+     *  hands back stable Layer instances; the resolved RT stays registered until {@link #clearTextures}
+     *  (which clears this memo too), so the fast path needs no live-map probe. */
+    private record GlintRT(RenderType rt, float[] holder) {}
+    private static final Map<Layer, GlintRT[]> GLINT_FAST = new WeakHashMap<>();
 
     // ── Scroll direction → UV drift ─────────────────────────────────────────────
     // The glint motif drifts along one of eight compass directions (or freezes when STATIC). The pattern
@@ -236,21 +289,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final RenderStateShard.ShaderStateShard CHROMATIC_SHADER_SHARD =
             new RenderStateShard.ShaderStateShard(() -> chromaticShader);
     /** Each applied chromatic trim rolls a fresh seed, and the RenderType key includes that seed — so without
-     *  a bound these accumulate one RenderType + one BufferBuilder (in both fixed-buffer maps) per distinct
-     *  seed for the whole session. Cap with an access-ordered LRU whose eviction releases the evicted RT from
-     *  the registry and the live fixed-buffer map, mirroring {@link #clearTextures()}. */
+     *  a bound these accumulate one RenderType + BufferBuilder per distinct seed for the whole session. Cap
+     *  with an access-ordered LRU whose eviction unregisters the evicted RT (recycling its builder via
+     *  {@link #unregisterFixedBuffer}), mirroring {@link #clearTextures()}. */
     private static final int CHROMATIC_CACHE_CAP = 256;
     private static final Map<String, RenderType> BY_CHROMATIC =
             new LinkedHashMap<>(16, 0.75f, true) {
                 @Override protected boolean removeEldestEntry(Map.Entry<String, RenderType> eldest) {
                     if (size() <= CHROMATIC_CACHE_CAP) return false;
-                    RenderType rt = eldest.getValue();
-                    if (fixedBufferRegistry != null) fixedBufferRegistry.remove(rt);
-                    try {
-                        SortedMap<RenderType, BufferBuilder> live =
-                                Minecraft.getInstance().renderBuffers().fixedBuffers;
-                        if (live != null) live.remove(rt);
-                    } catch (Throwable ignored) {}
+                    unregisterFixedBuffer(eldest.getValue()); // recycle the evicted RT's builder, don't orphan it
                     return true;
                 }
             };
@@ -383,12 +430,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_texturing|" + k.hashCode(),
                                     () -> setChromaticMatrix(layer, scaleU, scaleV, colorCount), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        registerFixedBuffer(cached);
         return cached;
     }
 
@@ -427,7 +471,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
-        String key = "armor|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx + "|" + layer.scrollDir() + "|" + layer.scrollOffset();
+        String key = "armor|" + layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx + "|" + layer.scrollDir() + "|" + layer.scrollOffset();
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
@@ -470,12 +514,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_armor_glint_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx, 1.0f), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        registerFixedBuffer(cached);
         return cached;
     }
 
@@ -526,12 +567,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_horse_armor_glint_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx, 1.0f), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        registerFixedBuffer(cached);
         return cached;
     }
 
@@ -569,12 +607,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setWriteMaskState(NO_WRITE)
                             .setLayeringState(mountArmorMaskLayering())
                             .createCompositeState(false));
-            if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        registerFixedBuffer(cached);
         return cached;
     }
 
@@ -648,12 +683,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_mount_armor_glint_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx, 1.0f), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        registerFixedBuffer(cached);
         return cached;
     }
 
@@ -676,6 +708,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     public static RenderType forGlint(Data glint, int layerIdx, float[] frameColor, boolean isItem, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
+        // Fast path (layer 0 only): skip rebuilding the String key + map probes every frame and just refresh
+        // the colour holder the RT's shader closure reads. The memo is keyed by Layer VALUE, so it must NOT
+        // serve layerIdx > 0 — two identical-value layers at different indices would resolve to the SAME
+        // RenderType, and applyGlint would hand VertexMultiConsumer the same delegate twice ("Duplicate
+        // delegates" under Sodium/Embeddium). Higher layers take the slow path, whose key includes layerIdx.
+        boolean canMemo = layerIdx == 0 && colorIdx < 8;
+        int fastSlot = canMemo ? colorIdx * 2 + (isItem ? 1 : 0) : -1;
+        if (canMemo) {
+            GlintRT[] fast = GLINT_FAST.get(layer);
+            if (fast != null && fast[fastSlot] != null) {
+                GlintRT gr = fast[fastSlot];
+                System.arraycopy(frameColor, 0, gr.holder(), 0, 4);
+                return gr.rt();
+            }
+        }
         if (getTexture(layer.design()) == null) return null;
         String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx + "|" + layer.scrollDir() + "|" + layer.scrollOffset();
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
@@ -718,12 +765,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_texturing",
                                     () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (fixedBufferRegistry != null)
-                fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        registerFixedBuffer(cached);
+        if (canMemo) {
+            GlintRT[] fast = GLINT_FAST.get(layer);
+            if (fast == null) { fast = new GlintRT[16]; GLINT_FAST.put(layer, fast); }
+            fast[fastSlot] = new GlintRT(cached, holder);
+        }
         return cached;
     }
 
