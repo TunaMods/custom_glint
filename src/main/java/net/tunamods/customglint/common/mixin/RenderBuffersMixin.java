@@ -20,7 +20,7 @@ import java.util.SortedMap;
 @Mixin(RenderBuffers.class)
 public class RenderBuffersMixin {
 
-    @Shadow public SortedMap<RenderType, BufferBuilder> fixedBuffers;
+    @Shadow(aliases = {"f_110093_"}) public SortedMap<RenderType, BufferBuilder> fixedBuffers;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void cg_registerGlintBuffer(CallbackInfo ci) {
