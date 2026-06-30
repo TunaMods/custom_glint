@@ -43,11 +43,16 @@ public final class CustomGlintClientInit {
 
         // Drain world-space item glow outlines after weather, where the live world projection / modelview
         // still match what the items were drawn with and the opaque scene depth is committed for the
-        // occlusion test. (Under a shader pack the pack's later scene composite can overwrite the ring —
-        // the shader-pack-deferred path is a later increment.)
+        // occlusion test. Snapshot the world projection every frame here regardless — under a shader pack
+        // the drain is DEFERRED to the RETURN of LevelRenderer.renderLevel (LevelRendererMixin), past which
+        // the live projection has moved to GUI ortho; Iris composites its scene to the main target at that
+        // RETURN, so a drain here would just be overwritten.
         MinecraftForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
-                GlowOutlineRenderer.drainWorld();
+                GlowOutlineRenderer.snapshotWorldProjection();
+                if (!CustomGlintRenderer.isShaderPackActive()) {
+                    GlowOutlineRenderer.drainWorld();
+                }
             }
         });
     }

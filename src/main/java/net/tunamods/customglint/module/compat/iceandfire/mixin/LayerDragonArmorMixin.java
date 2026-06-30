@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -141,14 +142,17 @@ public class LayerDragonArmorMixin {
         // No tex captured ⇒ IaF early-exited (no armor / dragon type unsupported) ⇒ nothing to glint.
         if (tex == null) return;
 
+        // HEAD > CHEST > LEGS > FEET — first slot with a glint OR a glow trim wins and supplies both
+        // the animated glint and (if glowing) the outline colour.
         ItemStack active = null;
         CustomGlint.Data glint = null;
         for (EquipmentSlot s : CG_SLOTS) {
             ItemStack stack = entity.getItemBySlot(s);
-            CustomGlint.Data dat = CustomGlint.read(stack);
-            if (dat != null) { active = stack; glint = dat; break; }
+            CustomGlint.Data dat = CustomGlint.readCached(stack);
+            if (dat != null || CustomGlint.isGlowing(stack)) { active = stack; glint = dat; break; }
         }
         if (active == null) return;
+        boolean glowing = CustomGlint.isGlowing(active);
 
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
@@ -195,6 +199,14 @@ public class LayerDragonArmorMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
                 model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
             }
+        }
+
+        // Glow outline: trace the dragon model against the composed layered armor texture (its alpha is
+        // the armor shape) into the glow mask. Keyed on the dragon entity (CAT_ARMOR), so the armor ring
+        // fuses with the dragon's body/entity ring into ONE connected ring.
+        if (glowing) {
+            EntityGlintRender.captureModelSilhouette(entity, model, tex, pose, light,
+                    CustomGlintRenderer.resolveGlowColor(active), GlowOutlineRenderer.CAT_ARMOR);
         }
     }
 }

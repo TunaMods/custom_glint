@@ -9,18 +9,18 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.geom.ModelPart;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 
@@ -36,119 +36,48 @@ import java.util.SortedMap;
  *
  * The naive approach (just render parts with a glint render type) fails because:
  * - EQUAL depth test is invisible — EK's decoration depth and our glint depth differ by an FP
- *   epsilon despite using the same VIEW_OFFSET_Z_LAYERING. The same EQUAL works fine on
- *   {@link CustomGlint#forArmorGlint} for vanilla armor, so it's something about EK's pipeline.
+ *   epsilon despite using the same VIEW_OFFSET_Z_LAYERING. The same EQUAL works fine on vanilla
+ *   armor ({@code CustomGlintRenderer.forArmorGlint}), so it's something about EK's pipeline.
  * - LEQUAL depth + no mask renders the full cuboid bounding box of each decoration ModelPart,
  *   bleeding through the transparent regions of the decoration texture — looks "huge" because
  *   the plume's cuboid is much larger than its visible feather shape.
  *
- * Solution: stencil pre-pass.
- * 1. Render parts with {@link CustomGlint#forOutline}(decorationTexture) — this is the outline
- *    shader with alpha-discard, so it skips transparent texels. Stencil op REPLACE writes 1
- *    only where the discard passes. Color/depth masks off so nothing visible is drawn.
- * 2. Render glint passes with stencil test EQUAL 1 — glint only appears on opaque decoration
- *    texels. LEQUAL depth handles occlusion (other geometry in front of the decoration).
+ * Solution: a per-slot stencil pre-pass (see {@link #forDecorationStencilWriteSlot} /
+ * {@link #forDecorationGlintSlot}).
+ * 1. WRITE: render parts through {@code RENDERTYPE_OUTLINE_SHADER} (alpha-discard, so transparent
+ *    texels are skipped) with stencil op REPLACE, stamping a unique per-decoration slot value where
+ *    the discard passes. Color/depth masks off so nothing visible is drawn.
+ * 2. GLINT: render glint passes with stencil test EQUAL slot — glint only appears on that
+ *    decoration's opaque texels. LEQUAL depth handles occlusion.
+ * Each {@code applyDecorationGlint} call takes a fresh slot from {@code CustomGlintRenderer.nextStencilSlot()}
+ * so overlapping decorations don't cross-contaminate. There are three dispatch paths (shaders on / off /
+ * absent); {@link #clearCaches()} releases the per-slot caches on reload and on logout.
  */
 public final class EpicKnightsGlintRT extends RenderStateShard {
     private EpicKnightsGlintRT() { super("", () -> {}, () -> {}); }
 
-    private static final Map<String, RenderType> CACHE  = new HashMap<>();
-    private static final Map<String, float[]>    COLORS = new HashMap<>();
-
-    /** Glint render type for the stencil-masked second pass. LEQUAL is safe because stencil masks to opaque pixels. */
-    public static RenderType forDecorationGlint(CustomGlint.Data glint, int layerIdx, float[] frameColor, int colorIdx) {
-        CustomGlint.Layer layer = glint.layers()[layerIdx];
-        if (CustomGlintRenderer.getTexture(layer.design()) == null) return null;
-        String key = "ek-deco|" + layer.design() + "|" + Arrays.toString(layer.colors())
-                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
-        float[] holder = COLORS.computeIfAbsent(key, k -> new float[4]);
-        System.arraycopy(frameColor, 0, holder, 0, 4);
-        RenderType cached = CACHE.computeIfAbsent(key, k -> {
-            ResourceLocation tex = layer.design();
-            RenderType rt = RenderType.create(
-                    "customglint:ek_decoration_glint|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_TEX,
-                    VertexFormat.Mode.QUADS,
-                    256,
-                    false,
-                    false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
-                            .setTextureState(new TextureStateShard(tex, false, false) {
-                                @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
-                                }
-                                @Override public void clearRenderState() {
-                                    super.clearRenderState();
-                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-                                }
-                            })
-                            .setWriteMaskState(COLOR_WRITE)
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            .setLayeringState(VIEW_OFFSET_Z_LAYERING)
-                            .setTransparencyState(GLINT_TRANSPARENCY)
-                            .setTexturingState(new TexturingStateShard("customglint:ek_decoration_glint_texturing", () -> {
-                                float phase = (float) colorIdx / Math.max(1, layer.colors().length);
-                                long t = (long) (Util.getMillis() * 8.0 * layer.speed());
-                                float f  = (float) (t % 110000L) / 110000.0F + phase;
-                                float f1 = (float) (t % 30000L)  /  30000.0F;
-                                Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, -f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, f1, 0.0F);
-                                m.scale(8.0f * layer.patternScale());
-                                RenderSystem.setTextureMatrix(m);
-                            }, RenderSystem::resetTextureMatrix))
-                            .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            return rt;
-        });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
-        // Tag for shader-pack late-render bucket so under an active pack the glint flushes after
-        // the main scene depth is committed (mirrors what every forShader* RT in CustomGlintRenderer
-        // does). Without this, under an active pack the deferred FullyBuffered flush orders the
-        // glint draw before the decoration's depth lands → glint either fails the LEQUAL test
-        // against unwritten depth (clear value) or draws before the pack's gbuffers_entities pass.
-        CustomGlintRenderer.tagAsLateRenderForShaders(cached);
-        return cached;
+    /** Releases every RenderType this class registered into the fixed-buffer maps, then drops the cache
+     *  entries. The per-slot / per-shader glint caches key on continuous speed/scale floats (and, for the
+     *  slot caches, the per-frame stencil slot), so without a reload clear they would accumulate dead
+     *  RenderTypes + BufferBuilders for the whole session. Registered as a reload cleanup so it runs with
+     *  {@link CustomGlintRenderer#clearTextures()}, mirroring how the core BY_* caches are cleared. */
+    public static void clearCaches() {
+        evictAll(SLOT_WRITE_CACHE.values());     SLOT_WRITE_CACHE.clear();
+        evictAll(SLOT_GLINT_CACHE.values());     SLOT_GLINT_CACHE.clear();   SLOT_GLINT_COLORS.clear();
+        evictAll(DEPTH_PREWRITE_CACHE.values()); DEPTH_PREWRITE_CACHE.clear();
+        evictAll(SHADER_GLINT_CACHE.values());   SHADER_GLINT_CACHE.clear(); SHADER_GLINT_COLORS.clear();
     }
 
-    /**
-     * Depth-correct stencil-write layering for EK decorations.
-     *
-     * The shared {@link CustomGlintRenderer#forOutlineStencilWriteItem} uses
-     * STENCIL_WRITE_LAYERING_ITEM, whose {@code setupRenderState} sets
-     * {@code glStencilOp(KEEP, REPLACE, REPLACE)} — i.e. dpfail=REPLACE. That writes stencil
-     * even where depth fails, which on multi-plane flat decorations (horns, feathers, ears)
-     * causes the back-side plane sitting behind the player head to write stencil, and pass 2's
-     * glint then bleeds through the head.
-     *
-     * Here we use dpfail=KEEP, dppass=REPLACE — strict depth-correct write. The armor variant
-     * needs dpfail=REPLACE to compensate for polygon-offset slope variance under shader mods,
-     * but EK decorations are drawn with entityCutoutNoCull (no polygon offset) so depth is
-     * reliable and dppass-only works correctly.
-     */
-    private static final RenderStateShard.LayeringStateShard EK_STENCIL_WRITE_LAYERING =
-            new RenderStateShard.LayeringStateShard("custom_glint_ek_stencil_write",
-                () -> {
-                    Minecraft.getInstance().getMainRenderTarget().enableStencil();
-                    GL11.glEnable(GL11.GL_STENCIL_TEST);
-                    GL11.glStencilMask(0xFF);
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 1, 0xFF);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
-                },
-                () -> {
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-                    GL11.glDisable(GL11.GL_STENCIL_TEST);
-                });
+    private static void evictAll(java.util.Collection<RenderType> rts) {
+        SortedMap<RenderType, BufferBuilder> live = null;
+        try { live = Minecraft.getInstance().renderBuffers().fixedBuffers; } catch (Throwable ignored) {}
+        for (RenderType rt : rts) {
+            if (CustomGlintRenderer.fixedBufferRegistry != null) CustomGlintRenderer.fixedBufferRegistry.remove(rt);
+            if (live != null) live.remove(rt);
+        }
+    }
+
+    static { CustomGlintRenderer.additionalReloadCleanup.add(EpicKnightsGlintRT::clearCaches); }
 
     private static final RenderStateShard.WriteMaskStateShard EK_NO_WRITE =
             new RenderStateShard.WriteMaskStateShard(false, false);
@@ -311,30 +240,6 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         return cached;
     }
 
-    private static final Map<ResourceLocation, RenderType> EK_STENCIL_WRITE_CACHE = new HashMap<>();
-    private static RenderType forDecorationStencilWrite(ResourceLocation tex) {
-        return EK_STENCIL_WRITE_CACHE.computeIfAbsent(tex, t -> {
-            RenderType rt = RenderType.create(
-                    "customglint:ek_deco_stencil_write",
-                    DefaultVertexFormat.POSITION_COLOR_TEX,
-                    VertexFormat.Mode.QUADS,
-                    1536, false, false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
-                            .setTextureState(new TextureStateShard(t, false, false))
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
-                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
-                            .setWriteMaskState(EK_NO_WRITE)
-                            .setLayeringState(EK_STENCIL_WRITE_LAYERING)
-                            .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            return rt;
-        });
-    }
-
     /**
      * Derive the sibling texture for an EK decoration: base ↔ overlay.
      *
@@ -391,6 +296,32 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
         } else {
             applyDecorationGlint_noShaders(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+        }
+    }
+
+    /**
+     * Fold a glowing EK decoration into the wearer's glow ring. The decoration {@link ModelPart}s
+     * trace their real shape against the decoration texture's alpha; for dyeable decorations whose
+     * shape is split across base + overlay (crowns put the band in the overlay, the base holds only
+     * the gems), both textures are unioned under the SAME wearer id so the whole silhouette joins the
+     * ring. {@code CAT_ARMOR} + {@code identity = entity} matches what {@code HumanoidArmorLayerMixin}
+     * uses for the base armor, so body + base armor + every decoration compose as ONE connected ring
+     * with no internal seam.
+     *
+     * <p>Independent of the three glint paths: the glow ring is a post-process composite drained with
+     * the world items, so it works the same with or without a shader mod/pack (matching the base
+     * armor outline).
+     */
+    public static void captureDecorationOutline(LivingEntity entity, PoseStack pose, ModelPart[] parts,
+            ResourceLocation decorationTexture, int light, ItemStack stack) {
+        if (CustomGlintRenderer.isInShadowPass()) return;
+        int color = CustomGlintRenderer.resolveGlowColor(stack);
+        EntityGlintRender.capturePartsSilhouette(entity, parts, decorationTexture, pose, light, color,
+                GlowOutlineRenderer.CAT_ARMOR);
+        ResourceLocation sibling = siblingTexture(decorationTexture);
+        if (sibling != null) {
+            EntityGlintRender.capturePartsSilhouette(entity, parts, sibling, pose, light, color,
+                    GlowOutlineRenderer.CAT_ARMOR);
         }
     }
 
@@ -500,7 +431,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * maps to {@code gbuffers_entities} under every shader pack, so the ring is actually
      * visible. No stencil dependency.
      *
-     * Glint pass: existing {@link #forDecorationGlint} RT (LEQUAL depth + VIEW_OFFSET_Z_LAYERING
+     * Glint pass: existing {@link #forDecorationGlintSlot} RT (LEQUAL depth + VIEW_OFFSET_Z_LAYERING
      * matching EK's entityCutoutNoCull pipeline). Under shaders we lose the stencil mask, so on
      * flat decorations whose visible shape lives in texture alpha (plumes, surcoats) the glint
      * paints across the full cuboid quad. Documented limitation — the alternative (no glint)
@@ -621,7 +552,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * exact texels, transparent regions don't draw → glint follows the decoration shape
      * without needing a stencil mask.
      *
-     * Why we can't just switch {@link #forDecorationGlint} to EQUAL: that RT is used by the
+     * Why we can't just switch {@link #forDecorationGlintSlot} to EQUAL: that RT is used by the
      * no-shaders and shaders-off paths which rely on its LEQUAL behavior with stencil masking
      * for cases where the depth-match approach was historically observed to fail (FP epsilon,
      * documented in this file's javadoc). Under shader packs we don't have a stencil option,

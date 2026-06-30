@@ -6,6 +6,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.Model;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
@@ -213,6 +214,24 @@ public final class EntityGlintRender {
         CapturingModelConsumer cap = CAPTURE_POOL.get();
         cap.reset();
         model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, texture, modelView, color,
+                GlowOutlineRenderer.glowKeyFor(identity, category), category);
+    }
+
+    /** Parts-based variant of {@link #captureModelSilhouette} for renderers that expose raw
+     *  {@link ModelPart}[] rather than a {@link Model} (Epic Knights armor decorations). Records the
+     *  posed parts into the glow mask, tracing them against {@code texture}. Passing the wearer entity
+     *  as {@code identity} (with {@code CAT_ARMOR}) folds the decoration silhouette into the same ring
+     *  as the body + base armor, so there's no seam between them. */
+    public static void capturePartsSilhouette(Object identity, ModelPart[] parts, ResourceLocation texture,
+                                              PoseStack pose, int light, int color, int category) {
+        if (parts == null || texture == null) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        for (ModelPart part : parts) {
+            part.render(pose, cap, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        }
         Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
         GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, texture, modelView, color,
                 GlowOutlineRenderer.glowKeyFor(identity, category), category);

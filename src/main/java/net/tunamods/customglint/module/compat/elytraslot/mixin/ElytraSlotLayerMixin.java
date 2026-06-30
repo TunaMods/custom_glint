@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.ElytraModel;
+import net.minecraft.client.model.Model;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -12,6 +13,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Shadow;
@@ -73,7 +76,7 @@ public class ElytraSlotLayerMixin {
         }
         if (stack == null || stack.isEmpty()) return;
 
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
 
@@ -110,13 +113,26 @@ public class ElytraSlotLayerMixin {
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             }
         }
-        if (combined == null) return;
+        if (combined == null && !glowing) return;
 
         // Lambda popped the pose before returning, so re-apply ElytraSlot's (0, 0, 0.125) offset.
         // elytraModel's setupAnim from the prior render call is preserved (model state, not pose).
         poseStack.pushPose();
-        poseStack.translate(0.0f, 0.0f, 0.125f);
-        elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-        poseStack.popPose();
+        try {
+            poseStack.translate(0.0f, 0.0f, 0.125f);
+            if (combined != null) {
+                elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            }
+            // Glow outline: mirror ElytraLayerMixin — re-render the elytra model into the glow mask under
+            // the offset pose, traced against the ElytraSlot-resolved texture (Curios-slot elytras may be
+            // custom-textured, so use the result's texture rather than the hardcoded vanilla one). Keyed on
+            // the elytra ItemStack (NOT the wearer), so it gets its OWN ring, matching the chestplate path.
+            if (glowing && tex != null) {
+                EntityGlintRender.captureModelSilhouette(stack, (Model) elytraModel, tex, poseStack, packedLight,
+                        CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR);
+            }
+        } finally {
+            poseStack.popPose();
+        }
     }
 }

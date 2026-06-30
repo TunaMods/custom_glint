@@ -46,10 +46,14 @@ import java.util.Map;
  * Blaze3D primitives ({@link ShaderInstance} core shaders, a {@link TextureTarget} mask, a manual
  * {@link Tesselator} fullscreen blit).
  *
- * <p>This first cut covers WORLD items (third-person held, dropped, item frames, other players),
- * drained at {@code RenderLevelStageEvent.AFTER_WEATHER} where the live world projection / modelview
- * match what the items were drawn with. GUI / first-person hand / special BEWLR / armor / entity paths
- * and the shader-pack deferral are deferred to later increments.
+ * <p>Coverage is full across the render surfaces: world items (third-person held, dropped, item
+ * frames, other players) drained at {@code RenderLevelStageEvent.AFTER_WEATHER} where the live world
+ * projection / modelview match what the items were drawn with ({@link #drainWorld}); the shader-pack
+ * path captures a projection snapshot and drains separately ({@link #drainWorldShaderPack}); the GUI /
+ * inventory / HUD path renders under the live ortho matrices ({@link #drainGui}, {@link #queueGuiItem});
+ * the first-person hand ({@link #drainHeldFp}, {@link #queueHeldFpItem}); special BEWLR models via the
+ * recording {@code CapturingBufferSource}; and armor / entity model silhouettes ({@link #queueModelOutline},
+ * driven from {@code EntityGlintRender}).
  *
  * <p><b>Occlusion</b> — the silhouette pass occludes against the scene: it binds the main depth texture
  * to sampler unit 1 (safe, because that pass writes the offscreen MASK, not the main target) and
@@ -266,8 +270,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         screenBox[2] = screenBox[3] = Float.NEGATIVE_INFINITY;
     }
 
-    private static void beginAccumulation(int width, int height, Matrix4f modelView) {
-        ACC_MVP.set(RenderSystem.getProjectionMatrix()).mul(modelView);
+    private static void beginAccumulation(int width, int height, Matrix4f modelView, Matrix4f proj) {
+        ACC_MVP.set(proj).mul(modelView);
         ACC_W = width;
         ACC_H = height;
     }
@@ -396,12 +400,35 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // ── Drain ──────────────────────────────────────────────────────────────────
 
     /** Drain world-space item outlines at {@code RenderLevelStageEvent.AFTER_WEATHER}, where the live
-     *  projection is the world one the items were drawn with. */
-    public static void drainWorld() { drain(worldJobs, modelWorldJobs); }
+     *  projection is the world one the items were drawn with. Used off-pack only — under a shader pack the
+     *  drain is deferred to {@link #drainWorldShaderPack()} (see that method). */
+    public static void drainWorld() { drain(worldJobs, modelWorldJobs, RenderSystem.getProjectionMatrix()); }
 
     /** Drain first-person held-item outlines at the RETURN of {@code renderHandsWithItems}, where the live
      *  projection is the hand-FOV one the hand items were drawn with and they have already been flushed. */
-    public static void drainHeldFp() { drain(heldFpJobs, modelFpJobs); }
+    public static void drainHeldFp() { drain(heldFpJobs, modelFpJobs, RenderSystem.getProjectionMatrix()); }
+
+    // ── Shader-pack (Oculus/Iris) deferred world drain ─────────────────────────
+    // Snapshot of the live world projection taken at AFTER_WEATHER (which fires every frame BEFORE Iris's
+    // end-of-renderLevel composite). Under a pack the world drain runs at renderLevel RETURN, past which the
+    // live projection has moved to GUI ortho — so the deferred drain replays this snapshot instead.
+    private static final Matrix4f WORLD_PROJ = new Matrix4f();
+    private static boolean worldProjValid = false;
+
+    /** Capture the live world projection. Called every frame at {@code AFTER_WEATHER}. */
+    public static void snapshotWorldProjection() {
+        WORLD_PROJ.set(RenderSystem.getProjectionMatrix());
+        worldProjValid = true;
+    }
+
+    /** Deferred world drain for the shader-pack path. Iris composites its scene to the main render target
+     *  at the RETURN of {@code LevelRenderer.renderLevel} ({@code finalizeLevelRendering}), overwriting
+     *  anything drawn during the earlier RenderLevelStageEvent phases — so under a pack the ring must be
+     *  composited AFTER that, replaying the {@link #snapshotWorldProjection() AFTER_WEATHER} projection. */
+    public static void drainWorldShaderPack() {
+        if (!worldProjValid) { worldJobs.clear(); modelWorldJobs.clear(); return; }
+        drain(worldJobs, modelWorldJobs, WORLD_PROJ);
+    }
 
     /** Drain GUI / inventory / HUD item outlines. Called at the RETURN of {@code GuiGraphics.flush()}
      *  (see {@code GuiGraphicsMixin}) — right after the icon batch (and its slot background) flush to the main
@@ -421,7 +448,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         ensureTarget(main.width, main.height);
         // GUI is drained immediately while the GUI ortho matrices are live, so accumulate under the LIVE
         // modelview (no captured-modelview push like the world drain).
-        beginAccumulation(main.width, main.height, RenderSystem.getModelViewMatrix());
+        beginAccumulation(main.width, main.height, RenderSystem.getModelViewMatrix(), RenderSystem.getProjectionMatrix());
 
         // Save the GUI's active GL scissor: each ring box is INTERSECTED with it (so a ring can't draw past
         // the GUI's own clip — wand-preview box, scroll panel) and it is RESTORED afterwards (the composite
@@ -497,13 +524,12 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  live projection, then run the id-aware composite. Flat baked items trace the block atlas; special
      *  items trace their own texture. The live projection differs per call site (world FOV at AFTER_WEATHER
      *  vs hand FOV at renderHandsWithItems RETURN), which is exactly what each set of jobs was drawn under. */
-    private static void drain(List<ItemJob> jobs, List<ModelJob> models) {
+    private static void drain(List<ItemJob> jobs, List<ModelJob> models, Matrix4f proj) {
         if (jobs.isEmpty() && models.isEmpty()) return;
         if (silhouetteShader == null || compositeShader == null) { jobs.clear(); models.clear(); return; }
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
-        Matrix4f proj = RenderSystem.getProjectionMatrix();
         ensureTarget(main.width, main.height);
-        int searchRadius = accumulate(jobs, models, main);
+        int searchRadius = accumulate(jobs, models, main, proj);
         composite(main, itemBoxes, searchRadius, proj.m22(), proj.m32());
         jobs.clear();
         models.clear();
@@ -512,12 +538,12 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** Accumulate the silhouettes of {@code jobs}+{@code models} into the mask and compute each object's
      *  screen box into {@link #itemBoxes}. Returns the composite kernel radius (the widest category
      *  present). Leaves the mask bound for writing. */
-    private static int accumulate(List<ItemJob> jobs, List<ModelJob> models, RenderTarget main) {
+    private static int accumulate(List<ItemJob> jobs, List<ModelJob> models, RenderTarget main, Matrix4f proj) {
         // Replay under the modelview the items were DRAWN with (captured at their render RETURN), not the
         // live drain-time modelview — those differ on 1.20.1 and the live one offsets the ring. All jobs in
         // one drain share the same draw-time modelview (one render pass), so take it from whichever exists.
         Matrix4f modelView = !jobs.isEmpty() ? jobs.get(0).modelView : models.get(0).modelView;
-        beginAccumulation(main.width, main.height, modelView);
+        beginAccumulation(main.width, main.height, modelView, proj);
 
         int searchRadius = 1;
         for (ItemJob j : jobs) searchRadius = Math.max(searchRadius, CAT_THICKNESS[j.category]);
@@ -692,7 +718,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // Fall back to the silhouette box if the anchor is missing or projects behind the near plane.
         float cx = (minX + maxX) * 0.5f, cy = (minY + maxY) * 0.5f;
         float halfFb = Math.max((maxX - minX), (maxY - minY)) * 0.5f;
-        if (anchor != null) {
+        if (anchor != null && anchor.length > 3) {
             halfFb = anchor[3] * guiScale; // GUI px → framebuffer px (GUI ortho scales by guiScale)
             Vector4f p = SCRATCH_V.set(anchor[0], anchor[1], anchor[2], 1.0f);
             ACC_MVP.transform(p);
