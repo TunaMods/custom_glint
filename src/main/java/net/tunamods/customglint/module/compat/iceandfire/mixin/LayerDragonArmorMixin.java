@@ -83,6 +83,17 @@ public class LayerDragonArmorMixin {
         }
     }
 
+    // Clear any texture left over from a previous render that threw between the capture redirect and the
+    // RETURN inject — otherwise the next armorless dragon (whose render never hits the redirect) would read a
+    // stale CG_TEX and draw a spurious glint/outline. HEAD always runs before the redirect.
+    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityDragonBase;FFFFFF)V",
+            at = @At("HEAD"), require = 0)
+    private void cg_clearTex(PoseStack pose, MultiBufferSource buffer, int light,
+            @Coerce LivingEntity entity, float a, float b, float c, float d, float e, float f,
+            CallbackInfo ci) {
+        CG_TEX.remove();
+    }
+
     // ── Capture layered ResourceLocation passed to entityTranslucent ─────────
     // Dual SRG/named pair because class-level remap=false leaves vanilla method descriptors as-written.
 
