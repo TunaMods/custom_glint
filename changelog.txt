@@ -11,18 +11,8 @@
 - The 16 named glint colors now match Minecraft's dye colors exactly
 - The Glint Table and wand editor are now fully translatable, with Spanish included
 
-- Glinted items, armor and entities now read their glint settings once instead of every frame, so scenes packed with glints run smoother
-- Adding a dye to a Glint Trim now appends the color and keeps multi-layer trims intact, instead of resetting the trim to a single color
-- Chromatic trims can be used in the smithing and dye recipes even before you add any colors
-- The wand editor's item picker now lists items in a stable order
-- Fixed crashes with some modded armor, items and loot tables
-
 [Compat]
 - Compatible with Oculus
-- Ice and Fire: glowing mount armor (dragons, hippogryphs, hippocampi) now shows the glow ring around the mount, fused with its body
-- Epic Knights: glowing armor decorations (plumes, capes, crowns) now join the wearer's glow ring
-- ElytraSlot: a glowing elytra worn in a Curios slot now shows its glow ring
-- World item glow outlines now draw under shader packs
 
 
 [1.5.0]
