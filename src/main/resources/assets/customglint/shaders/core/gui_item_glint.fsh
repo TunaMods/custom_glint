@@ -25,15 +25,36 @@ layout(std140) uniform Globals {
 };
 
 uniform sampler2D Sampler0;   // cached item slot — silhouette mask
-uniform sampler2D Sampler1;   // grayscale glint design (REPEAT + LINEAR)
+uniform sampler2D Sampler1;   // grayscale glint design — single design (REPEAT), or the shared atlas (CLAMP)
 
 in vec2 texCoord0;
 in vec4 vertexColor;
 in float vGuiScale;
 in vec2 vScroll;   // 2D scroll vector (design-UV), direction+speed/static already resolved CPU-side
 in float vPS;
+in float vAtlasMode; // 1 = Sampler1 is the shared design atlas; 0 = a single REPEAT design texture
+in float vCellIndex; // atlas cell for this design when vAtlasMode == 1
 
 out vec4 fragColor;
+
+// Shared GUI design atlas layout — MUST match CustomGlintRenderer.GUI_ATLAS_* constants. The atlas packs
+// every design into an 8x8 grid of 64px cells, each with a GUTTER-px wrapped border so fract() tiling stays
+// seamless under LINEAR (the bound sampler CLAMPs; the wrap is the gutter, not the hardware).
+const float ATLAS_GRID    = 8.0;
+const float ATLAS_CONTENT = 64.0;
+const float ATLAS_GUTTER  = 4.0;
+const float ATLAS_STRIDE  = ATLAS_CONTENT + 2.0 * ATLAS_GUTTER; // 72
+const float ATLAS_DIM     = ATLAS_GRID * ATLAS_STRIDE;          // 576
+
+// Maps a (tiled) design coordinate onto this layer's atlas cell. duv is unbounded (the scroll wraps it);
+// fract() folds it into the cell, then the content sub-rect (inside the gutter) is addressed.
+vec2 atlasUV(vec2 duv) {
+    int ci = int(vCellIndex + 0.5);
+    float col = float(ci - (ci / 8) * 8); // ci % 8
+    float row = float(ci / 8);
+    vec2 origin = (vec2(col, row) * ATLAS_STRIDE + ATLAS_GUTTER) / ATLAS_DIM;
+    return origin + fract(duv) * (ATLAS_CONTENT / ATLAS_DIM);
+}
 
 // Silhouette alpha threshold (same role as gui_item_outline's EDGE).
 const float EDGE = 0.1;
@@ -68,7 +89,10 @@ void main() {
     }
 
     vec2 duv = glintUV(itemLocal, vScroll, vPS);
-    vec4 design = texture(Sampler1, duv) * vertexColor;
+    // Atlas mode: every glinted icon shares one design atlas so the glint glyphs batch into one draw; the
+    // design is selected by cell index. Single-design mode samples the bound design directly (REPEAT).
+    vec2 suv = (vAtlasMode > 0.5) ? atlasUV(duv) : duv;
+    vec4 design = texture(Sampler1, suv) * vertexColor;
     if (design.a < 0.004) {
         discard;   // design texture's own alpha decides the glint SHAPE
     }

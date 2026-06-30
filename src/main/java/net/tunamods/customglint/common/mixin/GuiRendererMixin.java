@@ -151,14 +151,30 @@ public class GuiRendererMixin {
                         layer.seed() & 0xFFFF, chromaCols.length, psPackedC, guiSpeedPacked, scissor, bounds));
                 continue;
             }
-            Identifier texId = CustomGlintRenderer.getTexture(layer.design());
-            if (texId == null) continue;
-            // Mirror the chromatic branch's guard: getTexture(texId) can return null/placeholder if the design
-            // was released between a resource reload and this frame; calling getTextureView() on it would NPE.
-            var designTex = Minecraft.getInstance().getTextureManager().getTexture(texId);
-            GpuTextureView designView = designTex != null ? designTex.getTextureView() : null;
-            if (designView == null) continue;
-            TextureSetup tex = TextureSetup.doubleTexture(slotView.textureView(), slotSampler, designView, designSampler);
+            // Prefer the shared design atlas: every glinted icon's glyph then carries the SAME TextureSetup
+            // (shared slot atlas + shared design atlas), so the GUI mesher batches them into ONE draw instead
+            // of flushing a draw per distinct design. The design is selected in-shader from the cell index
+            // packed into the payload (bit 7 = atlas mode, bits 8-15 = cell). Designs the atlas doesn't hold
+            // (CHROMATIC aside, beyond capacity, or a load failure) fall back to the per-design texture.
+            TextureSetup tex;
+            int modeAspect;
+            Integer cell = CustomGlintRenderer.guiDesignCellIndex(layer.design());
+            GpuTextureView atlasView = cell != null ? CustomGlintRenderer.guiDesignAtlasView() : null;
+            if (cell != null && atlasView != null) {
+                tex = TextureSetup.doubleTexture(slotView.textureView(), slotSampler,
+                        atlasView, CustomGlintRenderer.guiDesignAtlasSampler());
+                modeAspect = (guiScale & 127) | (1 << 7) | ((cell & 255) << 8);
+            } else {
+                Identifier texId = CustomGlintRenderer.getTexture(layer.design());
+                if (texId == null) continue;
+                // Mirror the chromatic branch's guard: getTexture(texId) can return null/placeholder if the
+                // design was released between a resource reload and this frame; getTextureView() would NPE.
+                var designTex = Minecraft.getInstance().getTextureManager().getTexture(texId);
+                GpuTextureView designView = designTex != null ? designTex.getTextureView() : null;
+                if (designView == null) continue;
+                tex = TextureSetup.doubleTexture(slotView.textureView(), slotSampler, designView, designSampler);
+                modeAspect = guiScale & 127;
+            }
             int[] colors = layer.colors();
             // An unchosen layer (no dye picked) renders as a white placeholder, the colors stay empty
             // everywhere else (so it isn't "chosen" and can't be printed), only the draw substitutes white.
@@ -170,12 +186,12 @@ public class GuiRendererMixin {
             if (layer.simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
                     cg_emitGlint(tex, itemState.pose(), x0, y0, x1, y1, slotView, colors[i],
-                            layer.speed(), i, cc, psPacked, packedScaleAspect, scrollDir, scrollOffset, millis, scissor, bounds);
+                            layer.speed(), i, cc, psPacked, modeAspect, scrollDir, scrollOffset, millis, scissor, bounds);
                 }
             } else {
                 cg_emitGlint(tex, itemState.pose(), x0, y0, x1, y1, slotView,
                         CustomGlintRenderer.computeAnimatedColorGui(glint, li),
-                        layer.speed(), 0, cc, psPacked, packedScaleAspect, scrollDir, scrollOffset, millis, scissor, bounds);
+                        layer.speed(), 0, cc, psPacked, modeAspect, scrollDir, scrollOffset, millis, scissor, bounds);
             }
         }
     }

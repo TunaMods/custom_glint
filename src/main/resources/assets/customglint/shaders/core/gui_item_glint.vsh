@@ -32,6 +32,8 @@ out vec4 vertexColor;
 out float vGuiScale;
 out vec2 vScroll;
 out float vPS;
+out float vAtlasMode;   // 1 = Sampler1 is the shared design atlas (sample cell vCellIndex); 0 = single design
+out float vCellIndex;   // atlas cell index for this layer's design (only meaningful when vAtlasMode == 1)
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
@@ -42,5 +44,10 @@ void main() {
     // in GuiRendererMixin so the GUI drift matches the in-hand glint exactly).
     vScroll   = vec2(UV1) / 16000.0;
     vPS       = float(UV2.x) / 4096.0;     // patternScale
-    vGuiScale = float(UV2.y & 127);        // guiScale, for the exact slot UV size (high bits unused)
+    // UV2.y bit layout: bits 0-6 guiScale, bit 7 atlas-mode flag, bits 8-15 atlas cell index. Sharing the
+    // design atlas (atlas-mode) lets every glinted icon's glint glyph carry one TextureSetup and batch.
+    int p2    = UV2.y;
+    vGuiScale = float(p2 & 127);           // guiScale, for the exact slot UV size
+    vAtlasMode = float((p2 >> 7) & 1);
+    vCellIndex = float((p2 >> 8) & 255);
 }

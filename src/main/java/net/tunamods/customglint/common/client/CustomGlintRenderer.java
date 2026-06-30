@@ -171,6 +171,13 @@ public final class CustomGlintRenderer {
         for (Identifier loc : textureCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
         textureCache.clear();
+        // The stitched GUI design atlas is a DynamicTexture too; release it and force a lazy rebuild so a
+        // resource reload (or a data pack that adds designs) re-stitches the current PATTERNS set.
+        if (guiDesignAtlasBuilt) {
+            mc.getTextureManager().release(GUI_DESIGN_ATLAS_ID);
+            guiDesignCell.clear();
+            guiDesignAtlasBuilt = false;
+        }
         // Chromatic palette strips + the white dummy are DynamicTextures too, release and rebuild on reload.
         for (Identifier loc : paletteCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
@@ -594,6 +601,23 @@ public final class CustomGlintRenderer {
 
     private static Identifier generateTexture(Identifier design) {
         Minecraft mc = Minecraft.getInstance();
+        NativeImage gray = loadGrayscale(design);
+        if (gray == null) return null;
+        String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
+        Identifier loc = CustomGlint.res("glint/" + safePath);
+        // 26.1: DynamicTexture needs a label supplier; wrap/filter (REPEAT + NEAREST) is no longer set
+        // on the texture, GlintPipelines.glintSampler() supplies it per binding.
+        DynamicTexture dt = new DynamicTexture(() -> MOD_ID + ":glint/" + safePath, gray);
+        mc.getTextureManager().register(loc, dt);
+        return loc;
+    }
+
+    /** Reads a design PNG and converts it to a fresh grayscale {@link NativeImage} (the caller owns and must
+     *  close it). Returns null when the design is absent/unreadable. Shared by {@link #generateTexture} (one
+     *  texture per design, the world path) and {@link #ensureGuiDesignAtlas} (all designs stitched into one
+     *  GUI atlas so the inventory glint overlays batch). */
+    private static NativeImage loadGrayscale(Identifier design) {
+        Minecraft mc = Minecraft.getInstance();
         NativeImage source;
         try {
             var resource = mc.getResourceManager().getResource(design);
@@ -604,7 +628,6 @@ public final class CustomGlintRenderer {
         } catch (IOException e) {
             return null;
         }
-
         // Allocate `gray` and run the copy INSIDE the try whose finally closes `source`: the
         // `new NativeImage(...)` can itself throw (native allocation failure), and if it sat outside
         // the try the already-read `source` would leak its native buffer on every retry. If the copy
@@ -631,14 +654,95 @@ public final class CustomGlintRenderer {
         } finally {
             source.close();
         }
+        return gray;
+    }
 
-        String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
-        Identifier loc = CustomGlint.res("glint/" + safePath);
-        // 26.1: DynamicTexture needs a label supplier; wrap/filter (REPEAT + NEAREST) is no longer set
-        // on the texture, GlintPipelines.glintSampler() supplies it per binding.
-        DynamicTexture dt = new DynamicTexture(() -> MOD_ID + ":glint/" + safePath, gray);
-        mc.getTextureManager().register(loc, dt);
-        return loc;
+    // ── GUI design atlas (inventory glint-overlay batching) ──────────────────────────────────────
+    // Each glinted inventory icon draws its scrolling glint as a live overlay GLYPH (GuiRendererMixin),
+    // one per layer/colour. Those glyphs are NOT sorted by the GUI renderer (only blits are), and the GUI
+    // mesher flushes a new draw on every texture change — so with a per-design Sampler1 each distinct design
+    // forced its own draw call (an inventory full of trims = dozens of draws/frame). Stitching every design
+    // into ONE shared atlas makes every glint glyph carry the SAME TextureSetup, so they batch into a single
+    // draw regardless of how many distinct designs are on screen. The per-glyph design is selected in-shader
+    // from a cell index (packed into the spare high bits of UV2.y); each cell is built with a wrapped gutter
+    // so the in-shader fract() tiling stays seamless under LINEAR filtering.
+    private static final int GUI_ATLAS_GRID    = 8;   // 8x8 = 64 cells (covers the 56 built-in designs)
+    private static final int GUI_ATLAS_CONTENT = 64;  // design content size per cell (designs are <=64px)
+    private static final int GUI_ATLAS_GUTTER  = 4;   // wrapped border per side, so LINEAR can't seam-bleed
+    private static final int GUI_ATLAS_STRIDE  = GUI_ATLAS_CONTENT + 2 * GUI_ATLAS_GUTTER; // 72
+    private static final int GUI_ATLAS_DIM      = GUI_ATLAS_GRID * GUI_ATLAS_STRIDE;        // 576
+    public static final Identifier GUI_DESIGN_ATLAS_ID = CustomGlint.res("gui_design_atlas");
+    private static boolean guiDesignAtlasBuilt = false;
+    /** design Identifier → its 0-based cell index in the atlas (also the PATTERNS index). Absent designs
+     *  (CHROMATIC, load failures, or beyond the 64-cell capacity) fall back to the per-design draw path. */
+    private static final Map<Identifier, Integer> guiDesignCell = new HashMap<>();
+
+    /** Builds the shared GUI design atlas once (lazily, on first inventory glint draw). Idempotent; the
+     *  {@code built} flag is set first so a failed build degrades to the per-design fallback for the whole
+     *  session instead of retrying (and stalling) every frame. Rebuilt after a resource reload via
+     *  {@link #clearTextures}. */
+    private static void ensureGuiDesignAtlas() {
+        if (guiDesignAtlasBuilt) return;
+        guiDesignAtlasBuilt = true;
+        Identifier[] designs = CustomGlint.PATTERNS;
+        NativeImage atlas = new NativeImage(GUI_ATLAS_DIM, GUI_ATLAS_DIM, false);
+        try {
+            int cap = GUI_ATLAS_GRID * GUI_ATLAS_GRID;
+            for (int i = 0; i < designs.length && i < cap; i++) {
+                Identifier design = designs[i];
+                if (design.equals(CustomGlint.CHROMATIC)) continue; // procedural: no design texture
+                NativeImage gray = loadGrayscale(design);
+                if (gray == null) continue;                          // missing → per-design fallback
+                try {
+                    int col = i % GUI_ATLAS_GRID, row = i / GUI_ATLAS_GRID;
+                    int ox = col * GUI_ATLAS_STRIDE, oy = row * GUI_ATLAS_STRIDE;
+                    int sw = gray.getWidth(), sh = gray.getHeight();
+                    for (int gy = 0; gy < GUI_ATLAS_STRIDE; gy++) {
+                        for (int gx = 0; gx < GUI_ATLAS_STRIDE; gx++) {
+                            // Local cell coord (content origin at GUTTER,GUTTER), wrapped into the design so
+                            // the gutter holds the opposite-edge texels: seamless LINEAR tiling in the shader.
+                            int lx = gx - GUI_ATLAS_GUTTER, ly = gy - GUI_ATLAS_GUTTER;
+                            int cx = ((lx % GUI_ATLAS_CONTENT) + GUI_ATLAS_CONTENT) % GUI_ATLAS_CONTENT;
+                            int cy = ((ly % GUI_ATLAS_CONTENT) + GUI_ATLAS_CONTENT) % GUI_ATLAS_CONTENT;
+                            atlas.setPixel(ox + gx, oy + gy,
+                                    gray.getPixel(cx * sw / GUI_ATLAS_CONTENT, cy * sh / GUI_ATLAS_CONTENT));
+                        }
+                    }
+                    guiDesignCell.put(design, i);
+                } finally {
+                    gray.close();
+                }
+            }
+            // DynamicTexture takes ownership of `atlas` on register (don't close it on the success path).
+            Minecraft.getInstance().getTextureManager().register(GUI_DESIGN_ATLAS_ID,
+                    new DynamicTexture(() -> MOD_ID + ":gui_design_atlas", atlas));
+        } catch (Throwable t) {
+            atlas.close();
+            guiDesignCell.clear();
+            LOGGER.warn("[{}/CustomGlint] GUI design atlas build failed; falling back to per-design glint draws", MOD_ID, t);
+        }
+    }
+
+    /** The shared GUI design-atlas texture view (one for every glinted icon → the glint glyphs batch), or
+     *  null if the atlas isn't built/available (caller falls back to the per-design path). */
+    public static GpuTextureView guiDesignAtlasView() {
+        ensureGuiDesignAtlas();
+        AbstractTexture t = Minecraft.getInstance().getTextureManager().getTexture(GUI_DESIGN_ATLAS_ID);
+        return t != null ? t.getTextureView() : null;
+    }
+
+    /** The atlas cell index for {@code design} (also its PATTERNS index), or null when it isn't atlased
+     *  (CHROMATIC, a load failure, or past the 64-cell capacity) and the per-design draw path must be used. */
+    public static Integer guiDesignCellIndex(Identifier design) {
+        ensureGuiDesignAtlas();
+        return guiDesignCell.get(design);
+    }
+
+    /** Sampler for the GUI design atlas: CLAMP (tiling is done in-shader via fract + the wrapped gutters,
+     *  so the bound sampler must NOT wrap across cell boundaries) + LINEAR (matches the per-design design
+     *  sampler's filtering). Cached instance, so every atlas glyph shares one TextureSetup and batches. */
+    public static com.mojang.blaze3d.textures.GpuSampler guiDesignAtlasSampler() {
+        return RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
     }
 
     // ── Procedural chromatic ────────────────────────────────────────────────────
