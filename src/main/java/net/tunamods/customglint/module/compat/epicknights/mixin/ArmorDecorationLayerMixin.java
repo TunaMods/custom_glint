@@ -81,8 +81,7 @@ public class ArmorDecorationLayerMixin {
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
         if (glint != null) {
-            EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint,
-                    glowing, stack);
+            EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint);
         }
         // Glow ring: fold the decoration silhouette into the wearer's outline (same id as the base
         // armor) so plumes/surcoats/crowns join the one connected ring rather than going un-ringed.

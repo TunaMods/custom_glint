@@ -1,7 +1,6 @@
 package net.tunamods.customglint.module.compat.epicknights;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -29,7 +28,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.SortedMap;
 
 /**
  * Compat-local render pipeline for Epic Knights armor decorations.
@@ -69,12 +67,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     }
 
     private static void evictAll(java.util.Collection<RenderType> rts) {
-        SortedMap<RenderType, BufferBuilder> live = null;
-        try { live = Minecraft.getInstance().renderBuffers().fixedBuffers; } catch (Throwable ignored) {}
-        for (RenderType rt : rts) {
-            if (CustomGlintRenderer.fixedBufferRegistry != null) CustomGlintRenderer.fixedBufferRegistry.remove(rt);
-            if (live != null) live.remove(rt);
-        }
+        for (RenderType rt : rts) CustomGlintRenderer.unregisterFixedBuffer(rt);
     }
 
     static { CustomGlintRenderer.additionalReloadCleanup.add(EpicKnightsGlintRT::clearCaches); }
@@ -149,13 +142,9 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setWriteMaskState(EK_NO_WRITE)
                             .setLayeringState(ekStencilWriteLayeringSlot(v))
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(created, new BufferBuilder(created.bufferSize()));
             return created;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(rt))
-            live.put(rt, new BufferBuilder(rt.bufferSize()));
+        CustomGlintRenderer.registerFixedBuffer(rt);
         return rt;
     }
 
@@ -188,7 +177,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         CustomGlint.Layer layer = glint.layers()[layerIdx];
         if (CustomGlintRenderer.getTexture(layer.design()) == null) return null;
         String key = "ek-deco-slot|" + slot + "|" + layer.design() + "|" + Arrays.toString(layer.colors())
-                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
+                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
         float[] holder = SLOT_GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = SLOT_GLINT_CACHE.computeIfAbsent(key, k -> {
@@ -231,12 +220,9 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                                 RenderSystem.setTextureMatrix(m);
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        CustomGlintRenderer.registerFixedBuffer(cached);
         return cached;
     }
 
@@ -288,14 +274,13 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * </ul>
      */
     public static void applyDecorationGlint(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
+            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
         if (CustomGlintRenderer.isShaderPackActive()) {
-            applyDecorationGlint_shadersOn(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+            applyDecorationGlint_shadersOn(pose, buffer, light, overlay, parts, decorationTexture, glint);
         } else if (CustomGlintRenderer.isShaderModInstalled()) {
-            applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+            applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint);
         } else {
-            applyDecorationGlint_noShaders(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+            applyDecorationGlint_noShaders(pose, buffer, light, overlay, parts, decorationTexture, glint);
         }
     }
 
@@ -338,8 +323,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * GLINT→OUTLINE registers WRITE-before-GLINT-before-OUTLINE for the eventual flush.
      */
     private static void applyDecorationGlint_shadersOff(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
+            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
         // After an Oculus/Iris pack toggle (activate then deactivate), the entity render dispatcher
         // hands layers a synthetic lambda MultiBufferSource that does NOT extend BufferSource. The old
         // `instanceof BufferSource` check then bailed here and the decoration glint silently vanished
@@ -443,8 +427,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * head bone — same natural pivot armor uses without needing an AABB pre-pass.
      */
     private static void applyDecorationGlint_shadersOn(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
+            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
         if (CustomGlintRenderer.isInShadowPass()) return;
 
         // Sibling overlay union — dyeable decorations have shape split across base+overlay
@@ -530,15 +513,12 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setTextureState(new TextureStateShard(tex, false, false))
                             .setCullState(NO_CULL)
                             .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            // DEPTH_ONLY_WRITE writes only depth (no color).
+                            // DEPTH_WRITE writes only depth (no color).
                             .setWriteMaskState(DEPTH_WRITE)
                             .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
                             .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
-            SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-            if (live != null && !live.containsKey(rt)) live.put(rt, new BufferBuilder(rt.bufferSize()));
+            CustomGlintRenderer.registerFixedBuffer(rt);
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
@@ -569,7 +549,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         CustomGlint.Layer layer = glint.layers()[layerIdx];
         if (CustomGlintRenderer.getTexture(layer.design()) == null) return null;
         String key = "ek-deco-sh|" + layer.design() + "|" + Arrays.toString(layer.colors())
-                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
+                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx;
         float[] holder = SHADER_GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = SHADER_GLINT_CACHE.computeIfAbsent(key, k -> {
@@ -613,13 +593,10 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                                 RenderSystem.setTextureMatrix(m);
                             }, RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            if (CustomGlintRenderer.fixedBufferRegistry != null)
-                CustomGlintRenderer.fixedBufferRegistry.put(rt, new BufferBuilder(rt.bufferSize()));
             CustomGlintRenderer.tagAsLateRenderForShaders(rt);
             return rt;
         });
-        SortedMap<RenderType, BufferBuilder> live = Minecraft.getInstance().renderBuffers().fixedBuffers;
-        if (live != null && !live.containsKey(cached)) live.put(cached, new BufferBuilder(cached.bufferSize()));
+        CustomGlintRenderer.registerFixedBuffer(cached);
         return cached;
     }
 
@@ -644,9 +621,8 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * setupRenderState fires at the right moment because it's baked into the RT.
      */
     private static void applyDecorationGlint_noShaders(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
-        applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
+        applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint);
     }
 
 }
