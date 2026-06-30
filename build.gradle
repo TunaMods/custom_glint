@@ -262,6 +262,13 @@ tasks.register('stageApiInFullJar') {
     // pre-reobf — leaving the nested api jar with named (e.g. onResourceManagerReload) instead
     // of SRG (m_6213_) method names, which crashes prod with AbstractMethodError.
     dependsOn 'apiJar', 'reobfApiJar'
+    // Track the (reobfuscated) api jar as an input so this restages whenever its bytes change.
+    // Without it the task declares outputs but no inputs, so Gradle marks it UP-TO-DATE as long
+    // as the stage dir exists — meaning an api-source change rebuilds apiJar but the full jar keeps
+    // bundling the PREVIOUS build's nested api jar (a NoSuchMethodError on any new api method).
+    inputs.files(apiJar.archiveFile)
+    inputs.property('apiJarName', apiJarName)
+    inputs.property('modVersion', mod_version)
     def jarjarDir = file("${buildDir}/jarjar-stage/META-INF/jarjar")
     outputs.dir jarjarDir
     doLast {

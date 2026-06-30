@@ -5,7 +5,6 @@ import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
-import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.core.NonNullList;
@@ -46,7 +45,8 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
                 return false;
             }
         }
-        return filled == 2 && !trim.isEmpty() && !dye.isEmpty();
+        return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
+                && GlintTrimItem.getColors(trim).length < 8;
     }
 
     @Override
@@ -62,10 +62,10 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        int[] colors = new int[]{ GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()] };
-        result.getOrCreateTag().put(GlintTrimItem.COLORS_TAG, new IntArrayTag(colors));
-        ResourceLocation pattern = GlintTrimItem.getPattern(result);
-        if (pattern != null) CustomGlint.write(result, pattern, colors, 1.0f, true, 1.0f, false);
+        // Append the dye color (cap 8), mirroring GlowTrimDyeRecipe. addColor's rewritePreview is a
+        // no-op for multi-layer trims, so extra layers / speeds / scroll settings are preserved instead
+        // of being collapsed into a single default layer.
+        GlintTrimItem.addColor(result, GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()]);
         return result;
     }
 

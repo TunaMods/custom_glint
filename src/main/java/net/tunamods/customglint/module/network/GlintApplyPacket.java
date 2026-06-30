@@ -80,27 +80,10 @@ public class GlintApplyPacket {
             boolean wandOnly = buf.readBoolean();
             return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0], "", 0xFFFFFFFF, wandOnly);
         }
-        int layerCount = Math.min(buf.readVarInt(), 8);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
-        for (int i = 0; i < layerCount; i++) {
-            String design = buf.readUtf();
-            int colorLen = Math.min(buf.readVarInt(), 8);
-            int[] colors = new int[colorLen];
-            for (int j = 0; j < colorLen; j++) colors[j] = buf.readInt();
-            float speed = buf.readFloat();
-            if (speed <= 0) speed = 1.0f;
-            boolean interp = buf.readBoolean();
-            float scale = buf.readFloat();
-            boolean simultaneous = buf.readBoolean();
-            int scrollDir = buf.readVarInt();
-            float scrollOffset = buf.readFloat();
-            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous, scrollDir, scrollOffset);
-        }
+        CustomGlint.Layer[] layers = readLayers(buf, 8);
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
-        int gcLen = Math.min(buf.readVarInt(), 8);
-        int[] glowColors = new int[gcLen];
-        for (int i = 0; i < gcLen; i++) glowColors[i] = buf.readInt();
+        int[] glowColors = readCappedColors(buf, 8);
         String trimName = buf.readUtf();
         int trimNameColor = buf.readInt();
         boolean wandOnly = buf.readBoolean();
@@ -132,8 +115,7 @@ public class GlintApplyPacket {
     public static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
         int n = buf.readVarInt();
         if (n < 0 || n > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad layer count: " + n);
-        int keep = Math.max(0, Math.min(n, cap));
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[keep];
+        java.util.List<CustomGlint.Layer> layers = new java.util.ArrayList<>();
         for (int i = 0; i < n; i++) {
             String design = buf.readUtf();
             int sentLen = buf.readVarInt();
@@ -142,15 +124,30 @@ public class GlintApplyPacket {
             int[] colors = new int[keepLen];
             for (int j = 0; j < sentLen; j++) { int c = buf.readInt(); if (j < keepLen) colors[j] = c; }
             float speed = buf.readFloat();
-            if (speed <= 0) speed = 1.0f;
+            if (speed <= 0 || !Float.isFinite(speed)) speed = 1.0f;
             boolean interp = buf.readBoolean();
             float scale = buf.readFloat();
+            if (!Float.isFinite(scale)) scale = 1.0f;
             boolean sim = buf.readBoolean();
             int scrollDir = buf.readVarInt();
             float scrollOffset = buf.readFloat();
-            if (i < keep) layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, sim, scrollDir, scrollOffset);
+            if (!Float.isFinite(scrollOffset)) scrollOffset = 0.0f;
+            ResourceLocation rl = ResourceLocation.tryParse(design);
+            if (rl != null && layers.size() < cap)
+                layers.add(new CustomGlint.Layer(rl, colors, speed, interp, scale, sim, scrollDir, scrollOffset));
         }
-        return layers;
+        return layers.toArray(new CustomGlint.Layer[0]);
+    }
+
+    /** Reads a {@code writeVarInt(len) + len*writeInt} color array, draining the full sent length but
+     *  keeping at most {@code cap} entries; throws on a bogus count. */
+    public static int[] readCappedColors(FriendlyByteBuf buf, int cap) {
+        int n = buf.readVarInt();
+        if (n < 0 || n > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad color count: " + n);
+        int keep = Math.min(n, cap);
+        int[] out = new int[keep];
+        for (int i = 0; i < n; i++) { int c = buf.readInt(); if (i < keep) out[i] = c; }
+        return out;
     }
 
     public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
@@ -185,8 +182,14 @@ public class GlintApplyPacket {
                     applyName(pkt, wand);
                 }
             } else {
+                // The give-an-item path is only reachable from the wand editor, which is opened by
+                // right-clicking the wand. Require the sender to actually hold one, so a forged packet can't
+                // spawn arbitrary items (command blocks, bedrock, etc.).
+                if (!wandIsWand) return;
                 CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(pkt.layers);
-                Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(pkt.itemId));
+                ResourceLocation itemRl = ResourceLocation.tryParse(pkt.itemId);
+                if (itemRl == null) return;
+                Item item = ForgeRegistries.ITEMS.getValue(itemRl);
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
                 CustomGlint.write(given, layers);

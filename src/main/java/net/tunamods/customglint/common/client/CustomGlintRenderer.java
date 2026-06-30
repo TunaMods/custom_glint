@@ -4,52 +4,22 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.model.EntityModel;
-import net.minecraft.client.model.ElytraModel;
-import net.minecraft.client.model.HorseModel;
-import net.minecraft.client.model.HumanoidModel;
-import net.minecraft.client.model.Model;
-import net.minecraft.client.model.geom.ModelPart;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.BlockEntityWithoutLevelRenderer;
-import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraftforge.client.event.RegisterShadersEvent;
-import net.minecraft.client.renderer.texture.AbstractTexture;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.BowItem;
-import net.minecraft.world.item.CrossbowItem;
-import net.minecraft.world.item.FishingRodItem;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemDisplayContext;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.TieredItem;
-import net.minecraft.client.resources.model.BakedModel;
-import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.mixin.CompositeRenderTypeAccessor;
-import net.tunamods.customglint.common.mixin.CompositeStateAccessor;
-import net.tunamods.customglint.common.mixin.TextureStateShardAccessor;
 import org.joml.Matrix4f;
 import com.mojang.blaze3d.platform.GlStateManager;
-import com.mojang.blaze3d.platform.Window;
-import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 
@@ -59,17 +29,13 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.BiFunction;
-import java.util.function.BooleanSupplier;
-import java.util.function.Function;
-import java.util.function.Predicate;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
@@ -124,6 +90,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         for (ResourceLocation loc : paletteCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
         paletteCache.clear();
+        // Drop tagged-RT references too, else each reload orphans the previous generation of compat
+        // (EK decoration) RenderTypes here even after their own caches are evicted — they'd never GC.
+        SHADER_TT_TAGGED.clear();
         if (whiteTex != null) { mc.getTextureManager().release(whiteTex); whiteTex = null; }
     }
 
@@ -197,6 +166,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                  SU_W  = { 1f, 0f},  SU_SW = { SQ,-SQ}, SU_S  = {0f,-1f},  SU_SE = {-SQ,-SQ},
                                  SU_STATIC = {0f, 0f};
     private static final ThreadLocal<float[]> SCROLL_BUF = ThreadLocal.withInitial(() -> new float[2]);
+    /** Reused per-thread texture matrix for the scroll/chromatic shards — these run in a RenderType setup
+     *  lambda once per glint flush per frame, so a fresh Matrix4f each call is needless GC churn. {@code
+     *  translation()} fully overwrites the matrix, so no explicit {@code identity()} is needed. */
+    private static final ThreadLocal<Matrix4f> SCROLL_MAT = ThreadLocal.withInitial(Matrix4f::new);
 
     private static float[] scrollUnit(int dir) {
         return switch (dir) {
@@ -236,7 +209,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  texture centre so growing patternScale doesn't slide the motif off (centre-pivot). */
     private static void setItemScrollMatrix(Layer layer, int colorIdx, float scaleU, float scaleV) {
         float[] sc = scrollAmount(layer, colorIdx);
-        Matrix4f m = new Matrix4f().translation(sc[0], sc[1], 0.0F);
+        Matrix4f m = SCROLL_MAT.get().translation(sc[0], sc[1], 0.0F);
         m.translate(0.5f, 0.5f, 0.0f);
         m.scale(scaleU * layer.patternScale(), scaleV * layer.patternScale(), 1.0f);
         m.translate(-0.5f, -0.5f, 0.0f);
@@ -246,7 +219,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Armor / horse / mount / entity directional-drift texture matrix (uniform model-UV scale). */
     private static void setModelScrollMatrix(Layer layer, int colorIdx, float scale) {
         float[] sc = scrollAmount(layer, colorIdx);
-        Matrix4f m = new Matrix4f().translation(sc[0], sc[1], 0.0F);
+        Matrix4f m = SCROLL_MAT.get().translation(sc[0], sc[1], 0.0F);
         m.translate(0.5f, 0.5f, 0.0f);
         m.scale(scale * layer.patternScale());
         m.translate(-0.5f, -0.5f, 0.0f);
@@ -262,7 +235,25 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static ShaderInstance chromaticShader;
     private static final RenderStateShard.ShaderStateShard CHROMATIC_SHADER_SHARD =
             new RenderStateShard.ShaderStateShard(() -> chromaticShader);
-    private static final Map<String, RenderType> BY_CHROMATIC = new HashMap<>();
+    /** Each applied chromatic trim rolls a fresh seed, and the RenderType key includes that seed — so without
+     *  a bound these accumulate one RenderType + one BufferBuilder (in both fixed-buffer maps) per distinct
+     *  seed for the whole session. Cap with an access-ordered LRU whose eviction releases the evicted RT from
+     *  the registry and the live fixed-buffer map, mirroring {@link #clearTextures()}. */
+    private static final int CHROMATIC_CACHE_CAP = 256;
+    private static final Map<String, RenderType> BY_CHROMATIC =
+            new LinkedHashMap<>(16, 0.75f, true) {
+                @Override protected boolean removeEldestEntry(Map.Entry<String, RenderType> eldest) {
+                    if (size() <= CHROMATIC_CACHE_CAP) return false;
+                    RenderType rt = eldest.getValue();
+                    if (fixedBufferRegistry != null) fixedBufferRegistry.remove(rt);
+                    try {
+                        SortedMap<RenderType, BufferBuilder> live =
+                                Minecraft.getInstance().renderBuffers().fixedBuffers;
+                        if (live != null) live.remove(rt);
+                    } catch (Throwable ignored) {}
+                    return true;
+                }
+            };
 
     /** 1px-tall palette strips (one RGBA texel per colour) bound to Sampler1, keyed by colour set. Cleared on
      *  resource reload alongside the texture cache. */
@@ -341,7 +332,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  the slick flows in-shader via GameTime); the spare column-2 slots carry the per-layer payload the
      *  immutable RenderType can't pass as a uniform. UV0.z is 0 so column 2 never affects {@code noiseCoord}. */
     private static void setChromaticMatrix(Layer layer, float scaleU, float scaleV, int colorCount) {
-        Matrix4f m = new Matrix4f().translation(0.0f, 0.0f, 0.0f);
+        Matrix4f m = SCROLL_MAT.get().translation(0.0f, 0.0f, 0.0f);
         m.translate(0.5f, 0.5f, 0.0f);
         m.scale(scaleU * layer.patternScale(), scaleV * layer.patternScale(), 1.0f);
         m.translate(-0.5f, -0.5f, 0.0f);
@@ -684,20 +675,22 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     public static RenderType forGlint(Data glint, int layerIdx, float[] frameColor, boolean isItem, int colorIdx) {
-        // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
-        // isItem=false → 3D entity model (trident, etc.) → 1.0 gives visible pattern detail;
-        // vanilla entityGlint() uses 0.16 but that tiles too infrequently for custom designs.
-        TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(TextureAtlas.LOCATION_BLOCKS);
-        int atlasW = atlas.width;
-        int atlasH = atlas.height;
-        float scaleU = isItem ? (8.0f * atlasW / 1024.0f) : 1.0f;
-        float scaleV = isItem ? (8.0f * atlasH / 512.0f) : 1.0f;
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
         String key = layer.design() + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed() + "|" + layer.interpolate() + "|" + isItem + "|" + layer.patternScale() + "|" + colorIdx + "|" + layerIdx + "|" + layer.scrollDir() + "|" + layer.scrollOffset();
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = BY_GLINT.computeIfAbsent(key, k -> {
+            // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
+            // isItem=false → 3D entity model (trident, etc.) → 1.0 gives visible pattern detail;
+            // vanilla entityGlint() uses 0.16 but that tiles too infrequently for custom designs.
+            // Atlas dims are read here (on cache miss only) — they're baked into the texturing shard below,
+            // and the cache is cleared on resource reload if the atlas ever resizes.
+            TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(TextureAtlas.LOCATION_BLOCKS);
+            int atlasW = atlas.width;
+            int atlasH = atlas.height;
+            float scaleU = isItem ? (8.0f * atlasW / 1024.0f) : 1.0f;
+            float scaleV = isItem ? (8.0f * atlasH / 512.0f) : 1.0f;
             ResourceLocation tex = layer.design();
             RenderType rt = RenderType.create(
                     MOD_ID + ":custom_glint|" + k.hashCode(),
@@ -737,6 +730,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static int computeAnimatedColor(Data glint, int layerIdx) {
         Layer layer = glint.layers()[layerIdx];
         int[] colors = layer.colors();
+        if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
@@ -783,7 +777,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static int resolveGlowColor(ItemStack stack) {
         int[] glow = CustomGlint.getGlowColors(stack);
         if (glow.length > 0) return computeAnimatedGlowColor(glow);
-        Data glint = CustomGlint.read(stack);
+        Data glint = CustomGlint.readCached(stack);
         return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
     }
 
@@ -835,17 +829,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     // ── Shader-mod detection ──────────────────────────────────────────────────
     // Reflective so we don't need a compileOnly dep on the shader mod. Common shader
-    // mods expose the same public detection surface, resolved once and cached;
-    // called every outline draw, so the Method is cached as a MethodHandle.
+    // mods expose the same public detection surface, resolved once and cached as a
+    // reflect.Method (see SHADER_GET_INSTANCE / SHADER_IS_IN_USE) and reused per call.
     //
-    // Why this matters here: the shader mod's ShaderKey enum (the master list of every
-    // RenderType→shader-program mapping under a loaded pack) has no `OUTLINE` entry.
-    // That means draws using RENDERTYPE_OUTLINE_SHADER fall through to no destination
-    // program under shaders — the stencil setup runs, but the visible color attachment
-    // never receives our outline geometry. When a pack is loaded, we route the dilated
-    // outline through vanilla's OutlineBufferSource instead — that pipeline (entity
-    // outline target + EntityOutlineShader post-process composite) is one the shader
-    // mod explicitly preserves to keep vanilla glowing working under shaders.
+    // Consumed by the glow-outline drain timing (LevelRendererMixin routes the world drain
+    // through GlowOutlineRenderer.drainWorldShaderPack when a pack is active) and by the Epic
+    // Knights decoration glint path, which swaps to a depth-prewrite + late-bucket shader RT
+    // under a pack instead of the plain EQUAL-depth glint.
     private static volatile boolean SHADER_LOOKUP_DONE = false;
     private static volatile Method SHADER_GET_INSTANCE = null;
     private static volatile Method SHADER_IS_IN_USE = null;
@@ -879,8 +869,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /**
      * True iff a shader mod is installed (detection API class resolved), regardless of whether
      * a shaderpack is currently active. The shader mod replaces the buffer-source pipeline
-     * whenever it's loaded, which breaks our stencil-based outline path even with no pack —
-     * so the forward-pass outline branch needs to trigger on presence, not just active-pack.
+     * whenever it's loaded, so the Epic Knights decoration glint switches to its late-bucket
+     * shader RT on mod presence, not just on an active pack.
      */
     public static boolean isShaderModInstalled() {
         if (!SHADER_LOOKUP_DONE) isShaderPackActive();
@@ -890,12 +880,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // Under shader mods, every RenderType is mixed in to implement BlendingStateHolder with a
     // TransparencyType field (default GENERAL_TRANSPARENT). The batched FullyBufferedMultiBuffer-
     // Source flushes by TransparencyType in enum order (OPAQUE → OPAQUE_DECAL → GENERAL_TRANSPARENT
-    // → DECAL → WATER_MASK → LINES). Items use GENERAL_TRANSPARENT; if our outline RT also sits
-    // there, the order between item and outline within the same bucket is undefined → outline can
-    // flush before item → depth buffer empty when outline draws → polygon-offset/front-face-cull
-    // can't reject the interior → outline reads as a filled silhouette. Tagging the outline RT as
-    // LINES (last bucket) forces the shader mod to flush ALL item geometry first, then our outline — depth
-    // ordering works in every camera context (1P / 3P / GROUND). Reflective to avoid compileOnly.
+    // → DECAL → WATER_MASK → LINES). The geometry a glint draws over uses GENERAL_TRANSPARENT; if the
+    // glint RT also sits there, the order within the same bucket is undefined → the glint can flush
+    // before the base geometry → depth buffer empty when the glint draws → its EQUAL depth test can't
+    // line up. Tagging the glint RT as LINES (last bucket) forces the shader mod to flush ALL base
+    // geometry first, then the glint — depth ordering works in every camera context (1P / 3P / GROUND).
+    // Used by the Epic Knights decoration depth-prewrite + glint RTs. Reflective to avoid compileOnly.
     private static volatile boolean SHADER_TT_LOOKUP_DONE = false;
     private static volatile Method SHADER_TT_SET = null;
     private static volatile Object SHADER_TT_LINES = null;

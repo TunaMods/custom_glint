@@ -175,6 +175,25 @@ public class GlintTableMenu extends AbstractContainerMenu {
         sendTo(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
     }
 
+    /** Clamps client-supplied extra layers (NaN/Infinity speed/scale/offset → defaults, &gt;8 colors truncated)
+     *  so a crafted print packet can't persist garbage into the broadcast trim. */
+    private static CustomGlint.Layer[] sanitizeLayers(CustomGlint.Layer[] in) {
+        if (in == null) return new CustomGlint.Layer[0];
+        CustomGlint.Layer[] out = new CustomGlint.Layer[in.length];
+        for (int i = 0; i < in.length; i++) {
+            CustomGlint.Layer l = in[i];
+            int[] colors = l.colors();
+            if (colors.length > CustomGlint.MAX_COLORS_PER_LAYER)
+                colors = java.util.Arrays.copyOf(colors, CustomGlint.MAX_COLORS_PER_LAYER);
+            float speed = (Float.isFinite(l.speed()) && l.speed() > 0) ? Math.min(8.0f, l.speed()) : 1.0f;
+            float scale = Float.isFinite(l.patternScale()) ? Math.max(0.10f, Math.min(8.0f, l.patternScale())) : 1.0f;
+            float offset = Float.isFinite(l.scrollOffset()) ? Math.max(0.0f, Math.min(1.0f, l.scrollOffset())) : 0.0f;
+            out[i] = new CustomGlint.Layer(l.design(), colors, speed, l.interpolate(), scale,
+                    l.simultaneous(), l.scrollDir(), offset, l.seed());
+        }
+        return out;
+    }
+
     /**
      * Print a finished trim: build it from the sent params + the dye/material slots, validate and consume
      * the cost, then give it to the player and store it in the printed library. No-op on validation fail.
@@ -186,6 +205,12 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (!(player instanceof ServerPlayer sp)) return;
         ResourceLocation design = ResourceLocation.tryParse(designId);
         if (design == null) return;
+
+        // The active layer's speed/scale are clamped below; the below/above layers arrive straight from
+        // GlintPrintPacket, so sanitize them the same way (finite floats, 8-color cap) before they persist
+        // into the printed trim and get broadcast to tracking clients.
+        belowLayers = sanitizeLayers(belowLayers);
+        aboveLayers = sanitizeLayers(aboveLayers);
 
         int extraLayers = belowLayers.length + aboveLayers.length;
         if (extraLayers > 0) {
@@ -269,9 +294,12 @@ public class GlintTableMenu extends AbstractContainerMenu {
         for (int c : newColors) GlintTrimItem.addColor(trim, c);
         for (int c : donorColors) GlintTrimItem.addColor(trim, c);
         // Sanitize client-sent floats before they persist into the (broadcast) trim — a crafted packet must
-        // not write NaN/Infinity/out-of-range speed or scale, matching the editor's own clamps.
-        GlintTrimItem.setSpeed(trim, Float.isFinite(speed) ? Math.max(0.10f, Math.min(8.0f, speed)) : 1.0f);
-        GlintTrimItem.setScale(trim, Float.isFinite(scale) ? Math.max(0.10f, Math.min(8.0f, scale)) : 1.0f);
+        // not write NaN/Infinity/out-of-range speed or scale, matching the editor's own clamps. The same
+        // clamped values must also feed the glint Data write below (read() lets NaN slip past its <=0 guard).
+        float safeSpeed = Float.isFinite(speed) ? Math.max(0.10f, Math.min(8.0f, speed)) : 1.0f;
+        float safeScale = Float.isFinite(scale) ? Math.max(0.10f, Math.min(8.0f, scale)) : 1.0f;
+        GlintTrimItem.setSpeed(trim, safeSpeed);
+        GlintTrimItem.setScale(trim, safeScale);
         GlintTrimItem.setScrollDir(trim, scrollDir);
         GlintTrimItem.setScrollOffset(trim, Float.isFinite(scrollOffset) ? Math.max(0.0f, Math.min(1.0f, scrollOffset)) : 0.0f);
         GlintTrimItem.setPattern(trim, design);
@@ -292,7 +320,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
         // Final active-layer Data write carrying the chosen interpolation (and simultaneous when a tear is
         // present). Written LAST — setGlowing/setPattern reset interpolate/simultaneous.
-        CustomGlint.write(trim, design, GlintTrimItem.getColors(trim), speed, interpolate, scale,
+        CustomGlint.write(trim, design, GlintTrimItem.getColors(trim), safeSpeed, interpolate, safeScale,
                 activeSim, GlintTrimItem.getScrollDir(trim), GlintTrimItem.getScrollOffset(trim));
 
         if (extraLayers > 0) {
@@ -483,6 +511,10 @@ public class GlintTableMenu extends AbstractContainerMenu {
     /** Give the player a free blank trim of a palette design (shift-click in the left grid). */
     public void giveDesignCopy(String name) {
         if (!(player instanceof ServerPlayer sp)) return;
+        // The left palette is built from the player's stored designs, so only hand out a design they've
+        // actually stored — a forged packet can't mint an unowned design. The glow-trim template is always
+        // craftable, so it's allowed unconditionally.
+        if (!GlowTrimItem.STORAGE_KEY.equals(name) && !GlintTablePlayerData.storedDesigns(sp).contains(name)) return;
         ItemStack stack;
         if (GlowTrimItem.STORAGE_KEY.equals(name)) {
             stack = new ItemStack(ModItems.GLOW_TRIM.get());

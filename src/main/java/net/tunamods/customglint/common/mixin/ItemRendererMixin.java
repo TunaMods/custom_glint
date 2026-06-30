@@ -121,7 +121,13 @@ public class ItemRendererMixin {
         PoseStack tp = new PoseStack();
         tp.last().pose().set(pose.last().pose());
         tp.last().normal().set(pose.last().normal());
-        BakedModel rendered = model.applyTransform(ctx, tp, leftHand);
+        BakedModel rendered;
+        try {
+            rendered = model.applyTransform(ctx, tp, leftHand);
+        } catch (Throwable ignored) {
+            // Some modded models throw from applyTransform; skip the glow capture rather than crash render.
+            return;
+        }
         tp.translate(-0.5F, -0.5F, -0.5F);
         if (rendered == null || rendered.isCustomRenderer()) return;
 
@@ -158,6 +164,9 @@ public class ItemRendererMixin {
         try {
             mc.getItemRenderer().renderStatic(mc.player, stack, ctx, leftHand, tp, cap, mc.level,
                     LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 0);
+        } catch (Throwable ignored) {
+            // A throwing BEWLR (modded special renderer) must skip the glow capture, not crash the item render.
+            return;
         } finally {
             CustomGlintRenderer.IN_OUTLINE.set(false);
         }
@@ -187,12 +196,16 @@ public class ItemRendererMixin {
     private static List<BakedQuad> cg_collectQuads(BakedModel model) {
         List<BakedQuad> out = new ArrayList<>();
         RandomSource random = RandomSource.create();
-        for (Direction dir : Direction.values()) {
+        try {
+            for (Direction dir : Direction.values()) {
+                random.setSeed(42L);
+                out.addAll(model.getQuads(null, dir, random));
+            }
             random.setSeed(42L);
-            out.addAll(model.getQuads(null, dir, random));
+            out.addAll(model.getQuads(null, null, random));
+        } catch (Throwable ignored) {
+            // Some modded models throw from getQuads(null, ...); use whatever was collected.
         }
-        random.setSeed(42L);
-        out.addAll(model.getQuads(null, null, random));
         return out;
     }
 
@@ -253,7 +266,7 @@ public class ItemRendererMixin {
         if (CustomGlintRenderer.IN_OUTLINE.get()) return buffer.getBuffer(renderType);
         ItemStack stack = CustomGlintRenderer.CURRENT_ITEM_STACK.get();
         if (stack == null) return null;
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         if (glint == null) return null;
 
         CustomGlint.Layer[] layers = glint.layers();

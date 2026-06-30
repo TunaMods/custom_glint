@@ -5,10 +5,11 @@ import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlintWandItem;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
@@ -52,26 +53,9 @@ public class GiveGlintTrimPacket {
     }
 
     public static GiveGlintTrimPacket decode(FriendlyByteBuf buf) {
-        int layerCount = Math.min(buf.readVarInt(), 8);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerCount];
-        for (int i = 0; i < layerCount; i++) {
-            String design = buf.readUtf();
-            int colorLen = Math.min(buf.readVarInt(), 8);
-            int[] colors = new int[colorLen];
-            for (int j = 0; j < colorLen; j++) colors[j] = buf.readInt();
-            float speed = buf.readFloat();
-            if (speed <= 0) speed = 1.0f;
-            boolean interp = buf.readBoolean();
-            float scale = buf.readFloat();
-            boolean simultaneous = buf.readBoolean();
-            int scrollDir = buf.readVarInt();
-            float scrollOffset = buf.readFloat();
-            layers[i] = new CustomGlint.Layer(new ResourceLocation(design), colors, speed, interp, scale, simultaneous, scrollDir, scrollOffset);
-        }
+        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
         boolean glowing = buf.readBoolean();
-        int gcLen = Math.min(buf.readVarInt(), 8);
-        int[] glowColors = new int[gcLen];
-        for (int i = 0; i < gcLen; i++) glowColors[i] = buf.readInt();
+        int[] glowColors = GlintApplyPacket.readCappedColors(buf, 8);
         String trimName = buf.readUtf(32767);
         int trimNameColor = buf.readInt();
         return new GiveGlintTrimPacket(layers, glowing, glowColors, trimName, trimNameColor);
@@ -81,6 +65,11 @@ public class GiveGlintTrimPacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer player = ctx.get().getSender();
             if (player == null) return;
+            // Only reachable from the wand editor (opened by right-clicking the wand). Require the sender to
+            // hold one so a forged packet can't mint free trims.
+            boolean holdsWand = player.getItemInHand(InteractionHand.MAIN_HAND).getItem() instanceof GlintWandItem
+                    || player.getItemInHand(InteractionHand.OFF_HAND).getItem() instanceof GlintWandItem;
+            if (!holdsWand) return;
 
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 

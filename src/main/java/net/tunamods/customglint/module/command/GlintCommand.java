@@ -210,6 +210,9 @@ public class GlintCommand {
         ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
+        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             String name = parts[i].trim().toLowerCase();
@@ -297,6 +300,9 @@ public class GlintCommand {
         ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
+        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             String name = parts[i].trim().toLowerCase();

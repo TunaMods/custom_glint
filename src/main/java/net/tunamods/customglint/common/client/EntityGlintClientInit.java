@@ -1,8 +1,10 @@
 package net.tunamods.customglint.common.client;
 
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.tunamods.customglint.common.CustomGlint;
 
@@ -42,5 +44,14 @@ public final class EntityGlintClientInit {
     @SubscribeEvent
     public static void onLeaveLevel(ClientPlayerNetworkEvent.LoggingOut event) {
         EntityGlintCache.clear();
+    }
+
+    /** Evict per-entity cache entries as their entities leave the client level, so the UUID→glint map
+     *  stays bounded by currently-loaded entities instead of growing for the whole session. A re-tracked
+     *  entity is repopulated by the resolver fallback / next server broadcast. */
+    @SubscribeEvent
+    public static void onEntityLeave(EntityLeaveLevelEvent event) {
+        if (event.getLevel().isClientSide() && event.getEntity() instanceof LivingEntity le)
+            EntityGlintCache.remove(le.getUUID());
     }
 }

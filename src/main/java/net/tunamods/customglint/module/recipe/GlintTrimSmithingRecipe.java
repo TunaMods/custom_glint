@@ -35,9 +35,11 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public boolean isTemplateIngredient(ItemStack stack) {
-        return stack.getItem() instanceof GlintTrimItem
-                && GlintTrimItem.getPattern(stack) != null
-                && GlintTrimItem.getColors(stack).length > 0;
+        if (!(stack.getItem() instanceof GlintTrimItem)) return false;
+        ResourceLocation pattern = GlintTrimItem.getPattern(stack);
+        // Chromatic trims render from a procedural palette and are valid with zero colors.
+        return pattern != null
+                && (GlintTrimItem.getColors(stack).length > 0 || CustomGlint.isChromatic(pattern));
     }
 
     @Override
@@ -65,7 +67,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
         ItemStack base     = pContainer.getItem(1);
         ResourceLocation pattern = GlintTrimItem.getPattern(template);
         int[] colors             = GlintTrimItem.getColors(template);
-        if (pattern == null || colors.length == 0) return ItemStack.EMPTY;
+        if (pattern == null || (colors.length == 0 && !CustomGlint.isChromatic(pattern))) return ItemStack.EMPTY;
         CustomGlint.Data preview = CustomGlint.read(template);
         boolean simultaneous = preview != null && preview.layers().length > 0 && preview.layers()[0].simultaneous();
         float speed          = preview != null && preview.layers().length > 0 ? preview.layers()[0].speed() : 1.0f;

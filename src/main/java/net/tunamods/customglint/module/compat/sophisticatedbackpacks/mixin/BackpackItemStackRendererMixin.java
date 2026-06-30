@@ -59,7 +59,7 @@ public class BackpackItemStackRendererMixin {
 
     private static void cg_apply(ItemStack stack, PoseStack pose, MultiBufferSource buffer,
             int light, int overlay) {
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         if (glint == null) return;
 
         ItemRenderer ir = Minecraft.getInstance().getItemRenderer();
@@ -71,7 +71,8 @@ public class BackpackItemStackRendererMixin {
         for (int i = 0; i < orig.length; i++) {
             CustomGlint.Layer l = orig[i];
             layers[i] = new CustomGlint.Layer(l.design(), l.colors(), l.speed(), l.interpolate(),
-                    l.patternScale() * CG_BACKPACK_PATTERN_SCALE, l.simultaneous());
+                    l.patternScale() * CG_BACKPACK_PATTERN_SCALE, l.simultaneous(),
+                    l.scrollDir(), l.scrollOffset(), l.seed());
         }
         glint = new CustomGlint.Data(layers);
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();

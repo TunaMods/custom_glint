@@ -5,11 +5,8 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.renderer.RenderType;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.Model;
-import net.minecraft.client.model.EntityModel;
-import net.minecraft.client.model.geom.ModelPart;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -19,7 +16,6 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ArmorItem;
-import net.minecraft.world.item.DyeableLeatherItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.tunamods.customglint.common.CustomGlint;
@@ -63,12 +59,15 @@ public class HumanoidArmorLayerMixin {
             LivingEntity entity, EquipmentSlot slot, int packedLight, HumanoidModel model) {
         ItemStack stack = entity.getItemBySlot(slot);
         if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem)) return;
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         boolean glowing = CustomGlint.isGlowing(stack);
         // Bail only if there is nothing to render — no glint AND no glow.
         if (glint == null && !glowing) return;
 
         Model rendererModel = ForgeHooksClient.getArmorModel(entity, stack, slot, model);
+        // A modded IClientItemExtensions.getArmorModel override may return null; fall back to the vanilla
+        // model rather than NPE on the render thread at renderToBuffer / captureModelSilhouette below.
+        if (rendererModel == null) rendererModel = model;
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();

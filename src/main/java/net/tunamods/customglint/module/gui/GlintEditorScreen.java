@@ -20,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.client.GlintGuiConfig;
@@ -510,8 +511,11 @@ public class GlintEditorScreen extends Screen {
         // Change preview item
         bevel(px + 8, py + 116, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.change_item").getString(), () -> {
-            if (allItems == null) allItems = ForgeRegistries.ITEMS.getValues().stream()
-                    .filter(item -> { ResourceLocation k = ForgeRegistries.ITEMS.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
+            // Iterate the vanilla registry in id order (matches 1.21.1 / 26.1) rather than
+            // ForgeRegistries.ITEMS.getValues(), whose iteration isn't id-ordered and shuffles the
+            // picker into a seemingly-random order.
+            if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
+                    .filter(item -> { ResourceLocation k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
             filterItems(searchBox != null ? searchBox.getValue() : "");
             pickerScroll = 0;
@@ -762,6 +766,10 @@ public class GlintEditorScreen extends Screen {
 
             selectedLayer = 0;
             editingColorIdx = 0;
+            // Importing replaces the glow color set; drop any stale glow-channel edit target so a later channel
+            // edit doesn't silently retarget the glint color when the imported trim has fewer/zero glow colors.
+            editingGlowColor = false;
+            editingGlowColorIdx = 0;
 
             if (obj.has("glowing")) glowEnabled = obj.get("glowing").getAsBoolean();
             // Restore glow override colors so an exported Glow-Trimmed item round-trips through Import

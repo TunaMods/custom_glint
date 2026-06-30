@@ -9,7 +9,6 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
@@ -107,12 +106,16 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private String selectPattern(LootContext context) {
-        // Get biome category to weight pattern selection
-        var origin = context.getParam(LootContextParams.ORIGIN);
-        var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
-        String biomeName = biome.unwrapKey()
-            .map(key -> key.location().getPath())
-            .orElse("plains");
+        // Get biome category to weight pattern selection. ORIGIN isn't guaranteed on every loot context
+        // (some modded chest tables omit it); getParam would throw NoSuchElementException, so default to plains.
+        var origin = context.getParamOrNull(LootContextParams.ORIGIN);
+        String biomeName = "plains";
+        if (origin != null) {
+            var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
+            biomeName = biome.unwrapKey()
+                .map(key -> key.location().getPath())
+                .orElse("plains");
+        }
 
         // Category-based selection bonus
         float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
@@ -125,9 +128,14 @@ public class GlintTrimLootModifier extends LootModifier {
         float swampBonus = isSwampBiome(biomeName) ? 3.0f : 1.0f;
         float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? 3.0f : 1.0f;
 
+        // Compute each pattern's biome-weighted weight exactly once, then walk the same array to pick. (The
+        // total and the pick used to recompute the whole bonus chain twice per roll — identical logic that had
+        // to be kept byte-for-byte in sync.)
+        java.util.List<String> patterns = GlintTrimItem.PATTERNS;
+        float[] weights = new float[patterns.size()];
         float totalWeight = 0.0f;
-        for (String pattern : GlintTrimItem.PATTERNS) {
-            String cleanName = pattern.equals("vanilla") ? "vanilla" : pattern;
+        for (int i = 0; i < patterns.size(); i++) {
+            String cleanName = patterns.get(i);
             float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
 
             // Apply category bonuses
@@ -150,36 +158,16 @@ public class GlintTrimLootModifier extends LootModifier {
             else if (plainsBonus > 1.0f && (cleanName.equals("stars") || cleanName.equals("lightning") || cleanName.equals("halo") || cleanName.equals("prism") || cleanName.equals("glow") || cleanName.equals("sheen") || cleanName.equals("sparkle")))
                 weight *= plainsBonus;
 
+            weights[i] = weight;
             totalWeight += weight;
         }
 
         float pick = context.getRandom().nextFloat() * totalWeight;
-        for (String pattern : GlintTrimItem.PATTERNS) {
-            String cleanName = pattern.equals("vanilla") ? "vanilla" : pattern;
-            float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
-            if (netherBonus > 1.0f && (cleanName.equals("fire") || cleanName.equals("ember") || cleanName.equals("plasma") || cleanName.equals("oil") || cleanName.equals("smoke")))
-                weight *= netherBonus;
-            else if (endBonus > 1.0f && (cleanName.equals("glitch") || cleanName.equals("matrix") || cleanName.equals("static") || cleanName.equals("vanilla") || cleanName.equals("arcs") || cleanName.equals("pulse")))
-                weight *= endBonus;
-            else if (oceanBonus > 1.0f && (cleanName.equals("tide") || cleanName.equals("wave") || cleanName.equals("ripple") || cleanName.equals("coral") || cleanName.equals("scales") || cleanName.equals("silk") || cleanName.equals("net")))
-                weight *= oceanBonus;
-            else if (desertBonus > 1.0f && (cleanName.equals("dunes") || cleanName.equals("sand") || cleanName.equals("solid") || cleanName.equals("swirl")))
-                weight *= desertBonus;
-            else if (forestBonus > 1.0f && (cleanName.equals("petal") || cleanName.equals("feather") || cleanName.equals("blobs") || cleanName.equals("cascade") || cleanName.equals("debris") || cleanName.equals("mosaic")))
-                weight *= forestBonus;
-            else if (mountainBonus > 1.0f && (cleanName.equals("crystal") || cleanName.equals("diamonds") || cleanName.equals("vein") || cleanName.equals("cracks") || cleanName.equals("plate") || cleanName.equals("mesh") || cleanName.equals("grid") || cleanName.equals("tile")))
-                weight *= mountainBonus;
-            else if (snowBonus > 1.0f && (cleanName.equals("frost") || cleanName.equals("aurora") || cleanName.equals("shimmer")))
-                weight *= snowBonus;
-            else if (swampBonus > 1.0f && cleanName.equals("weave"))
-                weight *= swampBonus;
-            else if (plainsBonus > 1.0f && (cleanName.equals("stars") || cleanName.equals("lightning") || cleanName.equals("halo") || cleanName.equals("prism") || cleanName.equals("glow") || cleanName.equals("sheen") || cleanName.equals("sparkle")))
-                weight *= plainsBonus;
-
-            pick -= weight;
-            if (pick <= 0) return pattern;
+        for (int i = 0; i < patterns.size(); i++) {
+            pick -= weights[i];
+            if (pick <= 0) return patterns.get(i);
         }
-        return GlintTrimItem.PATTERNS.get(context.getRandom().nextInt(GlintTrimItem.PATTERNS.size()));
+        return patterns.get(context.getRandom().nextInt(patterns.size()));
     }
 
     private static boolean isNetherBiome(String biome) {

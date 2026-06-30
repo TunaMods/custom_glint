@@ -19,6 +19,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class GlintTrimItem extends Item {
     public static final String PATTERN_TAG  = "pattern";
@@ -38,7 +39,10 @@ public class GlintTrimItem extends Item {
         0xFFFF0000, 0xFF333333
     };
 
-    public static final List<String> PATTERNS = new ArrayList<>(List.of(
+    // CopyOnWriteArrayList: the datapack reload listener (CustomGlintMod) mutates this on the server
+    // thread while the client thread iterates it (creative-tab build) in single-player/LAN — a plain
+    // ArrayList would throw ConcurrentModificationException on the timing overlap.
+    public static final List<String> PATTERNS = new CopyOnWriteArrayList<>(List.of(
         "arcs", "aurora", "blobs", "cascade", "checker", "chevron", "coral", "cracks",
         "crosshatch", "crystal", "debris", "diamonds", "dunes", "ember", "feather", "fire",
         "frost", "glitch", "glow", "grid", "halo", "hexagon", "lightning", "marble",
@@ -91,21 +95,11 @@ public class GlintTrimItem extends Item {
 
     /** Replaces the whole color set (Glint Table build / dye recipe), re-emitting the preview glint. */
     public static void setColors(ItemStack stack, int[] colors) {
+        // Enforce the 8-color cap on the one raw write path too (addColor/mergeColors already cap), so no
+        // caller can silently store more than the design supports.
+        if (colors.length > 8) colors = java.util.Arrays.copyOf(colors, 8);
         stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(colors));
         rewritePreview(stack);
-    }
-
-    /** Sets the display config (pattern/speed/scale/scroll/offset/glowing) directly, preserving the current
-     *  colors and WITHOUT rewriting the preview glint — for {@code /glint extract} on a multi-layer glint,
-     *  where the full multi-layer tag is copied separately and must not be clobbered by a single-layer write. */
-    public static void setConfig(ItemStack stack, ResourceLocation pattern, float speed, float scale, int scroll, float offset, boolean glowing) {
-        var tag = stack.getOrCreateTag();
-        tag.putString(PATTERN_TAG, pattern.toString());
-        tag.putFloat(SPEED_TAG, speed);
-        tag.putFloat(SCALE_TAG, scale);
-        tag.putInt(SCROLL_TAG, scroll);
-        tag.putFloat(OFFSET_TAG, offset);
-        tag.putBoolean(GLOWING_TAG, glowing);
     }
 
     /** Procedural-chromatic seed (0 = not chromatic / not yet rolled). */
@@ -153,21 +147,6 @@ public class GlintTrimItem extends Item {
     /** Localized direction label for GUI buttons, keyed on the stable {@link #scrollName} code. */
     public static Component scrollLabel(int scroll) {
         return Component.translatable("screen.customglint.scroll." + scrollName(scroll));
-    }
-
-    /** Inverse of {@link #scrollName}: parses a direction name to a {@code SCROLL_*} value (default East). */
-    public static int scrollFromName(String name) {
-        return switch (name.toLowerCase()) {
-            case "static" -> CustomGlint.SCROLL_STATIC;
-            case "ne", "northeast" -> CustomGlint.SCROLL_NE;
-            case "n", "north" -> CustomGlint.SCROLL_N;
-            case "nw", "northwest" -> CustomGlint.SCROLL_NW;
-            case "w", "west" -> CustomGlint.SCROLL_W;
-            case "sw", "southwest" -> CustomGlint.SCROLL_SW;
-            case "s", "south" -> CustomGlint.SCROLL_S;
-            case "se", "southeast" -> CustomGlint.SCROLL_SE;
-            default -> CustomGlint.SCROLL_E;
-        };
     }
 
     public static int[] getColors(ItemStack stack) {

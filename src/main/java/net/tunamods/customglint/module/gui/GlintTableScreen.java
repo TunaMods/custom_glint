@@ -636,12 +636,16 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     @Override
     public void render(GuiGraphics g, int mx, int my, float dt) {
         prologue();
-        super.render(g, mx, my, dt); // dim + renderBg + slots + renderLabels + widgets + cursor + slot tooltips
 
+        // Arm the per-frame memo BEFORE super.render: the widget face/label suppliers (printBtn, glowModeBtn)
+        // call canPrint()/previewSource() during super.render, and without the memo armed each of those re-runs
+        // the full uncached path (ItemStack.copy + NBT writes) every frame. syncButtons() also runs first so
+        // widget .active states are fresh for the same draw rather than a frame stale.
         frameActiveTrim = null; framePreviewSource = null; frameActiveIcon = null; frameCanPrint = null;
         frameCaptureDone = false; frameTotalLayers = null; frameMemo = true;
         try {
             syncButtons();
+            super.render(g, mx, my, dt); // dim + renderBg + slots + renderLabels + widgets + cursor + slot tooltips
             drawTrimGrid(g, mx, my);
             drawPrintedGrid(g, mx, my);
             drawMainPreview(g);
@@ -751,7 +755,18 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return new ItemStack(GlintTableMenu.DYE_ITEMS[idx]);
     }
 
+    // The constant ghost hints (materials, palette dyes, tears) never change, but the tear ghosts run a
+    // full CustomGlint.write through getDefaultInstance(); cache them so renderBg doesn't rebuild every
+    // frame. The two cycling-dye wells animate and are rebuilt per call below.
+    private static final java.util.Map<Integer, ItemStack> GHOST_CACHE = new java.util.HashMap<>();
+
     private ItemStack ghostFor(int containerSlot) {
+        if (containerSlot == GlintTableMenu.SLOT_NAME_DYE) return cyclingDyeGhost(0);
+        if (containerSlot == GlintTableMenu.SLOT_GLOW_DYE) return cyclingDyeGhost(8);
+        return GHOST_CACHE.computeIfAbsent(containerSlot, GlintTableScreen::buildGhost);
+    }
+
+    private static ItemStack buildGhost(int containerSlot) {
         if (containerSlot >= GlintTableMenu.SLOT_DYE_START && containerSlot < GlintTableMenu.SLOT_DYE_START + 16) {
             return new ItemStack(GlintTableMenu.DYE_ITEMS[containerSlot - GlintTableMenu.SLOT_DYE_START]);
         }
@@ -765,8 +780,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             case GlintTableMenu.SLOT_TEAR_SEQ  -> ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance();
             case GlintTableMenu.SLOT_LAYER_TEAR -> ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance();
             case GlintTableMenu.SLOT_RAINBOW_DYE -> ModItems.RAINBOW_DYE.get().getDefaultInstance();
-            case GlintTableMenu.SLOT_NAME_DYE -> cyclingDyeGhost(0);
-            case GlintTableMenu.SLOT_GLOW_DYE -> cyclingDyeGhost(8);
+            // SLOT_NAME_DYE / SLOT_GLOW_DYE animate and are handled in ghostFor (not cached here).
             default -> ItemStack.EMPTY;
         };
     }

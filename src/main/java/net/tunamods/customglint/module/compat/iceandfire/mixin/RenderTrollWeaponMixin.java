@@ -67,10 +67,19 @@ public class RenderTrollWeaponMixin {
 
     private static void cg_apply(ItemStack stack, PoseStack pose, MultiBufferSource buffer,
             int light, int overlay) {
+        // Glow-outline capture re-renders the whole item through renderStatic into a record-only buffer
+        // (ItemRendererMixin.cg_captureSpecialOutline), bucketing vertices by the texture each RenderType
+        // draws through — so it already traces this weapon's real shape via IaF's own entitySolid(weapon
+        // .TEXTURE) draw. If we drew our glint layers during that pass they'd be recorded under the SHARED
+        // design texture as a full-model-hull bucket, identical for every troll weapon variant (the "all
+        // show the same outline" case). Skip the glint draw under IN_OUTLINE; the base capture handles the
+        // per-weapon ring. The core applyGlint does the same for vanilla items.
+        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
+
         Model model = cg_getModel();
         if (model == null) return;
 
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         if (glint == null) return;
 
         CustomGlint.Layer[] layers = glint.layers();
@@ -103,9 +112,12 @@ public class RenderTrollWeaponMixin {
             VertexConsumer combined = list.size() == 1 ? list.get(0)
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             pose.pushPose();
-            pose.translate(0.5f, -0.75f, 0.5f);
-            model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
-            pose.popPose();
+            try {
+                pose.translate(0.5f, -0.75f, 0.5f);
+                model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
+            } finally {
+                pose.popPose();
+            }
         }
     }
 }

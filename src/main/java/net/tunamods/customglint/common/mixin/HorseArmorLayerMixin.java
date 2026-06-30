@@ -59,11 +59,12 @@ public class HorseArmorLayerMixin {
             int packedLight, Horse entity, HorseModel<Horse> model) {
         ItemStack stack = entity.getArmor();
         if (stack.isEmpty()) return;
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
         if (!(stack.getItem() instanceof HorseArmorItem ha)) return;
         ResourceLocation tex = ha.getTexture();
+        if (tex == null) return; // a modded HorseArmorItem could return null; skip rather than NPE the stencil/glow path
 
         if (glint != null) {
             // ── Stencil mask pass ───────────────────────────────────────────

@@ -25,9 +25,16 @@ public class GlintDesignSyncPacket {
         }
     }
 
+    /** Generous upper bound on design names on the wire — guards a malformed/hostile server from driving a
+     *  negative-capacity allocation or an unbounded read loop. The real list is the builtin set plus data-pack
+     *  additions, far under this. */
+    private static final int MAX_DESIGNS = 65536;
+
     public static GlintDesignSyncPacket decode(FriendlyByteBuf buf) {
         int count = buf.readVarInt();
-        List<String> designs = new ArrayList<>(count);
+        if (count < 0 || count > MAX_DESIGNS)
+            throw new io.netty.handler.codec.DecoderException("Bad design count: " + count);
+        List<String> designs = new ArrayList<>(Math.min(count, 256));
         for (int i = 0; i < count; i++) {
             designs.add(buf.readUtf());
         }

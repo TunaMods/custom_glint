@@ -63,10 +63,16 @@ public class RenderDeathWormGauntletMixin {
 
     private static void cg_apply(ItemStack stack, PoseStack pose, MultiBufferSource buffer,
             int light, int overlay) {
+        // See RenderTrollWeaponMixin: during the glow-outline capture re-render (IN_OUTLINE), skip our
+        // glint draw so the silhouette traces this variant's real texture (IaF's own per-variant draw)
+        // rather than recording a shared full-model-hull bucket under the design texture — which would
+        // give all three gauntlet variants the same outline.
+        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
+
         Model model = cg_getModel();
         if (model == null) return;
 
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         if (glint == null) return;
 
         CustomGlint.Layer[] layers = glint.layers();
@@ -99,9 +105,12 @@ public class RenderDeathWormGauntletMixin {
             VertexConsumer combined = list.size() == 1 ? list.get(0)
                     : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             pose.pushPose();
-            pose.translate(0.5f, 0.5f, 0.5f);
-            model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
-            pose.popPose();
+            try {
+                pose.translate(0.5f, 0.5f, 0.5f);
+                model.renderToBuffer(pose, combined, light, overlay, 1.0f, 1.0f, 1.0f, 1.0f);
+            } finally {
+                pose.popPose();
+            }
         }
     }
 }

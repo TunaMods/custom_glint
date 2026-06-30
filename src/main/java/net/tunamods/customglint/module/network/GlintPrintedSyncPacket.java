@@ -27,9 +27,10 @@ public class GlintPrintedSyncPacket {
     }
 
     public static GlintPrintedSyncPacket decode(FriendlyByteBuf buf) {
-        int count = buf.readVarInt();
-        // Clamp the pre-sized capacity so a crafted server can't trigger a huge eager allocation.
-        List<ItemStack> trims = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
+        // Clamp count itself so a crafted server can neither pre-size a huge list nor drive a multi-billion
+        // readItem loop (the legit set is capped at 128, so 1024 is ample headroom).
+        int count = Math.max(0, Math.min(buf.readVarInt(), 1024));
+        List<ItemStack> trims = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             ItemStack s = buf.readItem();
             if (!s.isEmpty()) trims.add(s);
