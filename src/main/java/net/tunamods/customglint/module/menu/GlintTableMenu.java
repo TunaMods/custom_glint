@@ -162,10 +162,12 @@ public class GlintTableMenu extends AbstractContainerMenu {
     }
 
     /** Records one finished painted trim into the player's printed library (deduped, capped at 128) + syncs. */
-    private static void storePrinted(ServerPlayer sp, ItemStack trim) {
+    /** @return true if the trim was stored, false if it was a duplicate or the library is full — so the
+     *  caller knows whether to consume the source stack (a silent no-op must NOT destroy the item). */
+    private static boolean storePrinted(ServerPlayer sp, ItemStack trim) {
         List<ItemStack> list = GlintTablePlayerData.printedTrims(sp);
-        for (ItemStack s : list) if (ItemStack.isSameItemSameTags(s, trim)) return;
-        if (list.size() >= 128) return;
+        for (ItemStack s : list) if (ItemStack.isSameItemSameTags(s, trim)) return false;
+        if (list.size() >= 128) return false;
         ItemStack one = trim.copy();
         one.setCount(1);
         List<ItemStack> updated = new ArrayList<>();
@@ -173,6 +175,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         updated.add(one);
         GlintTablePlayerData.setPrintedTrims(sp, updated);
         sendTo(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
+        return true;
     }
 
     /** Clamps client-supplied extra layers (NaN/Infinity speed/scale/offset → defaults, &gt;8 colors truncated)
@@ -389,13 +392,16 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
     private static final int MAX_STORED_DESIGNS = 128;
 
-    private static void storeDesign(ServerPlayer sp, String name) {
+    /** @return true if stored, false if it was a duplicate or the library is full — the caller must not
+     *  consume the source stack on a no-op. */
+    private static boolean storeDesign(ServerPlayer sp, String name) {
         List<String> stored = GlintTablePlayerData.storedDesigns(sp);
-        if (stored.contains(name) || stored.size() >= MAX_STORED_DESIGNS) return;
+        if (stored.contains(name) || stored.size() >= MAX_STORED_DESIGNS) return false;
         List<String> updated = new ArrayList<>(stored);
         updated.add(name);
         GlintTablePlayerData.setStoredDesigns(sp, updated);
         sendTo(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+        return true;
     }
 
     /** The {@link DyeColor} an item dyes with (vanilla {@link DyeItem}), or null. */
@@ -480,9 +486,11 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (!(player instanceof ServerPlayer sp)) return;
         ItemStack carried = getCarried();
         if (carried.isEmpty() || !isAnyTrim(carried)) return;
-        if (isPainted(carried)) storePrinted(sp, carried);
-        else if (designName(carried) != null) storeDesign(sp, designName(carried));
+        boolean stored;
+        if (isPainted(carried)) stored = storePrinted(sp, carried);
+        else if (designName(carried) != null) stored = storeDesign(sp, designName(carried));
         else return;
+        if (!stored) return; // duplicate or full library — don't consume the trim
         carried.shrink(1);
         setCarried(carried);
     }
@@ -537,8 +545,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
             if (!moveItemStackTo(stack, INV_START, INV_END, true)) return ItemStack.EMPTY;
         } else if (isAnyTrim(stack) && (isPainted(stack) || designName(stack) != null)) {
             if (player instanceof ServerPlayer sp) {
-                if (isPainted(stack)) storePrinted(sp, stack);
-                else storeDesign(sp, designName(stack));
+                boolean stored = isPainted(stack) ? storePrinted(sp, stack) : storeDesign(sp, designName(stack));
+                if (!stored) return ItemStack.EMPTY; // duplicate or full library — don't destroy the trim
             }
             stack.shrink(1);
             if (stack.isEmpty()) slot.set(ItemStack.EMPTY);
