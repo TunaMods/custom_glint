@@ -1,6 +1,7 @@
 {
   "parent": "item/generated",
   "textures": {
-    "layer0": "customglint:item/glow_glint_trim"
+    "layer0": "customglint:item/glow_glint_trim_body",
+    "layer1": "customglint:item/glow_glint_trim_edge"
   }
 }

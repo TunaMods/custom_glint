@@ -25,7 +25,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@code renderDecoration} call can look up its glint data without referencing EK's internal
  * {@code ArmorDecorationItem.DecorationInfo} type (not on our compile classpath).
  *
- * Uses {@link EpicKnightsGlintRT#forDecorationGlint} (LEQUAL depth) rather than
+ * Uses {@link EpicKnightsGlintRT#forDecorationGlintSlot} (LEQUAL depth) rather than
  * {@code CustomGlint.forArmorGlint} (EQUAL): EK's decoration pass writes depth that doesn't
  * exactly match the EQUAL test of the vanilla-style armor glint, leaving the glint invisible.
  * LEQUAL is safe here because decoration meshes are dense (no transparent cutouts to bleed
@@ -36,6 +36,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ArmorDecorationLayerMixin {
 
     private static final ThreadLocal<ItemStack> CG_STACK = new ThreadLocal<>();
+
+    /** Wearer of the decoration, captured at {@code renderPiece} HEAD so {@code renderDecoration} can
+     *  fold the decoration's glow silhouette into the wearer's ring (same id as the base armor). */
+    private static final ThreadLocal<LivingEntity> CG_ENTITY = new ThreadLocal<>();
 
     /**
      * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
@@ -51,6 +55,7 @@ public class ArmorDecorationLayerMixin {
     private void cg_capStack(PoseStack pose, MultiBufferSource buf, LivingEntity entity,
             EquipmentSlot slot, int light, CallbackInfo ci) {
         CG_STACK.set(entity.getItemBySlot(slot));
+        CG_ENTITY.set(entity);
         CG_LAST_PARTS.remove();
     }
 
@@ -59,6 +64,7 @@ public class ArmorDecorationLayerMixin {
     private void cg_clearStack(PoseStack pose, MultiBufferSource buf, LivingEntity entity,
             EquipmentSlot slot, int light, CallbackInfo ci) {
         CG_STACK.remove();
+        CG_ENTITY.remove();
         CG_LAST_PARTS.remove();
     }
 
@@ -71,9 +77,19 @@ public class ArmorDecorationLayerMixin {
         CG_LAST_PARTS.set(parts);
         ItemStack stack = CG_STACK.get();
         if (stack == null || stack.isEmpty()) return;
-        CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
-        EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint,
-                CustomGlint.isGlowing(stack), stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
+        boolean glowing = CustomGlint.isGlowing(stack);
+        if (glint == null && !glowing) return;
+        if (glint != null) {
+            EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint);
+        }
+        // Glow ring: fold the decoration silhouette into the wearer's outline (same id as the base
+        // armor) so plumes/surcoats/crowns join the one connected ring rather than going un-ringed.
+        if (glowing) {
+            LivingEntity entity = CG_ENTITY.get();
+            if (entity != null) {
+                EpicKnightsGlintRT.captureDecorationOutline(entity, pose, parts, texture, light, stack);
+            }
+        }
     }
 }

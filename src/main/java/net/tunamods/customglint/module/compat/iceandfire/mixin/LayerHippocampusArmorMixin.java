@@ -8,12 +8,12 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.module.compat.iceandfire.MountArmorCache;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -33,8 +33,8 @@ import java.util.List;
  * by entity.getArmor() (1/2/3 = iron/gold/diamond), source the actual ItemStack from the
  * client-synced cache.
  *
- * Mask + glint mechanics identical to the dragon/hippogryph variants. See
- * {@link LayerDragonArmorMixin} for the stencil rationale.
+ * Glint + outline mechanics identical to the dragon/hippogryph variants (depth-offset
+ * armorCutoutNoCull, no stencil mask). See {@link LayerDragonArmorMixin} for the rationale.
  *
  * Armor ItemStack source: {@link MountArmorCache} (synced by EntityHippocampusArmorSyncMixin +
  * StartTracking listener — IaF's SimpleContainer doesn't sync to clients on its own).
@@ -94,7 +94,6 @@ public class LayerHippocampusArmorMixin {
             CallbackInfo ci) {
         int armor = cg_getArmor(entity);
         if (armor == 0) return;
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
 
         ResourceLocation tex;
         switch (armor) {
@@ -105,8 +104,9 @@ public class LayerHippocampusArmorMixin {
         }
 
         ItemStack stack = MountArmorCache.get(entity.getId());
-        CustomGlint.Data glint = CustomGlint.read(stack);
-        if (glint == null) return;
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
+        boolean glowing = CustomGlint.isGlowing(stack);
+        if (glint == null && !glowing) return;
 
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
@@ -120,53 +120,49 @@ public class LayerHippocampusArmorMixin {
         // offset, masked by the armor texture's own alpha cutout) lands only on the armor's opaque
         // texels. Routed through the unwrapped buffer so the wrapper can't re-fan the body glint.
         MultiBufferSource flush = EntityGlintRender.unwrap(buffer);
-        model.renderToBuffer(pose, flush.getBuffer(RenderType.armorCutoutNoCull(tex)),
-                light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        if (glint != null) {
+            model.renderToBuffer(pose, flush.getBuffer(RenderType.armorCutoutNoCull(tex)),
+                    light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
 
-        CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
-        List<VertexConsumer> list = new ArrayList<>();
-        for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
-            if (layers[li].simultaneous()) {
-                for (int i = 0; i < colors.length; i++) {
-                    float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * aa;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
+            CustomGlint.Layer[] layers = glint.layers();
+            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+            List<VertexConsumer> list = new ArrayList<>();
+            for (int li = 0; li < layers.length; li++) {
+                int[] colors = layers[li].colors();
+                if (layers[li].simultaneous()) {
+                    for (int i = 0; i < colors.length; i++) {
+                        float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * aa;
+                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
+                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
+                        buf[3] = 1.0f;
+                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
+                        if (rt != null) list.add(flush.getBuffer(rt));
+                    }
+                } else {
+                    int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
+                    float aa = ((color >> 24) & 0xFF) / 255.0f;
+                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * aa;
+                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * aa;
+                    buf[2] = ( color        & 0xFF) / 255.0f * aa;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
                     if (rt != null) list.add(flush.getBuffer(rt));
                 }
-            } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float aa = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * aa;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * aa;
-                buf[2] = ( color        & 0xFF) / 255.0f * aa;
-                buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
-                if (rt != null) list.add(flush.getBuffer(rt));
             }
-        }
-        if (!list.isEmpty()) {
-            VertexConsumer combined = list.size() == 1 ? list.get(0)
-                    : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-            model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            if (!list.isEmpty()) {
+                VertexConsumer combined = list.size() == 1 ? list.get(0)
+                        : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+                model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+            }
         }
 
-        if (CustomGlint.isGlowing(stack)) {
-            // No depth pre-fill: it wrote colorless depth into the body's transparent gaps (tail /
-            // fins), leaving invisible world-occluding planes. OUTLINE_FULL_SILHOUETTE instead stamps
-            // the whole body silhouette into the outline stencil so the back-side armor ring is
-            // suppressed across those gaps without touching world depth. Matches 1.21.1. slot=null →
-            // AABB-centroid scale. Stack overload so glowColors NBT drives the outline color when set.
-            CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(true);
-            try {
-                CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, stack, null);
-            } finally {
-                CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(false);
-            }
+        // Glow outline: trace the parent model against the armor texture into the glow mask. Keyed on
+        // the mount entity (CAT_ARMOR), so the armor ring fuses with the mount's body/entity ring into
+        // ONE connected ring (matches HumanoidArmorLayerMixin's wearer-keyed armor outline).
+        if (glowing) {
+            EntityGlintRender.captureModelSilhouette(entity, model, tex, pose, light,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR);
         }
     }
 }

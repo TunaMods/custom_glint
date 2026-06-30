@@ -5,18 +5,11 @@ import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.ModList;
 
 /**
- * Standalone-only Epic Knights compat (init side). EK chest armor models include standard
- * vanilla-layout arm cuboids (UV 40,16 size 4×12×4), and EK chest textures have fully-opaque
- * pixels across that UV region even when no visible arm armor is intended. Our outline RTs
- * use {@code RENDERTYPE_OUTLINE_SHADER} which alpha-discards only at exact 0.0, so the WRITE
- * pass stamps the full arm cuboid and the dilated TEST pass forms a ring around the arm.
- *
- * Fix: install a predicate on {@code CustomGlintRenderer.chestArmorHidesArmsInOutline} that
- * matches any {@code com.magistuarmory.*} item. {@code HumanoidArmorLayerMixin} hides arm
- * parts for the outline render call only; normal armor render and glint pass are unaffected.
- *
- * Client-only wiring is isolated in {@link EpicKnightsClientCompat} so a dedicated server
- * never resolves {@code CustomGlintRenderer} transitively.
+ * Standalone-only Epic Knights compat (init side). Soft-dep gated on {@code magistuarmory}; routes
+ * client wiring through {@link EpicKnightsClientCompat} so a dedicated server never resolves the
+ * client renderer transitively. EK decoration glint (capes, tabards, crowns) is drawn by
+ * {@link EpicKnightsGlintRT} via {@code ArmorDecorationLayerMixin}; the client wiring registers that
+ * class's logout cache cleanup.
  */
 public final class EpicKnightsCompat {
     private EpicKnightsCompat() {}

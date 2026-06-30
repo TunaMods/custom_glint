@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -82,6 +83,17 @@ public class LayerDragonArmorMixin {
         }
     }
 
+    // Clear any texture left over from a previous render that threw between the capture redirect and the
+    // RETURN inject — otherwise the next armorless dragon (whose render never hits the redirect) would read a
+    // stale CG_TEX and draw a spurious glint/outline. HEAD always runs before the redirect.
+    @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityDragonBase;FFFFFF)V",
+            at = @At("HEAD"), require = 0)
+    private void cg_clearTex(PoseStack pose, MultiBufferSource buffer, int light,
+            @Coerce LivingEntity entity, float a, float b, float c, float d, float e, float f,
+            CallbackInfo ci) {
+        CG_TEX.remove();
+    }
+
     // ── Capture layered ResourceLocation passed to entityTranslucent ─────────
     // Dual SRG/named pair because class-level remap=false leaves vanilla method descriptors as-written.
 
@@ -140,16 +152,18 @@ public class LayerDragonArmorMixin {
         CG_TEX.remove();
         // No tex captured ⇒ IaF early-exited (no armor / dragon type unsupported) ⇒ nothing to glint.
         if (tex == null) return;
-        if (CustomGlintRenderer.IN_OUTLINE.get()) return;
 
+        // HEAD > CHEST > LEGS > FEET — first slot with a glint OR a glow trim wins and supplies both
+        // the animated glint and (if glowing) the outline colour.
         ItemStack active = null;
         CustomGlint.Data glint = null;
         for (EquipmentSlot s : CG_SLOTS) {
             ItemStack stack = entity.getItemBySlot(s);
-            CustomGlint.Data dat = CustomGlint.read(stack);
-            if (dat != null) { active = stack; glint = dat; break; }
+            CustomGlint.Data dat = CustomGlint.readCached(stack);
+            if (dat != null || CustomGlint.isGlowing(stack)) { active = stack; glint = dat; break; }
         }
         if (active == null) return;
+        boolean glowing = CustomGlint.isGlowing(active);
 
         EntityModel<?> model = cg_getParentModel();
         if (model == null) return;
@@ -198,29 +212,12 @@ public class LayerDragonArmorMixin {
             }
         }
 
-        if (CustomGlint.isGlowing(active)) {
-            // No body depth pre-fill. It wrote depth at EVERY model fragment — transparent wing
-            // membranes and scale gaps included — with no color, leaving invisible occluder planes
-            // that hid water, clouds, ice and the dragon's own far-side glint seen through those gaps
-            // (only on glow armor, the path that filled). Removing it also drops the body-glint bleed
-            // it caused, so the pre-drain that guarded against that is gone too.
-            //
-            // slot=null routes through doModelOutline's AABB-centroid scale branch — non-humanoid
-            // mount models need symmetric centroid dilation, not the chest-height humanoid pivot.
-            // Pass the active stack (not just the Data) so outline color resolution prefers glowColors
-            // NBT when set via Glow Trim or the wand editor (the Data overload only reads glint layer 0).
-            //
-            // OUTLINE_FULL_SILHOUETTE: stamp the whole dragon silhouette into the outline stencil so
-            // the back-side armor ring is suppressed across the transparent wing membranes / scale
-            // gaps. Replaces the removed depth pre-fill (which did this in the depth buffer and left
-            // invisible world-occluding planes); the stencil WRITE touches no depth, so the world
-            // stays visible. The dragon's barding covers the full body, so the ring still hugs it.
-            CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(true);
-            try {
-                CustomGlintRenderer.doModelOutline(pose, buffer, light, model, tex, active, null);
-            } finally {
-                CustomGlintRenderer.OUTLINE_FULL_SILHOUETTE.set(false);
-            }
+        // Glow outline: trace the dragon model against the composed layered armor texture (its alpha is
+        // the armor shape) into the glow mask. Keyed on the dragon entity (CAT_ARMOR), so the armor ring
+        // fuses with the dragon's body/entity ring into ONE connected ring.
+        if (glowing) {
+            EntityGlintRender.captureModelSilhouette(entity, model, tex, pose, light,
+                    CustomGlintRenderer.resolveGlowColor(active), GlowOutlineRenderer.CAT_ARMOR);
         }
     }
 }

@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
@@ -34,7 +35,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
-            if (s.getItem() == CustomGlintMod.GLINT_BLACK_TEAR.get()) {
+            if (s.getItem() == ModItems.GLINT_BLACK_TEAR.get()) {
                 if (hasTear) return false;
                 hasTear = true;
             } else if (CustomGlint.has(s)) {
@@ -52,7 +53,7 @@ public class GlintBlackTearRecipe extends CustomRecipe {
         ItemStack glinted = ItemStack.EMPTY;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
-            if (!s.isEmpty() && s.getItem() != CustomGlintMod.GLINT_BLACK_TEAR.get() && CustomGlint.has(s)) {
+            if (!s.isEmpty() && s.getItem() != ModItems.GLINT_BLACK_TEAR.get() && CustomGlint.has(s)) {
                 glinted = s;
                 break;
             }
@@ -91,12 +92,12 @@ public class GlintBlackTearRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(CustomGlintMod.GLINT_BLACK_TEAR.get().getDefaultInstance()));
+        list.add(Ingredient.of(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance()));
         list.add(Ingredient.of(
-            CustomGlint.glinted(Items.DIAMOND_SWORD, new ResourceLocation("customglint", "textures/glint/wave.png"), new int[]{0xFFFF0000}),
-            CustomGlint.glinted(Items.GOLDEN_CHESTPLATE, new ResourceLocation("customglint", "textures/glint/sparkle.png"), new int[]{0xFF00AAFF}),
-            CustomGlint.glinted(Items.BOW, new ResourceLocation("customglint", "textures/glint/stars.png"), new int[]{0xFFFFFF00}),
-            CustomGlint.glinted(Items.BOOK, new ResourceLocation("customglint", "textures/glint/pulse.png"), new int[]{0xFF8800CC})
+            CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{0xFFFF0000}),
+            CustomGlint.glinted(Items.GOLDEN_CHESTPLATE, CustomGlint.SPARKLE, new int[]{0xFF00AAFF}),
+            CustomGlint.glinted(Items.BOW, CustomGlint.STARS, new int[]{0xFFFFFF00}),
+            CustomGlint.glinted(Items.BOOK, CustomGlint.PULSE, new int[]{0xFF8800CC})
         ));
         return list;
     }

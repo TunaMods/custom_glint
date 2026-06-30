@@ -12,8 +12,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.animal.horse.Horse;
 import net.minecraft.world.item.HorseArmorItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.client.model.Model;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.common.client.EntityGlintRender;
+import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -56,11 +59,12 @@ public class HorseArmorLayerMixin {
             int packedLight, Horse entity, HorseModel<Horse> model) {
         ItemStack stack = entity.getArmor();
         if (stack.isEmpty()) return;
-        CustomGlint.Data glint = CustomGlint.read(stack);
+        CustomGlint.Data glint = CustomGlint.readCached(stack);
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return;
         if (!(stack.getItem() instanceof HorseArmorItem ha)) return;
         ResourceLocation tex = ha.getTexture();
+        if (tex == null) return; // a modded HorseArmorItem could return null; skip rather than NPE the stencil/glow path
 
         if (glint != null) {
             // ── Stencil mask pass ───────────────────────────────────────────
@@ -113,8 +117,13 @@ public class HorseArmorLayerMixin {
                 for (RenderType rt : glintTypes) bs2.endBatch(rt);
             }
         }
-        if (glowing)
-            CustomGlintRenderer.doModelOutline(poseStack, buffer, packedLight, model, tex, stack, null);
+
+        // Glow outline: re-render the barding model into the glow mask, traced against the armor texture.
+        // Shares the horse's outline id so barding + body compose as ONE ring. CAT_ARMOR ring thickness.
+        if (glowing) {
+            EntityGlintRender.captureModelSilhouette(entity, (Model) model, tex, poseStack, packedLight,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR);
+        }
     }
 
 }

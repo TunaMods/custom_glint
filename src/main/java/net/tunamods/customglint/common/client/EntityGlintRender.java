@@ -1,9 +1,12 @@
 package net.tunamods.customglint.common.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.Model;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
@@ -12,11 +15,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.tunamods.customglint.common.CustomGlint;
 
-import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -25,7 +28,7 @@ import java.util.List;
  * the renderer's outer popPose, so the pose stack is still in entity-local space (matches the
  * vantage of armor/layer renderers).
  *
- * Resolution order: per-instance via the registered {@link InstanceResolver} (standalone module
+ * Resolution order: per-instance via the registered {@link InstanceResolver} (the api client init
  * installs one that reads from EntityGlintCache), then {@link CustomGlint#ENTITY_GLINTS} type
  * registry. Mods that bundle only the api jar without a resolver still get type-registry-based glints.
  */
@@ -47,7 +50,7 @@ public final class EntityGlintRender {
         }
     }
 
-    /** Default: no per-instance data — standalone module overrides this in client init. */
+    /** Default: no per-instance data — the api client init (EntityGlintClientInit) overrides this. */
     public static InstanceResolver instanceResolver = entity -> null;
 
     /**
@@ -96,97 +99,6 @@ public final class EntityGlintRender {
         return buffer instanceof GlintWrappingBufferSource w ? w.delegate : buffer;
     }
 
-    /**
-     * Captured (model, texture, pose snapshot, light) for one render-layer surface, queued by
-     * {@link net.tunamods.customglint.common.mixin.RenderLayerMixin} during the entity render and
-     * drained at popPose by {@link #renderOutline}. Pose snapshot is taken because each layer
-     * may have applied its own intermediate transforms onto the PoseStack before invoking the
-     * shared static helpers in {@code RenderLayer}.
-     */
-    public static final class PendingOutline {
-        public final EntityModel<?> model;
-        public final ResourceLocation texture;
-        public final Matrix4f pose;
-        public final Matrix3f normal;
-        public final int light;
-        PendingOutline(EntityModel<?> m, ResourceLocation t, Matrix4f p, Matrix3f n, int l) {
-            this.model = m; this.texture = t; this.pose = p; this.normal = n; this.light = l;
-        }
-    }
-
-    /** Per-thread overlay queue. Cleared at the start of every entity outline drain so a
-     *  non-glowing entity's queued (but never drained) entries don't leak into the next one. */
-    private static final ThreadLocal<List<PendingOutline>> PENDING =
-            ThreadLocal.withInitial(ArrayList::new);
-
-    /**
-     * Cheap-gate version of glow lookup used by the layer mixin before snapshotting pose.
-     * Returns true iff the entity has a glow/glowColors signal that would trigger an outline.
-     */
-    private static boolean entityHasGlow(LivingEntity entity) {
-        Resolution r = instanceResolver.resolve(entity);
-        if (r == null) return false;
-        return r.glowing || r.glowColors.length > 0;
-    }
-
-    /**
-     * Called from {@link net.tunamods.customglint.common.mixin.RenderLayerMixin} at the RETURN of
-     * the two shared static helpers in {@code RenderLayer} (coloredCutoutModelCopyLayerRender
-     * and renderColoredCutoutModel). Snapshots the current pose and queues the overlay for
-     * outline rendering at popPose-time, where it shares a single stencil slot with the base
-     * body and every other overlay so the union of all silhouettes is stamped before any
-     * dilated TEST pass runs. Without this union approach, an early layer's TEST ring would
-     * spill into the area that a later overlay covers (e.g. stray's body outline visible
-     * inside the clothing outline).
-     */
-    public static void queueLayerOutline(LivingEntity entity, EntityModel<?> model,
-                                         ResourceLocation texture, PoseStack pose,
-                                         int packedLight) {
-        if (entity == null || model == null || texture == null) return;
-        if (!entityHasGlow(entity)) return;
-        PENDING.get().add(new PendingOutline(model, texture,
-                new Matrix4f(pose.last().pose()), new Matrix3f(pose.last().normal()), packedLight));
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    public static void renderOutline(LivingEntityRenderer renderer, LivingEntity entity,
-                                     PoseStack pose, MultiBufferSource buffer, int packedLight) {
-        List<PendingOutline> pending = PENDING.get();
-        CustomGlint.Data data;
-        boolean glowing;
-        int[] glowColors;
-        Resolution r = instanceResolver.resolve(entity);
-        if (r != null) {
-            data = r.data;
-            glowing = r.glowing;
-            glowColors = r.glowColors;
-        } else {
-            data = CustomGlint.getEntityGlint(entity.getType());
-            glowing = false;
-            glowColors = new int[0];
-        }
-        if (!glowing && glowColors.length == 0) {
-            // Stale entries left over if a layer queued without our glow gate matching
-            // (shouldn't happen, but defensively clear).
-            pending.clear();
-            return;
-        }
-        int color = resolveOutlineColor(data, glowColors);
-        EntityModel model = renderer.getModel();
-        ResourceLocation texture = renderer.getTextureLocation(entity);
-
-        List<PendingOutline> all = new ArrayList<>(pending.size() + 1);
-        all.add(new PendingOutline(model, texture,
-                new Matrix4f(pose.last().pose()), new Matrix3f(pose.last().normal()), packedLight));
-        all.addAll(pending);
-        pending.clear();
-
-        // Unwrap so the outline's stencil RTs flow into the real buffer source (the wrap
-        // re-fans entity_* RTs to glint, which would corrupt the stencil pass).
-        MultiBufferSource raw = buffer instanceof GlintWrappingBufferSource w ? w.delegate : buffer;
-        CustomGlintRenderer.doMultiModelOutline(pose, raw, color, all);
-    }
-
     @Nullable
     private static CustomGlint.Data resolveData(LivingEntity entity) {
         Resolution r = instanceResolver.resolve(entity);
@@ -202,17 +114,170 @@ public final class EntityGlintRender {
         buf[3] = 1.0f;
     }
 
-    private static int resolveOutlineColor(@Nullable CustomGlint.Data data, int[] glowColors) {
-        if (glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(glowColors);
-        if (data != null) return CustomGlintRenderer.computeAnimatedColor(data, 0);
+    // ── Glow outline capture ────────────────────────────────────────────────────────
+    // A glowing entity's body is re-recorded into the glow mask, tracing the real body shape against the
+    // entity texture. The recording is the IN-PHASE TEE: the body is recorded DURING its single real draw
+    // (no second model walk), routed through a CapturingModelConsumer that forwards every call to the real
+    // body buffer and also records the camera-relative [x,y,z,u,v]. All silhouettes of ONE figure share that
+    // figure's id (glowKeyFor) so they compose as ONE ring, distinct from other figures. Drained with the
+    // world items at AFTER_WEATHER.
+
+    /** Draw the entity body AND, when it glows, capture its silhouette in the SAME model walk — the in-phase
+     *  tee. Called from {@code LivingEntityRendererMixin}'s {@code @Redirect} on the body {@code renderToBuffer}.
+     *
+     *  <p>The {@code consumer} is the renderer's real (glint-fanned, if the entity also has glint) body buffer.
+     *  When glowing we route the walk through a {@link CapturingModelConsumer} whose {@code delegate} is that
+     *  real buffer, so the body renders identically while we record its camera-relative {@code [x,y,z,u,v]}.
+     *  Non-glowing entities just draw straight through (one extra method call). The captured modelview matches
+     *  the world-item capture path so the deferred drain replays both under the same transform. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static void renderBodyTee(LivingEntityRenderer renderer, LivingEntity entity, EntityModel model,
+                                     PoseStack pose, VertexConsumer consumer, int light, int overlay,
+                                     float red, float green, float blue, float alpha) {
+        Resolution r = entity.isInvisible() ? null : instanceResolver.resolve(entity);
+        boolean glow = r != null && (r.glowing || r.glowColors.length > 0);
+        if (!glow) { model.renderToBuffer(pose, consumer, light, overlay, red, green, blue, alpha); return; }
+        ResourceLocation tex = renderer.getTextureLocation(entity);
+        if (tex == null) { model.renderToBuffer(pose, consumer, light, overlay, red, green, blue, alpha); return; }
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        cap.delegate = consumer;
+        try {
+            model.renderToBuffer(pose, cap, light, overlay, red, green, blue, alpha);
+        } finally {
+            cap.delegate = null;
+        }
+        // Snapshot the live modelview the body is drawn under (camera transform) so the deferred replay
+        // reproduces the exact transform — same scheme as the world-item path in ItemRendererMixin.
+        Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, tex, modelView, outlineColorFor(r),
+                GlowOutlineRenderer.glowKeyFor(entity, GlowOutlineRenderer.CAT_ENTITY),
+                GlowOutlineRenderer.CAT_ENTITY);
+    }
+
+    /** Outline colour for an entity-glow figure: its glow colours (animated) if set, else its glint
+     *  layer-0 colour, else white. */
+    public static int outlineColorFor(@Nullable Resolution r) {
+        if (r != null && r.glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors);
+        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0);
         return 0xFFFFFFFF;
+    }
+
+    /** Resolved silhouette-capture parameters for a teed surface-layer draw. */
+    public static final class OutlineSpec {
+        public final Object identity;
+        public final ResourceLocation tex;
+        public final int color, category;
+        public OutlineSpec(Object identity, ResourceLocation tex, int color, int category) {
+            this.identity = identity; this.tex = tex; this.color = color; this.category = category;
+        }
+    }
+
+    /** Capture spec for an entity-surface layer (sheep wool, saddle, stray clothing, …), or null when the
+     *  entity isn't glowing / is invisible. CAT_ENTITY + the entity id → folds into the body ring. */
+    @Nullable
+    public static OutlineSpec surfaceOutlineSpec(LivingEntity entity, ResourceLocation texture) {
+        if (texture == null || entity.isInvisible()) return null;
+        Resolution r = instanceResolver.resolve(entity);
+        if (r == null || !(r.glowing || r.glowColors.length > 0)) return null;
+        return new OutlineSpec(entity, texture, outlineColorFor(r), GlowOutlineRenderer.CAT_ENTITY);
+    }
+
+    /** In-phase tee for an 8-arg {@code Model.renderToBuffer(pose, vc, light, overlay, r,g,b,a)} draw (entity
+     *  surface layers). Forwards the real draw unchanged; when {@code spec} is non-null it ALSO records the
+     *  silhouette in the SAME walk and queues it (no second {@code renderToBuffer}). {@code spec == null}
+     *  (entity not glowing) → plain forward. */
+    public static void teeOutline(Model model, PoseStack pose, VertexConsumer realVc, int light, int overlay,
+                                  float red, float green, float blue, float alpha, @Nullable OutlineSpec spec) {
+        if (spec == null) { model.renderToBuffer(pose, realVc, light, overlay, red, green, blue, alpha); return; }
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        cap.delegate = realVc;
+        try {
+            model.renderToBuffer(pose, cap, light, overlay, red, green, blue, alpha);
+        } finally {
+            cap.delegate = null;
+        }
+        Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, spec.tex, modelView, spec.color,
+                GlowOutlineRenderer.glowKeyFor(spec.identity, spec.category), spec.category);
+    }
+
+    /** Re-render a posed {@code model} into the glow mask, tracing it against {@code texture}. Used for worn
+     *  items (humanoid armor, elytra, horse barding) that already draw at the layer's RETURN with the same
+     *  pose — there's no single tee chokepoint, so this records a second (record-only) walk. Silhouettes
+     *  sharing an {@code identity} (e.g. the wearer entity) compose as ONE ring with the body. {@code color}
+     *  is the item's resolved glow colour; {@code category} picks the ring thickness. */
+    public static void captureModelSilhouette(Object identity, Model model, ResourceLocation texture,
+                                              PoseStack pose, int light, int color, int category) {
+        if (model == null || texture == null) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, texture, modelView, color,
+                GlowOutlineRenderer.glowKeyFor(identity, category), category);
+    }
+
+    /** Parts-based variant of {@link #captureModelSilhouette} for renderers that expose raw
+     *  {@link ModelPart}[] rather than a {@link Model} (Epic Knights armor decorations). Records the
+     *  posed parts into the glow mask, tracing them against {@code texture}. Passing the wearer entity
+     *  as {@code identity} (with {@code CAT_ARMOR}) folds the decoration silhouette into the same ring
+     *  as the body + base armor, so there's no seam between them. */
+    public static void capturePartsSilhouette(Object identity, ModelPart[] parts, ResourceLocation texture,
+                                              PoseStack pose, int light, int color, int category) {
+        if (parts == null || texture == null) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        for (ModelPart part : parts) {
+            part.render(pose, cap, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, texture, modelView, color,
+                GlowOutlineRenderer.glowKeyFor(identity, category), category);
+    }
+
+    /** {@link VertexConsumer} for tracing a posed model into a glow silhouette: captures each vertex's
+     *  camera-relative position + UV as {@code [x,y,z,u,v]} and drops everything else. The model's big
+     *  {@code vertex(Matrix4f, …)} convenience method decomposes into {@code vertex(x,y,z)} then {@code uv(u,v)}
+     *  (among others), so we stash the position on {@code vertex} and flush the 5-tuple on {@code uv}.
+     *
+     *  <p>When {@link #delegate} is set it ALSO forwards every call to that real buffer, so a single model walk
+     *  both DRAWS the entity and RECORDS its silhouette — the in-phase tee. With {@code delegate == null} it is
+     *  record-only. The forwarded position is already pose-transformed (the convenience method transforms
+     *  before calling {@code vertex(x,y,z)}), so the entity renders identically. */
+    private static final ThreadLocal<CapturingModelConsumer> CAPTURE_POOL =
+            ThreadLocal.withInitial(CapturingModelConsumer::new);
+
+    public static final class CapturingModelConsumer implements VertexConsumer {
+        public float[] data = new float[4096];
+        public int count = 0;
+        public VertexConsumer delegate; // non-null = in-phase tee (forward + record); null = record-only
+        private float px, py, pz;
+
+        /** Reset for reuse: drop the recorded vertices + delegate but keep the (already-grown) backing array. */
+        public void reset() { count = 0; delegate = null; }
+
+        private void put(float u, float v) {
+            if (count + 5 > data.length) data = Arrays.copyOf(data, data.length * 2);
+            data[count++] = px; data[count++] = py; data[count++] = pz; data[count++] = u; data[count++] = v;
+        }
+
+        @Override public VertexConsumer vertex(double x, double y, double z) { px = (float) x; py = (float) y; pz = (float) z; if (delegate != null) delegate.vertex(x, y, z); return this; }
+        @Override public VertexConsumer uv(float u, float v) { put(u, v); if (delegate != null) delegate.uv(u, v); return this; }
+        @Override public VertexConsumer color(int r, int g, int b, int a) { if (delegate != null) delegate.color(r, g, b, a); return this; }
+        @Override public VertexConsumer overlayCoords(int u, int v) { if (delegate != null) delegate.overlayCoords(u, v); return this; }
+        @Override public VertexConsumer uv2(int u, int v) { if (delegate != null) delegate.uv2(u, v); return this; }
+        @Override public VertexConsumer normal(float nx, float ny, float nz) { if (delegate != null) delegate.normal(nx, ny, nz); return this; }
+        @Override public void endVertex() { if (delegate != null) delegate.endVertex(); }
+        @Override public void defaultColor(int r, int g, int b, int a) { if (delegate != null) delegate.defaultColor(r, g, b, a); }
+        @Override public void unsetDefaultColor() { if (delegate != null) delegate.unsetDefaultColor(); }
     }
 
     /**
      * MultiBufferSource wrapper that auto-fans every entity-* RenderType request through the
-     * glint render-types of all configured layers. The strategy mirrors what
-     * {@link CustomGlintRenderer#applyGlint(...)} (well, ItemRendererMixin's getFoilBuffer path)
-     * does for items: a VertexMultiConsumer of {base, glint_layer0, glint_layer1, …}.
+     * glint render-types of all configured layers. The strategy mirrors what ItemRendererMixin's
+     * getFoilBuffer path does for items: a VertexMultiConsumer of {base, glint_layer0, glint_layer1, …}.
      *
      * RenderType filter: only RTs whose toString begins with "entity_" get wrapped. That covers
      * entityCutoutNoCull / entitySolid / entityTranslucent / itemEntityTranslucentCull / etc.
@@ -254,6 +319,11 @@ public final class EntityGlintRender {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                    if (crt != null) list.add(delegate.getBuffer(crt));
+                    continue;
+                }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {

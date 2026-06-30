@@ -39,12 +39,12 @@ In build.gradle:
     }
 
     dependencies {
-        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.4.0")
-        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.4.0")
+        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.6.0")
+        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.6.0")
 
         jarJar(group: 'net.tunamods.customglint', name: 'custom-glint-api',
-               version: '[1.4.0,2.0)') {
-            jarJar.ranged(it, '[1.4.0,2.0)')
+               version: '[1.6.0,2.0)') {
+            jarJar.ranged(it, '[1.6.0,2.0)')
         }
     }
 

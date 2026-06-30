@@ -1,5 +1,7 @@
 package net.tunamods.customglint.module.command;
 
+import net.tunamods.customglint.module.item.ModItems;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -205,17 +207,12 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
-        }
+        ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
+        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             String name = parts[i].trim().toLowerCase();
@@ -229,7 +226,7 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
+        CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
 
         int count = 0;
         for (Entity e : targets) {
@@ -270,15 +267,12 @@ public class GlintCommand {
         int count = 0;
         for (Entity e : targets) {
             if (!(e instanceof LivingEntity le)) continue;
-            if (enabled && !CustomGlint.hasEntity(le)) continue;
             CustomGlint.setEntityGlowing(le, enabled);
             EntityGlintEvents.broadcast(le);
             count++;
         }
         if (count == 0) {
-            source.sendFailure(Component.literal(enabled
-                ? "No matching living entities have a glint to glow"
-                : "No matching living entities"));
+            source.sendFailure(Component.literal("No matching living entities"));
             return 0;
         }
         final int n = count;
@@ -300,17 +294,12 @@ public class GlintCommand {
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
             return 0;
         }
-        ResourceLocation design;
-        if ("vanilla".equals(key)) {
-            design = CustomGlint.VANILLA;
-        } else if (key.contains(":")) {
-            int c = key.indexOf(':');
-            design = new ResourceLocation(key.substring(0, c), "textures/glint/" + key.substring(c + 1) + ".png");
-        } else {
-            design = new ResourceLocation("customglint", "textures/glint/" + key + ".png");
-        }
+        ResourceLocation design = CustomGlint.designFromName(key);
 
         String[] parts = colorsArg.split(",");
+        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             String name = parts[i].trim().toLowerCase();
@@ -329,7 +318,8 @@ public class GlintCommand {
             return 0;
         }
 
-        CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.write(stack, CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer }));
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
     }
@@ -344,11 +334,6 @@ public class GlintCommand {
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty()) {
             source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
-
-        if (enabled && !CustomGlint.has(stack)) {
-            source.sendFailure(Component.literal("Item has no custom glint — apply a glint first"));
             return 0;
         }
 
@@ -400,7 +385,7 @@ public class GlintCommand {
         }
 
         CustomGlint.Layer[] layers = data.layers();
-        ItemStack trim = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
+        ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
         if (layers.length == 1) {
             CustomGlint.Layer layer = layers[0];

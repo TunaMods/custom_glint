@@ -1,9 +1,12 @@
 package net.tunamods.customglint.common.client;
 
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
+import net.minecraftforge.client.event.ContainerScreenEvent;
 import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
+import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -20,25 +23,58 @@ public final class CustomGlintClientInit {
 
     /** Invoked via {@code () -> CustomGlintClientInit::run} from the API mod constructor on client only. */
     public static void run() {
-        // Vanilla trident BEWLR outline texture: use the real trident texture so the outline
-        // shader alpha-discards transparent texels instead of filling model cubes opaquely.
-        CustomGlintRenderer.BEWLR_OUTLINE_TEXTURES.put(
-                "net.minecraft.world.item.TridentItem",
-                new ResourceLocation("minecraft", "textures/entity/trident.png"));
-
         FMLJavaModLoadingContext.get().getModEventBus().addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
+        // Glow-outline core shaders (silhouette + composite) — mod-bus event, client only.
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(GlowOutlineRenderer::registerShaders);
+        // Procedural chromatic glint core shader — mod-bus event, client only.
+        FMLJavaModLoadingContext.get().getModEventBus().addListener(CustomGlintRenderer::registerShaders);
 
-        // Once-per-frame stencil-clear gate reset. See pendingFrameStencilClear's javadoc
-        // in CustomGlintRenderer for the multi-outline / FullyBuffered drain interaction
-        // this prevents. RenderTickEvent.START fires once per rendered frame regardless of
-        // shader pack or batched-render plumbing, which is what we need.
+        // Release the glow-outline offscreen target on resource reload so it isn't pinned for the session.
+        CustomGlintRenderer.additionalReloadCleanup.add(GlowOutlineRenderer::release);
+
+        // Once-per-frame reset. Arms the glint stencil masks (mount-armor glint via
+        // forMountArmorStencilMask, Epic Knights decoration glint via the per-slot stencil pool) and
+        // clears the glow-outline per-frame capture queue. RenderTickEvent.START fires once per rendered
+        // frame regardless of shader pack or batched-render plumbing.
         MinecraftForge.EVENT_BUS.addListener((TickEvent.RenderTickEvent event) -> {
             if (event.phase == TickEvent.Phase.START) {
                 CustomGlintRenderer.pendingFrameStencilClear = true;
-                CustomGlintRenderer.shaderOutlinedThisFrame.clear();
                 CustomGlintRenderer.resetStencilSlots();
+                GlowOutlineRenderer.beginFrame();
             }
         });
+
+        // Drain world-space item glow outlines after weather, where the live world projection / modelview
+        // still match what the items were drawn with and the opaque scene depth is committed for the
+        // occlusion test. Snapshot the world projection every frame here regardless — under a shader pack
+        // the drain is DEFERRED to the RETURN of LevelRenderer.renderLevel (LevelRendererMixin), past which
+        // the live projection has moved to GUI ortho; Iris composites its scene to the main target at that
+        // RETURN, so a drain here would just be overwritten.
+        MinecraftForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
+            if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+                GlowOutlineRenderer.snapshotWorldProjection();
+                if (!CustomGlintRenderer.isShaderPackActive()) {
+                    GlowOutlineRenderer.drainWorld();
+                }
+            }
+        });
+
+        // GUI / inventory / HUD glow rings: drain ONCE per GUI context instead of once per item flush.
+        // ItemRendererMixin captures each glowing icon's silhouette (in GUI screen space) at its render
+        // RETURN; these hooks composite all of them together while the GUI ortho matrices are still live,
+        // collapsing what used to be N mask<->main framebuffer ping-pongs (one per glowing icon) into one.
+        // drainGui no-ops on an empty queue, so the three hooks never double-drain:
+        //   - container foreground fires before the screen's tooltips/dragged item, keeping the ring under
+        //     them; it drains the slot icons and clears the queue.
+        //   - screen post catches non-container screens (e.g. the wand editor preview) and anything queued
+        //     after the foreground (a dragged glowing item).
+        //   - render-gui post covers the in-game HUD hotbar when no screen is open.
+        MinecraftForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->
+                GlowOutlineRenderer.drainGui());
+        MinecraftForge.EVENT_BUS.addListener((ScreenEvent.Render.Post event) ->
+                GlowOutlineRenderer.drainGui());
+        MinecraftForge.EVENT_BUS.addListener((RenderGuiEvent.Post event) ->
+                GlowOutlineRenderer.drainGui());
     }
 
     private static void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {

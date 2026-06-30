@@ -1,6 +1,9 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.common.CustomGlint;
+
+import net.tunamods.customglint.module.item.ModItems;
+
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
@@ -61,8 +64,8 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
         GlintTrimItem.addColor(result, 0xFFFF0000);
         GlintTrimItem.setScale(result, 2.0f);
         return result;
@@ -74,8 +77,8 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(CustomGlintMod.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, new ResourceLocation("customglint", "textures/glint/wave.png"));
+        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(trimExample, CustomGlint.WAVE);
         GlintTrimItem.addColor(trimExample, 0xFFFF0000);
         list.add(Ingredient.of(trimExample));
         list.add(Ingredient.of(Items.SLIME_BALL));
