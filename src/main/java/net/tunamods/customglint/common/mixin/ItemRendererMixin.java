@@ -125,25 +125,51 @@ public class ItemRendererMixin {
 
         // Route the glint into the batched source so every icon's glint accumulates and draws in ONE
         // endBatch (drained once) instead of one flush per item — the per-item GuiGraphics.flush() is the
-        // dominant GUI cost with many glinted icons (e.g. the creative tab). Covers the HUD hotbar (drained
-        // at Gui.render TAIL) and container screens / inventory / creative (drained before the tooltip, see
-        // AbstractContainerScreenMixin). Other screen types keep the inline path (no batched drain hooks
-        // there), so they're unaffected.
+        // dominant GUI cost with the creative tab's many distinct-design icons. Scoped to the HUD hotbar
+        // (drained at Gui.render TAIL) and the CREATIVE menu (drained before the tooltip, see
+        // AbstractContainerScreenMixin), where the icons are the last things drawn so the deferred glint's
+        // EQUAL depth test still matches their committed depth. Every OTHER screen keeps the inline path: a
+        // screen that draws its item previews AFTER super.render (the Glint Table's scrollable design +
+        // printed palettes) has no drain left that frame, so a batched glint would land a frame late / at the
+        // wrong depth — those palettes must draw their glint inline.
         net.minecraft.client.gui.screens.Screen cgScreen = Minecraft.getInstance().screen;
         boolean guiHud = CustomGlintRenderer.CURRENT_CTX.get() == ItemDisplayContext.GUI
                 && (cgScreen == null
-                    || cgScreen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen);
+                    || cgScreen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen);
 
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
+        // Fast path — the overwhelmingly common single-layer glint that resolves to ONE glint delegate: any
+        // non-simultaneous layer (it animates down to a single colour) or a simultaneous layer with ≤1 colour.
+        // Returns the (glint, base) pair straight from the 2-arg VertexMultiConsumer, skipping the ArrayList
+        // + dedup array the general multi-delegate path below allocates for every item, every frame.
+        if (layers.length == 1 && !CustomGlint.isChromatic(layers[0])) {
+            CustomGlint.Layer only = layers[0];
+            int[] cols = only.colors();
+            if (!only.simultaneous() || cols.length <= 1) {
+                int color = only.simultaneous()
+                        ? (cols.length == 0 ? 0xFFFFFFFF : cols[0])
+                        : CustomGlintRenderer.computeAnimatedColor(glint, 0);
+                cg_packColor(buf, color);
+                RenderType rt = CustomGlintRenderer.forGlint(glint, 0, buf, isItem, 0);
+                if (rt == null) return null;
+                VertexConsumer glintBuf = cg_glintBuf(buffer, rt, guiHud);
+                VertexConsumer base = buffer.getBuffer(renderType);
+                // glintBuf==base only when a Sodium immediate source hands back one builder for both; a
+                // VertexMultiConsumer can't multiplex a builder against itself, so collapse to the base.
+                return glintBuf == base ? base : VertexMultiConsumer.create(glintBuf, base);
+            }
+        }
+
+        // General path: multi-layer, or a simultaneous layer fanning out one draw per colour.
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             // Procedural chromatic: one shader-driven draw (the palette + seed ride the RenderType), no
             // per-colour fan-out and no texture sampling.
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
-                if (crt != null) list.add(cg_glintBuf(buffer, crt, guiHud));
+                if (crt != null) cg_addDistinct(list, cg_glintBuf(buffer, crt, guiHud));
                 continue;
             }
             // An undyed (empty-palette) non-chromatic layer renders white so the design stays visible without
@@ -152,40 +178,40 @@ public class ItemRendererMixin {
             int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    cg_packColor(buf, colors[i]);
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, i);
-                    if (rt != null) list.add(cg_glintBuf(buffer, rt, guiHud));
+                    if (rt != null) cg_addDistinct(list, cg_glintBuf(buffer, rt, guiHud));
                 }
             } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
+                cg_packColor(buf, CustomGlintRenderer.computeAnimatedColor(glint, layerIdx));
                 RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, 0);
-                if (rt != null) list.add(cg_glintBuf(buffer, rt, guiHud));
+                if (rt != null) cg_addDistinct(list, cg_glintBuf(buffer, rt, guiHud));
             }
         }
         if (list.isEmpty()) return null;
-        list.add(buffer.getBuffer(renderType));
-        // De-dupe delegates by identity. Some buffer sources — notably the GUI immediate source under Sodium,
-        // hit by the multi-layer Glint Table preview — hand back the SAME builder for more than one of our
-        // RenderTypes, and VertexMultiConsumer rejects duplicate delegates ("Duplicate delegates" crash).
-        // One builder can't be multiplexed against itself anyway, so collapsing duplicates is correct; the
-        // world path returns distinct fixed buffers, so this is a no-op there.
-        List<VertexConsumer> distinct = new ArrayList<>(list.size());
-        for (VertexConsumer vc : list) {
-            boolean dup = false;
-            for (VertexConsumer seen : distinct) if (seen == vc) { dup = true; break; }
-            if (!dup) distinct.add(vc);
-        }
-        return distinct.size() == 1 ? distinct.get(0)
-                : VertexMultiConsumer.create(distinct.toArray(new VertexConsumer[0]));
+        // De-dupe the base too: a Sodium immediate source can hand back a builder we already hold (the
+        // "Duplicate delegates" crash the multi-layer Glint Table preview hit). The world path returns
+        // distinct fixed buffers, so this is a no-op there.
+        cg_addDistinct(list, buffer.getBuffer(renderType));
+        return list.size() == 1 ? list.get(0)
+                : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+    }
+
+    /** Packs an ARGB int into the shader-colour buffer as premultiplied RGB (alpha folded in) + alpha 1 —
+     *  the form forGlint's colour holder expects. */
+    private static void cg_packColor(float[] buf, int color) {
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+        buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+        buf[2] = ( color        & 0xFF) / 255.0f * a;
+        buf[3] = 1.0f;
+    }
+
+    /** Appends {@code vc} unless an identity-equal delegate is already present. VertexMultiConsumer rejects
+     *  duplicate delegates, and a Sodium immediate source can return one builder for several RenderTypes. */
+    private static void cg_addDistinct(List<VertexConsumer> list, VertexConsumer vc) {
+        for (int i = 0; i < list.size(); i++) if (list.get(i) == vc) return;
+        list.add(vc);
     }
 
     // ── Glow-outline capture ─────────────────────────────────────────────────

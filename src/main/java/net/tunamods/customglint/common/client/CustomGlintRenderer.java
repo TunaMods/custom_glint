@@ -79,13 +79,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 LOGGER.warn("[{}/CustomGlint] additional reload cleanup threw", MOD_ID, t);
             }
         }
-        for (RenderType rt : BY_GLINT.values())             evictRt(rt);
+        for (ItemGlintEntry e : BY_GLINT_ITEM.values())     evictRt(e.rt);
         for (RenderType rt : BY_ARMOR_GLINT.values())       evictRt(rt);
         for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) evictRt(rt);
         for (RenderType rt : BY_MOUNT_ARMOR_GLINT.values()) evictRt(rt);
         for (RenderType rt : BY_MOUNT_ARMOR_MASK.values())  evictRt(rt);
         for (RenderType rt : BY_CHROMATIC.values())         evictRt(rt);
-        BY_GLINT.clear();
+        BY_GLINT_ITEM.clear();
         BY_ARMOR_GLINT.clear();
         BY_HORSE_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_GLINT.clear();
@@ -306,9 +306,24 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
     }
 
+    /** Item-glint cache entry: the cached RenderType plus its per-frame colour holder in one object, so a
+     *  single map probe per draw yields both (the RT's setup closure reads {@code color[0..3]} at flush). */
+    private static final class ItemGlintEntry { RenderType rt; final float[] color = new float[4]; }
+
+    /** LRU of item-glint entries. Mirrors {@link RtCache}'s bound + eviction, but evicts the RenderType held
+     *  inside the entry and needs no paired colour-map cleanup (the colour rides the entry). */
+    private static final class ItemGlintCache extends LinkedHashMap<String, ItemGlintEntry> {
+        ItemGlintCache() { super(64, 0.75f, true); }
+        @Override protected boolean removeEldestEntry(Map.Entry<String, ItemGlintEntry> eldest) {
+            if (size() > RT_CACHE_CAP) { evictRt(eldest.getValue().rt); return true; }
+            return false;
+        }
+    }
+
     /** Per-key mutable float[4] holders; RenderType lambdas close over these references and read them each frame. */
     private static final Map<String, float[]>    GLINT_COLORS          = new HashMap<>();
-    private static final Map<String, RenderType> BY_GLINT              = new RtCache();
+    /** Item glint (forGlint) RenderType + colour holder, keyed together so the hot path probes one map. */
+    private static final Map<String, ItemGlintEntry> BY_GLINT_ITEM     = new ItemGlintCache();
     private static final Map<String, RenderType> BY_ARMOR_GLINT        = new RtCache();
     private static final Map<String, RenderType> BY_HORSE_ARMOR_GLINT  = new RtCache();
     private static final Map<String, RenderType> BY_MOUNT_ARMOR_GLINT  = new RtCache();
@@ -842,12 +857,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
         String key = layerKey(layer) + "|" + isItem + "|" + layer.interpolate() + "|" + colorIdx + "|" + layerIdx;
-        float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
-        System.arraycopy(frameColor, 0, holder, 0, 4);
-        RenderType cached = BY_GLINT.computeIfAbsent(key, k -> {
+        // One map probe carries both the RenderType and the colour holder its setup closure reads each flush.
+        ItemGlintEntry entry = BY_GLINT_ITEM.computeIfAbsent(key, k -> new ItemGlintEntry());
+        System.arraycopy(frameColor, 0, entry.color, 0, 4);
+        if (entry.rt == null) {
             ResourceLocation tex = layer.design();
-            RenderType rt = RenderType.create(
-                    MOD_ID + ":custom_glint|" + k.hashCode(),
+            final float[] holder = entry.color;
+            entry.rt = RenderType.create(
+                    MOD_ID + ":custom_glint|" + key.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
                     VertexFormat.Mode.QUADS,
                     256,
@@ -872,11 +889,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_texturing",
                                     () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            putCapturedFixedBuffer(rt);
-            return rt;
-        });
-        registerLiveFixedBuffer(cached);
-        return cached;
+            putCapturedFixedBuffer(entry.rt);
+        }
+        registerLiveFixedBuffer(entry.rt);
+        return entry.rt;
     }
 
     public static int computeAnimatedColor(Data glint, int layerIdx) {
