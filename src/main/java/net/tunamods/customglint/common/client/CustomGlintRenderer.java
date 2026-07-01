@@ -885,8 +885,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
         int[] colors = layer.colors();
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
-        Minecraft mc = Minecraft.getInstance();
-        long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
+        // Wall-clock ticks, NOT game time: a screen pausing the game (singleplayer) freezes game time, which
+        // sticks the colour on one point of the cycle. A two-colour glint with a near-invisible colour (the
+        // layer tear's yellow/black) then freezes blank in a menu; wall-clock keeps it cycling like it does
+        // in the running world.
+        long gameTime = Util.getMillis() / 50L;
         float totalTicks = (20.0f * colors.length) / layer.speed();
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
