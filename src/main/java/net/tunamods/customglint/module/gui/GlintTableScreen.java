@@ -25,6 +25,7 @@ import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.client.GlintGuiConfig;
 import net.tunamods.customglint.module.client.GlintTableModelClient;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -803,14 +804,32 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         int total = trims.size();
         String mainName  = highlightedMain();
         String donorName = highlightedDonor();
+        // Pass 1 — wells + item icons. The glint is batched (armed) so the whole palette's glint draws in ONE
+        // drain instead of a GuiGraphics.flush() per icon. Drained + disarmed before pass 2 so the deferred
+        // glint lands on the icons (EQUAL depth still matches) but under everything pass 2 draws.
+        CustomGlintRenderer.guiGlintBatchArmed = true;
+        try {
+            for (int row = 0; row < GRID_ROWS; row++) {
+                for (int col = 0; col < GRID_COLS; col++) {
+                    int cx = gx + col * CELL, cy = gy + row * CELL;
+                    slotWell(g, cx - 1, cy - 1);
+                    int idx = (gridScroll + row) * GRID_COLS + col;
+                    if (idx >= total) continue;
+                    g.renderItem(trimCache.getOrDefault(trims.get(idx), ItemStack.EMPTY), cx, cy);
+                }
+            }
+        } finally {
+            CustomGlintRenderer.drainGuiGlint();
+            CustomGlintRenderer.guiGlintBatchArmed = false;
+        }
+        // Pass 2 — dims, selection rings, hover tint. Drawn AFTER the drain so an unowned trim's dim overlay
+        // covers its glint (the inline icon→glint→dim order), not the reverse.
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
-                int cx = gx + col * CELL, cy = gy + row * CELL;
-                slotWell(g, cx - 1, cy - 1);
                 int idx = (gridScroll + row) * GRID_COLS + col;
                 if (idx >= total) continue;
+                int cx = gx + col * CELL, cy = gy + row * CELL;
                 String name = trims.get(idx);
-                g.renderItem(trimCache.getOrDefault(name, ItemStack.EMPTY), cx, cy);
                 if (!GlintStoredSyncPacket.CLIENT_STORED.contains(name)) overlay(g, cx, cy, cx + 16, cy + 16, DIM_GHOST);
                 if (name.equals(mainName))       border(g, cx - 1, cy - 1, 18, 18, RING_MAIN);
                 else if (name.equals(donorName)) border(g, cx - 1, cy - 1, 18, 18, RING_DONOR);
@@ -830,15 +849,30 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         int gx = leftPos + RGRID_X, gy = topPos + GRID_Y;
         List<ItemStack> list = GlintPrintedSyncPacket.CLIENT_PRINTED;
         int cap = printedCapacity();
+        // Pass 1 — wells + item icons, glint batched (see drawTrimGrid).
+        CustomGlintRenderer.guiGlintBatchArmed = true;
+        try {
+            for (int row = 0; row < GRID_ROWS; row++) {
+                for (int col = 0; col < GRID_COLS; col++) {
+                    int idx = (printScroll + row) * GRID_COLS + col;
+                    if (idx >= cap) continue;
+                    int cx = gx + col * CELL, cy = gy + row * CELL;
+                    slotWell(g, cx - 1, cy - 1);
+                    if (idx < list.size()) g.renderItem(list.get(idx), cx, cy);
+                }
+            }
+        } finally {
+            CustomGlintRenderer.drainGuiGlint();
+            CustomGlintRenderer.guiGlintBatchArmed = false;
+        }
+        // Pass 2 — selection rings + hover tint, over the drained glint.
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
                 int idx = (printScroll + row) * GRID_COLS + col;
                 if (idx >= cap) continue;
                 int cx = gx + col * CELL, cy = gy + row * CELL;
-                slotWell(g, cx - 1, cy - 1);
                 if (idx < list.size()) {
                     ItemStack s = list.get(idx);
-                    g.renderItem(s, cx, cy);
                     if (!selectedPrinted.isEmpty() && ItemStack.isSameItemSameComponents(s, selectedPrinted))
                         border(g, cx - 1, cy - 1, 18, 18, RING_MAIN);
                     else if (selectedDonorPrinted && ItemStack.isSameItemSameComponents(s, selectedDonor))

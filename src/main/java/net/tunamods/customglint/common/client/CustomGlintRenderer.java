@@ -198,6 +198,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static MultiBufferSource.BufferSource guiGlintSource;
     private static ByteBufferBuilder guiGlintSpare;
 
+    /** Set by a screen that draws its own item icons (outside the vanilla slot pass) and wants their glint
+     *  batched — the Glint Table's design/printed palettes. While armed, {@code applyGlint} routes GUI-context
+     *  glint into {@link #guiGlintBuffer} regardless of the open screen; the screen must drain + disarm right
+     *  after its icon pass (before it draws anything on top of those icons). */
+    public static boolean guiGlintBatchArmed = false;
+
     /** A glint-layer buffer in the private HUD source (each RenderType gets its own builder so layers/colours
      *  accumulate without flushing one another). The base item RT still goes through the normal GUI source. */
     public static VertexConsumer guiGlintBuffer(RenderType rt) {

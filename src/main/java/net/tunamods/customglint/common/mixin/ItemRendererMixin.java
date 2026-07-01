@@ -131,11 +131,14 @@ public class ItemRendererMixin {
         // EQUAL depth test still matches their committed depth. Every OTHER screen keeps the inline path: a
         // screen that draws its item previews AFTER super.render (the Glint Table's scrollable design +
         // printed palettes) has no drain left that frame, so a batched glint would land a frame late / at the
-        // wrong depth — those palettes must draw their glint inline.
+        // wrong depth. Such a screen instead ARMS the batch itself (guiGlintBatchArmed) around its own icon
+        // pass and drains right after, so its palette glint batches too without landing late — that's how the
+        // Glint Table's design + printed palettes route here.
         net.minecraft.client.gui.screens.Screen cgScreen = Minecraft.getInstance().screen;
         boolean guiHud = CustomGlintRenderer.CURRENT_CTX.get() == ItemDisplayContext.GUI
                 && (cgScreen == null
-                    || cgScreen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen);
+                    || cgScreen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
+                    || CustomGlintRenderer.guiGlintBatchArmed);
 
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
