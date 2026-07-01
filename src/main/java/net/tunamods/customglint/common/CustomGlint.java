@@ -160,24 +160,28 @@ public final class CustomGlint {
         return Integer.parseUnsignedInt(hex.startsWith("#") ? hex.substring(1) : hex, 16) | 0xFF000000;
     }
 
-    // The 16 named glint colors ARE Minecraft's dye colors, sourced from DyeColor.getTextColor()
-    // (the vivid per-dye colour, already opaque ARGB) so they track vanilla instead of drifting.
-    public static final int RED        = DyeColor.RED.getTextColor();
-    public static final int ORANGE     = DyeColor.ORANGE.getTextColor();
-    public static final int YELLOW     = DyeColor.YELLOW.getTextColor();
-    public static final int LIME       = DyeColor.LIME.getTextColor();
-    public static final int GREEN      = DyeColor.GREEN.getTextColor();
-    public static final int CYAN       = DyeColor.CYAN.getTextColor();
-    public static final int LIGHT_BLUE = DyeColor.LIGHT_BLUE.getTextColor();
-    public static final int BLUE       = DyeColor.BLUE.getTextColor();
-    public static final int PURPLE     = DyeColor.PURPLE.getTextColor();
-    public static final int MAGENTA    = DyeColor.MAGENTA.getTextColor();
-    public static final int PINK       = DyeColor.PINK.getTextColor();
-    public static final int BROWN      = DyeColor.BROWN.getTextColor();
-    public static final int WHITE      = DyeColor.WHITE.getTextColor();
-    public static final int LIGHT_GRAY = DyeColor.LIGHT_GRAY.getTextColor();
-    public static final int GRAY       = DyeColor.GRAY.getTextColor();
-    public static final int BLACK      = DyeColor.BLACK.getTextColor();
+    // The 16 named glint colors ARE Minecraft's dye colors, sourced from DyeColor.getTextColor() so they
+    // track vanilla instead of drifting. getTextColor() returns the vivid per-dye colour as RGB with a ZERO
+    // alpha byte (0x00RRGGBB); every glint colour source must be opaque ARGB (the render path multiplies the
+    // colour by its own alpha, so alpha 0 draws nothing), so OR in full alpha here. Consumers that want the
+    // bare RGB (hex boxes, dye-name lookup, swatch fills) already mask with & 0xFFFFFF, so this is safe.
+    private static int dye(DyeColor c) { return 0xFF000000 | c.getTextColor(); }
+    public static final int RED        = dye(DyeColor.RED);
+    public static final int ORANGE     = dye(DyeColor.ORANGE);
+    public static final int YELLOW     = dye(DyeColor.YELLOW);
+    public static final int LIME       = dye(DyeColor.LIME);
+    public static final int GREEN      = dye(DyeColor.GREEN);
+    public static final int CYAN       = dye(DyeColor.CYAN);
+    public static final int LIGHT_BLUE = dye(DyeColor.LIGHT_BLUE);
+    public static final int BLUE       = dye(DyeColor.BLUE);
+    public static final int PURPLE     = dye(DyeColor.PURPLE);
+    public static final int MAGENTA    = dye(DyeColor.MAGENTA);
+    public static final int PINK       = dye(DyeColor.PINK);
+    public static final int BROWN      = dye(DyeColor.BROWN);
+    public static final int WHITE      = dye(DyeColor.WHITE);
+    public static final int LIGHT_GRAY = dye(DyeColor.LIGHT_GRAY);
+    public static final int GRAY       = dye(DyeColor.GRAY);
+    public static final int BLACK      = dye(DyeColor.BLACK);
 
     // ── Designs ───────────────────────────────────────────────────────────────
 
