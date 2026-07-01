@@ -9,6 +9,9 @@
 - Glint Trim chest loot can now also drop Rainbow Dye and the layer and black tears
 - Fixed the wand editor's glint-import search box not filtering the list
 - The 16 named glint colors now match Minecraft's dye colors exactly
+- Fixed some glint colors rendering invisible
+- Fixed glints freezing on one color while a menu is open instead of animating
+- Glinted items in inventories and menus now draw faster
 - The Glint Table and wand editor are now fully translatable, with Spanish included
 
 [Compat]
