@@ -1,3 +1,9 @@
+[1.7.0]
+
+- Added /glint cheat to unlock every Glint Table design at once
+- The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print, and the Print tooltip lists whatever is missing
+- Every color on every layer of a printed trim now costs its dye (a matching dye per shade, a Rainbow Dye per custom color)
+
 [1.6.0]
 
 - Ported to NeoForge 26.1.2
