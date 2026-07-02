@@ -172,12 +172,8 @@ public final class CustomGlintRenderer {
             if (loc != null) mc.getTextureManager().release(loc);
         textureCache.clear();
         // The stitched GUI design atlas is a DynamicTexture too; release it and force a lazy rebuild so a
-        // resource reload (or a data pack that adds designs) re-stitches the current PATTERNS set.
-        if (guiDesignAtlasBuilt) {
-            mc.getTextureManager().release(GUI_DESIGN_ATLAS_ID);
-            guiDesignCell.clear();
-            guiDesignAtlasBuilt = false;
-        }
+        // resource reload (or a data pack that adds designs) re-stitches the current design set.
+        invalidateGuiDesignAtlas();
         // Chromatic palette strips + the white dummy are DynamicTextures too, release and rebuild on reload.
         for (Identifier loc : paletteCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
@@ -666,16 +662,41 @@ public final class CustomGlintRenderer {
     // draw regardless of how many distinct designs are on screen. The per-glyph design is selected in-shader
     // from a cell index (packed into the spare high bits of UV2.y); each cell is built with a wrapped gutter
     // so the in-shader fract() tiling stays seamless under LINEAR filtering.
-    private static final int GUI_ATLAS_GRID    = 8;   // 8x8 = 64 cells (covers the 56 built-in designs)
     private static final int GUI_ATLAS_CONTENT = 64;  // design content size per cell (designs are <=64px)
     private static final int GUI_ATLAS_GUTTER  = 4;   // wrapped border per side, so LINEAR can't seam-bleed
     private static final int GUI_ATLAS_STRIDE  = GUI_ATLAS_CONTENT + 2 * GUI_ATLAS_GUTTER; // 72
-    private static final int GUI_ATLAS_DIM      = GUI_ATLAS_GRID * GUI_ATLAS_STRIDE;        // 576
+    // The grid is sized to the design count at build time (ceil(sqrt(n)) cells per side) so data-pack designs
+    // batch too, not just the built-ins. Only the grid dimension varies; the shader recovers it from
+    // textureSize(Sampler1)/STRIDE, so no per-draw uniform is needed. The cell index rides 8 bits of the GUI
+    // glint vertex payload (UV2.y bits 8-15), so at most 256 designs share the atlas; any beyond that fall
+    // back to the per-design draw path (still correct, just one draw each).
+    private static final int GUI_ATLAS_MAX_CELLS = 256;
     public static final Identifier GUI_DESIGN_ATLAS_ID = CustomGlint.res("gui_design_atlas");
     private static boolean guiDesignAtlasBuilt = false;
-    /** design Identifier → its 0-based cell index in the atlas (also the PATTERNS index). Absent designs
-     *  (CHROMATIC, load failures, or beyond the 64-cell capacity) fall back to the per-design draw path. */
+    /** design Identifier → its 0-based cell index in the atlas. Absent designs (CHROMATIC, load failures, or
+     *  beyond {@link #GUI_ATLAS_MAX_CELLS}) fall back to the per-design draw path. */
     private static final Map<Identifier, Integer> guiDesignCell = new HashMap<>();
+    /** Full design list to atlas (built-ins + data-pack designs), installed by the full mod at client init
+     *  since the data-pack design list lives in the module, not the api jar. Null → built-ins only (an
+     *  api-only embedder without the full mod's data-pack list). */
+    private static volatile Supplier<List<Identifier>> guiAtlasDesignSource = null;
+
+    /** Installs the design source for the shared GUI atlas — the full mod passes its data-pack-inclusive
+     *  design list here so those designs batch like the built-ins. Forces a rebuild on the next draw. */
+    public static void setGuiAtlasDesignSource(Supplier<List<Identifier>> source) {
+        guiAtlasDesignSource = source;
+        invalidateGuiDesignAtlas();
+    }
+
+    /** Drops the built GUI atlas so the next inventory glint draw re-stitches it — call after the design list
+     *  changes (data-pack reload / server sync) or a resource reload. Idempotent; no-op if not yet built. */
+    public static void invalidateGuiDesignAtlas() {
+        if (!guiDesignAtlasBuilt) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) mc.getTextureManager().release(GUI_DESIGN_ATLAS_ID);
+        guiDesignCell.clear();
+        guiDesignAtlasBuilt = false;
+    }
 
     /** Builds the shared GUI design atlas once (lazily, on first inventory glint draw). Idempotent; the
      *  {@code built} flag is set first so a failed build degrades to the per-design fallback for the whole
@@ -684,17 +705,29 @@ public final class CustomGlintRenderer {
     private static void ensureGuiDesignAtlas() {
         if (guiDesignAtlasBuilt) return;
         guiDesignAtlasBuilt = true;
-        Identifier[] designs = CustomGlint.PATTERNS;
-        NativeImage atlas = new NativeImage(GUI_ATLAS_DIM, GUI_ATLAS_DIM, false);
+        // Source list: the full mod's data-pack-inclusive designs when installed, else the built-ins. Guarded
+        // because the source reads a list mutated on other threads (the data-pack reload) — a torn read falls
+        // back to the built-ins rather than aborting the build.
+        List<Identifier> designs;
         try {
-            int cap = GUI_ATLAS_GRID * GUI_ATLAS_GRID;
-            for (int i = 0; i < designs.length && i < cap; i++) {
-                Identifier design = designs[i];
-                if (design.equals(CustomGlint.CHROMATIC)) continue; // procedural: no design texture
+            Supplier<List<Identifier>> src = guiAtlasDesignSource;
+            designs = src != null ? src.get() : Arrays.asList(CustomGlint.PATTERNS);
+        } catch (Throwable t) {
+            designs = Arrays.asList(CustomGlint.PATTERNS);
+        }
+        if (designs == null || designs.isEmpty()) designs = Arrays.asList(CustomGlint.PATTERNS);
+        int count = Math.min(designs.size(), GUI_ATLAS_MAX_CELLS);
+        int grid = (int) Math.ceil(Math.sqrt(count));       // cells per side, so grid*grid >= count
+        int dim = grid * GUI_ATLAS_STRIDE;
+        NativeImage atlas = new NativeImage(dim, dim, false);
+        try {
+            for (int i = 0; i < count; i++) {
+                Identifier design = designs.get(i);
+                if (design == null || design.equals(CustomGlint.CHROMATIC)) continue; // procedural: no texture
                 NativeImage gray = loadGrayscale(design);
                 if (gray == null) continue;                          // missing → per-design fallback
                 try {
-                    int col = i % GUI_ATLAS_GRID, row = i / GUI_ATLAS_GRID;
+                    int col = i % grid, row = i / grid;
                     int ox = col * GUI_ATLAS_STRIDE, oy = row * GUI_ATLAS_STRIDE;
                     int sw = gray.getWidth(), sh = gray.getHeight();
                     for (int gy = 0; gy < GUI_ATLAS_STRIDE; gy++) {
@@ -731,8 +764,8 @@ public final class CustomGlintRenderer {
         return t != null ? t.getTextureView() : null;
     }
 
-    /** The atlas cell index for {@code design} (also its PATTERNS index), or null when it isn't atlased
-     *  (CHROMATIC, a load failure, or past the 64-cell capacity) and the per-design draw path must be used. */
+    /** The atlas cell index for {@code design}, or null when it isn't atlased (CHROMATIC, a load failure, or
+     *  past {@link #GUI_ATLAS_MAX_CELLS}) and the per-design draw path must be used. */
     public static Integer guiDesignCellIndex(Identifier design) {
         ensureGuiDesignAtlas();
         return guiDesignCell.get(design);

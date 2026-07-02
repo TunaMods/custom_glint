@@ -37,23 +37,25 @@ in float vCellIndex; // atlas cell for this design when vAtlasMode == 1
 
 out vec4 fragColor;
 
-// Shared GUI design atlas layout — MUST match CustomGlintRenderer.GUI_ATLAS_* constants. The atlas packs
-// every design into an 8x8 grid of 64px cells, each with a GUTTER-px wrapped border so fract() tiling stays
-// seamless under LINEAR (the bound sampler CLAMPs; the wrap is the gutter, not the hardware).
-const float ATLAS_GRID    = 8.0;
+// Shared GUI design atlas layout — MUST match CustomGlintRenderer.GUI_ATLAS_* constants. Designs pack into a
+// square grid of 64px cells, each with a GUTTER-px wrapped border so fract() tiling stays seamless under
+// LINEAR (the bound sampler CLAMPs; the wrap is the gutter, not the hardware). The grid dimension is dynamic
+// (sized CPU-side to the design count so data-pack designs atlas too) and recovered here from the atlas
+// texture size, so no uniform is needed: the atlas is square with dim = grid * STRIDE, hence grid = dim/STRIDE.
 const float ATLAS_CONTENT = 64.0;
 const float ATLAS_GUTTER  = 4.0;
 const float ATLAS_STRIDE  = ATLAS_CONTENT + 2.0 * ATLAS_GUTTER; // 72
-const float ATLAS_DIM     = ATLAS_GRID * ATLAS_STRIDE;          // 576
 
 // Maps a (tiled) design coordinate onto this layer's atlas cell. duv is unbounded (the scroll wraps it);
 // fract() folds it into the cell, then the content sub-rect (inside the gutter) is addressed.
 vec2 atlasUV(vec2 duv) {
-    int ci = int(vCellIndex + 0.5);
-    float col = float(ci - (ci / 8) * 8); // ci % 8
-    float row = float(ci / 8);
-    vec2 origin = (vec2(col, row) * ATLAS_STRIDE + ATLAS_GUTTER) / ATLAS_DIM;
-    return origin + fract(duv) * (ATLAS_CONTENT / ATLAS_DIM);
+    float dim  = float(textureSize(Sampler1, 0).x);   // square atlas: dim = grid * STRIDE
+    int   grid = int(dim / ATLAS_STRIDE + 0.5);        // cells per side, recovered exactly
+    int   ci   = int(vCellIndex + 0.5);
+    float col  = float(ci - (ci / grid) * grid);       // ci % grid
+    float row  = float(ci / grid);                     // ci / grid
+    vec2 origin = (vec2(col, row) * ATLAS_STRIDE + ATLAS_GUTTER) / dim;
+    return origin + fract(duv) * (ATLAS_CONTENT / dim);
 }
 
 // Silhouette alpha threshold (same role as gui_item_outline's EDGE).

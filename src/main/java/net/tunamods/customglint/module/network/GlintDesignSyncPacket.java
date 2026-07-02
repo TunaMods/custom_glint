@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
 public record GlintDesignSyncPacket(List<String> designs) implements CustomPacketPayload {
 
@@ -40,6 +41,9 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
     public static void clearClient() {
         GlintTrimItem.PATTERNS.removeAll(clientSyncedDesigns);
         clientSyncedDesigns.clear();
+        // The GUI glint atlas is stitched from the (now-shrunk) design list — force a re-stitch. Client-only
+        // path (logout), so touching the renderer is safe.
+        CustomGlintRenderer.invalidateGuiDesignAtlas();
     }
 
     @Override
@@ -57,6 +61,9 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
                     clientSyncedDesigns.add(design);
                 }
             }
+            // Data-pack designs just changed on the client — re-stitch the shared GUI glint atlas so they
+            // batch too. enqueueWork runs on the client render thread, so releasing the texture here is safe.
+            CustomGlintRenderer.invalidateGuiDesignAtlas();
         });
     }
 }

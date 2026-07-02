@@ -1,6 +1,7 @@
 package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModComponents;
@@ -67,6 +68,14 @@ public class CustomGlintMod {
             TrimItemColors.register(modEventBus);
             GlintTableClientInit.register(modEventBus);
             GlintTableModelClient.register(modEventBus);
+            // Feed the renderer's shared GUI glint atlas the full, data-pack-inclusive design list (the api
+            // jar can't see the module's design registry). A snapshot copy avoids a torn read while the
+            // data-pack reload mutates PATTERNS on another thread; the renderer re-stitches on invalidation.
+            CustomGlintRenderer.setGuiAtlasDesignSource(() -> {
+                List<Identifier> ids = new ArrayList<>();
+                for (String name : new ArrayList<>(GlintTrimItem.PATTERNS)) ids.add(CustomGlint.designFromName(name));
+                return ids;
+            });
         }
 
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
