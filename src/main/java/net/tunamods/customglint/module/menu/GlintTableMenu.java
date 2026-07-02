@@ -6,6 +6,7 @@ import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
@@ -22,17 +23,24 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlocks;
+import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.network.GlintPrintedSyncPacket;
+import net.tunamods.customglint.module.network.GlintServerBlueprintsSyncPacket;
 import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
@@ -165,6 +173,11 @@ public class GlintTableMenu extends AbstractContainerMenu {
             List<ItemStack> printed = new ArrayList<>();
             for (ItemStack s : sp.getData(ModAttachments.PRINTED_TRIMS.get())) if (!s.isEmpty()) printed.add(s);
             PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(printed));
+            // On a dedicated server, push the shared blueprint trims so the client can list them alongside its
+            // own personal ones. The integrated (single-player) server skips this: the client's local config
+            // scan already covers the very same directory, so syncing would just duplicate every entry.
+            if (sp.level().getServer().isDedicatedServer())
+                PacketDistributor.sendToPlayer(sp, new GlintServerBlueprintsSyncPacket(readServerBlueprints()));
             // Re-check the design-collection advancements on open so a player who already owns designs from
             // before this feature existed (or via another path) still earns them.
             checkDesignAdvancements(sp);
@@ -204,15 +217,133 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
     /** Records one finished painted trim into the player's printed library (deduped, capped at 128) + syncs.
      *  Returns true only if it actually stored: false on a dedup hit or at the cap, so deposit callers can
-     *  leave the physical trim in place instead of consuming it for nothing. */
+     *  leave the physical trim in place instead of consuming it for nothing.
+     *
+     *  Crafting a trim that matches a dimmed IMPORTED entry clears its lock (un-dims it, makes it
+     *  withdrawable) instead of appending a duplicate, so importing a trim then building it "pays off" the
+     *  import. Matching is by {@link #trimSignature} (glint layers + glow, ignoring seed / custom name). */
     private static boolean storePrinted(ServerPlayer sp, ItemStack trim) {
         List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
-        for (ItemStack s : list) if (ItemStack.isSameItemSameComponents(s, trim)) return false; // already have this config
-        if (list.size() >= 128) return false;
+        String sig = trimSignature(trim);
+
+        // First pass: unlock a matching import if one is dimmed in the library.
+        List<ItemStack> cleaned = new ArrayList<>();
+        boolean unlocked = false;
+        for (ItemStack s : list) {
+            if (s.isEmpty()) continue;
+            if (!unlocked && isImportLocked(s) && trimSignature(s).equals(sig)) {
+                ItemStack u = s.copy();
+                u.remove(ModComponents.IMPORT_LOCKED.get());
+                cleaned.add(u);
+                unlocked = true;
+            } else {
+                cleaned.add(s);
+            }
+        }
+        if (unlocked) {
+            sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
+            PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
+            return true;
+        }
+
+        for (ItemStack s : cleaned) if (ItemStack.isSameItemSameComponents(s, trim)) return false; // already have this config
+        if (cleaned.size() >= 128) return false;
         ItemStack one = trim.copy();
         one.setCount(1);
+        cleaned.add(one);
+        sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
+        PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
+        return true;
+    }
+
+    /** True when a printed-library entry is a not-yet-crafted import (dimmed, non-withdrawable). */
+    private static boolean isImportLocked(ItemStack stack) {
+        return Boolean.TRUE.equals(stack.get(ModComponents.IMPORT_LOCKED.get()));
+    }
+
+    /** A trim's identity for import matching: its glint layers (design + colors + timing/flags, seed
+     *  excluded so a rolled chromatic seed doesn't block the match) plus the glow flag and glow colors. The
+     *  custom name is intentionally left out, reproducing the glint and glow is enough to "craft" an import. */
+    private static String trimSignature(ItemStack stack) {
+        StringBuilder sb = new StringBuilder();
+        CustomGlint.Data d = CustomGlint.read(stack);
+        if (d != null) {
+            for (CustomGlint.Layer l : d.layers()) {
+                sb.append(l.design()).append('|');
+                for (int c : l.colors()) sb.append(Integer.toHexString(c)).append(',');
+                sb.append(';').append(l.speed()).append(';').append(l.interpolate())
+                  .append(';').append(l.patternScale()).append(';').append(l.simultaneous())
+                  .append(';').append(l.scrollDir()).append(';').append(l.scrollOffset()).append('#');
+            }
+        }
+        sb.append("glow=").append(CustomGlint.isGlowing(stack)).append(';');
+        for (int c : CustomGlint.getGlowColors(stack)) sb.append(Integer.toHexString(c)).append(',');
+        return sb.toString();
+    }
+
+    /**
+     * Import a premade trim from a config file (sent by the client's Import list): rebuild it, mark every
+     * layer's design owned so it can be built, and drop it into the printed library as a LOCKED (dimmed,
+     * non-withdrawable) entry. The lock clears only when the player prints a matching trim, so importing
+     * hands out a build target, not a free finished trim. No-op if an identical trim is already in the library.
+     */
+    public void importTrim(CustomGlint.Layer[] layers, boolean glowing, int[] glowColors, String name, int nameColor) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        if (layers.length == 0) return;
+        CustomGlint.Layer[] withSeeds = CustomGlint.ensureChromaticSeeds(layers);
+        // A single-color layer is always sequential (simultaneous needs 2+ colors to mean anything, and
+        // print() builds it that way), so store the import the same way it will be crafted, otherwise the
+        // exact-match unlock would never fire on a 1-color import.
+        for (int i = 0; i < withSeeds.length; i++) {
+            CustomGlint.Layer l = withSeeds[i];
+            if (l.simultaneous() && l.colors().length < 2)
+                withSeeds[i] = new CustomGlint.Layer(l.design(), l.colors(), l.speed(), l.interpolate(),
+                        l.patternScale(), false, l.scrollDir(), l.scrollOffset(), l.seed());
+        }
+
+        ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
+        CustomGlint.Layer l0 = withSeeds[0];
+        GlintTrimItem.setPattern(trim, l0.design());
+        for (int c : l0.colors()) GlintTrimItem.addColor(trim, c);
+        GlintTrimItem.setSpeed(trim, l0.speed());
+        GlintTrimItem.setScale(trim, l0.patternScale());
+        GlintTrimItem.setScrollDir(trim, l0.scrollDir());
+        GlintTrimItem.setScrollOffset(trim, l0.scrollOffset());
+        GlintTrimItem.setGlowing(trim, glowing);
+        CustomGlint.setGlowing(trim, glowing);
+        if (glowColors.length > 0) CustomGlint.setGlowColors(trim, glowColors);
+        if (!name.isEmpty()) {
+            int rgb = (nameColor >>> 8) & 0xFFFFFF; // client packs the name colour as (rgb << 8) | alpha
+            trim.set(DataComponents.CUSTOM_NAME, Component.literal(name).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
+        }
+        // Full multi-layer glint Data is authoritative; write() preserves the glow flag / glow colors set above.
+        CustomGlint.write(trim, withSeeds);
+
+        // Owning the designs makes the trim buildable; without this the print's ownsDesign gate would keep the
+        // import permanently locked. Blank designs are already freely craftable, so this leaks only the pattern.
+        for (CustomGlint.Layer l : withSeeds) {
+            String dn = l.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(l.design());
+            if (dn != null) storeDesign(sp, dn);
+        }
+
+        storePrintedImport(sp, trim);
+    }
+
+    /** Adds an imported trim to the printed library as a locked (dimmed) entry, deduped by signature so a
+     *  trim the player already owns or already imported isn't added again. Capped with the library. */
+    private static boolean storePrintedImport(ServerPlayer sp, ItemStack trim) {
+        List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
+        String sig = trimSignature(trim);
         List<ItemStack> updated = new ArrayList<>();
-        for (ItemStack s : list) if (!s.isEmpty()) updated.add(s); // drop any stale empty entries
+        for (ItemStack s : list) {
+            if (s.isEmpty()) continue;
+            if (trimSignature(s).equals(sig)) return false; // already imported or already owned
+            updated.add(s);
+        }
+        if (updated.size() >= 128) return false;
+        ItemStack one = trim.copy();
+        one.setCount(1);
+        one.set(ModComponents.IMPORT_LOCKED.get(), true);
         updated.add(one);
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
@@ -606,6 +737,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (index < 0 || index >= list.size()) return;
         ItemStack trim = list.get(index);
         if (trim.isEmpty()) return;
+        if (isImportLocked(trim)) return; // an imported trim stays in the library until it's actually crafted
         ItemStack one = trim.copy();
         one.setCount(1);
         if (!sp.addItem(one)) return; // inventory full, leave it in the library
@@ -618,6 +750,69 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
+    }
+
+    /** Delete (server): shift-click a still-locked imported trim in the printed library removes it outright.
+     *  Only import-locked (un-crafted) entries can be deleted this way; a real printed trim is withdrawn. */
+    public void deletePrinted(int index) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
+        if (index < 0 || index >= list.size()) return;
+        ItemStack trim = list.get(index);
+        if (trim.isEmpty() || !isImportLocked(trim)) return; // only imported, un-crafted entries are deletable
+
+        List<ItemStack> updated = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            if (i == index) continue;
+            ItemStack s = list.get(i);
+            if (!s.isEmpty()) updated.add(s);
+        }
+        sp.setData(ModAttachments.PRINTED_TRIMS.get(), updated);
+        PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
+    }
+
+    /** The dedicated server's shared blueprint directory ({@code config/customglint/trims}). Same path a
+     *  client uses for its personal store, but this reads it on the server machine. */
+    private static Path serverBlueprintDir() {
+        return Paths.get("config/customglint/trims").toAbsolutePath();
+    }
+
+    /** Read the server's shared blueprint trims as name → raw JSON, for syncing to a client. Never null. */
+    private static Map<String, String> readServerBlueprints() {
+        Map<String, String> out = new LinkedHashMap<>();
+        Path dir = serverBlueprintDir();
+        if (!Files.exists(dir)) return out;
+        try (var stream = Files.list(dir)) {
+            stream.filter(p -> p.toString().endsWith(".json"))
+                  .sorted()
+                  .forEach(p -> {
+                      try {
+                          out.put(p.getFileName().toString().replace(".json", ""), Files.readString(p));
+                      } catch (Exception ignored) {
+                          // Unreadable file: skip it rather than fail the whole sync.
+                      }
+                  });
+        } catch (Exception ignored) {
+            // No dir / unreadable: return whatever we have (possibly empty).
+        }
+        return out;
+    }
+
+    /** Delete (server): an op removes one of the server's shared blueprint trims. Requires op permission on a
+     *  dedicated server; deletes the matching config file and re-syncs the shared list to the player. */
+    public void deleteServerBlueprint(ServerPlayer sp, String name) {
+        if (!sp.level().getServer().isDedicatedServer()) return; // single-player uses the client store
+        if (!sp.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)) return; // ops only (level 2)
+        // Reject anything but a bare file name so a crafted packet can't escape the trims dir.
+        if (name == null || name.isEmpty() || name.contains("/") || name.contains("\\") || name.contains("..")) return;
+        try {
+            Path dir = serverBlueprintDir();
+            Path file = dir.resolve(name + ".json").normalize();
+            if (file.startsWith(dir)) Files.deleteIfExists(file);
+        } catch (Exception ignored) {
+            // Locked/unremovable: the re-sync below simply keeps showing it.
+        }
+        PacketDistributor.sendToPlayer(sp, new GlintServerBlueprintsSyncPacket(readServerBlueprints()));
     }
 
     /** Give the player a free blank trim of a palette design (shift-click in the left grid). No-op if the

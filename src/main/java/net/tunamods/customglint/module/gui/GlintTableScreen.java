@@ -1,7 +1,14 @@
 package net.tunamods.customglint.module.gui;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.blaze3d.platform.InputConstants;
 import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.EditBox;
@@ -19,6 +26,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
@@ -31,16 +39,25 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.GlintClientConfig;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.client.GlintTableModelClient;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
+import net.tunamods.customglint.module.network.GlintDeletePrintedPacket;
+import net.tunamods.customglint.module.network.GlintDeleteServerBlueprintPacket;
 import net.tunamods.customglint.module.network.GlintDepositPacket;
 import net.tunamods.customglint.module.network.GlintGiveDesignPacket;
+import net.tunamods.customglint.module.network.GlintImportPacket;
 import net.tunamods.customglint.module.network.GlintPrintPacket;
+import net.tunamods.customglint.module.network.GlintServerBlueprintsSyncPacket;
 import net.tunamods.customglint.module.network.GlintPrintedSyncPacket;
 import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 import net.tunamods.customglint.module.network.GlintWithdrawPacket;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 
+import java.io.BufferedWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +68,7 @@ import java.util.Optional;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
@@ -184,6 +202,23 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private BevelButton printBtn, glowModeBtn, glowToggleBtn, nameToggleBtn;
     private BevelButton offsetMinus, offsetPlus; // shown only while the scroll button is on Static
     private static final int SND_BTN_W = 12; // square toggle just left of the skin button
+    private static final int IMP_BTN_W = 12; // square Import toggle just left of the sound button
+
+    // ── Import picker overlay ─────────────────────────────────────────────────
+    // Lists two blueprint sources: the player's PERSONAL client trims (config/customglint/trims/*.json on this
+    // client, cross-world, freely deletable) and, on a dedicated server, the SHARED server blueprints synced
+    // from the server (op-managed, only ops can delete). Picking one sends it to the server, which drops it
+    // into the printed library as a LOCKED (dimmed) build target.
+    private boolean showImportPicker = false;
+    /** One row in the import picker. {@code server} = a shared server blueprint (op-deletable); otherwise a
+     *  personal client file (this-client-deletable). */
+    private record ImpEntry(String name, boolean server) {}
+    private final List<ImpEntry> importAll = new ArrayList<>();  // every scanned blueprint (client + server)
+    private List<ImpEntry> importFiltered = new ArrayList<>();   // the search-filtered view shown in the list
+    private int importScroll = 0;
+    private EditBox importSearchBox;
+    private static final int IMPORT_ROWS = 10, IMPORT_ROW_H = 13, IMP_PW = 160;
+    private static final int IMP_TRASH_W = 11; // hover-only delete hotzone at the right edge of an import row
 
     // Scroll-direction control under the speed/opacity/scale slots (bottom-left). A button cycles the 8
     // compass presets + Static; a small −/value/+ offset stepper shows only while Static.
@@ -246,6 +281,15 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         hexBox.setResponder(this::applyHex);
         hexBox.setVisible(false);
         addWidget(hexBox);
+
+        // Import-picker search box: an event-only widget (drawn manually inside renderImportPicker so it sits
+        // on top of the modal panel), hidden until the picker opens.
+        importSearchBox = new EditBox(font, leftPos, topPos, IMP_PW - 4, 12,
+                Component.translatable("screen.customglint.glint_table.import_search"));
+        importSearchBox.setMaxLength(40);
+        importSearchBox.setResponder(this::filterImport);
+        importSearchBox.setVisible(false);
+        addWidget(importSearchBox);
 
         // Restore the in-progress build from the last time the table was open (once per screen instance, so a
         // window resize, which re-runs init(), doesn't clobber the live edits).
@@ -871,6 +915,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             drawSectionLabels(g);
             // Drawn last so it overlays the modifier buttons (interp / true-false) it can sit on top of.
             if (hexBox != null) hexBox.extractRenderState(g, mx, my, dt);
+            // The import picker is modal, drawn on top of everything else in the window.
+            if (showImportPicker) renderImportPicker(g, mx, my, dt);
+            drawImportMsg(g); // transient save confirmation, on top of everything
         } finally {
             frameMemo = false;
         }
@@ -887,8 +934,18 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
      *  trims + the design palette), which are custom-drawn, not real slots. */
     @Override
     protected void extractTooltip(GuiGraphicsExtractor g, int mx, int my) {
+        if (showImportPicker) return; // the modal import picker owns the screen; suppress slot/grid tooltips under it
         super.extractTooltip(g, mx, my);
         if (!menu.getCarried().isEmpty()) return; // don't tooltip while a stack is on the cursor
+        int impBtnX = leftPos + SKIN_BTN_X - SND_BTN_W - 2 - IMP_BTN_W - 2;
+        if (mx >= impBtnX && mx < impBtnX + IMP_BTN_W
+                && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
+            g.setTooltipForNextFrame(font, List.of(
+                    Component.translatable("screen.customglint.glint_table.import"),
+                    Component.translatable("screen.customglint.glint_table.import_rclick").withStyle(ChatFormatting.GRAY)),
+                    Optional.empty(), mx, my);
+            return;
+        }
         if (mx >= leftPos + SKIN_BTN_X && mx < leftPos + SKIN_BTN_X + SKIN_BTN_W
                 && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
             g.setTooltipForNextFrame(font, Component.translatable("screen.customglint.glint_table.skin_tooltip"), mx, my);
@@ -1068,6 +1125,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 if (idx < list.size()) {
                     ItemStack s = list.get(idx);
                     g.item(s, cx, cy);
+                    // An imported-but-not-yet-crafted trim is dimmed and can't be withdrawn until the player
+                    // prints a matching trim (see GlintTableMenu#storePrinted).
+                    if (isImportLocked(s)) g.fill(cx, cy, cx + 16, cy + 16, DIM_PREVIEW);
                     if (!selectedPrinted.isEmpty() && ItemStack.isSameItemSameComponents(s, selectedPrinted))
                         border(g, cx - 1, cy - 1, 18, 18, RING_MAIN);
                     else if (selectedDonorPrinted && ItemStack.isSameItemSameComponents(s, selectedDonor))
@@ -1077,6 +1137,323 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             }
         }
         drawScrollbar(g, gx, gy, cap, printScroll);
+    }
+
+    /** True when a printed-library entry is an imported trim the player hasn't crafted yet (dimmed, locked). */
+    private static boolean isImportLocked(ItemStack s) {
+        return Boolean.TRUE.equals(s.get(ModComponents.IMPORT_LOCKED.get()));
+    }
+
+    // ── Import picker ─────────────────────────────────────────────────────────
+
+    private int impPickerX() { return leftPos + (imageWidth - IMP_PW) / 2; }
+    private int impPickerY() { return topPos + 24; }
+    private int impPickerH() { return IMPORT_ROWS * IMPORT_ROW_H + 22; }
+
+    /** Toggle the import picker; on open, (re)scan the config dir and focus the search box. */
+    private void toggleImportPicker() {
+        showImportPicker = !showImportPicker;
+        importScroll = 0;
+        if (showImportPicker) {
+            scanImportConfigs();
+            if (importSearchBox != null) {
+                importSearchBox.setValue("");
+                setFocused(importSearchBox);
+                importSearchBox.setFocused(true);
+            }
+        } else if (importSearchBox != null) {
+            importSearchBox.setFocused(false);
+        }
+    }
+
+    /** Rebuild the import list: this client's personal blueprints ({@code config/customglint/trims/*.json},
+     *  cross-world) plus, on a dedicated server, the shared server blueprints synced from the server. In
+     *  single-player the server source is skipped — the integrated server reads the very same directory this
+     *  local scan does, so listing both would double every entry. */
+    private void scanImportConfigs() {
+        importAll.clear();
+        try {
+            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            if (Files.exists(dir)) {
+                // try-with-resources: Files.list holds an open directory handle that must be closed.
+                try (var stream = Files.list(dir)) {
+                    stream.filter(p -> p.toString().endsWith(".json"))
+                          .map(p -> p.getFileName().toString().replace(".json", ""))
+                          .sorted()
+                          .forEach(n -> importAll.add(new ImpEntry(n, false)));
+                }
+            }
+        } catch (Exception ignored) {
+            // No config dir / unreadable: leave the personal list empty.
+        }
+        if (Minecraft.getInstance().hasSingleplayerServer() == false) {
+            for (String n : GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.keySet())
+                importAll.add(new ImpEntry(n, true));
+        }
+        filterImport(importSearchBox != null ? importSearchBox.getValue() : "");
+    }
+
+    private void filterImport(String query) {
+        String lq = query == null ? "" : query.toLowerCase(Locale.ROOT);
+        importFiltered = lq.isEmpty() ? new ArrayList<>(importAll)
+                : importAll.stream().filter(e -> e.name().toLowerCase(Locale.ROOT).contains(lq)).collect(Collectors.toList());
+        importScroll = Math.max(0, Math.min(importScroll, Math.max(0, importFiltered.size() - IMPORT_ROWS)));
+    }
+
+    /** True when the local player may manage the server's shared blueprints: single-player (full access) or an
+     *  operator (permission level 2). Personal client blueprints are always managed by their own client. */
+    private static boolean canManageServerTrims() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.hasSingleplayerServer()
+                || (mc.player != null && mc.player.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER));
+    }
+
+    /** Import a chosen blueprint: a personal client one reads its local file; a shared server one uses the
+     *  JSON synced from the server. Either way the parsed trim is sent to the server as a locked build target. */
+    private void importSelected(ImpEntry entry) {
+        String json;
+        try {
+            if (entry.server()) {
+                json = GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.get(entry.name());
+                if (json == null) return;
+            } else {
+                json = new String(Files.readAllBytes(Paths.get("config/customglint/trims", entry.name() + ".json").toAbsolutePath()));
+            }
+        } catch (Exception ignored) {
+            return; // unreadable file
+        }
+        sendImportFromJson(json);
+        showImportPicker = false;
+        if (importSearchBox != null) importSearchBox.setFocused(false);
+    }
+
+    /** Parse a blueprint's JSON into layers + glow + name and send it to the server, which adds it to the
+     *  printed library as a locked (dimmed) build target. Silently ignores malformed JSON. */
+    private void sendImportFromJson(String json) {
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+
+            List<CustomGlint.Layer> layers = new ArrayList<>();
+            if (obj.has("layers")) {
+                JsonArray arr = obj.getAsJsonArray("layers");
+                for (int i = 0; i < Math.min(arr.size(), MAX_LAYERS); i++) {
+                    JsonObject lo = arr.get(i).getAsJsonObject();
+                    Identifier design = Identifier.parse(lo.get("design").getAsString());
+                    List<Integer> colors = new ArrayList<>();
+                    for (JsonElement e : lo.getAsJsonArray("colors"))
+                        colors.add((int) Long.parseLong(e.getAsString().replace("0x", ""), 16));
+                    int[] carr = colors.stream().mapToInt(Integer::intValue).toArray();
+                    float speed = lo.has("speed") ? lo.get("speed").getAsFloat() : 1.0f;
+                    boolean interp = !lo.has("interpolate") || lo.get("interpolate").getAsBoolean();
+                    float pscale = lo.has("patternScale") ? lo.get("patternScale").getAsFloat() : 1.0f;
+                    boolean sim = !lo.has("simultaneous") || lo.get("simultaneous").getAsBoolean();
+                    int scroll = lo.has("scroll") ? lo.get("scroll").getAsInt() : CustomGlint.SCROLL_E;
+                    float offset = lo.has("offset") ? lo.get("offset").getAsFloat() : 0.0f;
+                    layers.add(new CustomGlint.Layer(design, carr, speed, interp, pscale, sim, scroll, offset));
+                }
+            }
+            if (layers.isEmpty()) return;
+
+            boolean glowing = obj.has("glowing") && obj.get("glowing").getAsBoolean();
+            // Manual glow colors, present only in table-saved trims (the wand export omits them); optional so
+            // older / wand-exported files still load.
+            int[] glowColors = new int[0];
+            if (obj.has("glowColors")) {
+                List<Integer> gc = new ArrayList<>();
+                for (JsonElement e : obj.getAsJsonArray("glowColors"))
+                    gc.add((int) Long.parseLong(e.getAsString().replace("0x", ""), 16));
+                glowColors = gc.stream().mapToInt(Integer::intValue).toArray();
+            }
+            String displayName = obj.has("displayName") ? obj.get("displayName").getAsString() : "";
+            int nameColor = 0xFFFFFFFF;
+            if (obj.has("nameColor")) {
+                int rgb = (int) Long.parseLong(obj.get("nameColor").getAsString().replace("0x", ""), 16) & 0xFFFFFF;
+                nameColor = (rgb << 8) | 0xFF; // packed as (rgb << 8) | alpha, mirroring the wand editor
+            }
+            ClientPacketDistributor.sendToServer(new GlintImportPacket(
+                    layers.toArray(new CustomGlint.Layer[0]), glowing, glowColors, displayName, nameColor));
+        } catch (Exception ignored) {
+            // Malformed JSON: ignore.
+        }
+    }
+
+    /** Right-click Import: save the current preview build (every layer, its colors, and all modifiers) to
+     *  {@code config/customglint/trims/<name>.json}, the same format the Import list and wand editor read.
+     *  This is the "design a trim you don't own and come back to it later" half of the feature: you can
+     *  build and save anything freely; it just can't be printed until you own + pay for it. */
+    private void saveCurrentAsImport() {
+        ItemStack src = previewSource();
+        CustomGlint.Data data = src.getItem() instanceof GlintTrimItem ? CustomGlint.read(src) : null;
+        if (data == null || data.layers().length == 0) {
+            actionBar(Component.translatable("screen.customglint.glint_table.import_save_empty"));
+            return;
+        }
+        try {
+            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Files.createDirectories(dir);
+
+            JsonObject root = new JsonObject();
+            root.addProperty("glowing", CustomGlint.isGlowing(src));
+            int[] glowColors = CustomGlint.getGlowColors(src);
+            if (glowColors.length > 0) {
+                JsonArray gc = new JsonArray();
+                for (int c : glowColors) gc.add(String.format("0x%08X", c));
+                root.add("glowColors", gc);
+            }
+            if (src.has(DataComponents.CUSTOM_NAME)) {
+                Component hover = src.getHoverName();
+                root.addProperty("displayName", hover.getString());
+                TextColor color = hover.getStyle().getColor();
+                if (color != null) root.addProperty("nameColor", String.format("0x%06X", color.getValue() & 0xFFFFFF));
+            }
+
+            JsonArray layersArray = new JsonArray();
+            for (CustomGlint.Layer layer : data.layers()) {
+                JsonObject lo = new JsonObject();
+                lo.addProperty("design", layer.design().toString());
+                JsonArray colors = new JsonArray();
+                for (int c : layer.colors()) colors.add(String.format("0x%08X", c));
+                lo.add("colors", colors);
+                lo.addProperty("speed", layer.speed());
+                lo.addProperty("interpolate", layer.interpolate());
+                lo.addProperty("patternScale", layer.patternScale());
+                lo.addProperty("simultaneous", layer.simultaneous());
+                lo.addProperty("scroll", layer.scrollDir());
+                lo.addProperty("offset", layer.scrollOffset());
+                layersArray.add(lo);
+            }
+            root.add("layers", layersArray);
+
+            String base = sanitizeFileName(!trimName.isEmpty() ? trimName : designLabel(data.layers()[0].design()));
+            Path file = uniqueTrimFile(dir, base);
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            try (BufferedWriter writer = Files.newBufferedWriter(file)) {
+                gson.toJson(root, writer);
+            }
+            String fn = file.getFileName().toString().replace(".json", "");
+            actionBar(Component.translatable("screen.customglint.glint_table.import_saved", fn));
+        } catch (Exception e) {
+            actionBar(Component.translatable("screen.customglint.glint_table.import_save_failed"));
+        }
+    }
+
+    // Transient "saved / couldn't save" confirmation, shown in-screen for a couple seconds (an actionbar
+    // overlay would be hidden behind the open GUI).
+    private Component importMsg = null;
+    private long importMsgUntil = 0;
+
+    private void actionBar(Component c) {
+        importMsg = c;
+        importMsgUntil = Util.getMillis() + 2500;
+    }
+
+    private void drawImportMsg(GuiGraphicsExtractor g) {
+        if (importMsg == null || Util.getMillis() >= importMsgUntil) return;
+        int tw = font.width(importMsg);
+        int cx = leftPos + imageWidth / 2, ty = topPos + 18;
+        g.fill(cx - tw / 2 - 3, ty - 2, cx + tw / 2 + 3, ty + 10, 0xE0000000);
+        g.text(font, importMsg, cx - tw / 2, ty, 0xFFFFFFFF, false);
+    }
+
+    /** A filesystem-safe trim file base name: lowercased, non-[a-z0-9_-] runs collapsed to '_', trimmed. */
+    private static String sanitizeFileName(String s) {
+        String cleaned = s.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]+", "_").replaceAll("^_+|_+$", "");
+        return cleaned.isEmpty() ? "trim" : cleaned;
+    }
+
+    /** {@code base.json}, or {@code base_2.json}, {@code base_3.json}… so saving never clobbers a prior trim. */
+    private static Path uniqueTrimFile(Path dir, String base) {
+        Path p = dir.resolve(base + ".json");
+        for (int n = 2; Files.exists(p); n++) p = dir.resolve(base + "_" + n + ".json");
+        return p;
+    }
+
+    private static String designLabel(Identifier design) {
+        if (design.equals(CustomGlint.VANILLA)) return "vanilla";
+        String nm = GlintTrimItem.extractPatternName(design);
+        return nm == null ? "trim" : nm;
+    }
+
+    private void renderImportPicker(GuiGraphicsExtractor g, int mx, int my, float dt) {
+        int ox = impPickerX(), oy = impPickerY(), h = impPickerH();
+        g.fill(ox - 1, oy - 1, ox + IMP_PW + 1, oy + h + 1, 0xFF666666);
+        g.fill(ox, oy, ox + IMP_PW, oy + h, 0xEE111111);
+
+        if (importSearchBox != null) {
+            importSearchBox.setX(ox + 2);
+            importSearchBox.setY(oy + 3);
+            importSearchBox.setWidth(IMP_PW - 4);
+            importSearchBox.setVisible(true);
+            importSearchBox.extractRenderState(g, mx, my, dt);
+        }
+
+        int listY = oy + 20, sbX = ox + IMP_PW - 5;
+        if (importFiltered.isEmpty()) {
+            g.text(font, Component.translatable("screen.customglint.glint_table.import_empty"), ox + 4, listY + 2, 0xFF888888, false);
+        }
+        boolean canManageServer = canManageServerTrims();
+        for (int i = 0; i < IMPORT_ROWS && importScroll + i < importFiltered.size(); i++) {
+            ImpEntry e = importFiltered.get(importScroll + i);
+            int ry = listY + i * IMPORT_ROW_H;
+            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
+            if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, 0x40FFFFFF);
+            // Server (shared) blueprints get a small padlock and a gold tint; personal client ones stay plain.
+            int textX = ox + 4;
+            if (e.server()) {
+                drawLockIcon(g, ox + 4, ry + 3, 0xFFE0C060);
+                textX = ox + 12;
+            }
+            g.text(font, Component.literal(e.name()), textX, ry + 2, e.server() ? 0xFFE0C060 : 0xFFDDDDDD, false);
+            // Trash on the far right of the hovered row: personal rows always; server rows only for ops/single-player.
+            if (hovered && (!e.server() || canManageServer)) {
+                boolean onTrash = mx >= sbX - IMP_TRASH_W && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
+                drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
+            }
+        }
+
+        if (importFiltered.size() > IMPORT_ROWS) {
+            int trackH = IMPORT_ROWS * IMPORT_ROW_H;
+            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+            int thumbH = Math.max(8, trackH * IMPORT_ROWS / importFiltered.size());
+            int thumbY = listY + (int) ((trackH - thumbH) * (float) importScroll / (importFiltered.size() - IMPORT_ROWS));
+            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+        }
+    }
+
+    /** Tiny 7×8 trash-can glyph drawn with fills (the font has no trash glyph). Origin = top-left. */
+    private void drawTrashIcon(GuiGraphicsExtractor g, int x, int y, int color) {
+        g.fill(x + 2, y, x + 5, y + 1, color);          // handle nub
+        g.fill(x, y + 1, x + 7, y + 2, color);          // lid
+        g.fill(x + 1, y + 3, x + 6, y + 8, color);      // can body
+        int slot = 0xEE111111;                          // stripes cut back to the panel colour
+        g.fill(x + 2, y + 4, x + 3, y + 7, slot);
+        g.fill(x + 4, y + 4, x + 5, y + 7, slot);
+    }
+
+    /** Tiny 5×7 padlock glyph marking a shared server blueprint. Origin = top-left. */
+    private void drawLockIcon(GuiGraphicsExtractor g, int x, int y, int color) {
+        g.fill(x + 1, y, x + 4, y + 1, color);         // shackle top
+        g.fill(x + 1, y + 1, x + 2, y + 3, color);     // shackle left
+        g.fill(x + 3, y + 1, x + 4, y + 3, color);     // shackle right
+        g.fill(x, y + 3, x + 5, y + 7, color);         // body
+    }
+
+    /** Delete a personal client blueprint: remove its {@code config/customglint/trims/<name>.json}, then rescan. */
+    private void deleteImport(String name) {
+        try {
+            Files.deleteIfExists(Paths.get("config/customglint/trims", name + ".json").toAbsolutePath());
+        } catch (Exception ignored) {
+            // Locked/unremovable file: leave it; the rescan below simply keeps showing it.
+        }
+        scanImportConfigs();
+    }
+
+    /** Delete a shared server blueprint (op/single-player only): ask the server to remove it, drop it from the
+     *  local mirror for instant feedback, then rescan. The server's authoritative re-sync follows. */
+    private void deleteServerBlueprint(String name) {
+        ClientPacketDistributor.sendToServer(new GlintDeleteServerBlueprintPacket(name));
+        GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.remove(name);
+        scanImportConfigs();
     }
 
     private void drawScrollbar(GuiGraphicsExtractor g, int gx, int gy, int total, int scroll) {
@@ -1788,6 +2165,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 () -> "♪", () -> GlintClientConfig.glintTableSound() ? LABEL_HDR : COST_BAD, () -> GUI_FACE,
                 b -> GlintClientConfig.setGlintTableSound(!GlintClientConfig.glintTableSound())));
 
+        // Import: left-click opens a picker of premade config trims (same source as the wand editor's
+        // Import); right-click saves the current preview build to a config file so it can be imported later.
+        // Sits to the left of the sound toggle.
+        addRenderableWidget(new BevelButton(leftPos + SKIN_BTN_X - SND_BTN_W - 2 - IMP_BTN_W - 2, topPos + SKIN_BTN_Y, IMP_BTN_W, SKIN_BTN_H, 2, true,
+                () -> "↓", () -> LABEL_HDR, () -> GUI_FACE, b -> { if (b == 1) saveCurrentAsImport(); else toggleImportPicker(); }));
+
         printBtn = addRenderableWidget(new BevelButton(leftPos + PRINT_X, topPos + PRINT_Y, PRINT_W, PRINT_H, 3, false,
                 () -> Component.translatable("screen.customglint.glint_table.print").getString(), () -> canPrint() ? LABEL_HDR : COST_BAD, () -> canPrint() ? GUI_FACE : BTN_DISABLED,
                 b -> { if (canPrint()) onPrint(); }));
@@ -2042,6 +2425,36 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         double mx = event.x(), my = event.y();
         int x = leftPos, y = topPos;
 
+        // Import picker is modal: it swallows every click while open (search box, a row, or click-outside-to-close).
+        if (showImportPicker) {
+            int ox = impPickerX(), oy = impPickerY(), h = impPickerH();
+            if (mx >= ox + 2 && mx < ox + IMP_PW - 2 && my >= oy + 3 && my < oy + 17) {
+                if (importSearchBox != null) importSearchBox.mouseClicked(event, doubleClick);
+                return true;
+            }
+            if (mx < ox || mx >= ox + IMP_PW || my < oy || my >= oy + h) { // click outside closes
+                showImportPicker = false;
+                if (importSearchBox != null) importSearchBox.setFocused(false);
+                return true;
+            }
+            int listY = oy + 20, sbX = ox + IMP_PW - 5;
+            if (my >= listY && mx >= ox && mx < sbX) {
+                int row = (int) (my - listY) / IMPORT_ROW_H;
+                int idx = importScroll + row;
+                if (row >= 0 && row < IMPORT_ROWS && idx < importFiltered.size()) {
+                    ImpEntry e = importFiltered.get(idx);
+                    boolean trashShown = !e.server() || canManageServerTrims(); // server rows: op/single-player only
+                    if (mx >= sbX - IMP_TRASH_W && trashShown) { // trash hotzone: delete, don't select
+                        if (e.server()) deleteServerBlueprint(e.name()); // shared: ask the server to remove it
+                        else deleteImport(e.name());                     // personal: delete the local file
+                    } else {
+                        importSelected(e);
+                    }
+                }
+            }
+            return true;
+        }
+
         // A click inside the open hex box goes to the box (and is consumed) so it never falls through to a
         // modifier button drawn beneath it.
         if (hexOpen && hexBox != null && hexBox.isVisible()
@@ -2177,9 +2590,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // not physical items (re-print to materialise a copy).
         int ri = gridIndexAt(mx, my, x + RGRID_X, y + GRID_Y, printScroll, GlintPrintedSyncPacket.CLIENT_PRINTED.size());
         if (ri >= 0) {
-            // Shift-left-click pulls the trim out of the library into the inventory (no-op if it's full).
+            // Shift-left-click pulls a real trim out of the library into the inventory (no-op if it's full).
+            // An imported-but-not-yet-crafted trim is dimmed and locked; shift-clicking it instead deletes it
+            // from the library.
             if (event.button() == 0 && hasShiftDown()) {
-                ClientPacketDistributor.sendToServer(new GlintWithdrawPacket(ri));
+                if (isImportLocked(GlintPrintedSyncPacket.CLIENT_PRINTED.get(ri)))
+                    ClientPacketDistributor.sendToServer(new GlintDeletePrintedPacket(ri));
+                else
+                    ClientPacketDistributor.sendToServer(new GlintWithdrawPacket(ri));
                 return true;
             }
             ItemStack picked = GlintPrintedSyncPacket.CLIENT_PRINTED.get(ri).copy();
@@ -2219,6 +2637,15 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        // Import picker: Escape or Enter closes it; other keys type into the search box.
+        if (showImportPicker) {
+            if (event.key() == 256 || event.key() == 257 || event.key() == 335) {
+                showImportPicker = false;
+                if (importSearchBox != null) importSearchBox.setFocused(false);
+                return true;
+            }
+            if (importSearchBox != null && importSearchBox.isFocused()) { importSearchBox.keyPressed(event); return true; }
+        }
         // Enter closes whichever text box is being edited (mirrors the right-click-to-close toggle on the slots).
         if (event.key() == 257 || event.key() == 335) { // Return / numpad Enter
             if (hexOpen) { closeHex(); setFocused(null); return true; }
@@ -2239,6 +2666,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
+        if (showImportPicker && importSearchBox != null && importSearchBox.isFocused() && importSearchBox.charTyped(event)) return true;
         if (nameBox != null && nameBox.isVisible() && nameBox.isFocused() && nameBox.charTyped(event)) return true;
         if (hexBox != null && hexBox.isVisible() && hexBox.isFocused() && hexBox.charTyped(event)) return true;
         return super.charTyped(event);
@@ -2270,6 +2698,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     @Override
     public boolean mouseScrolled(double mx, double my, double scrollX, double scrollY) {
         int x = leftPos, y = topPos;
+        if (showImportPicker) {
+            int max = Math.max(0, importFiltered.size() - IMPORT_ROWS);
+            importScroll = Math.max(0, Math.min(max, importScroll - (int) Math.signum(scrollY)));
+            return true;
+        }
         if (inGrid(mx, my, x + LGRID_X, y + GRID_Y)) {
             gridScroll = scrolled(gridScroll, trims.size(), scrollY);
             return true;
