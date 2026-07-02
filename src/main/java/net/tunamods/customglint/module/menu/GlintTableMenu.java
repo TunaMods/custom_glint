@@ -272,6 +272,25 @@ public class GlintTableMenu extends AbstractContainerMenu {
             newColors.add((alpha << 24) | rgb);
             for (int idx : shard) if (consumed.add(SLOT_DYE_START + idx)) usedDyeSlots.add(SLOT_DYE_START + idx);
         }
+        // The committed layers (below/above the active one) also cost dyes now, not just the active layer:
+        // each of their colours consumes a matching vanilla dye (deduped by slot with the active layer, one
+        // dye covers a shade everywhere) or a rainbow dye for any colour that isn't a vanilla dye shade.
+        int committedRainbow = 0;
+        for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
+            for (CustomGlint.Layer l : group) {
+                for (int color : l.colors()) {
+                    int idx = dyeIndexForRgb(color);
+                    if (idx < 0) { committedRainbow++; continue; }
+                    int slot = SLOT_DYE_START + idx;
+                    if (!consumed.add(slot)) continue; // that dye is already being consumed for the print
+                    if (container.getItem(slot).get(DataComponents.DYE) == null) return; // required dye missing
+                    usedDyeSlots.add(slot);
+                }
+            }
+        }
+        if (container.getItem(SLOT_RAINBOW_DYE).getCount() < rainbowNeeded + committedRainbow) return;
+        rainbowNeeded += committedRainbow;
+
         // At least one color is required: the placed trim's existing colors, or a newly selected dye.
         if (baseColors.length + newColors.size() == 0) return;
         // The merge slot's (donor) colors are folded in for free (mirrors GlintTrimMergeRecipe); the
@@ -322,17 +341,16 @@ public class GlintTableMenu extends AbstractContainerMenu {
         GlintTrimItem.setScrollDir(trim, scrollDir);
         GlintTrimItem.setScrollOffset(trim, scrollOffset);
         GlintTrimItem.setPattern(trim, design);
-        // Simultaneous tears: one per simultaneous layer in the finished trim. The committed extra layers are
-        // already baked simultaneous, so each REQUIRES a tear; the active layer becomes simultaneous only if
-        // its toggle is on and a tear is left over after covering the committed ones. (This is why the cost no
-        // longer depends on which layer is selected, it counts the whole trim.)
+        // Simultaneous tears: one per simultaneous layer with ≥2 colors in the finished trim (a single-colour
+        // layer renders the same either way, so it costs none). The active layer keeps the simultaneous state
+        // the client chose (the `simultaneous` flag) rather than being silently downgraded when no spare tear
+        // is around, so the print BLOCKS on a missing tear instead of quietly printing sequential.
         int committedSim = 0;
-        for (CustomGlint.Layer l : belowLayers) if (l.simultaneous()) committedSim++;
-        for (CustomGlint.Layer l : aboveLayers) if (l.simultaneous()) committedSim++;
-        int availSimTears = container.getItem(SLOT_TEAR).getCount();
-        if (availSimTears < committedSim) return; // not enough tears for the simultaneous extra layers
-        boolean activeSim = simultaneous && availSimTears > committedSim;
+        for (CustomGlint.Layer l : belowLayers) if (l.simultaneous() && l.colors().length >= 2) committedSim++;
+        for (CustomGlint.Layer l : aboveLayers) if (l.simultaneous() && l.colors().length >= 2) committedSim++;
+        boolean activeSim = simultaneous && GlintTrimItem.getColors(trim).length >= 2;
         int simTearsUsed = committedSim + (activeSim ? 1 : 0);
+        if (container.getItem(SLOT_TEAR).getCount() < simTearsUsed) return; // not enough tears for the simultaneous layers
         // The sequential tear is consumed when reverting a SIMULTANEOUS source layer back to sequential. The
         // source's mode rides in from the client (sourceSimultaneous) so it works whether the trim was placed
         // physically or just selected from the printed library.
@@ -449,6 +467,15 @@ public class GlintTableMenu extends AbstractContainerMenu {
         int idx = dye.ordinal();
         if (idx < 0 || idx >= GlintTrimItem.DYE_COLORS.length) return -1;
         return GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF;
+    }
+
+    /** RGB (lower 24 bits) → the vanilla dye index whose mod-palette colour matches, or -1 if it isn't a dye
+     *  shade (a mix / custom colour, which costs a rainbow dye instead). */
+    private static int dyeIndexForRgb(int color) {
+        int rgb = color & 0xFFFFFF;
+        for (int i = 0; i < GlintTrimItem.DYE_COLORS.length; i++)
+            if ((GlintTrimItem.DYE_COLORS[i] & 0xFFFFFF) == rgb) return i;
+        return -1;
     }
 
     private boolean isServer() {
