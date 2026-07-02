@@ -188,11 +188,12 @@ public class GlintApplyPacket implements CustomPacketPayload {
                 }
             } else {
                 // Server-authoritative gate. This branch spawns an arbitrary registered item into the
-                // player's inventory, a creative convenience reached only through the wand UI (the wand has
-                // no recipe; it's creative/command-only). The packet is client-sent, so re-verify here that
-                // the player actually holds the wand AND is in creative. Without this a modified client could
-                // send the packet with any itemId and spawn/dupe items at will.
-                if (!wandIsWand || !player.isCreative()) return;
+                // player's inventory, reached only through the wand UI. The wand has no recipe (it's
+                // creative/command-only), so possessing one IS the authorization — no game-mode check, so an
+                // admin who hands themselves a wand can use it in survival too. The packet is client-sent, so
+                // still re-verify the player actually holds the wand; without that a modified client could
+                // send the packet with no wand and spawn/dupe items at will.
+                if (!wandIsWand) return;
                 Identifier itemRl = Identifier.tryParse(pkt.itemId);
                 if (itemRl == null) return;
                 Item item = BuiltInRegistries.ITEM.getOptional(itemRl).orElse(null);
