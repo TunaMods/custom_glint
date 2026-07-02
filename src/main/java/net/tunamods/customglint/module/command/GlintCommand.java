@@ -329,14 +329,13 @@ public class GlintCommand {
         int count = 0;
         for (Entity e : targets) {
             if (!(e instanceof LivingEntity le)) continue;
-            if (enabled && !CustomGlint.hasEntity(le)) continue;
+            // Glow is independent of the glint: an entity can glow with no custom glint (the outline
+            // defaults to white when there are no glow colors or glint to draw its color from).
             CustomGlint.setEntityGlowing(le, enabled);
             count++;
         }
         if (count == 0) {
-            source.sendFailure(Component.literal(enabled
-                ? "No matching living entities have a glint to glow"
-                : "No matching living entities"));
+            source.sendFailure(Component.literal("No matching living entities"));
             return 0;
         }
         final int n = count;
@@ -387,11 +386,7 @@ public class GlintCommand {
             return 0;
         }
 
-        if (enabled && !CustomGlint.has(stack)) {
-            source.sendFailure(Component.literal("Item has no custom glint, apply a glint first"));
-            return 0;
-        }
-
+        // Glow is independent of the glint: an item can carry a glowing outline with no custom glint at all.
         CustomGlint.setGlowing(stack, enabled);
         source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
         return 1;
