@@ -13,6 +13,7 @@ import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 import net.tunamods.customglint.module.menu.ModAttachments;
 import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -434,6 +435,7 @@ public class GlintCommand {
         int added = stored.size() - before;
         player.setData(ModAttachments.STORED_DESIGNS.get(), stored);
         PacketDistributor.sendToPlayer(player, new GlintStoredSyncPacket(new ArrayList<>(stored)));
+        GlintTableMenu.checkDesignAdvancements(player);
 
         final int n = added;
         source.sendSuccess(() -> Component.literal(n == 0

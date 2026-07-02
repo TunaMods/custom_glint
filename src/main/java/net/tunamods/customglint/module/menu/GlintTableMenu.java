@@ -20,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlocks;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
@@ -164,7 +165,29 @@ public class GlintTableMenu extends AbstractContainerMenu {
             List<ItemStack> printed = new ArrayList<>();
             for (ItemStack s : sp.getData(ModAttachments.PRINTED_TRIMS.get())) if (!s.isEmpty()) printed.add(s);
             PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(printed));
+            // Re-check the design-collection advancements on open so a player who already owns designs from
+            // before this feature existed (or via another path) still earns them.
+            checkDesignAdvancements(sp);
         }
+    }
+
+    /** Base design names (the built-in {@link CustomGlint#PATTERNS}), the pool the collection advancements
+     *  count against. Data-pack designs don't count toward "base" totals. */
+    private static Set<String> baseDesignNames() {
+        Set<String> set = new HashSet<>();
+        for (Identifier d : CustomGlint.PATTERNS)
+            set.add(d.equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(d));
+        return set;
+    }
+
+    /** Fire the design-collection advancements with the player's current count of BASE designs owned. Called
+     *  after any change to the stored-design set (and on table open). Advancements are idempotent, so the
+     *  extra fires are harmless. */
+    public static void checkDesignAdvancements(ServerPlayer sp) {
+        Set<String> base = baseDesignNames();
+        int collected = 0;
+        for (String s : sp.getData(ModAttachments.STORED_DESIGNS.get())) if (base.contains(s)) collected++;
+        ModTriggers.DESIGNS_COLLECTED.get().trigger(sp, collected, base.size());
     }
 
     /** A "painted" trim, one that has had color applied, lives in the printed library; an empty trim
@@ -404,6 +427,14 @@ public class GlintTableMenu extends AbstractContainerMenu {
         // Output: give to the player (drop overflow) and store in the printed library.
         if (!sp.addItem(trim)) sp.drop(trim, false);
         storePrinted(sp, trim);
+
+        // A trim printed with the full 8 colors earns "Ratatouille"; a layered trim earns "Like Ogres" and
+        // the full 8 layers earns "How many cheeses?".
+        if (GlintTrimItem.getColors(trim).length >= 8) ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
+        CustomGlint.Data printed = CustomGlint.read(trim);
+        int layers = printed != null ? printed.layers().length : 0;
+        if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
+        if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
     }
 
     /** Storage-library name for a trim stack (a Glint design name, or the Glow Trim sentinel), or null. */
@@ -439,6 +470,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (updated != null) {
             sp.setData(ModAttachments.STORED_DESIGNS.get(), updated);
             PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+            checkDesignAdvancements(sp);
         }
     }
 
@@ -456,6 +488,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         updated.add(name);
         sp.setData(ModAttachments.STORED_DESIGNS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+        checkDesignAdvancements(sp);
         return true;
     }
 

@@ -1,0 +1,44 @@
+{
+  "parent": "customglint:like_ogres",
+  "display": {
+    "icon": {
+      "id": "customglint:glint_trim",
+      "components": {
+        "customglint:glint": {
+          "glint": {
+            "layers": [
+              { "design": "customglint:textures/glint/sparkle.png", "colors": [ -65536 ] },
+              { "design": "customglint:textures/glint/swirl.png", "colors": [ -32768 ] },
+              { "design": "customglint:textures/glint/stars.png", "colors": [ -256 ] },
+              { "design": "customglint:textures/glint/hexagon.png", "colors": [ -16711936 ] },
+              { "design": "customglint:textures/glint/aurora.png", "colors": [ -16711681 ] },
+              { "design": "customglint:textures/glint/prism.png", "colors": [ -16776961 ] },
+              { "design": "customglint:textures/glint/oil.png", "colors": [ -8388353 ] },
+              { "design": "customglint:textures/glint/ripple.png", "colors": [ -65281 ] }
+            ]
+          }
+        }
+      }
+    },
+    "title": {
+      "translate": "advancement.customglint.how_many_cheeses.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.how_many_cheeses.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "eight_layers": {
+      "trigger": "customglint:eight_layer_trim"
+    }
+  },
+  "requirements": [
+    [
+      "eight_layers"
+    ]
+  ]
+}

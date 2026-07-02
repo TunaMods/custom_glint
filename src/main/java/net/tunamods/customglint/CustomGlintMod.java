@@ -2,6 +2,7 @@ package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModComponents;
@@ -61,6 +62,7 @@ public class CustomGlintMod {
         ModRecipes.register(modEventBus);
         ModComponents.register(modEventBus);
         ModNetworking.register(modEventBus);
+        ModTriggers.register(modEventBus);
 
         // Animated glow tint for the Glint/Glow Trim inventory icons. Client-only (touches ItemTintSource);
         // the client classes are referenced solely inside the dist guard so they never load on a server.
@@ -81,6 +83,21 @@ public class CustomGlintMod {
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
+        NeoForge.EVENT_BUS.addListener(this::onItemCrafted);
+    }
+
+    /** Award the 8-color trim advancement when a color-adding craft (dye / merge recipe) yields a full
+     *  8-color Glint Trim. The Glint Table print fires the same trigger from {@code GlintTableMenu#print}. */
+    private void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;
+        if (GlintTrimItem.getColors(event.getCrafting()).length >= 8) {
+            ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
+        }
+        CustomGlint.Data data = CustomGlint.read(event.getCrafting());
+        int layers = data != null ? data.layers().length : 0;
+        if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
+        if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
