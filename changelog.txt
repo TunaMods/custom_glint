@@ -1,7 +1,7 @@
 [1.7.0]
 
 - Added /glint cheat to unlock every Glint Table design at once
-- Added advancements for smithing a trim, crafting the Glint Table, filling a trim with all 8 colors or 8 layers, and collecting 5, 10, 20, 50, or every base design
+- Added advancements for smithing a trim, crafting the Glint Table, filling a trim with all 8 colors or 8 layers, the ultimate 8-layer trim with all 8 colors on every layer, and collecting 5, 10, 20, 50, or every base design
 - Added trim import to the Glint Table: save any build you preview to a file and pull it back later as a build target that unlocks once you print it
 - On servers, operators can share a set of blueprint trims that everyone sees in the import list
 - The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
