@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
 import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlocks;
 import net.tunamods.customglint.module.item.ModComponents;
@@ -559,13 +560,14 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (!sp.addItem(trim)) sp.drop(trim, false);
         storePrinted(sp, trim);
 
-        // A trim printed with the full 8 colors earns "Ratatouille"; a layered trim earns "Like Ogres" and
-        // the full 8 layers earns "How many cheeses?".
+        // A trim printed with the full 8 colors earns "Ratatouille"; a layered trim earns "Like Ogres", the
+        // full 8 layers earns "How many cheeses?", and 8 layers each with all 8 colors earns "In this Economy?".
         if (GlintTrimItem.getColors(trim).length >= 8) ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
         CustomGlint.Data printed = CustomGlint.read(trim);
         int layers = printed != null ? printed.layers().length : 0;
         if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
         if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
+        if (EightByEightTrimTrigger.matches(printed)) ModTriggers.EIGHT_BY_EIGHT_TRIM.get().trigger(sp);
     }
 
     /** Storage-library name for a trim stack (a Glint design name, or the Glow Trim sentinel), or null. */

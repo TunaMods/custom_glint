@@ -2,6 +2,7 @@ package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
 import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -98,6 +99,7 @@ public class CustomGlintMod {
         int layers = data != null ? data.layers().length : 0;
         if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
         if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
+        if (EightByEightTrimTrigger.matches(data)) ModTriggers.EIGHT_BY_EIGHT_TRIM.get().trigger(sp);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
