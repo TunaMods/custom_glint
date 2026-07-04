@@ -136,6 +136,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     // Which grid's scrollbar is being dragged (0 = left, 1 = right, -1 = none).
     private int draggingGrid = -1;
+    // Whether the Import picker's scrollbar thumb is being dragged.
+    private boolean draggingImport = false;
 
     // Grid selections: left-click sets the main (layer-1) design; right-click sets the merge donor (its
     // colors fold into the main, the main keeps its design). selectedPrinted is a finished trim picked
@@ -1072,13 +1074,16 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 lines.add(Component.translatable(c.kind() == 1
                         ? "screen.customglint.glint_table.hint.remove_layer"
                         : "screen.customglint.glint_table.hint.edit_layer").withStyle(ChatFormatting.GRAY));
+                if (c.kind() != 1 && captureActive() != null)
+                    lines.add(Component.translatable("screen.customglint.glint_table.hint.layer_swap").withStyle(ChatFormatting.GRAY));
                 g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
                 return;
             }
         }
 
         // Color-shard strip: select / remove the active layer's colours (and edit a rainbow shard's hex).
-        {
+        // Hidden (no shard tooltips) while nothing is previewing, matching drawColorStrip.
+        if (colorShardsVisible()) {
             int csy = topPos + COLOR_STRIP_Y;
             int n = Math.min(colorShards.size(), 8);
             for (int k = 0; k < n; k++) {
@@ -1092,6 +1097,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                     lines.add(Component.translatable("screen.customglint.glint_table.hint.shard_remove").withStyle(ChatFormatting.GRAY));
                 } else {
                     lines.add(Component.translatable("screen.customglint.glint_table.hint.shard_select").withStyle(ChatFormatting.GRAY));
+                    if (selectedColorIdx >= 0)
+                        lines.add(Component.translatable("screen.customglint.glint_table.hint.shard_swap").withStyle(ChatFormatting.GRAY));
                 }
                 g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
                 return;
@@ -1666,6 +1673,17 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return Math.round(Math.max(0f, Math.min(1f, f)) * maxRow);
     }
 
+    /** Import-picker equivalent of {@link #scrollFromMouse}: map a mouse Y on the Import scrollbar track to a
+     *  row, matching renderImportPicker's thumb geometry. */
+    private int importScrollFromMouse(double my) {
+        int listY = impPickerY() + 20, trackH = IMPORT_ROWS * IMPORT_ROW_H;
+        int total = importFiltered.size(), max = Math.max(0, total - IMPORT_ROWS);
+        if (max <= 0) return 0;
+        int thumbH = Math.max(8, trackH * IMPORT_ROWS / total);
+        float f = (float) ((my - listY - thumbH / 2.0) / (trackH - thumbH));
+        return Math.round(Math.max(0f, Math.min(1f, f)) * max);
+    }
+
     /** Selected-but-not-placed preview ghosted into the empty main slot (8). Drawn solid when the
      *  selection is owned (a printed-library trim, or a stored design); dimmed only when unowned. */
     private void drawMainPreview(GuiGraphicsExtractor g) {
@@ -1747,11 +1765,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return result;
     }
 
-    /** True when the layer strip should be visible: there's an active design or committed layers. The [+]
-     *  add chip shows regardless of whether a layer tear is in the slot, adding a layer is free to preview;
-     *  the layer tears are only required (and consumed) at print. */
+    /** The layer strip is always visible so layer 1 (and the [+] add chip) is a constant, like the color-shard
+     *  strip below the preview — it no longer waits for a design to be previewed before appearing. Layer chips
+     *  render only for layers that exist (the active layer once a design is chosen, plus any committed ones);
+     *  on a bare table only the [+] shows. The [+] add chip shows regardless of whether a layer tear is in the
+     *  slot — adding a layer is free to preview; the layer tears are only required (and consumed) at print. */
     private boolean layerStripVisible() {
-        return activeTrim().getItem() instanceof GlintTrimItem || !lowerLayers.isEmpty() || !upperLayers.isEmpty();
+        return true;
     }
 
     /** Draw the layer chips above the preview: a design icon per layer (active ringed) plus a [+] add. */
@@ -1791,8 +1811,15 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     /** The color shards (one per entry in {@link #colorShards}) plus a trailing "+" box, mirroring the layer
      *  strip. Each shard shows its blended colour; the selected shard ({@link #selectedColorIdx}) is ringed;
      *  an empty (unset) shard shows a neutral placeholder. */
+    /** The colour shards belong to the active layer, so the strip only shows them while a design is being
+     *  previewed — with no preview it collapses to just the "+" box, mirroring the layer strip hiding its
+     *  layer-1 chip until there's a design. */
+    private boolean colorShardsVisible() {
+        return activeTrim().getItem() instanceof GlintTrimItem;
+    }
+
     private void drawColorStrip(GuiGraphicsExtractor g, int mx, int my) {
-        int n = Math.min(colorShards.size(), 8);
+        int n = colorShardsVisible() ? Math.min(colorShards.size(), 8) : 0;
         for (int k = 0; k < n; k++) {
             int x = leftPos + COLOR_STRIP_X + k * COLOR_CELL, y = topPos + COLOR_STRIP_Y;
             List<Integer> shard = colorShards.get(k);
@@ -1814,24 +1841,33 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 g.fill(x, y, x + COLOR_ICON, y + COLOR_ICON, HOVER_TINT);
         }
         // "+" add-color box after the shards, hidden while the hex box is open so it doesn't paint over it
-        // (the hex EditBox is a widget drawn earlier, in super.extractContents).
+        // (the hex EditBox is a widget drawn earlier, in super.extractContents). With no preview it's the only
+        // thing on the strip and shows disabled/red (like the layer strip's [+]), since there's no layer to
+        // add a colour to yet.
         if (n < 8 && !hexOpen) {
             int x = leftPos + COLOR_STRIP_X + n * COLOR_CELL, y = topPos + COLOR_STRIP_Y;
-            boolean hover = mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON;
-            raisedPanel(g, x, y, COLOR_ICON, COLOR_ICON, hover ? BTN_HOVER : GUI_FACE);
-            centered(g, "+", x + COLOR_ICON / 2, y + 2, LABEL_HDR);
+            boolean on = colorShardsVisible();
+            boolean hover = on && mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON;
+            raisedPanel(g, x, y, COLOR_ICON, COLOR_ICON, hover ? BTN_HOVER : (on ? GUI_FACE : BTN_DISABLED));
+            centered(g, "+", x + COLOR_ICON / 2, y + 2, on ? LABEL_HDR : COST_BAD);
         }
     }
 
     /** Color-strip clicks: left-click a shard selects it (the dye bar then highlights/recolors it),
      *  right-click removes it, and the trailing "+" adds a new (unset) shard. Returns true if hit. */
     private boolean colorStripClick(double mx, double my, int button) {
+        if (!colorShardsVisible()) return false; // no preview: the strip is just an inert "+", nothing to click
         int y = topPos + COLOR_STRIP_Y;
         int n = Math.min(colorShards.size(), 8);
         for (int k = 0; k < n; k++) {
             int x = leftPos + COLOR_STRIP_X + k * COLOR_CELL;
             if (mx < x || mx >= x + COLOR_ICON || my < y || my >= y + COLOR_ICON) continue;
-            if (button == 1 && selectedColorIdx == k) { // right-click the SELECTED shard: delete it (select first)
+            if (button == 0 && hasShiftDown() && selectedColorIdx >= 0 && selectedColorIdx != k
+                    && selectedColorIdx < colorShards.size()) { // shift-left-click another shard: swap the two colours
+                Collections.swap(colorShards, selectedColorIdx, k);
+                selectedColorIdx = k; // selection follows the colour we moved
+                closeHex();
+            } else if (button == 1 && selectedColorIdx == k) { // right-click the SELECTED shard: delete it (select first)
                 colorShards.remove(k);
                 selectedColorIdx = -1;
                 closeHex();
@@ -1971,6 +2007,25 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             upperLayers.clear(); upperLayers.addAll(tail);
             loadControlsFromLayer(clicked);
         }
+    }
+
+    /** Swap the active (selected) layer with a committed one, keeping the SAME layer active. The two chips
+     *  exchange positions in the stack; the active editor state is untouched (it just moves), mirroring the
+     *  color-shard swap. {@code kind}/{@code k} identify the clicked committed chip (0 = lower, 2 = upper). */
+    private void swapLayers(int kind, int k) {
+        CustomGlint.Layer active = captureActive();
+        if (active == null) return; // no active layer to swap
+        List<CustomGlint.Layer> combined = new ArrayList<>(lowerLayers);
+        int activeIdx = combined.size();
+        combined.add(active);
+        combined.addAll(upperLayers);
+        int p = (kind == 0) ? k : activeIdx + 1 + k;
+        if (p < 0 || p >= combined.size() || p == activeIdx) return;
+        Collections.swap(combined, activeIdx, p); // active layer now sits at p
+        // Re-split around p so the active slot lands there; the active editor state stays as-is (no reload,
+        // so the selected color shard and sub-edits survive).
+        lowerLayers.clear(); lowerLayers.addAll(combined.subList(0, p));
+        upperLayers.clear(); upperLayers.addAll(combined.subList(p + 1, combined.size()));
     }
 
     /** Delete the active (selected) layer: discard its build and promote an adjacent committed layer into
@@ -2200,17 +2255,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // No design chosen yet: nothing to build or consume, just say so.
         ItemStack src = activeTrim();
         if (src.isEmpty() || !(src.getItem() instanceof GlintTrimItem) || GlintTrimItem.getPattern(src) == null) {
-            lines.add(Component.translatable("screen.customglint.glint_table.cant_print").withStyle(ChatFormatting.RED));
             lines.add(Component.literal("• ").append(Component.translatable("screen.customglint.glint_table.issue.pick_design")).withStyle(ChatFormatting.RED));
             return lines;
         }
 
-        // A "can't print" header + any structural blockers (non-material) up top; the material breakdown below
-        // is ALWAYS shown so every requirement stays visible and just flips red→green as it's met.
-        if (!canPrint()) lines.add(Component.translatable("screen.customglint.glint_table.cant_print").withStyle(ChatFormatting.RED));
+        // Structural blockers (non-material) up top; the material breakdown below is ALWAYS shown so every
+        // requirement stays visible and just flips red→green as it's met.
         for (Component s : printIssues()) lines.add(Component.literal("• ").append(s).withStyle(ChatFormatting.RED));
-
-        lines.add(Component.translatable("screen.customglint.glint_table.consumes").withStyle(ChatFormatting.GRAY));
 
         ItemStack base = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
@@ -2434,10 +2485,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    /** A gray, multi-line tooltip built from lang keys (one line per key). */
+    /** A clean white, multi-line tooltip built from lang keys (one line per key). Left unstyled so it renders
+     *  the default tooltip white, matching the wand editor's control tooltips. */
     private static List<Component> tipLines(String... keys) {
         List<Component> lines = new ArrayList<>(keys.length);
-        for (String k : keys) lines.add(Component.translatable(k).withStyle(ChatFormatting.GRAY));
+        for (String k : keys) lines.add(Component.translatable(k));
         return lines;
     }
 
@@ -2678,7 +2730,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 if (importSearchBox != null) importSearchBox.setFocused(false);
                 return true;
             }
-            int listY = oy + 20, sbX = ox + IMP_PW - 5;
+            int listY = oy + 20, sbX = ox + IMP_PW - 5, trackH = IMPORT_ROWS * IMPORT_ROW_H;
+            if (importFiltered.size() > IMPORT_ROWS && mx >= sbX && mx < sbX + 4 && my >= listY && my < listY + trackH) {
+                draggingImport = true;
+                importScroll = importScrollFromMouse(my);
+                return true;
+            }
             if (my >= listY && mx >= ox && mx < sbX) {
                 int row = (int) (my - listY) / IMPORT_ROW_H;
                 int idx = importScroll + row;
@@ -2770,6 +2827,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 if (mx < cx || mx >= cx + LAYER_ICON || my < cy || my >= cy + LAYER_ICON) continue;
                 if (c.kind() == 3) { if (event.button() == 0) addLayer(); }         // [+] add chip
                 else if (c.kind() == 1) { if (event.button() == 1) removeActiveLayer(); } // selected layer: right-click deletes
+                else if (event.button() == 0 && hasShiftDown()) swapLayers(c.kind(), c.index()); // shift-left: swap with the active layer
                 else editLayer(c.kind(), c.index());                                 // unselected: any click selects it first
                 return true;
             }
@@ -2792,7 +2850,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                     if (menu.getCarried().isEmpty() && shardSel) {
                         List<Integer> shard = colorShards.get(selectedColorIdx);
                         if (isCustomShard(shard)) { shard.clear(); shard.add(i); closeHex(); } // leave rainbow mode
-                        else if (hasShiftDown()) { if (!shard.contains(i) && shard.size() < 8) shard.add(i); } // mix in
+                        // Shift-right-click toggles this dye in the mix: remove it if already added (so you can
+                        // un-pick one colour without clearing the shard), otherwise blend it in (capped at 8).
+                        else if (hasShiftDown()) { if (!shard.remove((Integer) i) && shard.size() < 8) shard.add(i); }
                         else { shard.clear(); shard.add(i); }                                   // set as the sole colour
                     }
                     return true; // swallow the right-click regardless, no vanilla pickup/place here
@@ -2948,6 +3008,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (draggingImport)    { importScroll = importScrollFromMouse(event.y()); return true; }
         if (draggingGrid == 0) { gridScroll = scrollFromMouse(event.y(), topPos + GRID_Y, trims.size()); return true; }
         if (draggingGrid == 1) { printScroll = scrollFromMouse(event.y(), topPos + GRID_Y, printedCapacity()); return true; }
         return super.mouseDragged(event, dx, dy);
@@ -2956,6 +3017,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
         draggingGrid = -1;
+        draggingImport = false;
         return super.mouseReleased(event);
     }
 
