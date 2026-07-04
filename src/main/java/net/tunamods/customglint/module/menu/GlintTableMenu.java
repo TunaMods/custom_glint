@@ -134,13 +134,18 @@ public class GlintTableMenu extends AbstractContainerMenu {
         // add order. See the SLOT_* constants above for the authoritative index → role mapping; the
         // material/modifier slots are spread under the left panel to leave room for their labels +
         // value + [-]/[+] controls beneath each.
-        addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  GlintTableMenu::isAnyTrim,        SLOT_MAX)); // 8 main (left of center, aligned to the grids' top row)
-        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL),      SLOT_MAX)); // 12 scale
-        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE),        SLOT_MAX)); // 10 speed
+        // Main / merge trim slots reject physical placement (mayPlace=false): the screen turns a placed trim
+        // into a library deposit + ghost preview, so these slots never hold a real item and it can't get stuck
+        // where it couldn't be pulled back out. They still exist for layout (the ghost draws over them).
+        addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  s -> false,                      SLOT_MAX)); // 8 main (left of center, aligned to the grids' top row)
+        // Speed/scale can cost more than a 64 stack on extreme multi-layer builds, so these two slots also take
+        // the compressed block (worth 9), which fits far more cost in one slot. See materialUnits / consumeUnits.
+        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL) || s.is(Items.SLIME_BLOCK), SLOT_MAX)); // 12 scale
+        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE) || s.is(Items.REDSTONE_BLOCK), SLOT_MAX)); // 10 speed
         addSlot(new FilteredSlot(container, SLOT_GLASS,     54,  154, s -> s.is(Items.GLASS),           SLOT_MAX)); // 11 opacity
         addSlot(new FilteredSlot(container, SLOT_GLOWSTONE, 233, 154, s -> s.is(Items.GLOWSTONE_DUST),  SLOT_MAX)); // 13
         addSlot(new FilteredSlot(container, SLOT_NAMETAG,   267, 154, s -> s.is(Items.NAME_TAG),         1)); // 14 (boolean gate, one only)
-        addSlot(new FilteredSlot(container, SLOT_TRIM_B,    188, 19,  GlintTableMenu::isAnyTrim,        SLOT_MAX)); // 9 layered (right of center, aligned to the grids' top row)
+        addSlot(new FilteredSlot(container, SLOT_TRIM_B,    188, 19,  s -> false,                      SLOT_MAX)); // 9 layered (right of center, aligned to the grids' top row) — placement rejected, see SLOT_TRIM note
         addSlot(new FilteredSlot(container, SLOT_TEAR,      292, 154, GlintTableMenu::isSimTear,        SLOT_MAX)); // 15 simultaneous tear (left of the shared toggle)
 
         // 16 dye slots + the rainbow dye (17 cells total), full-width bar, recentered: 17*18 = 306 → x0 = 18.
@@ -454,16 +459,18 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
         // Flat cost: one material per LAYER (active + every extra layer) that tunes speed/scale off 1× or sets
         // any opacity, so the cost is the total for the whole trim, not just the active layer.
-        int redCost = Math.abs(speed - 1.0f) > 0.001f ? 1 : 0;
-        int slimeCost = Math.abs(scale - 1.0f) > 0.001f ? 1 : 0;
-        int glassCost = opacity > 0 ? 1 : 0;
-        for (CustomGlint.Layer l : belowLayers) { redCost += layerTunedSpeed(l); slimeCost += layerTunedScale(l); glassCost += layerTranslucent(l); }
-        for (CustomGlint.Layer l : aboveLayers) { redCost += layerTunedSpeed(l); slimeCost += layerTunedScale(l); glassCost += layerTranslucent(l); }
+        // One redstone/slime per ± step speed/scale sits off 1×, one glass per opacity level, tallied across the
+        // active + every committed layer (mirrors GlintTableScreen.layerCosts). Tuning a trim is a real cost now.
+        int redCost = CustomGlint.stepCost(speed);
+        int slimeCost = CustomGlint.stepCost(scale);
+        int glassCost = opacity;
+        for (CustomGlint.Layer l : belowLayers) { redCost += CustomGlint.stepCost(l.speed()); slimeCost += CustomGlint.stepCost(l.patternScale()); glassCost += layerGlass(l); }
+        for (CustomGlint.Layer l : aboveLayers) { redCost += CustomGlint.stepCost(l.speed()); slimeCost += CustomGlint.stepCost(l.patternScale()); glassCost += layerGlass(l); }
 
         // Validate every required material is present before consuming anything.
-        if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return;
-        if (slimeCost > 0 && container.getItem(SLOT_SLIME).getCount() < slimeCost) return;
-        if (glassCost > 0 && container.getItem(SLOT_GLASS).getCount() < glassCost) return;
+        if (redCost > 0 && materialUnits(SLOT_REDSTONE, Items.REDSTONE, Items.REDSTONE_BLOCK) < redCost) return;
+        if (slimeCost > 0 && materialUnits(SLOT_SLIME, Items.SLIME_BALL, Items.SLIME_BLOCK) < slimeCost) return;
+        if (glassCost > 0 && container.getItem(SLOT_GLASS).getCount() < glassCost) return; // glass has no block form (caps at 64)
         // A base trim already carries its glow / name / glow-color, so re-printing them is free; only
         // glow/name that wasn't there needs the glowstone / name tag / glow-color dye.
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
@@ -538,8 +545,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
 
         // Consume the cost.
-        if (redCost > 0) container.removeItem(SLOT_REDSTONE, redCost);
-        if (slimeCost > 0) container.removeItem(SLOT_SLIME, slimeCost);
+        consumeUnits(sp, SLOT_REDSTONE, redCost, Items.REDSTONE, Items.REDSTONE_BLOCK);
+        consumeUnits(sp, SLOT_SLIME, slimeCost, Items.SLIME_BALL, Items.SLIME_BLOCK);
         if (glassCost > 0) container.removeItem(SLOT_GLASS, glassCost);
         for (int slot : usedDyeSlots) container.removeItem(slot, 1);
         if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded); // one per custom-hex colour
@@ -612,6 +619,21 @@ public class GlintTableMenu extends AbstractContainerMenu {
      *  per-player (save-persisted) list without limit. */
     private static final int MAX_STORED_DESIGNS = 128;
 
+    /** Teach every design a trim carries (all glint layers, or the Glow Trim key) so a trim deposited into the
+     *  library stays fully re-printable from its ghost. Each store is idempotent + deduped. */
+    private static void storeTrimDesigns(ServerPlayer sp, ItemStack trim) {
+        if (trim.getItem() instanceof GlowTrimItem) { storeDesign(sp, GlowTrimItem.STORAGE_KEY); return; }
+        CustomGlint.Data d = CustomGlint.read(trim);
+        if (d != null) {
+            for (CustomGlint.Layer l : d.layers()) {
+                String dn = l.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(l.design());
+                if (dn != null) storeDesign(sp, dn);
+            }
+        }
+        String base = designName(trim); // fallback for a trim with no glint Data yet
+        if (base != null) storeDesign(sp, base);
+    }
+
     /** Records a single design into the player's storage library (the scrollable grid) and syncs it. */
     private static boolean storeDesign(ServerPlayer sp, String name) {
         List<String> stored = sp.getData(ModAttachments.STORED_DESIGNS.get());
@@ -648,6 +670,32 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return !player.level().isClientSide();
     }
 
+    /** How many material units a slot holds, counting the compressed block as 9 (speed/scale slots accept the
+     *  block so an extreme build's cost can exceed a 64 stack). A slot holding neither form counts as 0. */
+    private int materialUnits(int slot, Item loose, Item block) {
+        ItemStack s = container.getItem(slot);
+        if (s.is(loose)) return s.getCount();
+        if (s.is(block)) return s.getCount() * 9;
+        return 0;
+    }
+
+    /** Consume {@code cost} units of a material, breaking 9× blocks as needed and refunding the change to the
+     *  player as loose items so the net cost is exact. Assumes {@link #materialUnits} already confirmed enough. */
+    private void consumeUnits(ServerPlayer sp, int slot, int cost, Item loose, Item block) {
+        if (cost <= 0) return;
+        if (container.getItem(slot).is(block)) {
+            int blocksNeeded = (cost + 8) / 9; // ceil
+            container.removeItem(slot, blocksNeeded);
+            int refund = blocksNeeded * 9 - cost;
+            if (refund > 0) {
+                ItemStack change = new ItemStack(loose, refund);
+                if (!sp.addItem(change)) sp.drop(change, false);
+            }
+        } else {
+            container.removeItem(slot, cost); // loose items: exact
+        }
+    }
+
     /** Right-click on a dye slot is reserved for the screen's color-selection gesture, so block its
      *  pickup/place at the menu level (runs on both sides), the screen's click-swallow alone misses
      *  release/drag edge cases under fast spam. Left-click and shift still behave normally. */
@@ -672,9 +720,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return sp.getData(ModAttachments.STORED_DESIGNS.get()).contains(dn);
     }
 
-    private static int layerTunedSpeed(CustomGlint.Layer l) { return Math.abs(l.speed() - 1.0f) > 0.001f ? 1 : 0; }
-    private static int layerTunedScale(CustomGlint.Layer l) { return Math.abs(l.patternScale() - 1.0f) > 0.001f ? 1 : 0; }
-    private static int layerTranslucent(CustomGlint.Layer l) { int[] c = l.colors(); return (c.length > 0 && ((c[0] >>> 24) & 0xFF) < 255) ? 1 : 0; }
+    /** A committed layer's glass cost, from the alpha baked into its first colour (mirrors the client). */
+    private static int layerGlass(CustomGlint.Layer l) { int[] c = l.colors(); return c.length > 0 ? CustomGlint.glassCost((c[0] >>> 24) & 0xFF) : 0; }
 
     private static boolean isAnyTrim(ItemStack stack) {
         return stack.getItem() instanceof GlintTrimItem || stack.getItem() instanceof GlowTrimItem;
@@ -704,8 +751,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (isLayerTear(stack))             return new int[]{SLOT_LAYER_TEAR};
         if (isSimTear(stack))               return new int[]{SLOT_TEAR};
         if (isSeqTear(stack))               return new int[]{SLOT_TEAR_SEQ};
-        if (stack.is(Items.SLIME_BALL))     return new int[]{SLOT_SLIME};
-        if (stack.is(Items.REDSTONE))       return new int[]{SLOT_REDSTONE};
+        if (stack.is(Items.SLIME_BALL) || stack.is(Items.SLIME_BLOCK))   return new int[]{SLOT_SLIME};
+        if (stack.is(Items.REDSTONE) || stack.is(Items.REDSTONE_BLOCK))  return new int[]{SLOT_REDSTONE};
         if (stack.is(Items.GLASS))          return new int[]{SLOT_GLASS};
         if (stack.is(Items.GLOWSTONE_DUST)) return new int[]{SLOT_GLOWSTONE};
         if (stack.is(Items.NAME_TAG))       return new int[]{SLOT_NAMETAG};
@@ -723,9 +770,15 @@ public class GlintTableMenu extends AbstractContainerMenu {
         ItemStack carried = getCarried();
         if (carried.isEmpty() || !isAnyTrim(carried)) return;
         boolean stored;
-        if (isPainted(carried)) stored = storePrinted(sp, carried);
-        else if (designName(carried) != null) stored = storeDesign(sp, designName(carried));
-        else return;
+        if (isPainted(carried)) {
+            stored = storePrinted(sp, carried);
+            // Placing/depositing a real trim also teaches its designs, so the ghost it leaves behind stays fully
+            // re-printable (a painted trim's design is owned via the printed library, matching a printed/imported
+            // one). This replaces the design-store that physical placement used to get from slotsChanged.
+            storeTrimDesigns(sp, carried);
+        } else if (designName(carried) != null) {
+            stored = storeDesign(sp, designName(carried));
+        } else return;
         if (!stored) return; // already in the library (or library full): keep the trim, don't consume it
         carried.shrink(1);
         setCarried(carried);
@@ -857,7 +910,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
             // leaves the trim in the player's inventory instead of destroying it.
             boolean stored = true;
             if (player instanceof ServerPlayer sp) {
-                stored = isPainted(stack) ? storePrinted(sp, stack) : storeDesign(sp, designName(stack));
+                if (isPainted(stack)) { stored = storePrinted(sp, stack); storeTrimDesigns(sp, stack); }
+                else stored = storeDesign(sp, designName(stack));
             }
             if (!stored) return ItemStack.EMPTY; // leave the trim, no consumption
             stack.shrink(1);
