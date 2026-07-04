@@ -1,6 +1,5 @@
 package net.tunamods.customglint.module.gui;
 
-import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -12,6 +11,10 @@ import net.tunamods.customglint.common.client.GlintClientConfig;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.network.GlintApplyPacket;
 import net.tunamods.customglint.module.network.GiveGlintTrimPacket;
+import net.tunamods.customglint.module.network.GlintServerBlueprintsSyncPacket;
+import net.tunamods.customglint.module.network.GlintWandSaveBlueprintPacket;
+import net.tunamods.customglint.module.network.GlintWandDeleteBlueprintPacket;
+import net.tunamods.customglint.module.network.GlintWandRequestBlueprintsPacket;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -33,10 +36,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 
-import java.io.BufferedWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -138,6 +137,9 @@ public class GlintEditorScreen extends Screen {
     private int        pickerScroll  = 0;
     private static final int VISIBLE_ROWS = 8, ROW_H = 18;
 
+    /** Which picker's scrollbar thumb the mouse is currently dragging: 0 none, 1 design, 2 import, 3 item. */
+    private int scrollDrag = 0;
+
     // ── Design-picker overlay ───────────────────────────────────────────────
     private boolean      showDesignPicker = false;
     private List<String> filteredDesigns  = new ArrayList<>();
@@ -145,14 +147,17 @@ public class GlintEditorScreen extends Screen {
     private EditBox      designSearchBox;
     private static final int DESIGN_ROWS = 10, DESIGN_ROW_H = 13;
 
-    // ── Glint import overlay ──────────────────────────────────────────────────
+    // ── Glint import overlay (server blueprint pool) ──────────────────────────
     private boolean      showImportPicker = false;
-    /** Full scanned list; {@link #availableGlints} is the search-filtered view rendered in the picker. */
+    /** Full list of server blueprint names; {@link #availableGlints} is the search-filtered view. */
     private List<String> allGlints        = new ArrayList<>();
     private List<String> availableGlints  = new ArrayList<>();
     private int          importScroll     = 0;
     private EditBox      importSearchBox;
+    /** Blueprint-pool size the list was last built from, so the picker rebuilds when the async sync lands. */
+    private int          lastListedCount  = -1;
     private static final int IMPORT_ROWS = 10, IMPORT_ROW_H = 13;
+    private static final int IMP_TRASH_W = 11; // trash hotzone at the right edge of a hovered row
 
     // ── Widget refs ─────────────────────────────────────────────────────────
     private EditBox hexBox, rBox, gBox, bBox, aBox;
@@ -330,72 +335,49 @@ public class GlintEditorScreen extends Screen {
         return layers;
     }
 
-    /** Save the current build (every layer, its colors, and all modifiers) to
-     *  {@code config/customglint/trims/<name>.json}, the same format Import (and the Glint Table) read.
-     *  Mirrors the Glint Table's Save Design so a trim built with the wand can be reopened later. */
+    /** Save the current build (every layer, its colors, and all modifiers) to the server's shared blueprint
+     *  pool. The wand only ever saves server-side (never the client's personal trims): the design is built
+     *  into the same JSON the Glint Table reads and sent to the server, which writes it and re-syncs so it
+     *  shows up in Import. Anyone holding the wand may save — the wand is the gate. */
     private void saveDesign() {
         CustomGlint.Layer[] layers = buildLayers();
         if (layers.length == 0) {
             showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_empty"));
             return;
         }
-        try {
-            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
-            Files.createDirectories(dir);
-
-            JsonObject root = new JsonObject();
-            root.addProperty("glowing", glowEnabled);
-            if (glowEnabled && !glowOverrideColors.isEmpty()) {
-                JsonArray gc = new JsonArray();
-                for (int c : glowOverrideColors) gc.add(String.format("0x%08X", c));
-                root.add("glowColors", gc);
-            }
-            if (!trimName.isEmpty()) {
-                root.addProperty("displayName", trimName);
-                root.addProperty("nameColor", String.format("0x%06X", (trimNameColor >>> 8) & 0xFFFFFF));
-            }
-
-            JsonArray layersArray = new JsonArray();
-            for (CustomGlint.Layer layer : layers) {
-                JsonObject lo = new JsonObject();
-                lo.addProperty("design", layer.design().toString());
-                JsonArray colors = new JsonArray();
-                for (int c : layer.colors()) colors.add(String.format("0x%08X", c));
-                lo.add("colors", colors);
-                lo.addProperty("speed", layer.speed());
-                lo.addProperty("interpolate", layer.interpolate());
-                lo.addProperty("patternScale", layer.patternScale());
-                lo.addProperty("simultaneous", layer.simultaneous());
-                lo.addProperty("scroll", layer.scrollDir());
-                lo.addProperty("offset", layer.scrollOffset());
-                layersArray.add(lo);
-            }
-            root.add("layers", layersArray);
-
-            String base = sanitizeFileName(!trimName.isEmpty() ? trimName : layerDesigns.get(0));
-            Path file = uniqueTrimFile(dir, base);
-            Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            try (BufferedWriter writer = Files.newBufferedWriter(file)) {
-                gson.toJson(root, writer);
-            }
-            String fn = file.getFileName().toString().replace(".json", "");
-            showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_ok", fn));
-        } catch (Exception e) {
-            showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_failed"));
+        JsonObject root = new JsonObject();
+        root.addProperty("glowing", glowEnabled);
+        if (glowEnabled && !glowOverrideColors.isEmpty()) {
+            JsonArray gc = new JsonArray();
+            for (int c : glowOverrideColors) gc.add(String.format("0x%08X", c));
+            root.add("glowColors", gc);
         }
-    }
+        if (!trimName.isEmpty()) {
+            root.addProperty("displayName", trimName);
+            root.addProperty("nameColor", String.format("0x%06X", (trimNameColor >>> 8) & 0xFFFFFF));
+        }
 
-    /** A filesystem-safe trim file base name: lowercased, non-[a-z0-9_-] runs collapsed to '_', trimmed. */
-    private static String sanitizeFileName(String s) {
-        String cleaned = s.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]+", "_").replaceAll("^_+|_+$", "");
-        return cleaned.isEmpty() ? "trim" : cleaned;
-    }
+        JsonArray layersArray = new JsonArray();
+        for (CustomGlint.Layer layer : layers) {
+            JsonObject lo = new JsonObject();
+            lo.addProperty("design", layer.design().toString());
+            JsonArray colors = new JsonArray();
+            for (int c : layer.colors()) colors.add(String.format("0x%08X", c));
+            lo.add("colors", colors);
+            lo.addProperty("speed", layer.speed());
+            lo.addProperty("interpolate", layer.interpolate());
+            lo.addProperty("patternScale", layer.patternScale());
+            lo.addProperty("simultaneous", layer.simultaneous());
+            lo.addProperty("scroll", layer.scrollDir());
+            lo.addProperty("offset", layer.scrollOffset());
+            layersArray.add(lo);
+        }
+        root.add("layers", layersArray);
 
-    /** {@code base.json}, or {@code base_2.json}, {@code base_3.json}… so saving never clobbers a prior trim. */
-    private static Path uniqueTrimFile(Path dir, String base) {
-        Path p = dir.resolve(base + ".json");
-        for (int n = 2; Files.exists(p); n++) p = dir.resolve(base + "_" + n + ".json");
-        return p;
+        String base = !trimName.isEmpty() ? trimName : layerDesigns.get(0);
+        String json = new GsonBuilder().setPrettyPrinting().create().toJson(root);
+        ClientPacketDistributor.sendToServer(new GlintWandSaveBlueprintPacket(base, json));
+        showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_ok"));
     }
 
     // Transient "saved / couldn't save" confirmation, drawn in-screen for a couple seconds (an actionbar
@@ -622,8 +604,9 @@ public class GlintEditorScreen extends Screen {
             if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
                     .filter(item -> { Identifier k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
+            // Keep the previous scroll position on reopen (handy after giving yourself an item); the search
+            // responder resets it to the top only when the query text changes.
             filterItems(searchBox != null ? searchBox.getValue() : "");
-            pickerScroll = 0;
             showPicker = true;
             searchBox.setFocused(true);
         }), "screen.customglint.glint_editor.tip.change_item");
@@ -686,9 +669,12 @@ public class GlintEditorScreen extends Screen {
             }
         }), "screen.customglint.glint_editor.tip.name");
 
-        // Name text field (positioned below glow info, aligned with Smooth button area)
+        // Name text field (positioned below glow info, aligned with Smooth button area). Re-seed the value
+        // from trimName BEFORE wiring the responder, so an init() re-run (resize, or the rebuildWidgets that
+        // follows loading an import) keeps the current name instead of blanking the box.
         trimNameBox = addRenderableWidget(new EditBox(font, px + 100, py + 254, 90, 12, Component.translatable("screen.customglint.glint_editor.trim_name")));
         trimNameBox.setMaxLength(32);
+        trimNameBox.setValue(trimName);
         trimNameBox.setResponder(s -> trimName = s);
         trimNameBox.setVisible(!trimName.isEmpty());
 
@@ -710,7 +696,7 @@ public class GlintEditorScreen extends Screen {
 
         if (glowOverrideColors.isEmpty()) {
             // Auto mode, offer switch to custom
-            bevel(px + 162, py + 218, 82, 14,
+            tip(bevel(px + 162, py + 218, 82, 14,
                     () -> Component.translatable("screen.customglint.glint_editor.auto_to_custom").getString(), () -> {
                 List<Integer> l0 = layerColors.get(0);
                 glowOverrideColors.add(l0.isEmpty() ? 0xFF8844EE : l0.get(0));
@@ -720,15 +706,15 @@ public class GlintEditorScreen extends Screen {
                 syncChannelBoxes();
                 syncHexFromRGB();
                 rebuildWidgets();
-            });
+            }), "screen.customglint.glint_editor.tip.glow_mode");
         } else {
             // Custom mode, offer switch back to auto
-            bevel(px + 162, py + 218, 82, 14,
+            tip(bevel(px + 162, py + 218, 82, 14,
                     () -> Component.translatable("screen.customglint.glint_editor.custom_to_auto").getString(), () -> {
                 glowOverrideColors.clear();
                 editingGlowColor = false;
                 rebuildWidgets();
-            });
+            }), "screen.customglint.glint_editor.tip.glow_mode");
 
             // Glow color hex input, fixed to the right of the toggle button
             glowHexBox = addRenderableWidget(new EditBox(font, px + 248, py + 220, 46, 12, Component.translatable("screen.customglint.glint_editor.glow_hex")));
@@ -797,31 +783,26 @@ public class GlintEditorScreen extends Screen {
         ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
     }
 
+    /** Open the Import list: ask the server for the current shared blueprint pool (the wand has no server-side
+     *  menu to hang an on-open sync from), then build the list from whatever is already synced. The reply
+     *  arrives a tick later; {@link #renderImportPicker} rebuilds when it lands. */
     private void scanGlintConfigs() {
-        allGlints.clear();
-        try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
-            if (Files.exists(configDir)) {
-                // try-with-resources: Files.list holds an open directory handle that must be closed, else
-                // each open of the Import picker leaks one OS file descriptor.
-                try (var stream = Files.list(configDir)) {
-                    stream.filter(p -> p.toString().endsWith(".json"))
-                        .map(p -> p.getFileName().toString().replace(".json", ""))
-                        .sorted()
-                        .forEach(allGlints::add);
-                }
-            }
-        } catch (Exception e) {
-            // Silently fail if config dir doesn't exist
-        }
-        // Apply the current search query (empty → all) to populate the rendered list.
+        ClientPacketDistributor.sendToServer(new GlintWandRequestBlueprintsPacket());
+        rebuildImportList();
+    }
+
+    /** Rebuild the Import list from the synced server blueprint pool (name → JSON), then re-apply the search. */
+    private void rebuildImportList() {
+        allGlints = new ArrayList<>(GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.keySet());
+        allGlints.sort(String.CASE_INSENSITIVE_ORDER);
+        lastListedCount = GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.size();
         filterGlints(importSearchBox != null ? importSearchBox.getValue() : "");
     }
 
     private void loadGlintFromConfig(String name) {
+        String json = GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.get(name);
+        if (json == null) return;
         try {
-            Path file = Paths.get("config/customglint/trims", name + ".json").toAbsolutePath();
-            String json = new String(Files.readAllBytes(file));
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
 
             // Parse the (untrusted) trim file into temp lists first, then commit to the live fields only after
@@ -1150,11 +1131,18 @@ public class GlintEditorScreen extends Screen {
 
         // Hover tooltips for the control buttons (suppressed while an overlay owns the mouse).
         if (!showDesignPicker && !showPicker && !showImportPicker) {
+            boolean shown = false;
             for (var child : children()) {
                 if (!(child instanceof BevelButton bb) || bb.tooltip == null || !bb.visible) continue;
                 if (mx < bb.getX() || mx >= bb.getX() + bb.getWidth() || my < bb.getY() || my >= bb.getY() + bb.getHeight()) continue;
                 List<Component> lines = bb.tooltip.get();
-                if (!lines.isEmpty()) { g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my); break; }
+                if (!lines.isEmpty()) { g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my); shown = true; break; }
+            }
+            // The add-layer "+" tab is hand-drawn, not a widget, so tooltip it here.
+            if (!shown && layerDesigns.size() < 8) {
+                int plusX = px + 100 + layerDesigns.size() * 22, plusY = py + 6;
+                if (mx >= plusX - 1 && mx < plusX + 21 && my >= plusY - 1 && my < plusY + 15)
+                    g.setTooltipForNextFrame(font, Component.translatable("screen.customglint.glint_editor.tip.add_layer"), mx, my);
             }
         }
     }
@@ -1211,15 +1199,27 @@ public class GlintEditorScreen extends Screen {
         importSearchBox.setWidth(IPW - 4);
         importSearchBox.extractRenderState(g, mx, my, dt);
 
+        // The server's reply to the open-time request (or a save/delete re-sync) arrives asynchronously;
+        // rebuild the list when the synced pool changes size so new/removed blueprints show up.
+        if (GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.size() != lastListedCount) rebuildImportList();
+
         int listY = oy + 20;
         int sbX   = ox + IPW - 5;
 
+        if (availableGlints.isEmpty()) {
+            label(g, Component.translatable("screen.customglint.glint_editor.import_empty"), ox + 4, listY + 2, 0xFF888888);
+        }
         for (int i = 0; i < IMPORT_ROWS && importScroll + i < availableGlints.size(); i++) {
             String glint = availableGlints.get(importScroll + i);
             int ry = listY + i * IMPORT_ROW_H;
             boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
             if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, 0x40FFFFFF);
             label(g, glint, ox + 4, ry + 2, 0xDDDDDD);
+            // Trash icon on the far right of a hovered row (mirrors the Glint Table's import list).
+            if (hovered) {
+                boolean onTrash = mx >= sbX - IMP_TRASH_W && mx < sbX;
+                drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
+            }
         }
 
         if (availableGlints.size() > IMPORT_ROWS) {
@@ -1238,6 +1238,25 @@ public class GlintEditorScreen extends Screen {
                 .filter(d -> d.toLowerCase().contains(lq))
                 .collect(Collectors.toList());
         importScroll = Math.max(0, Math.min(importScroll, Math.max(0, availableGlints.size() - IMPORT_ROWS)));
+    }
+
+    /** Trash a server blueprint from the Import list: ask the server to delete it (no op gate — the wand is
+     *  the gate), drop it from the local mirror for instant feedback, and rebuild the list. The server's
+     *  authoritative re-sync follows. */
+    private void deleteImport(String name) {
+        ClientPacketDistributor.sendToServer(new GlintWandDeleteBlueprintPacket(name));
+        GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.remove(name);
+        rebuildImportList();
+    }
+
+    /** Tiny 7×8 trash-can glyph drawn with fills (the font has no trash glyph). Origin = top-left. */
+    private void drawTrashIcon(GuiGraphicsExtractor g, int x, int y, int color) {
+        g.fill(x + 2, y, x + 5, y + 1, color);          // handle nub
+        g.fill(x, y + 1, x + 7, y + 2, color);          // lid
+        g.fill(x + 1, y + 3, x + 6, y + 8, color);      // can body
+        int slot = 0xEE111111;                          // stripes cut back to the panel colour
+        g.fill(x + 2, y + 4, x + 3, y + 7, slot);
+        g.fill(x + 4, y + 4, x + 5, y + 7, slot);
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────
@@ -1298,8 +1317,11 @@ public class GlintEditorScreen extends Screen {
                 return true;
             }
 
-            int listY = oy + 20;
-            if (my >= listY && mx < ox + DPW - 5) {
+            int listY = oy + 20, sbX = ox + DPW - 5;
+            if (onScrollbar(mx, my, sbX, listY, DESIGN_ROWS * DESIGN_ROW_H, filteredDesigns.size(), DESIGN_ROWS)) {
+                scrollDrag = 1; dragScroll(my); return true;
+            }
+            if (my >= listY && mx < sbX) {
                 int row = (int)(my - listY) / DESIGN_ROW_H;
                 int idx = designScroll + row;
                 if (row < DESIGN_ROWS && idx < filteredDesigns.size()) {
@@ -1324,13 +1346,21 @@ public class GlintEditorScreen extends Screen {
                 return true;
             }
 
-            int listY = oy + 20;
-            if (my >= listY && mx < ox + IPW - 5) {
+            int listY = oy + 20, sbX = ox + IPW - 5;
+            if (onScrollbar(mx, my, sbX, listY, IMPORT_ROWS * IMPORT_ROW_H, availableGlints.size(), IMPORT_ROWS)) {
+                scrollDrag = 2; dragScroll(my); return true;
+            }
+            if (my >= listY && mx < sbX) {
                 int row = (int)(my - listY) / IMPORT_ROW_H;
                 int idx = importScroll + row;
                 if (row < IMPORT_ROWS && idx < availableGlints.size()) {
-                    loadGlintFromConfig(availableGlints.get(idx));
-                    rebuildWidgets();
+                    // Trash hotzone on the right edge deletes the blueprint; anywhere else loads it.
+                    if (mx >= sbX - IMP_TRASH_W) {
+                        deleteImport(availableGlints.get(idx));
+                    } else {
+                        loadGlintFromConfig(availableGlints.get(idx));
+                        rebuildWidgets();
+                    }
                 }
             }
             return true;
@@ -1348,8 +1378,11 @@ public class GlintEditorScreen extends Screen {
                 return true;
             }
 
-            int listY = oy + 20;
-            if (my >= listY && mx < ox + OW - 6) {
+            int listY = oy + 20, sbX = ox + OW - 6;
+            if (onScrollbar(mx, my, sbX, listY, VISIBLE_ROWS * ROW_H, filteredItems.size(), VISIBLE_ROWS)) {
+                scrollDrag = 3; dragScroll(my); return true;
+            }
+            if (my >= listY && mx < sbX) {
                 int row = (int)(my - listY) / ROW_H;
                 int idx = pickerScroll + row;
                 if (row < VISIBLE_ROWS && idx < filteredItems.size()) {
@@ -1458,6 +1491,12 @@ public class GlintEditorScreen extends Screen {
             if (event.key() == 256) { showDesignPicker = false; return true; }
             return true;
         }
+        if (showImportPicker && importSearchBox != null) {
+            importSearchBox.setFocused(true);
+            if (importSearchBox.keyPressed(event)) return true;
+            if (event.key() == 256) { showImportPicker = false; return true; }
+            return true;
+        }
         if (showPicker) {
             searchBox.setFocused(true);
             if (searchBox.keyPressed(event)) return true;
@@ -1470,8 +1509,43 @@ public class GlintEditorScreen extends Screen {
     @Override
     public boolean charTyped(CharacterEvent event) {
         if (showDesignPicker) { designSearchBox.setFocused(true); return designSearchBox.charTyped(event); }
+        if (showImportPicker && importSearchBox != null) { importSearchBox.setFocused(true); return importSearchBox.charTyped(event); }
         if (showPicker)       { searchBox.setFocused(true);       return searchBox.charTyped(event); }
         return super.charTyped(event);
+    }
+
+    /** True when (mx,my) is over a picker's scrollbar column, and there is something to scroll. */
+    private static boolean onScrollbar(double mx, double my, int sbX, int listY, int trackH, int total, int visible) {
+        return total > visible && mx >= sbX && mx < sbX + 4 && my >= listY && my < listY + trackH;
+    }
+
+    /** Map a mouse Y on a scrollbar track to a scroll row (thumb-centred, clamped), matching each picker's
+     *  drawn thumb geometry. */
+    private static int scrollAt(double my, int listY, int trackH, int minThumb, int total, int visible) {
+        int max = Math.max(0, total - visible);
+        if (max <= 0) return 0;
+        int thumbH = Math.max(minThumb, trackH * visible / total);
+        float f = (float) ((my - listY - thumbH / 2.0) / (trackH - thumbH));
+        return Math.round(Math.max(0f, Math.min(1f, f)) * max);
+    }
+
+    /** Update the scroll of the picker whose scrollbar is being dragged. */
+    private void dragScroll(double my) {
+        if (scrollDrag == 1)      designScroll = scrollAt(my, dpY() + 20, DESIGN_ROWS * DESIGN_ROW_H, 8, filteredDesigns.size(), DESIGN_ROWS);
+        else if (scrollDrag == 2) importScroll = scrollAt(my, ipY() + 20, IMPORT_ROWS * IMPORT_ROW_H, 8, availableGlints.size(), IMPORT_ROWS);
+        else if (scrollDrag == 3) pickerScroll = scrollAt(my, pickerOY() + 20, VISIBLE_ROWS * ROW_H, 10, filteredItems.size(), VISIBLE_ROWS);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (scrollDrag != 0) { dragScroll(event.y()); return true; }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        scrollDrag = 0;
+        return super.mouseReleased(event);
     }
 
     @Override
