@@ -1,9 +1,12 @@
 package net.tunamods.customglint.module.gui;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.util.Util;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.GlintClientConfig;
 import net.tunamods.customglint.module.item.GlintTrimItem;
@@ -30,6 +33,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 
+import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -38,6 +42,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -325,6 +330,92 @@ public class GlintEditorScreen extends Screen {
         return layers;
     }
 
+    /** Save the current build (every layer, its colors, and all modifiers) to
+     *  {@code config/customglint/trims/<name>.json}, the same format Import (and the Glint Table) read.
+     *  Mirrors the Glint Table's Save Design so a trim built with the wand can be reopened later. */
+    private void saveDesign() {
+        CustomGlint.Layer[] layers = buildLayers();
+        if (layers.length == 0) {
+            showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_empty"));
+            return;
+        }
+        try {
+            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Files.createDirectories(dir);
+
+            JsonObject root = new JsonObject();
+            root.addProperty("glowing", glowEnabled);
+            if (glowEnabled && !glowOverrideColors.isEmpty()) {
+                JsonArray gc = new JsonArray();
+                for (int c : glowOverrideColors) gc.add(String.format("0x%08X", c));
+                root.add("glowColors", gc);
+            }
+            if (!trimName.isEmpty()) {
+                root.addProperty("displayName", trimName);
+                root.addProperty("nameColor", String.format("0x%06X", (trimNameColor >>> 8) & 0xFFFFFF));
+            }
+
+            JsonArray layersArray = new JsonArray();
+            for (CustomGlint.Layer layer : layers) {
+                JsonObject lo = new JsonObject();
+                lo.addProperty("design", layer.design().toString());
+                JsonArray colors = new JsonArray();
+                for (int c : layer.colors()) colors.add(String.format("0x%08X", c));
+                lo.add("colors", colors);
+                lo.addProperty("speed", layer.speed());
+                lo.addProperty("interpolate", layer.interpolate());
+                lo.addProperty("patternScale", layer.patternScale());
+                lo.addProperty("simultaneous", layer.simultaneous());
+                lo.addProperty("scroll", layer.scrollDir());
+                lo.addProperty("offset", layer.scrollOffset());
+                layersArray.add(lo);
+            }
+            root.add("layers", layersArray);
+
+            String base = sanitizeFileName(!trimName.isEmpty() ? trimName : layerDesigns.get(0));
+            Path file = uniqueTrimFile(dir, base);
+            Gson gson = new GsonBuilder().setPrettyPrinting().create();
+            try (BufferedWriter writer = Files.newBufferedWriter(file)) {
+                gson.toJson(root, writer);
+            }
+            String fn = file.getFileName().toString().replace(".json", "");
+            showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_ok", fn));
+        } catch (Exception e) {
+            showSaveMsg(Component.translatable("screen.customglint.glint_editor.save_failed"));
+        }
+    }
+
+    /** A filesystem-safe trim file base name: lowercased, non-[a-z0-9_-] runs collapsed to '_', trimmed. */
+    private static String sanitizeFileName(String s) {
+        String cleaned = s.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]+", "_").replaceAll("^_+|_+$", "");
+        return cleaned.isEmpty() ? "trim" : cleaned;
+    }
+
+    /** {@code base.json}, or {@code base_2.json}, {@code base_3.json}… so saving never clobbers a prior trim. */
+    private static Path uniqueTrimFile(Path dir, String base) {
+        Path p = dir.resolve(base + ".json");
+        for (int n = 2; Files.exists(p); n++) p = dir.resolve(base + "_" + n + ".json");
+        return p;
+    }
+
+    // Transient "saved / couldn't save" confirmation, drawn in-screen for a couple seconds (an actionbar
+    // overlay would sit behind the open GUI).
+    private Component saveMsg = null;
+    private long saveMsgUntil = 0;
+
+    private void showSaveMsg(Component c) {
+        saveMsg = c;
+        saveMsgUntil = Util.getMillis() + 2500;
+    }
+
+    private void drawSaveMsg(GuiGraphicsExtractor g) {
+        if (saveMsg == null || Util.getMillis() >= saveMsgUntil) return;
+        int tw = font.width(saveMsg);
+        int cx = px + PANEL_W / 2, ty = py + 8;
+        g.fill(cx - tw / 2 - 3, ty - 2, cx + tw / 2 + 3, ty + 10, 0xE0000000);
+        g.text(font, saveMsg, cx - tw / 2, ty, 0xFFFFFFFF, false);
+    }
+
     private void refreshPreview() {
         previewStack = new ItemStack(previewItem);
         CustomGlint.Layer[] layers = buildLayers();
@@ -372,9 +463,17 @@ public class GlintEditorScreen extends Screen {
         soundBtn = addRenderableWidget(new BevelButton(px + 72, py + 232, 14, 14, 3, false,
                 () -> "♪", () -> GlintClientConfig.glintTableSound() ? skin.costOk : skin.costBad,
                 () -> skin.guiFace, b -> GlintClientConfig.setGlintTableSound(!GlintClientConfig.glintTableSound())));
+        tip(skinBtn, "screen.customglint.glint_editor.tip.skin");
+        tip(soundBtn, "screen.customglint.glint_editor.tip.sound");
+
+        // Save the current build to config/customglint/trims so it can be pulled back later through Import
+        // (or the Glint Table). Sits directly under the Skin button.
+        tip(bevel(px + 8, py + 248, 80, 14,
+                () -> Component.translatable("screen.customglint.glint_editor.save_design").getString(), this::saveDesign),
+                "screen.customglint.glint_editor.tip.save_design");
 
         // Design picker trigger button, full right-column width, shows current design
-        bevel(px + 100, py + 22, PANEL_W - 104, 14,
+        tip(bevel(px + 100, py + 22, PANEL_W - 104, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.design_button",
                         layerDesigns.get(selectedLayer)).getString(),
                 () -> {
@@ -382,7 +481,7 @@ public class GlintEditorScreen extends Screen {
                     designScroll = Math.max(0, filteredDesigns.indexOf(layerDesigns.get(selectedLayer)));
                     showDesignPicker = true;
                     if (designSearchBox != null) designSearchBox.setFocused(true);
-                });
+                }), "screen.customglint.glint_editor.tip.design");
 
         // Design search box, managed manually (not added to renderables). Preserve the query across
         // an init() re-run (a screen-customization mod like FancyMenu triggers one) so a partially-typed
@@ -396,7 +495,7 @@ public class GlintEditorScreen extends Screen {
         filterDesigns(prevDesignQuery);
 
         // Remove last color [−]
-        bevel(px + 100 + currentColors().size() * 18, py + 50, 14, 14, () -> "−", () -> {
+        tip(bevel(px + 100 + currentColors().size() * 18, py + 50, 14, 14, () -> "−", () -> {
             List<Integer> colors = currentColors();
             if (colors.size() > 1) {
                 colors.remove(colors.size() - 1);
@@ -404,10 +503,10 @@ public class GlintEditorScreen extends Screen {
                 loadEditRGB();
                 rebuildWidgets();
             }
-        });
+        }), "screen.customglint.glint_editor.tip.remove_color");
 
         // Add color [+]
-        bevel(px + 100 + currentColors().size() * 18 + 16, py + 50, 14, 14, () -> "+", () -> {
+        tip(bevel(px + 100 + currentColors().size() * 18 + 16, py + 50, 14, 14, () -> "+", () -> {
             List<Integer> colors = currentColors();
             if (colors.size() < 8) {
                 colors.add(0xFF8844EE);
@@ -415,7 +514,7 @@ public class GlintEditorScreen extends Screen {
                 loadEditRGB();
                 rebuildWidgets();
             }
-        });
+        }), "screen.customglint.glint_editor.tip.add_color");
 
         // Hex EditBox
         hexBox = addRenderableWidget(new EditBox(font, px + 136, py + 68, 58, 12, Component.translatable("screen.customglint.glint_editor.hex_field")));
@@ -448,62 +547,66 @@ public class GlintEditorScreen extends Screen {
         aBox.setResponder(this::onAChanged);
 
         // Speed [−] / [+], 0.10×..8.0× (0.10 steps below 1×, 0.5 above), matching the Glint Table.
-        bevel(px + 148, py + 152, 14, 14, () -> "−", () -> {
+        tip(bevel(px + 148, py + 152, 14, 14, () -> "−", () -> {
             layerSpeeds.set(selectedLayer, stepDown(layerSpeeds.get(selectedLayer)));
             refreshPreview();
-        });
-        bevel(px + 196, py + 152, 14, 14, () -> "+", () -> {
+        }), "screen.customglint.glint_editor.tip.speed");
+        tip(bevel(px + 196, py + 152, 14, 14, () -> "+", () -> {
             layerSpeeds.set(selectedLayer, stepUp(layerSpeeds.get(selectedLayer)));
             refreshPreview();
-        });
+        }), "screen.customglint.glint_editor.tip.speed");
 
         // Pattern Scale [−] / [+], same 0.10×..8.0× range as speed.
-        bevel(px + 148, py + 168, 14, 14, () -> "−", () -> {
+        tip(bevel(px + 148, py + 168, 14, 14, () -> "−", () -> {
             layerScales.set(selectedLayer, stepDown(layerScales.get(selectedLayer)));
             refreshPreview();
-        });
-        bevel(px + 196, py + 168, 14, 14, () -> "+", () -> {
+        }), "screen.customglint.glint_editor.tip.scale");
+        tip(bevel(px + 196, py + 168, 14, 14, () -> "+", () -> {
             layerScales.set(selectedLayer, stepUp(layerScales.get(selectedLayer)));
             refreshPreview();
-        });
+        }), "screen.customglint.glint_editor.tip.scale");
 
         // Smooth toggle
-        bevel(px + 100, py + 186, 90, 14,
+        tip(bevel(px + 100, py + 186, 90, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.smooth",
                         Component.translatable(layerInterpolates.get(selectedLayer)
                                 ? "screen.customglint.glint_editor.on" : "screen.customglint.glint_editor.off")).getString(),
                 () -> layerInterpolates.get(selectedLayer) ? skin.costOk : skin.labelHdr,
-                () -> { layerInterpolates.set(selectedLayer, !layerInterpolates.get(selectedLayer)); refreshPreview(); });
+                () -> { layerInterpolates.set(selectedLayer, !layerInterpolates.get(selectedLayer)); refreshPreview(); }),
+                "screen.customglint.glint_editor.tip.interpolation");
 
         // Simultaneous toggle
-        bevel(px + 196, py + 186, 96, 14,
+        tip(bevel(px + 196, py + 186, 96, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.mode",
                         Component.translatable(layerSimultaneous.get(selectedLayer)
                                 ? "screen.customglint.glint_editor.mode_simultaneous" : "screen.customglint.glint_editor.mode_cycle")).getString(),
-                () -> { layerSimultaneous.set(selectedLayer, !layerSimultaneous.get(selectedLayer)); refreshPreview(); });
+                () -> { layerSimultaneous.set(selectedLayer, !layerSimultaneous.get(selectedLayer)); refreshPreview(); }),
+                "screen.customglint.glint_editor.tip.type");
 
         // Scroll direction, cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
         // stepper appears/disappears with the mode.
         int sd = layerScrollDirs.get(selectedLayer);
-        bevel(px + 100, py + 202, 90, 14,
+        tip(bevel(px + 100, py + 202, 90, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.scroll",
                         GlintTrimItem.scrollLabel(layerScrollDirs.get(selectedLayer))).getString(),
-                () -> { layerScrollDirs.set(selectedLayer, (layerScrollDirs.get(selectedLayer) + 1) % 9); refreshPreview(); rebuildWidgets(); });
+                () -> { layerScrollDirs.set(selectedLayer, (layerScrollDirs.get(selectedLayer) + 1) % 9); refreshPreview(); rebuildWidgets(); }),
+                sd == CustomGlint.SCROLL_STATIC ? "screen.customglint.glint_editor.tip.scroll_static"
+                                                : "screen.customglint.glint_editor.tip.scroll");
 
         // Static UV offset stepper, only shown (and only meaningful) when the layer is STATIC.
         if (sd == CustomGlint.SCROLL_STATIC) {
-            bevel(px + 196, py + 202, 14, 14, () -> "−", () -> {
+            tip(bevel(px + 196, py + 202, 14, 14, () -> "−", () -> {
                 layerScrollOffsets.set(selectedLayer, Math.max(0.0f, Math.round((layerScrollOffsets.get(selectedLayer) - 0.05f) * 20) / 20.0f));
                 refreshPreview();
-            });
-            bevel(px + 244, py + 202, 14, 14, () -> "+", () -> {
+            }), "screen.customglint.glint_editor.tip.offset");
+            tip(bevel(px + 244, py + 202, 14, 14, () -> "+", () -> {
                 layerScrollOffsets.set(selectedLayer, Math.min(1.0f, Math.round((layerScrollOffsets.get(selectedLayer) + 0.05f) * 20) / 20.0f));
                 refreshPreview();
-            });
+            }), "screen.customglint.glint_editor.tip.offset");
         }
 
         // Import glint from config
-        bevel(px + 8, py + 100, 80, 14,
+        tip(bevel(px + 8, py + 100, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.import").getString(), () -> {
             showImportPicker = !showImportPicker;
             importScroll = 0;
@@ -511,10 +614,10 @@ public class GlintEditorScreen extends Screen {
                 scanGlintConfigs();
                 if (importSearchBox != null) importSearchBox.setFocused(true);
             }
-        });
+        }), "screen.customglint.glint_editor.tip.import");
 
         // Change preview item
-        bevel(px + 8, py + 116, 80, 14,
+        tip(bevel(px + 8, py + 116, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.change_item").getString(), () -> {
             if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
                     .filter(item -> { Identifier k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
@@ -523,47 +626,49 @@ public class GlintEditorScreen extends Screen {
             pickerScroll = 0;
             showPicker = true;
             searchBox.setFocused(true);
-        });
+        }), "screen.customglint.glint_editor.tip.change_item");
 
         // Give new item with glint
-        bevel(px + 8, py + 132, 80, 14,
+        tip(bevel(px + 8, py + 132, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.give_item").getString(), () -> {
             CustomGlint.Layer[] layers = buildLayers();
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
             String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(previewItem));
             ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, itemId, glowEnabled, gc, trimName, trimNameColor));
-        });
+        }), "screen.customglint.glint_editor.tip.give_item");
 
         // Give Glint Trim with current settings
-        bevel(px + 8, py + 148, 80, 14,
+        tip(bevel(px + 8, py + 148, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.give_trim").getString(), () -> {
             CustomGlint.Layer[] layers = buildLayers();
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
             ClientPacketDistributor.sendToServer(new GiveGlintTrimPacket(layers, glowEnabled, gc, trimName, trimNameColor));
-        });
+        }), "screen.customglint.glint_editor.tip.give_trim");
 
         // Apply glint to item already in the other hand
-        bevel(px + 8, py + 164, 80, 14,
+        tip(bevel(px + 8, py + 164, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.apply_hand").getString(), () -> {
             CustomGlint.Layer[] layers = buildLayers();
             int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
             ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor));
-        });
+        }), "screen.customglint.glint_editor.tip.apply_hand");
 
         // Remove glint from item in the other hand
-        bevel(px + 8, py + 180, 80, 14,
+        tip(bevel(px + 8, py + 180, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.remove").getString(),
-                () -> ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0])));
+                () -> ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, true, new CustomGlint.Layer[0], "", false, new int[0]))),
+                "screen.customglint.glint_editor.tip.remove");
 
         // Glow ON/OFF toggle
-        bevel(px + 8, py + 196, 80, 14,
+        tip(bevel(px + 8, py + 196, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.glow",
                         Component.translatable(glowEnabled ? "screen.customglint.glint_editor.on" : "screen.customglint.glint_editor.off")).getString(),
                 () -> glowEnabled ? skin.costOk : skin.labelHdr,
-                () -> { glowEnabled = !glowEnabled; refreshPreview(); });
+                () -> { glowEnabled = !glowEnabled; refreshPreview(); }),
+                "screen.customglint.glint_editor.tip.glow");
 
         // Custom Name toggle button
-        bevel(px + 8, py + 212, 80, 14,
+        tip(bevel(px + 8, py + 212, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.name",
                         Component.translatable(trimName.isEmpty() ? "screen.customglint.glint_editor.off" : "screen.customglint.glint_editor.on")).getString(),
                 () -> trimName.isEmpty() ? skin.labelHdr : skin.costOk, () -> {
@@ -579,7 +684,7 @@ public class GlintEditorScreen extends Screen {
                 }
                 if (nameHexBox != null) nameHexBox.setVisible(true);
             }
-        });
+        }), "screen.customglint.glint_editor.tip.name");
 
         // Name text field (positioned below glow info, aligned with Smooth button area)
         trimNameBox = addRenderableWidget(new EditBox(font, px + 100, py + 254, 90, 12, Component.translatable("screen.customglint.glint_editor.trim_name")));
@@ -855,6 +960,7 @@ public class GlintEditorScreen extends Screen {
         private final int textDy;
         private final IntConsumer onPress;
         private final boolean rightToo;
+        Supplier<List<Component>> tooltip; // hover tooltip lines, or null for none
 
         BevelButton(int x, int y, int w, int h, int textDy, boolean rightToo,
                     Supplier<String> label, IntSupplier textColor, IntSupplier faceColor, IntConsumer onPress) {
@@ -901,6 +1007,17 @@ public class GlintEditorScreen extends Screen {
     private BevelButton bevel(int x, int y, int w, int h, Supplier<String> label, IntSupplier textColor, Runnable onPress) {
         return addRenderableWidget(new BevelButton(x, y, w, h, (h - 8) / 2, false,
                 label, textColor, () -> skin.guiFace, b -> onPress.run()));
+    }
+
+    /** Attach a hover tooltip (one line per translatable key) to a button and return it, so button
+     *  creation can be wrapped inline: {@code tip(bevel(...), "…tip.speed")}. */
+    private BevelButton tip(BevelButton b, String... keys) {
+        b.tooltip = () -> {
+            List<Component> lines = new ArrayList<>(keys.length);
+            for (String k : keys) lines.add(Component.translatable(k));
+            return lines;
+        };
+        return b;
     }
 
     // ── Speed / scale stepping (0.10×..8.0×, matching the Glint Table) ──────────
@@ -1027,6 +1144,18 @@ public class GlintEditorScreen extends Screen {
         if (showPicker) {
             g.nextStratum();
             renderPicker(g, mx, my, dt);
+        }
+
+        drawSaveMsg(g); // transient save confirmation, on top of everything
+
+        // Hover tooltips for the control buttons (suppressed while an overlay owns the mouse).
+        if (!showDesignPicker && !showPicker && !showImportPicker) {
+            for (var child : children()) {
+                if (!(child instanceof BevelButton bb) || bb.tooltip == null || !bb.visible) continue;
+                if (mx < bb.getX() || mx >= bb.getX() + bb.getWidth() || my < bb.getY() || my >= bb.getY() + bb.getHeight()) continue;
+                List<Component> lines = bb.tooltip.get();
+                if (!lines.isEmpty()) { g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my); break; }
+            }
         }
     }
 
