@@ -384,11 +384,16 @@ public class GlintEditorScreen extends Screen {
                     if (designSearchBox != null) designSearchBox.setFocused(true);
                 });
 
-        // Design search box, managed manually (not added to renderables)
+        // Design search box, managed manually (not added to renderables). Preserve the query across
+        // an init() re-run (a screen-customization mod like FancyMenu triggers one) so a partially-typed
+        // search isn't wiped, and re-focus if the picker is currently open.
+        String prevDesignQuery = designSearchBox != null ? designSearchBox.getValue() : "";
         designSearchBox = new EditBox(font, 0, 0, DPW - 4, 12, Component.translatable("screen.customglint.glint_editor.search_designs"));
         designSearchBox.setMaxLength(30);
         designSearchBox.setResponder(s -> { designScroll = 0; filterDesigns(s); });
-        filterDesigns("");
+        designSearchBox.setValue(prevDesignQuery);
+        if (showDesignPicker) designSearchBox.setFocused(true);
+        filterDesigns(prevDesignQuery);
 
         // Remove last color [−]
         bevel(px + 100 + currentColors().size() * 18, py + 50, 14, 14, () -> "−", () -> {
@@ -651,11 +656,13 @@ public class GlintEditorScreen extends Screen {
             });
         }
 
-        // Item picker search box, managed manually
+        // Item picker search box, managed manually. Same preserve-across-init handling as the design box.
+        String prevItemQuery = searchBox != null ? searchBox.getValue() : "";
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
         searchBox.setMaxLength(40);
         searchBox.setResponder(s -> { pickerScroll = 0; filterItems(s); });
-
+        searchBox.setValue(prevItemQuery);
+        if (showPicker) searchBox.setFocused(true);
 
         refreshPreview();
     }
@@ -1305,11 +1312,16 @@ public class GlintEditorScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         if (showDesignPicker) {
+            // Force focus before forwarding: the box isn't a screen child, and screen-customization
+            // mods (e.g. FancyMenu) re-run init() to apply layouts, recreating this box unfocused.
+            // An unfocused EditBox silently drops every key/char, which reads as "typing does nothing".
+            designSearchBox.setFocused(true);
             if (designSearchBox.keyPressed(event)) return true;
             if (event.key() == 256) { showDesignPicker = false; return true; }
             return true;
         }
         if (showPicker) {
+            searchBox.setFocused(true);
             if (searchBox.keyPressed(event)) return true;
             if (event.key() == 256) { showPicker = false; return true; }
             return true;
@@ -1319,8 +1331,8 @@ public class GlintEditorScreen extends Screen {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
-        if (showDesignPicker) return designSearchBox.charTyped(event);
-        if (showPicker) return searchBox.charTyped(event);
+        if (showDesignPicker) { designSearchBox.setFocused(true); return designSearchBox.charTyped(event); }
+        if (showPicker)       { searchBox.setFocused(true);       return searchBox.charTyped(event); }
         return super.charTyped(event);
     }
 
