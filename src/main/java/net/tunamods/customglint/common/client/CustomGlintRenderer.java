@@ -379,6 +379,9 @@ public final class CustomGlintRenderer {
             int color, Identifier texture, float bbWidth, float bbHeight,
             Object entityState, boolean isBody) {
         if (texture == null || pose == null || !GlintClientConfig.entityOutlines()) return baseBuffer;
+        // Iris re-renders the body into its shadow map through this same tee; capturing there adds a
+        // second, light-posed silhouette that the world drain flushes as a detached floating ring.
+        if (isInShadowPass()) return baseBuffer;
         Matrix4f m = pose.pose();
         double distSq = (double) m.m30() * m.m30() + (double) m.m31() * m.m31() + (double) m.m32() * m.m32();
         if (distSq > GlintClientConfig.outlineMaxDistanceSq()) return baseBuffer; // too far: skip the outline
@@ -1328,6 +1331,7 @@ public final class CustomGlintRenderer {
     private static volatile boolean SHADER_LOOKUP_DONE = false;
     private static volatile Method SHADER_GET_INSTANCE = null;
     private static volatile Method SHADER_IS_IN_USE = null;
+    private static volatile Method SHADER_IS_SHADOW_PASS = null;
 
     /** Per-frame cache of {@link #computeShaderPackActive()}. A shader pack can't toggle mid-frame, and the
      *  reflective {@code isShaderPackInUse} probe is hit many times per frame (per equipment layer per wearer,
@@ -1348,9 +1352,11 @@ public final class CustomGlintRenderer {
                         Class<?> api = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
                         SHADER_GET_INSTANCE = api.getMethod("getInstance");
                         SHADER_IS_IN_USE = api.getMethod("isShaderPackInUse");
+                        SHADER_IS_SHADOW_PASS = api.getMethod("isRenderingShadowPass");
                     } catch (Throwable ignored) {
                         SHADER_GET_INSTANCE = null;
                         SHADER_IS_IN_USE = null;
+                        SHADER_IS_SHADOW_PASS = null;
                     }
                     SHADER_LOOKUP_DONE = true;
                 }
@@ -1360,6 +1366,28 @@ public final class CustomGlintRenderer {
         try {
             Object inst = SHADER_GET_INSTANCE.invoke(null);
             return (Boolean) SHADER_IS_IN_USE.invoke(inst);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether Iris is CURRENTLY rendering its shadow map. Unlike {@link #isShaderPackActive()} this is NOT
+     * frame-cached: the shadow pass is a sub-phase of a frame that toggles on and off mid-frame, so it must
+     * be probed live. Under a pack Iris re-renders every entity + its worn equipment into the shadow map
+     * through the same {@code ModelFeatureRenderer.renderModel} path the camera pass uses, so our in-phase
+     * silhouette tee ({@link #fanBodyGlow}/{@link #fanLayerGlow}) and the armor/item outline queues would
+     * capture a SECOND copy posed for the light's viewpoint. The world drain then flushes it against the
+     * camera view, producing a detached duplicate outline that slides as the camera turns. Every capture /
+     * queue entry point bails when this is true. Reflective (no compileOnly Iris dep); false without Iris.
+     */
+    public static boolean isInShadowPass() {
+        // Reuse the shader-detection lookup (resolves SHADER_IS_SHADOW_PASS in the same block).
+        if (!frameShaderActive) return false;   // no pack ⇒ no shadow pass; also skips the reflection cost.
+        if (SHADER_IS_SHADOW_PASS == null || SHADER_GET_INSTANCE == null) return false;
+        try {
+            Object inst = SHADER_GET_INSTANCE.invoke(null);
+            return (Boolean) SHADER_IS_SHADOW_PASS.invoke(inst);
         } catch (Throwable t) {
             return false;
         }

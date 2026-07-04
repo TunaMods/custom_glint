@@ -377,6 +377,7 @@ public final class EntityGlintRender {
             PoseStack.Pose pose, Identifier texture, int light, @Nullable CustomGlint.Data glint,
             boolean glowing, int[] glowColors) {
         if (model == null || state == null || texture == null || pose == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.entityOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
@@ -398,6 +399,7 @@ public final class EntityGlintRender {
     public static void queueSpecialModelOutline(Model model, Object state,
             PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
         if (model == null || state == null || pose == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
@@ -411,6 +413,7 @@ public final class EntityGlintRender {
     public static void queueSpecialPartOutline(ModelPart part,
             PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
         if (part == null || pose == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
@@ -440,6 +443,7 @@ public final class EntityGlintRender {
     public static void queueItemOutline(List<BakedQuad> quads, PoseStack.Pose pose, int light,
             @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors, boolean heldFirstPerson) {
         if (quads == null || quads.isEmpty() || pose == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
@@ -555,6 +559,7 @@ public final class EntityGlintRender {
     public static void queueChromaticModel(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light,
                                            boolean heldFirstPerson) {
         if (model == null || state == null || pose == null || rt == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate overlay
         ChromaModelJob job = new ChromaModelJob(model, state, pose.copy(), rt, light);
         (heldFirstPerson ? HELD_FP_CHROMA_MODELS : CHROMA_MODELS).add(job);
     }
@@ -564,6 +569,7 @@ public final class EntityGlintRender {
     public static void queueChromaticPart(ModelPart part, PoseStack.Pose pose, RenderType rt, int light,
                                           boolean heldFirstPerson) {
         if (part == null || pose == null || rt == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate overlay
         ChromaPartJob job = new ChromaPartJob(part, pose.copy(), rt, light);
         (heldFirstPerson ? HELD_FP_CHROMA_PARTS : CHROMA_PARTS).add(job);
     }
@@ -574,6 +580,7 @@ public final class EntityGlintRender {
     public static void queueChromaticItem(List<BakedQuad> quads, PoseStack.Pose pose, CustomGlint.Data glint,
                                           int layerIdx, int light, boolean heldFirstPerson) {
         if (quads == null || quads.isEmpty() || pose == null || glint == null) return;
+        if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate overlay
         ChromaItemJob job = new ChromaItemJob(quads, pose.copy(), light, glint, layerIdx);
         (heldFirstPerson ? HELD_FP_CHROMA_ITEMS : CHROMA_ITEMS).add(job);
     }
