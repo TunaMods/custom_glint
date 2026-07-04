@@ -41,5 +41,11 @@ public class ModNetworking {
         registrar.playToClient(GlintServerBlueprintsSyncPacket.TYPE, GlintServerBlueprintsSyncPacket.STREAM_CODEC, GlintServerBlueprintsSyncPacket::handle);
         // GlintDeleteServerBlueprintPacket C→S  op-only: delete one of the server's shared blueprint trims
         registrar.playToServer(GlintDeleteServerBlueprintPacket.TYPE, GlintDeleteServerBlueprintPacket.STREAM_CODEC, GlintDeleteServerBlueprintPacket::handle);
+        // GlintWandSaveBlueprintPacket    C→S  wand "Save Design": save the build to the shared blueprint pool
+        registrar.playToServer(GlintWandSaveBlueprintPacket.TYPE, GlintWandSaveBlueprintPacket.STREAM_CODEC, GlintWandSaveBlueprintPacket::handle);
+        // GlintWandDeleteBlueprintPacket  C→S  wand Import trash icon: delete a shared blueprint
+        registrar.playToServer(GlintWandDeleteBlueprintPacket.TYPE, GlintWandDeleteBlueprintPacket.STREAM_CODEC, GlintWandDeleteBlueprintPacket::handle);
+        // GlintWandRequestBlueprintsPacket C→S  wand Import open: request the current shared blueprint pool
+        registrar.playToServer(GlintWandRequestBlueprintsPacket.TYPE, GlintWandRequestBlueprintsPacket.STREAM_CODEC, GlintWandRequestBlueprintsPacket::handle);
     }
 }
