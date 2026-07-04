@@ -29,6 +29,7 @@ import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.minecraft.world.item.crafting.display.SlotDisplay;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.item.ModItems;
 
 import java.util.ArrayList;
@@ -60,6 +61,11 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
+        // Every Glint Trim is the same Item; its design/colors/glow live in the TRIM config component. Without
+        // this, JEI treats all trims as one subtype and collapses the whole design selection (including the
+        // trim ingredient-info page below) into a single entry.
+        registration.registerFromDataComponentTypes(ModItems.GLINT_TRIM.get(), ModComponents.TRIM.get());
+        registration.registerFromDataComponentTypes(ModItems.GLOW_TRIM.get(), ModComponents.GLOW_TRIM.get());
     }
 
     @Override
