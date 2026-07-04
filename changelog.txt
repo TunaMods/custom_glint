@@ -1,13 +1,15 @@
 [1.7.0]
 
 - Added /glint cheat to unlock every Glint Table design at once
-- Added advancements for smithing a trim, crafting the Glint Table, filling a trim with all 8 colors or 8 layers, the ultimate 8-layer trim with all 8 colors on every layer, and collecting 5, 10, 20, 50, or every base design
+- Added advancements
 - Added trim import to the Glint Table: save any build you preview to a file and pull it back later as a build target that unlocks once you print it
 - On servers, operators can share a set of blueprint trims that everyone sees in the import list
 - The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
-- The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print, and the Print tooltip lists whatever is missing
+- The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print
 - Every color on every layer of a printed trim now costs its dye (a matching dye per shade, a Rainbow Dye per custom color)
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
+- The Glint Table now drops itself when broken
+- Picking black for a glint color now hides that layer, so you can leave a gap in a design
 
 [1.6.0]
 
