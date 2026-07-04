@@ -785,6 +785,15 @@ public class GlintEditorScreen extends Screen {
 
             if (obj.has("glowing")) glowEnabled = obj.get("glowing").getAsBoolean();
 
+            // Manual glow colors, saved by the Save Design / Glint Table export; absent → auto mode (glow
+            // follows layer 0), so clear any leftover overrides from the trim we were editing.
+            glowOverrideColors.clear();
+            editingGlowColor = false;
+            if (obj.has("glowColors")) {
+                for (JsonElement e : obj.getAsJsonArray("glowColors"))
+                    glowOverrideColors.add((int) Long.parseLong(e.getAsString().replace("0x", ""), 16));
+            }
+
             if (obj.has("displayName")) {
                 trimName = obj.get("displayName").getAsString();
             } else {
