@@ -7,7 +7,7 @@ Added:
 - On servers, operators can share a set of blueprint trims that everyone sees in the import list
 - The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print
 - Save Design in the wand editor: save your current build to the server so anyone can import it later through the wand or the Glint Table (delete saved designs from the Import list with the trash icon)
-- Hover tooltips on the wand editor's buttons
+- Hover tooltips on every button and control, in both the wand editor and the Glint Table
 - Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
 
 Fixed:
@@ -23,6 +23,8 @@ Fixed:
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
 - The Glint Table's Print tooltip is tidier, dropping the "Can't print yet" and "Consumes" headings
+- The Glint Table's layer row now stays visible, and the color row appears once you start building a trim
+- Glint Table tooltips are now a clean white to match the wand editor
 
 Compat:
 - Fixed Shader Pack Outline duplication with certain shader packs
