@@ -175,6 +175,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
         // Push the player's stored-design set + printed-trim library to the client when the table opens.
         if (player instanceof ServerPlayer sp) {
+            consolidatePrintedLibrary(sp); // drop any leftover ghost that a real trim already covers
             PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(sp.getData(ModAttachments.STORED_DESIGNS.get()))));
             List<ItemStack> printed = new ArrayList<>();
             for (ItemStack s : sp.getData(ModAttachments.PRINTED_TRIMS.get())) if (!s.isEmpty()) printed.add(s);
@@ -247,6 +248,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
             }
         }
         if (unlocked) {
+            cleaned = consolidateGhosts(cleaned); // the just-unlocked real shadows any other matching ghost
             sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
             PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
             return true;
@@ -257,6 +259,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         ItemStack one = trim.copy();
         one.setCount(1);
         cleaned.add(one);
+        cleaned = consolidateGhosts(cleaned); // the new real shadows any matching import ghost
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
         return true;
@@ -265,6 +268,29 @@ public class GlintTableMenu extends AbstractContainerMenu {
     /** True when a printed-library entry is a not-yet-crafted import (dimmed, non-withdrawable). */
     private static boolean isImportLocked(ItemStack stack) {
         return Boolean.TRUE.equals(stack.get(ModComponents.IMPORT_LOCKED.get()));
+    }
+
+    /** Real (unlocked) trims always take priority: drop any import-locked ghost whose signature matches a real
+     *  entry, so the two never coexist as a duplicate. Returns the same list when nothing changed. */
+    private static List<ItemStack> consolidateGhosts(List<ItemStack> list) {
+        Set<String> real = new HashSet<>();
+        for (ItemStack s : list) if (!s.isEmpty() && !isImportLocked(s)) real.add(trimSignature(s));
+        if (real.isEmpty()) return list;
+        List<ItemStack> out = new ArrayList<>(list.size());
+        boolean changed = false;
+        for (ItemStack s : list) {
+            if (!s.isEmpty() && isImportLocked(s) && real.contains(trimSignature(s))) { changed = true; continue; }
+            out.add(s);
+        }
+        return changed ? out : list;
+    }
+
+    /** Consolidate the player's printed library in place (drop ghosts shadowed by a real trim) and persist it.
+     *  Run on open so any pre-existing duplicate is cleaned up; storePrinted does the same after each change. */
+    private static void consolidatePrintedLibrary(ServerPlayer sp) {
+        List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
+        List<ItemStack> cleaned = consolidateGhosts(list);
+        if (cleaned != list) sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
     }
 
     /** A trim's identity for import matching: its glint layers (design + colors + timing/flags, seed
@@ -277,8 +303,13 @@ public class GlintTableMenu extends AbstractContainerMenu {
             for (CustomGlint.Layer l : d.layers()) {
                 sb.append(l.design()).append('|');
                 for (int c : l.colors()) sb.append(Integer.toHexString(c)).append(',');
+                // A single-colour layer renders identically whether "simultaneous" or not, and the two build
+                // paths set that flag differently for such layers (import normalizes every layer, print only
+                // the active one). Canonicalize it to false so the same trim, imported vs printed, hashes the
+                // same — otherwise it shows up as a duplicate the print-unlock never consolidates.
+                boolean sim = l.simultaneous() && l.colors().length >= 2;
                 sb.append(';').append(l.speed()).append(';').append(l.interpolate())
-                  .append(';').append(l.patternScale()).append(';').append(l.simultaneous())
+                  .append(';').append(l.patternScale()).append(';').append(sim)
                   .append(';').append(l.scrollDir()).append(';').append(l.scrollOffset()).append('#');
             }
         }
