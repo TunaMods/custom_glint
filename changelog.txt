@@ -6,9 +6,12 @@ Added:
 - Trim import to the Glint Table: save any build you preview to a file and pull it back later as a build target that unlocks once you print it
 - On servers, operators can share a set of blueprint trims that everyone sees in the import list
 - The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print
+- Save Design in the wand editor: save your current build to a file and pull it back later through Import or the Glint Table
+- Hover tooltips on the wand editor's buttons
 
 Fixed:
 - The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
+- Importing a trim in the wand editor now keeps its glow colors instead of dropping them
 - Every color on every layer of a printed trim now costs its dye (a matching dye per shade, a Rainbow Dye per custom color)
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
 - The Glint Table now drops itself when broken
