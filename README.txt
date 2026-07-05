@@ -41,8 +41,8 @@ In build.gradle:
     dependencies {
         jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
             version {
-                strictly "[1.5.0,2.0)"
-                prefer "1.5.0"
+                strictly "[1.7.0,2.0)"
+                prefer "1.7.0"
             }
         }
     }
@@ -63,7 +63,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
     [[dependencies.yourmodid]]
         modId="customglint_api"
         type="required"
-        versionRange="[1.5,)"
+        versionRange="[1.7,)"
         ordering="NONE"
         side="BOTH"
 
