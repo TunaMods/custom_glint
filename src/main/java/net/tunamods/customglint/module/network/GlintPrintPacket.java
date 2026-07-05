@@ -25,20 +25,29 @@ public class GlintPrintPacket {
     public final boolean glow, glowAuto, named, simultaneous, interpolate, sourceSimultaneous;
     public final String name;
     public final int[][] shardDyes;
+    /** Manual-glow colour shards for a glint trim (empty when glow is off / auto). Each shard is charged a dye
+     *  exactly like the glint colours. Unused on the {@code glowBase} path (a Glow Trim's colours ride
+     *  {@code shardDyes}). */
+    public final int[][] glowShardDyes;
     public final int[] donorColors;
     public final CustomGlint.Layer[] belowLayers, aboveLayers;
+    /** True when the trim being printed is a Glow Trim: the server ignores the glint-only fields and builds a
+     *  glow-only trim, treating {@code shardDyes} as its glow colours. */
+    public final boolean glowBase;
 
     public GlintPrintPacket(String design, float speed, float scale, int opacity,
                             boolean glow, boolean glowAuto, boolean named, String name,
                             boolean simultaneous, int scrollDir, float scrollOffset, boolean interpolate,
                             int glowHex, int nameHex, int[][] shardDyes, int[] donorColors,
-                            CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous) {
+                            CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                            boolean glowBase, int[][] glowShardDyes) {
         this.design = design; this.speed = speed; this.scale = scale; this.opacity = opacity;
         this.glow = glow; this.glowAuto = glowAuto; this.named = named; this.name = name;
         this.simultaneous = simultaneous; this.scrollDir = scrollDir; this.scrollOffset = scrollOffset;
         this.interpolate = interpolate; this.glowHex = glowHex; this.nameHex = nameHex; this.shardDyes = shardDyes;
         this.donorColors = donorColors;
         this.belowLayers = belowLayers; this.aboveLayers = aboveLayers; this.sourceSimultaneous = sourceSimultaneous;
+        this.glowBase = glowBase; this.glowShardDyes = glowShardDyes;
     }
 
     public static void encode(GlintPrintPacket pkt, FriendlyByteBuf buf) {
@@ -62,6 +71,9 @@ public class GlintPrintPacket {
         GlintApplyPacket.writeLayers(buf, pkt.belowLayers);
         GlintApplyPacket.writeLayers(buf, pkt.aboveLayers);
         buf.writeBoolean(pkt.sourceSimultaneous);
+        buf.writeBoolean(pkt.glowBase);
+        buf.writeVarInt(pkt.glowShardDyes.length);
+        for (int[] shard : pkt.glowShardDyes) buf.writeVarIntArray(shard);
     }
 
     public static GlintPrintPacket decode(FriendlyByteBuf buf) {
@@ -71,7 +83,8 @@ public class GlintPrintPacket {
                 buf.readInt(), buf.readInt(),
                 readShardDyes(buf), readCappedVarIntArray(buf, 8),
                 GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
-                GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean());
+                GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(), buf.readBoolean(),
+                readShardDyes(buf));
     }
 
     private static int[][] readShardDyes(FriendlyByteBuf buf) {
@@ -98,9 +111,14 @@ public class GlintPrintPacket {
         ctx.get().enqueueWork(() -> {
             ServerPlayer sp = ctx.get().getSender();
             if (sp != null && sp.containerMenu instanceof GlintTableMenu m) {
-                m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name,
-                        pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex,
-                        pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous);
+                if (pkt.glowBase) {
+                    m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
+                } else {
+                    m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name,
+                            pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex,
+                            pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous,
+                            pkt.glowShardDyes);
+                }
             }
         });
         ctx.get().setPacketHandled(true);

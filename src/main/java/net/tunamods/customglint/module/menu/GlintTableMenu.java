@@ -399,7 +399,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
     public void print(String designId, float speed, float scale, int opacity,
                       boolean glow, boolean glowAuto, boolean named, String name, boolean simultaneous,
                       int scrollDir, float scrollOffset, boolean interpolate, int glowHex, int nameHex, int[][] shardDyes,
-                      int[] donorColors, CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous) {
+                      int[] donorColors, CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                      int[][] glowShardDyes) {
         if (!(player instanceof ServerPlayer sp)) return;
         ResourceLocation design = ResourceLocation.tryParse(designId);
         if (design == null) return;
@@ -433,8 +434,10 @@ public class GlintTableMenu extends AbstractContainerMenu {
         int[] baseColors = fromBase ? GlintTrimItem.getColors(base) : new int[0];
         int colorBudget = Math.max(0, 8 - baseColors.length);
         List<Integer> newColors = new ArrayList<>();
-        List<Integer> usedDyeSlots = new ArrayList<>();
-        Set<Integer> consumed = new HashSet<>();
+        // Cumulative dye cost: every colour shard on every layer charges its own dye — a shade reused across
+        // shards / layers costs one of that dye each time, no de-duplication. dyeUsed tracks the running
+        // per-shade count so each colour validates against what the slot still holds after earlier claims.
+        int[] dyeUsed = new int[16];
         int rainbowNeeded = 0; // custom-hex colours, each consuming one rainbow dye
         for (int[] shard : shardDyes) {
             if (shard.length == 0 || newColors.size() >= colorBudget) continue;
@@ -449,7 +452,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
             int r = 0, g = 0, b = 0;
             boolean allPresent = true;
             for (int idx : shard) {
-                if (idx < 0 || idx >= 16 || dyeOf(container.getItem(SLOT_DYE_START + idx)) == null) { allPresent = false; break; }
+                ItemStack ds = idx >= 0 && idx < 16 ? container.getItem(SLOT_DYE_START + idx) : ItemStack.EMPTY;
+                if (idx < 0 || idx >= 16 || dyeOf(ds) == null || ds.getCount() < dyeUsed[idx] + 1) { allPresent = false; break; }
                 int rgb = GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF;
                 r += (rgb >> 16) & 0xFF; g += (rgb >> 8) & 0xFF; b += rgb & 0xFF;
             }
@@ -458,21 +462,22 @@ public class GlintTableMenu extends AbstractContainerMenu {
             int rgb = ((r / n) << 16) | ((g / n) << 8) | (b / n);
             if (containsRgb(baseColors, rgb)) continue;
             newColors.add((alpha << 24) | rgb);
-            for (int idx : shard) if (consumed.add(SLOT_DYE_START + idx)) usedDyeSlots.add(SLOT_DYE_START + idx);
+            for (int idx : shard) dyeUsed[idx]++; // charge each component dye, cumulative
         }
-        // The committed layers (below/above the active one) also cost dyes now, not just the active layer:
-        // each of their colours consumes a matching vanilla dye (deduped by slot with the active layer, one
-        // dye covers a shade everywhere) or a rainbow dye for any colour that isn't a vanilla dye shade.
+        // The committed layers (below/above the active one) also cost dyes, cumulatively: every colour of every
+        // committed layer wants its own dye, stacking on top of the active layer's claims (no de-dup). The
+        // synthetic white fill an empty layer carries is skipped — it isn't a chosen colour. A non-dye colour
+        // takes a rainbow dye instead.
         int committedRainbow = 0;
         for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
             for (CustomGlint.Layer l : group) {
                 for (int color : l.colors()) {
+                    if ((color & 0xFFFFFF) == 0xFFFFFF) continue; // synthetic empty-layer fill, not a real colour
                     int idx = dyeIndexForRgb(color);
                     if (idx < 0) { committedRainbow++; continue; }
-                    int slot = SLOT_DYE_START + idx;
-                    if (!consumed.add(slot)) continue; // that dye is already being consumed for the print
-                    if (dyeOf(container.getItem(slot)) == null) return; // required dye missing
-                    usedDyeSlots.add(slot);
+                    ItemStack ds = container.getItem(SLOT_DYE_START + idx);
+                    if (dyeOf(ds) == null || ds.getCount() < dyeUsed[idx] + 1) return; // required dye missing / not enough
+                    dyeUsed[idx]++;
                 }
             }
         }
@@ -498,15 +503,43 @@ public class GlintTableMenu extends AbstractContainerMenu {
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
         boolean baseHasGlowColors = fromBase && CustomGlint.getGlowColors(base).length > 0;
         boolean baseNamed = fromBase && base.hasCustomHoverName();
-        if (glow && !baseGlowing && container.getItem(SLOT_GLOWSTONE).isEmpty()) return;
+        // Glow costs one glowstone per layer of the finished trim (active + every committed layer): an 8-layer
+        // glowing trim burns 8 glowstone. Only charged when glow is newly added (a base already glowing is free).
+        int glowstoneCost = (glow && !baseGlowing) ? extraLayers + 1 : 0;
+        if (glowstoneCost > 0 && container.getItem(SLOT_GLOWSTONE).getCount() < glowstoneCost) return;
         if (named && !baseNamed && container.getItem(SLOT_NAMETAG).isEmpty()) return;
-        DyeColor glowDye = dyeOf(container.getItem(SLOT_GLOW_DYE));
         DyeColor nameDye = dyeOf(container.getItem(SLOT_NAME_DYE));
-        boolean glowRainbow = isRainbowDye(container.getItem(SLOT_GLOW_DYE));
         boolean nameRainbow = isRainbowDye(container.getItem(SLOT_NAME_DYE));
-        int glowColor = glowRainbow ? glowHex : dyeColor(glowDye);
         int nameColor = nameRainbow ? nameHex : dyeColor(nameDye);
-        if (glow && !glowAuto && glowColor < 0 && !baseHasGlowColors) return;
+
+        // Manual glow colours: built from the glow shards (its own list of up to 8, separate from the glint
+        // colours), each charging a dye cumulatively on top of everything above. Auto glow / glow off / a base
+        // already glowing contribute none. A shard whose dye isn't present is skipped.
+        List<Integer> glowColors = new ArrayList<>();
+        if (glow && !glowAuto) {
+            for (int[] shard : glowShardDyes) {
+                if (shard.length == 0 || glowColors.size() >= 8) continue;
+                if (shard.length == 1 && (shard[0] & CUSTOM_FLAG) != 0) {
+                    if (container.getItem(SLOT_RAINBOW_DYE).getCount() < rainbowNeeded + 1) continue;
+                    glowColors.add(0xFF000000 | (shard[0] & 0xFFFFFF));
+                    rainbowNeeded++;
+                    continue;
+                }
+                int r = 0, g = 0, b = 0;
+                boolean allPresent = true;
+                for (int idx : shard) {
+                    ItemStack ds = idx >= 0 && idx < 16 ? container.getItem(SLOT_DYE_START + idx) : ItemStack.EMPTY;
+                    if (idx < 0 || idx >= 16 || dyeOf(ds) == null || ds.getCount() < dyeUsed[idx] + 1) { allPresent = false; break; }
+                    int rgb = GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF;
+                    r += (rgb >> 16) & 0xFF; g += (rgb >> 8) & 0xFF; b += rgb & 0xFF;
+                }
+                if (!allPresent) continue;
+                int n = shard.length;
+                glowColors.add(0xFF000000 | (((r / n) << 16) | ((g / n) << 8) | (b / n)));
+                for (int idx : shard) dyeUsed[idx]++;
+            }
+            if (glowColors.isEmpty() && !baseHasGlowColors) return; // manual glow needs at least one colour
+        }
 
         ItemStack trim;
         if (fromBase) {
@@ -526,20 +559,26 @@ public class GlintTableMenu extends AbstractContainerMenu {
         GlintTrimItem.setScrollDir(trim, scrollDir);
         GlintTrimItem.setScrollOffset(trim, Float.isFinite(scrollOffset) ? Math.max(0.0f, Math.min(1.0f, scrollOffset)) : 0.0f);
         GlintTrimItem.setPattern(trim, design);
-        // Simultaneous tears: one per simultaneous layer with ≥2 colors (a single-colour layer renders the same
-        // either way, so it costs none). The active layer keeps the chosen simultaneous state, so the print
-        // BLOCKS on a missing tear instead of quietly printing sequential.
-        int committedSim = 0;
-        for (CustomGlint.Layer l : belowLayers) if (l.simultaneous() && l.colors().length >= 2) committedSim++;
-        for (CustomGlint.Layer l : aboveLayers) if (l.simultaneous() && l.colors().length >= 2) committedSim++;
-        boolean activeSim = simultaneous && GlintTrimItem.getColors(trim).length >= 2;
-        int simTearsUsed = committedSim + (activeSim ? 1 : 0);
-        if (container.getItem(SLOT_TEAR).getCount() < simTearsUsed) return; // not enough tears for the simultaneous layers
-        // The sequential tear is consumed when reverting a SIMULTANEOUS source layer back to sequential.
-        boolean consumeSeqTear = !simultaneous && sourceSimultaneous && !container.getItem(SLOT_TEAR_SEQ).isEmpty();
+        // Mode tears: every multi-colour layer costs one tear matching how its colours animate — a simultaneous
+        // tear for a simultaneous layer, a sequential tear for a sequential one. A single-colour layer renders
+        // the same either way, so it costs no tear. The active layer keeps its chosen mode, so the print BLOCKS
+        // on a missing tear instead of quietly printing the other mode.
+        int committedSim = 0, committedSeq = 0;
+        for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
+            for (CustomGlint.Layer l : group) {
+                if (l.colors().length < 2) continue;
+                if (l.simultaneous()) committedSim++; else committedSeq++;
+            }
+        }
+        boolean activeMulti = GlintTrimItem.getColors(trim).length >= 2;
+        int simTearsUsed = committedSim + (simultaneous && activeMulti ? 1 : 0);
+        int seqTearsUsed = committedSeq + (!simultaneous && activeMulti ? 1 : 0);
+        if (container.getItem(SLOT_TEAR).getCount() < simTearsUsed) return;     // not enough simultaneous tears
+        if (container.getItem(SLOT_TEAR_SEQ).getCount() < seqTearsUsed) return; // not enough sequential tears
         GlintTrimItem.setGlowing(trim, glow);
         CustomGlint.setGlowing(trim, glow);
-        if (glow && !glowAuto && glowColor >= 0) CustomGlint.setGlowColors(trim, new int[]{0xFF000000 | glowColor});
+        if (glow && !glowAuto && !glowColors.isEmpty())
+            CustomGlint.setGlowColors(trim, glowColors.stream().mapToInt(Integer::intValue).toArray());
         if (named && !name.isEmpty()) {
             int rgb = nameColor >= 0 ? nameColor : 0xFFFFFF;
             trim.setHoverName(Component.literal(name).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
@@ -547,7 +586,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         // Final active-layer Data write carrying the chosen interpolation (and simultaneous when a tear is
         // present). Written LAST — setGlowing/setPattern reset interpolate/simultaneous.
         CustomGlint.write(trim, design, GlintTrimItem.getColors(trim), safeSpeed, interpolate, safeScale,
-                activeSim, GlintTrimItem.getScrollDir(trim), GlintTrimItem.getScrollOffset(trim));
+                simultaneous && activeMulti, GlintTrimItem.getScrollDir(trim), GlintTrimItem.getScrollOffset(trim));
 
         if (extraLayers > 0) {
             CustomGlint.Data activeData = CustomGlint.read(trim);
@@ -570,13 +609,12 @@ public class GlintTableMenu extends AbstractContainerMenu {
         consumeUnits(sp, SLOT_REDSTONE, redCost, Items.REDSTONE, Items.REDSTONE_BLOCK);
         consumeUnits(sp, SLOT_SLIME, slimeCost, Items.SLIME_BALL, Items.SLIME_BLOCK);
         if (glassCost > 0) container.removeItem(SLOT_GLASS, glassCost);
-        for (int slot : usedDyeSlots) container.removeItem(slot, 1);
+        for (int i = 0; i < 16; i++) if (dyeUsed[i] > 0) container.removeItem(SLOT_DYE_START + i, dyeUsed[i]);
         if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded); // one per custom-hex colour
-        if (glow && !baseGlowing) container.removeItem(SLOT_GLOWSTONE, 1);
+        if (glowstoneCost > 0) container.removeItem(SLOT_GLOWSTONE, glowstoneCost);
         // The name tag is a gate, not an ingredient: it's never consumed.
         if (simTearsUsed > 0) container.removeItem(SLOT_TEAR, simTearsUsed);
-        if (consumeSeqTear) container.removeItem(SLOT_TEAR_SEQ, 1);
-        if (glow && !glowAuto && glowColor >= 0) container.removeItem(SLOT_GLOW_DYE, 1);
+        if (seqTearsUsed > 0) container.removeItem(SLOT_TEAR_SEQ, seqTearsUsed);
         if (named && !name.isEmpty() && (nameDye != null || nameRainbow)) container.removeItem(SLOT_NAME_DYE, 1);
         if (extraLayers > 0) container.removeItem(SLOT_LAYER_TEAR, extraLayers);
 
@@ -591,6 +629,72 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (layerCount >= 2) ModTriggers.LAYERED_TRIM.trigger(sp);
         if (layerCount >= 8) ModTriggers.EIGHT_LAYER_TRIM.trigger(sp);
         if (EightByEightTrimTrigger.matches(printedData)) ModTriggers.EIGHT_BY_EIGHT_TRIM.trigger(sp);
+    }
+
+    /**
+     * Print a Glow Trim: a glow-only trim carries no glint design, layers, speed/scale or opacity — just its
+     * glow colours. The colours come from the selected dye shards (one dye per shade, one rainbow dye per
+     * custom colour, exactly like the glint print), the dyes are consumed, and the finished Glow Trim is given
+     * to the player + stored in the printed library. No-op on validation fail.
+     */
+    public void printGlow(int[][] shardDyes, float speed, boolean interpolate, boolean named, String name, int nameHex) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        float safeSpeed = Float.isFinite(speed) ? Math.max(0.10f, Math.min(8.0f, speed)) : 1.0f;
+        int redCost = CustomGlint.stepCost(safeSpeed); // speed off 1× costs redstone, like a glint layer
+        if (redCost > 0 && materialUnits(SLOT_REDSTONE, Items.REDSTONE, Items.REDSTONE_BLOCK) < redCost) return;
+
+        // Resolve the glow colours from the selected shards (opaque — glow has no opacity dimension), tracking
+        // which dyes to consume. A shard whose dye isn't present is skipped; a custom-hex shard costs a rainbow.
+        List<Integer> colors = new ArrayList<>();
+        // Cumulative dye cost (see print): each glow-colour shard charges its own dye, no de-duplication.
+        int[] dyeUsed = new int[16];
+        int rainbowNeeded = 0;
+        for (int[] shard : shardDyes) {
+            if (shard.length == 0 || colors.size() >= 8) continue;
+            if (shard.length == 1 && (shard[0] & CUSTOM_FLAG) != 0) {
+                if (container.getItem(SLOT_RAINBOW_DYE).getCount() < rainbowNeeded + 1) continue;
+                colors.add(0xFF000000 | (shard[0] & 0xFFFFFF));
+                rainbowNeeded++;
+                continue;
+            }
+            int r = 0, g = 0, b = 0;
+            boolean allPresent = true;
+            for (int idx : shard) {
+                ItemStack ds = idx >= 0 && idx < 16 ? container.getItem(SLOT_DYE_START + idx) : ItemStack.EMPTY;
+                if (idx < 0 || idx >= 16 || dyeOf(ds) == null || ds.getCount() < dyeUsed[idx] + 1) { allPresent = false; break; }
+                int rgb = GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF;
+                r += (rgb >> 16) & 0xFF; g += (rgb >> 8) & 0xFF; b += rgb & 0xFF;
+            }
+            if (!allPresent) continue;
+            int n = shard.length;
+            colors.add(0xFF000000 | (((r / n) << 16) | ((g / n) << 8) | (b / n)));
+            for (int idx : shard) dyeUsed[idx]++; // charge each component dye, cumulative
+        }
+        if (colors.isEmpty()) return; // a glow trim needs at least one colour
+
+        // Optional custom name (name tag is a gate, not consumed; the name dye supplies the colour).
+        DyeColor nameDye = dyeOf(container.getItem(SLOT_NAME_DYE));
+        boolean nameRainbow = isRainbowDye(container.getItem(SLOT_NAME_DYE));
+        int nameColor = nameRainbow ? nameHex : dyeColor(nameDye);
+        if (named && !name.isEmpty() && container.getItem(SLOT_NAMETAG).isEmpty()) return;
+
+        ItemStack trim = new ItemStack(ModItems.GLOW_TRIM.get());
+        for (int c : colors) GlowTrimItem.addColor(trim, c); // stores under COLORS_TAG + writes the glow preview
+        CustomGlint.setGlowing(trim, true);
+        CustomGlint.setGlowAnim(trim, safeSpeed, interpolate); // speed + interpolation drive the glow cycle
+        if (named && !name.isEmpty()) {
+            int rgb = nameColor >= 0 ? nameColor : 0xFFFFFF;
+            trim.setHoverName(Component.literal(name).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
+        }
+
+        // Consume the cost.
+        consumeUnits(sp, SLOT_REDSTONE, redCost, Items.REDSTONE, Items.REDSTONE_BLOCK);
+        for (int i = 0; i < 16; i++) if (dyeUsed[i] > 0) container.removeItem(SLOT_DYE_START + i, dyeUsed[i]);
+        if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded);
+        if (named && !name.isEmpty() && (nameDye != null || nameRainbow)) container.removeItem(SLOT_NAME_DYE, 1);
+
+        if (!sp.addItem(trim)) sp.drop(trim, false);
+        storePrinted(sp, trim);
     }
 
     /** Storage-library name for a trim stack (a Glint design name, or the Glow Trim sentinel), or null. */
