@@ -106,10 +106,14 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     }
 
     public static class Serializer implements RecipeSerializer<GlintTrimSmithingRecipe> {
+        // Stateless recipe: share ONE instance between both codecs. StreamCodec.unit validates on encode that
+        // the value == the captured instance (identity, no equals override), so the map codec must decode that
+        // SAME singleton, not a fresh `new` each load — otherwise recipe sync throws "Can't encode ...".
+        private static final GlintTrimSmithingRecipe INSTANCE = new GlintTrimSmithingRecipe();
         private static final MapCodec<GlintTrimSmithingRecipe> CODEC =
-                MapCodec.unit(GlintTrimSmithingRecipe::new);
+                MapCodec.unit(INSTANCE);
         private static final StreamCodec<RegistryFriendlyByteBuf, GlintTrimSmithingRecipe> STREAM_CODEC =
-                StreamCodec.unit(new GlintTrimSmithingRecipe());
+                StreamCodec.unit(INSTANCE);
 
         @Override
         public MapCodec<GlintTrimSmithingRecipe> codec() {
