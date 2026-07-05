@@ -10,8 +10,9 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 
 /**
  * C→S: the player dropped a trim held on the cursor onto one of the Glint Table's scrollable grids. The
- * server deposits one into the player's design / printed-trim library. No payload — the carried item is read
- * from the open menu.
+ * server deposits one into the player's design / printed-trim library (the click target isn't a real slot,
+ * so this is the drag-in equivalent of shift-clicking a trim into the table). No payload, the carried item
+ * is read from the open menu.
  */
 public record GlintDepositPacket() implements CustomPacketPayload {
 

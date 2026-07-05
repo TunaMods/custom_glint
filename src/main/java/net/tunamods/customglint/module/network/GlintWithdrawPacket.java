@@ -9,9 +9,9 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
 
 /**
- * C→S: shift-left-click on a trim in the Glint Table's printed (painted) library. The server pulls that trim
- * out of the library and into the player's inventory; if the inventory is full it stays in the library.
- * Carries the library index of the clicked trim.
+ * C→S: shift-left-click on a trim in the Glint Table's printed (painted) library. The server pulls that
+ * trim out of the library and into the player's inventory; if the inventory is full it stays in the library
+ * (the click is a no-op). Carries the library index of the clicked trim.
  */
 public record GlintWithdrawPacket(int index) implements CustomPacketPayload {
 
