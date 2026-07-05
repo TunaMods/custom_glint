@@ -24,6 +24,9 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
+import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlockEntities;
 import net.tunamods.customglint.module.block.ModBlocks;
 import net.tunamods.customglint.module.client.GlintTableClientInit;
@@ -67,6 +70,7 @@ public class CustomGlintMod {
         ModBlockEntities.register(modEventBus);
         ModMenuTypes.register(modEventBus);
         ModAttachments.register(modEventBus);
+        ModTriggers.register(modEventBus);
 
         ModNetworking.register(modEventBus);
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -83,6 +87,22 @@ public class CustomGlintMod {
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
+        NeoForge.EVENT_BUS.addListener(this::onItemCrafted);
+    }
+
+    /** Award the color/layer trim advancements when a crafting-table recipe (dye / merge / layer) yields a
+     *  qualifying Glint Trim. The Glint Table print fires the same triggers from {@code GlintTableMenu#print}. */
+    private void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;
+        if (GlintTrimItem.getColors(event.getCrafting()).length >= 8) {
+            ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
+        }
+        CustomGlint.Data data = CustomGlint.read(event.getCrafting());
+        int layers = data != null ? data.layers().length : 0;
+        if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
+        if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
+        if (EightByEightTrimTrigger.matches(data)) ModTriggers.EIGHT_BY_EIGHT_TRIM.get().trigger(sp);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
