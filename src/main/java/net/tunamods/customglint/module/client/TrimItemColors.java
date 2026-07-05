@@ -3,6 +3,7 @@ package net.tunamods.customglint.module.client;
 import net.tunamods.customglint.module.item.ModItems;
 
 import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -17,22 +18,30 @@ public final class TrimItemColors {
 
     @SubscribeEvent
     public static void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
-        // Only the white outline (layer1 / tintindex 1 — texture glow_glint_trim_edge) is recoloured; the
-        // grey body (layer0 / tintindex 0) stays untinted. A single multiply over the whole sprite would
-        // darken the grey body toward the glow colour, which is wrong.
+        // Only the white outline (layer1 / tintindex 1 — texture glow_glint_trim_edge) is recoloured; the grey
+        // body (layer0 / tintindex 0) stays untinted (returns white = the identity multiply). A single multiply
+        // over the whole sprite would darken the grey body toward the glow colour, which is wrong.
+        // Colour source = the authoritative glow colour (the `glowColors` tag), which every path writes: the
+        // Glow Trim recipe/print, and the Glint Table preview (CustomGlint.setGlowColors). Falls back to the
+        // trim's own colour storage so a bare trim still tints.
         event.register((stack, tintIndex) -> {
             if (tintIndex != 1) return 0xFFFFFFFF;
-            int[] colors = GlowTrimItem.getColors(stack);
-            if (colors.length == 0) return 0xFFFFFFFF;
-            return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
+            int[] glow = CustomGlint.getGlowColors(stack);
+            if (glow.length == 0) glow = GlowTrimItem.getColors(stack);
+            if (glow.length == 0) return 0xFFFFFFFF;
+            return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(glow,
+                    CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack)) & 0xFFFFFF);
         }, ModItems.GLOW_TRIM.get());
 
         event.register((stack, tintIndex) -> {
             if (tintIndex != 1) return 0xFFFFFFFF;
             if (!GlintTrimItem.isGlowing(stack)) return 0xFFFFFFFF;
-            int[] colors = GlintTrimItem.getColors(stack);
-            if (colors.length == 0) return 0xFFFFFFFF;
-            return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(colors) & 0xFFFFFF);
+            // Explicit glow colours win; otherwise the glow is "auto" and follows the glint colours.
+            int[] glow = CustomGlint.getGlowColors(stack);
+            if (glow.length == 0) glow = GlintTrimItem.getColors(stack);
+            if (glow.length == 0) return 0xFFFFFFFF;
+            return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(glow,
+                    CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack)) & 0xFFFFFF);
         }, ModItems.GLINT_TRIM.get());
     }
 }

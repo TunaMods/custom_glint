@@ -313,6 +313,8 @@ public final class CustomGlint {
     private static final String LAYERS_KEY       = "layers";
     private static final String GLOWING_KEY      = "glowing";
     private static final String GLOW_COLORS_KEY  = "glowColors";
+    private static final String GLOW_SPEED_KEY   = "glowSpeed";
+    private static final String GLOW_INTERP_KEY  = "glowInterp";
     private static final String DESIGN_KEY      = "design";
     private static final String COLORS_KEY      = "colors";
     private static final String SPEED_KEY       = "speed";
@@ -433,6 +435,10 @@ public final class CustomGlint {
             tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
         if (existing != null && existing.contains(GLOW_COLORS_KEY))
             tag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
+        if (existing != null && existing.contains(GLOW_SPEED_KEY))
+            tag.putFloat(GLOW_SPEED_KEY, existing.getFloat(GLOW_SPEED_KEY));
+        if (existing != null && existing.contains(GLOW_INTERP_KEY))
+            tag.putBoolean(GLOW_INTERP_KEY, existing.getBoolean(GLOW_INTERP_KEY));
         tag.put(LAYERS_KEY, layersToList(layers));
         stack.getOrCreateTag().put(TAG, tag);
     }
@@ -518,6 +524,33 @@ public final class CustomGlint {
         if (!stack.hasTag() || !stack.getTag().contains(TAG)) return;
         CompoundTag tag = stack.getTag().getCompound(TAG);
         tag.remove(GLOW_COLORS_KEY);
+    }
+
+    /** Glow-outline animation speed (how fast the outline cycles its glow colors), default 1.0. */
+    public static float getGlowSpeed(ItemStack stack) {
+        if (stack.isEmpty() || !stack.hasTag()) return 1.0f;
+        CompoundTag root = stack.getTag();
+        if (!root.contains(TAG)) return 1.0f;
+        CompoundTag tag = root.getCompound(TAG);
+        return tag.contains(GLOW_SPEED_KEY) ? tag.getFloat(GLOW_SPEED_KEY) : 1.0f;
+    }
+
+    /** Whether the glow outline blends smoothly between its colors (default true) or steps hard between them. */
+    public static boolean getGlowInterpolate(ItemStack stack) {
+        if (stack.isEmpty() || !stack.hasTag()) return true;
+        CompoundTag root = stack.getTag();
+        if (!root.contains(TAG)) return true;
+        CompoundTag tag = root.getCompound(TAG);
+        return !tag.contains(GLOW_INTERP_KEY) || tag.getBoolean(GLOW_INTERP_KEY);
+    }
+
+    /** Sets the glow outline's animation speed + interpolation (kept alongside {@code glowColors}). */
+    public static void setGlowAnim(ItemStack stack, float speed, boolean interpolate) {
+        CompoundTag root = stack.getOrCreateTag();
+        CompoundTag glintTag = root.contains(TAG) ? root.getCompound(TAG) : new CompoundTag();
+        glintTag.putFloat(GLOW_SPEED_KEY, speed);
+        glintTag.putBoolean(GLOW_INTERP_KEY, interpolate);
+        root.put(TAG, glintTag);
     }
 
     public static ItemStack glinted(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {

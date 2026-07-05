@@ -798,13 +798,22 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Animates through an int[] color array using game time. Default speed=1, interpolate=true. */
     public static int computeAnimatedGlowColor(int[] colors) {
+        return computeAnimatedGlowColor(colors, 1.0f, true);
+    }
+
+    /** Animates through an int[] color array using wall-clock time, at {@code speed} (a higher speed cycles
+     *  faster, mirroring the glint layer speed) and either blending between colors ({@code interpolate}) or
+     *  stepping hard between them. */
+    public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
+        if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        float totalTicks = 20.0f * colors.length;
+        float totalTicks = (20.0f * colors.length) / speed;
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
+        if (!interpolate) return colors[idx];
         float frac = t - (int) t;
         int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
         int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
@@ -825,7 +834,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  ({@link GlowOutlineRenderer}). */
     public static int resolveGlowColor(ItemStack stack) {
         int[] glow = CustomGlint.getGlowColors(stack);
-        if (glow.length > 0) return computeAnimatedGlowColor(glow);
+        if (glow.length > 0)
+            return computeAnimatedGlowColor(glow, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));
         Data glint = CustomGlint.readCached(stack);
         return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
     }
