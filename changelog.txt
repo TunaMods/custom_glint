@@ -9,6 +9,7 @@ Added:
 - Save Design in the wand editor: save your current build to the server so anyone can import it later through the wand or the Glint Table (delete saved designs from the Import list with the trash icon)
 - Hover tooltips on every button and control, in both the wand editor and the Glint Table
 - Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
+- Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
 
 Fixed:
 - The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
