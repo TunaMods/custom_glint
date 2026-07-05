@@ -4,6 +4,8 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.constants.VanillaTypes;
+import mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter;
+import mezz.jei.api.ingredients.subtypes.UidContext;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
 import net.minecraft.core.HolderLookup;
@@ -22,6 +24,7 @@ import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
@@ -394,6 +397,32 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
+        // Every Glint/Glow Trim is the same Item; its design/colors/glow live in the config component. Without a
+        // subtype interpreter JEI collapses all trims into one entry, hiding every design variant. The config
+        // records are value-equal (List<Integer> colors), so returning the component distinguishes each variant.
+        // (JEI 19.21 has no registerFromDataComponentTypes — that's a newer-JEI helper.)
+        registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), new ISubtypeInterpreter<>() {
+            @Override
+            public Object getSubtypeData(ItemStack stack, UidContext context) {
+                return stack.get(ModComponents.TRIM.get());
+            }
+            @Override
+            public String getLegacyStringSubtypeInfo(ItemStack stack, UidContext context) {
+                Object c = stack.get(ModComponents.TRIM.get());
+                return c == null ? "" : c.toString();
+            }
+        });
+        registration.registerSubtypeInterpreter(ModItems.GLOW_TRIM.get(), new ISubtypeInterpreter<>() {
+            @Override
+            public Object getSubtypeData(ItemStack stack, UidContext context) {
+                return stack.get(ModComponents.GLOW_TRIM.get());
+            }
+            @Override
+            public String getLegacyStringSubtypeInfo(ItemStack stack, UidContext context) {
+                Object c = stack.get(ModComponents.GLOW_TRIM.get());
+                return c == null ? "" : c.toString();
+            }
+        });
     }
 
     @Override
