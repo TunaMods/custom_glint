@@ -47,6 +47,24 @@ public final class CustomGlint {
      *  and loops); every input path (wand editor, dye/merge recipes, packets) enforces it. */
     public static final int MAX_COLORS_PER_LAYER = 8;
 
+    /** Most-translucent glint alpha (at the 8th glass); 0 glass = fully opaque (255). Shared so the Glint
+     *  Table's opacity↔alpha↔glass mapping matches on both the client (preview/cost) and the server (print). */
+    public static final int GLINT_ALPHA_MIN = 32;
+
+    /** Glint-Table material cost of a speed / scale value: the number of ± stepper clicks it sits from the 1×
+     *  default (0.10 per click below 1×, 0.5 per click above). Each click costs one redstone / slime, so a
+     *  fully-tuned layer is a real material sink. Both sides tally this per layer. */
+    public static int stepCost(float value) {
+        if (value >= 1.0f) return Math.round((value - 1.0f) / 0.5f);
+        return Math.round((1.0f - value) / 0.10f);
+    }
+
+    /** Glint-Table glass cost for a colour's alpha: the opacity level (0..8) it encodes, i.e. one glass per
+     *  opacity click. Inverts the opacity→alpha mapping ({@code alpha = 255 - level*(255-MIN)/8}). */
+    public static int glassCost(int alpha) {
+        return Math.round((255f - alpha) * 8f / (255f - GLINT_ALPHA_MIN));
+    }
+
     /** Last-guard cap on the number of glint layers read from NBT. Every input path caps at this — the
      *  editor / Glint Table, and the layer-tear merge recipe. The clamp stops an item authored outside those
      *  paths (e.g. {@code /give} with a hand-written {@code layers} list) from driving an unbounded

@@ -1,0 +1,28 @@
+{
+  "parent": "customglint:ratatouille",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim"
+    },
+    "title": {
+      "translate": "advancement.customglint.like_ogres.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.like_ogres.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "layered": {
+      "trigger": "customglint:layered_trim"
+    }
+  },
+  "requirements": [
+    [
+      "layered"
+    ]
+  ]
+}

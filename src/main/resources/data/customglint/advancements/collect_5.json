@@ -1,0 +1,31 @@
+{
+  "parent": "customglint:root",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim"
+    },
+    "title": {
+      "translate": "advancement.customglint.collect_5.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.collect_5.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "collect": {
+      "trigger": "customglint:designs_collected",
+      "conditions": {
+        "count": 5
+      }
+    }
+  },
+  "requirements": [
+    [
+      "collect"
+    ]
+  ]
+}

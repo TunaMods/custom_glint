@@ -1,5 +1,8 @@
 package net.tunamods.customglint;
 
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
+import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModCreativeTabs;
@@ -75,9 +78,28 @@ public class CustomGlintMod {
         MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
         MinecraftForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerJoin);
+        MinecraftForge.EVENT_BUS.addListener(this::onItemCrafted);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+        // Custom advancement triggers register straight into the vanilla registry (no DeferredRegister on
+        // 1.20.1). enqueueWork keeps it on the main thread, off the parallel mod-loading threads.
+        event.enqueueWork(ModTriggers::register);
+    }
+
+    /** Award the color/layer trim advancements when a crafting-table recipe (dye / merge / layer) yields a
+     *  qualifying Glint Trim. The Glint Table print fires the same triggers from {@code GlintTableMenu#print}. */
+    private void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;
+        if (GlintTrimItem.getColors(event.getCrafting()).length >= 8) {
+            ModTriggers.EIGHT_COLOR_TRIM.trigger(sp);
+        }
+        CustomGlint.Data data = CustomGlint.read(event.getCrafting());
+        int layers = data != null ? data.layers().length : 0;
+        if (layers >= 2) ModTriggers.LAYERED_TRIM.trigger(sp);
+        if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.trigger(sp);
+        if (EightByEightTrimTrigger.matches(data)) ModTriggers.EIGHT_BY_EIGHT_TRIM.trigger(sp);
     }
 
     private void onAddReloadListeners(AddReloadListenerEvent event) {

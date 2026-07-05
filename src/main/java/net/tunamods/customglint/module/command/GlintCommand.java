@@ -15,6 +15,12 @@ import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.entity.EntityGlintEvents;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
+import net.tunamods.customglint.module.menu.GlintTablePlayerData;
+import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
+import net.tunamods.customglint.module.network.ModNetworking;
+import net.minecraftforge.network.PacketDistributor;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -31,8 +37,10 @@ import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class GlintCommand {
@@ -128,6 +136,8 @@ public class GlintCommand {
                 .then(Commands.argument("enabled", BoolArgumentType.bool())
                     .executes(ctx -> glow(ctx.getSource(),
                         BoolArgumentType.getBool(ctx, "enabled")))))
+            .then(Commands.literal("cheat")
+                .executes(ctx -> cheat(ctx.getSource())))
             .then(Commands.literal("extract")
                 .executes(ctx -> extract(ctx.getSource())))
             .then(Commands.literal("export")
@@ -362,6 +372,34 @@ public class GlintCommand {
 
         CustomGlint.remove(stack);
         source.sendSuccess(() -> Component.literal("Glint removed"), false);
+        return 1;
+    }
+
+    /** Unlocks every Glint Table design at once: stores all built-in designs (+ the Glow Trim) into the
+     *  player's design library so the whole left palette is usable, instead of depositing each trim one by
+     *  one from creative. */
+    private static int cheat(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Must be a player"));
+            return 0;
+        }
+
+        List<String> stored = new ArrayList<>(GlintTablePlayerData.storedDesigns(player));
+        int before = stored.size();
+        if (!stored.contains(GlowTrimItem.STORAGE_KEY)) stored.add(GlowTrimItem.STORAGE_KEY);
+        for (String name : GlintTrimItem.PATTERNS) if (!stored.contains(name)) stored.add(name);
+
+        int added = stored.size() - before;
+        GlintTablePlayerData.setStoredDesigns(player, stored);
+        ModNetworking.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new GlintStoredSyncPacket(new ArrayList<>(stored)));
+        GlintTableMenu.checkDesignAdvancements(player);
+
+        final int n = added;
+        source.sendSuccess(() -> Component.literal(n == 0
+                ? "All Glint Table designs were already unlocked"
+                : "Unlocked " + n + " Glint Table design" + (n == 1 ? "" : "s")), false);
         return 1;
     }
 

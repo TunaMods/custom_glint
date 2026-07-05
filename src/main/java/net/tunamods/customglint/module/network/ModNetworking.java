@@ -41,5 +41,21 @@ public class ModNetworking {
         CHANNEL.registerMessage(9, GlintStoredSyncPacket.class, GlintStoredSyncPacket::encode, GlintStoredSyncPacket::decode, GlintStoredSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         // 10 — GlintPrintedSyncPacket S→C  syncs the player's printed-trim library to the client
         CHANNEL.registerMessage(10, GlintPrintedSyncPacket.class, GlintPrintedSyncPacket::encode, GlintPrintedSyncPacket::decode, GlintPrintedSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        // 11 — GlintImportPacket       C→S  Import list: add a config trim to the library as a locked build target
+        CHANNEL.registerMessage(11, GlintImportPacket.class, GlintImportPacket::encode, GlintImportPacket::decode, GlintImportPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // 12 — GlintDeletePrintedPacket C→S  shift-click a still-locked imported trim → remove it from the library
+        CHANNEL.registerMessage(12, GlintDeletePrintedPacket.class, GlintDeletePrintedPacket::encode, GlintDeletePrintedPacket::decode, GlintDeletePrintedPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+
+        // ── Shared blueprints (server-curated + wand Save Design) ─────────────
+        // 13 — GlintServerBlueprintsSyncPacket S→C  the dedicated server's shared blueprint trims, pushed on open
+        CHANNEL.registerMessage(13, GlintServerBlueprintsSyncPacket.class, GlintServerBlueprintsSyncPacket::encode, GlintServerBlueprintsSyncPacket::decode, GlintServerBlueprintsSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        // 14 — GlintDeleteServerBlueprintPacket C→S  op-only: delete one shared blueprint
+        CHANNEL.registerMessage(14, GlintDeleteServerBlueprintPacket.class, GlintDeleteServerBlueprintPacket::encode, GlintDeleteServerBlueprintPacket::decode, GlintDeleteServerBlueprintPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // 15 — GlintWandSaveBlueprintPacket    C→S  wand "Save Design": save the build to the shared blueprint pool
+        CHANNEL.registerMessage(15, GlintWandSaveBlueprintPacket.class, GlintWandSaveBlueprintPacket::encode, GlintWandSaveBlueprintPacket::decode, GlintWandSaveBlueprintPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // 16 — GlintWandDeleteBlueprintPacket  C→S  wand Import trash icon: delete a shared blueprint
+        CHANNEL.registerMessage(16, GlintWandDeleteBlueprintPacket.class, GlintWandDeleteBlueprintPacket::encode, GlintWandDeleteBlueprintPacket::decode, GlintWandDeleteBlueprintPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // 17 — GlintWandRequestBlueprintsPacket C→S  wand Import open: request the current shared blueprint pool
+        CHANNEL.registerMessage(17, GlintWandRequestBlueprintsPacket.class, GlintWandRequestBlueprintsPacket::encode, GlintWandRequestBlueprintsPacket::decode, GlintWandRequestBlueprintsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 }

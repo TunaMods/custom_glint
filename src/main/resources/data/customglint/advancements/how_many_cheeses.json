@@ -1,0 +1,28 @@
+{
+  "parent": "customglint:like_ogres",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim"
+    },
+    "title": {
+      "translate": "advancement.customglint.how_many_cheeses.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.how_many_cheeses.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "eight_layers": {
+      "trigger": "customglint:eight_layer_trim"
+    }
+  },
+  "requirements": [
+    [
+      "eight_layers"
+    ]
+  ]
+}

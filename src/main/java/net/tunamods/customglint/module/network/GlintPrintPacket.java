@@ -25,17 +25,19 @@ public class GlintPrintPacket {
     public final boolean glow, glowAuto, named, simultaneous, interpolate, sourceSimultaneous;
     public final String name;
     public final int[][] shardDyes;
+    public final int[] donorColors;
     public final CustomGlint.Layer[] belowLayers, aboveLayers;
 
     public GlintPrintPacket(String design, float speed, float scale, int opacity,
                             boolean glow, boolean glowAuto, boolean named, String name,
                             boolean simultaneous, int scrollDir, float scrollOffset, boolean interpolate,
-                            int glowHex, int nameHex, int[][] shardDyes,
+                            int glowHex, int nameHex, int[][] shardDyes, int[] donorColors,
                             CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous) {
         this.design = design; this.speed = speed; this.scale = scale; this.opacity = opacity;
         this.glow = glow; this.glowAuto = glowAuto; this.named = named; this.name = name;
         this.simultaneous = simultaneous; this.scrollDir = scrollDir; this.scrollOffset = scrollOffset;
         this.interpolate = interpolate; this.glowHex = glowHex; this.nameHex = nameHex; this.shardDyes = shardDyes;
+        this.donorColors = donorColors;
         this.belowLayers = belowLayers; this.aboveLayers = aboveLayers; this.sourceSimultaneous = sourceSimultaneous;
     }
 
@@ -56,6 +58,7 @@ public class GlintPrintPacket {
         buf.writeInt(pkt.nameHex);
         buf.writeVarInt(pkt.shardDyes.length);
         for (int[] shard : pkt.shardDyes) buf.writeVarIntArray(shard);
+        buf.writeVarIntArray(pkt.donorColors);
         GlintApplyPacket.writeLayers(buf, pkt.belowLayers);
         GlintApplyPacket.writeLayers(buf, pkt.aboveLayers);
         buf.writeBoolean(pkt.sourceSimultaneous);
@@ -66,7 +69,7 @@ public class GlintPrintPacket {
                 buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readUtf(32767), buf.readBoolean(),
                 buf.readVarInt(), buf.readFloat(), buf.readBoolean(),
                 buf.readInt(), buf.readInt(),
-                readShardDyes(buf),
+                readShardDyes(buf), readCappedVarIntArray(buf, 8),
                 GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
                 GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean());
     }
@@ -97,7 +100,7 @@ public class GlintPrintPacket {
             if (sp != null && sp.containerMenu instanceof GlintTableMenu m) {
                 m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name,
                         pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex,
-                        pkt.shardDyes, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous);
+                        pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous);
             }
         });
         ctx.get().setPacketHandled(true);

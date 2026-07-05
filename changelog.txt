@@ -1,3 +1,33 @@
+[1.7.0]
+
+Added:
+- /glint cheat to unlock every Glint Table design at once
+- Several Advancements
+- Trim import to the Glint Table: save any build you preview to a file and pull it back later as a build target that unlocks once you print it
+- On servers, operators can share a set of blueprint trims that everyone sees in the import list
+- The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print
+- Save Design in the wand editor: save your current build to the server so anyone can import it later through the wand or the Glint Table (delete saved designs from the Import list with the trash icon)
+- Hover tooltips on every button and control, in both the wand editor and the Glint Table
+- Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
+- Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
+
+Fixed:
+- The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
+- Importing a trim in the wand editor now keeps its glow colors instead of dropping them, and refills its custom name
+- The wand editor's Import search box now accepts typed text
+- Importing a trim you already own no longer leaves a duplicate in the Glint Table's printed list
+- Every color on every layer of a printed trim now costs its dye (a matching dye per shade, a Rainbow Dye per custom color)
+- /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
+- The Glint Table now drops itself when broken
+- Picking black for a glint color now hides that layer, so you can leave a gap in a design
+
+Altered:
+- Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
+- The Glint Table's Print tooltip is tidier, dropping the "Can't print yet" and "Consumes" headings
+- The Glint Table's layer row now stays visible, and the color row appears once you start building a trim
+- Glint Table tooltips are now a clean white to match the wand editor
+
+
 [1.6.0]
 
 - Added the Glint Table: a block for building and printing trims with a slot-based editor, crafted from iron blocks, a crafting table, a smithing table, and a Glint Trim

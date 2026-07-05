@@ -2,7 +2,6 @@ package net.tunamods.customglint.module.network;
 
 import net.tunamods.customglint.module.item.ModItems;
 
-import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlintWandItem;
@@ -74,7 +73,9 @@ public class GiveGlintTrimPacket {
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
             if (pkt.layers.length > 0) {
-                CustomGlint.Layer layer0 = pkt.layers[0];
+                // Roll a unique seed into any unseeded chromatic layer (the editor builds layers without one).
+                CustomGlint.Layer[] seeded = CustomGlint.ensureChromaticSeeds(pkt.layers);
+                CustomGlint.Layer layer0 = seeded[0];
                 for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
                 trim.getOrCreateTag().putFloat(GlintTrimItem.SPEED_TAG, layer0.speed());
                 trim.getOrCreateTag().putFloat(GlintTrimItem.SCALE_TAG, layer0.patternScale());
@@ -82,15 +83,15 @@ public class GiveGlintTrimPacket {
                 trim.getOrCreateTag().putFloat(GlintTrimItem.OFFSET_TAG, layer0.scrollOffset());
                 GlintTrimItem.setPattern(trim, layer0.design());
                 GlintTrimItem.setGlowing(trim, pkt.glowing);
-                CustomGlint.setGlowing(trim, pkt.glowing);
 
-                if (pkt.layers.length > 1) {
-                    if (trim.hasTag() && trim.getTag().contains(CustomGlintMod.MOD_ID)) {
-                        trim.getTag().remove(CustomGlintMod.MOD_ID);
-                    }
-                    CustomGlint.write(trim, CustomGlint.ensureChromaticSeeds(pkt.layers));
-                    CustomGlint.setGlowing(trim, pkt.glowing);
-                }
+                // The GlintTrimItem setters above only seed the trim's display config; each rewrites the glint
+                // Data as a single SEQUENTIAL layer. Write the real Data from the packet layers last so every
+                // layer's simultaneous flag (and any extra layers) is preserved, otherwise a single-layer
+                // simultaneous trim always came out sequential.
+                CustomGlint.write(trim, seeded);
+                CustomGlint.setGlowing(trim, pkt.glowing);
+                // Keep the trim NBT seed in sync with the Data we just wrote (setPattern rolled its own seed).
+                GlintTrimItem.setSeed(trim, layer0.seed());
             }
 
             // Apply custom name and color if provided

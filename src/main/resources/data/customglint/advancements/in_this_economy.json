@@ -1,0 +1,28 @@
+{
+  "parent": "customglint:how_many_cheeses",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim"
+    },
+    "title": {
+      "translate": "advancement.customglint.in_this_economy.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.in_this_economy.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "eight_by_eight": {
+      "trigger": "customglint:eight_by_eight_trim"
+    }
+  },
+  "requirements": [
+    [
+      "eight_by_eight"
+    ]
+  ]
+}
