@@ -28,7 +28,7 @@ public class GlintTrimItem extends Item {
     public static final int[] DYE_COLORS = {
         0xFFF9FFFE, 0xFFFF8000, 0xFFFF00FF, 0xFF00AAFF, 0xFFFFFF00, 0xFF00FF00, 0xFFFF80A0,
         0xFF808080, 0xFFAAAAAA, 0xFF00FFFF, 0xFF8800CC, 0xFF0000FF, 0xFF885522, 0xFF008800,
-        0xFFFF0000, 0xFF333333
+        0xFFFF0000, 0xFF000000
     };
 
     // CopyOnWriteArrayList: the design-sync handler (client thread) mutates this via removeAll/add
@@ -82,6 +82,14 @@ public class GlintTrimItem extends Item {
     /** Procedural-chromatic seed (0 = not chromatic / not yet rolled). */
     public static int getSeed(ItemStack stack) {
         return cfg(stack).seed();
+    }
+
+    /** Forces the trim's stored seed (keeps the TrimConfig in sync with a glint Data written separately,
+     *  e.g. the give-trim packet / Glint Table print that overwrite the Data with seeded layers). */
+    public static void setSeed(ItemStack stack, int seed) {
+        ModComponents.TrimConfig c = cfg(stack);
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), c.colors(), c.speed(), c.scale(),
+                c.scroll(), c.offset(), c.glowing(), seed));
     }
 
     /** The color array to bake into the preview glint: chromatic passes the raw list (an empty list renders
