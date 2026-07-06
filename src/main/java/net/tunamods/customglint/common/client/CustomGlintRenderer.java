@@ -777,23 +777,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     public static int computeAnimatedColor(Data glint, int layerIdx) {
+        return computeAnimatedColor(glint, layerIdx, 0.0f);
+    }
+
+    /** As {@link #computeAnimatedColor(Data, int)} but shifts the loop by {@code phaseFraction} of a full
+     *  cycle (0.5 = half a loop). Used by the glow ring so it never shows the glint's own colour. */
+    public static int computeAnimatedColor(Data glint, int layerIdx, float phaseFraction) {
         Layer layer = glint.layers()[layerIdx];
-        int[] colors = layer.colors();
-        if (colors.length == 0) return 0xFFFFFFFF;
-        if (colors.length == 1) return colors[0];
-        Minecraft mc = Minecraft.getInstance();
-        long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        float totalTicks = (20.0f * colors.length) / layer.speed();
-        float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
-        int idx = (int) t % colors.length;
-        if (!layer.interpolate()) return colors[idx];
-        float frac = t - (int) t;
-        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
-        int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
-        int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
-        int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
-        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
-        return (a << 24) | (r << 16) | (g << 8) | b;
+        return animateColors(layer.colors(), layer.speed(), layer.interpolate(), phaseFraction);
     }
 
     /** Animates through an int[] color array using game time. Default speed=1, interpolate=true. */
@@ -801,10 +792,23 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return computeAnimatedGlowColor(colors, 1.0f, true);
     }
 
-    /** Animates through an int[] color array using wall-clock time, at {@code speed} (a higher speed cycles
+    /** Animates through an int[] color array using game time, at {@code speed} (a higher speed cycles
      *  faster, mirroring the glint layer speed) and either blending between colors ({@code interpolate}) or
      *  stepping hard between them. */
     public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
+        return computeAnimatedGlowColor(colors, speed, interpolate, 0.0f);
+    }
+
+    /** As {@link #computeAnimatedGlowColor(int[], float, boolean)} but shifts the loop by
+     *  {@code phaseFraction} of a full cycle (0.5 = half a loop). */
+    public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate, float phaseFraction) {
+        return animateColors(colors, speed, interpolate, phaseFraction);
+    }
+
+    /** Core colour-loop animator. Cycles {@code colors} on game time; {@code speed} scales the rate,
+     *  {@code interpolate} blends vs. steps between colours, and {@code phaseFraction} shifts the whole
+     *  loop by that fraction of a full cycle (0 = no shift, matching the original animation exactly). */
+    private static int animateColors(int[] colors, float speed, boolean interpolate, float phaseFraction) {
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
         if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
@@ -812,6 +816,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
         float totalTicks = (20.0f * colors.length) / speed;
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        // Shift by phaseFraction of the loop and wrap back into [0, length).
+        t += phaseFraction * colors.length;
+        t = ((t % colors.length) + colors.length) % colors.length;
         int idx = (int) t % colors.length;
         if (!interpolate) return colors[idx];
         float frac = t - (int) t;
@@ -829,15 +836,22 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  {@code applyGlint} routes to the bare recording buffer instead of fanning glint layers. */
     public static final ThreadLocal<Boolean> IN_OUTLINE = ThreadLocal.withInitial(() -> false);
 
+    /** Phase offset (fraction of a full colour loop) applied to the glow OUTLINE ring so it never shows the
+     *  same colour as the glint's own animated tint at the same instant. Half a cycle = maximum contrast:
+     *  when the inner glint is on one colour, the ring is on the opposite side of the loop. */
+    public static final float GLOW_RING_PHASE_OFFSET = 0.5f;
+
     /** Glow-outline colour for an item: prefers the Glow Trim colours ({@code glowColors} NBT),
      *  falls back to glint layer 0, else white. Consumed by the post-process glow outline
-     *  ({@link GlowOutlineRenderer}). */
+     *  ({@link GlowOutlineRenderer}). The ring is shifted by {@link #GLOW_RING_PHASE_OFFSET} so it stays
+     *  out of phase with the glint's inner tint (which animates at offset 0). */
     public static int resolveGlowColor(ItemStack stack) {
         int[] glow = CustomGlint.getGlowColors(stack);
         if (glow.length > 0)
-            return computeAnimatedGlowColor(glow, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));
+            return computeAnimatedGlowColor(glow, CustomGlint.getGlowSpeed(stack),
+                    CustomGlint.getGlowInterpolate(stack), GLOW_RING_PHASE_OFFSET);
         Data glint = CustomGlint.readCached(stack);
-        return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
+        return glint != null ? computeAnimatedColor(glint, 0, GLOW_RING_PHASE_OFFSET) : 0xFFFFFFFF;
     }
 
     /** Once-per-frame stencil-clear gate. Armed at frame start by {@code CustomGlintClientInit}'s

@@ -156,10 +156,13 @@ public final class EntityGlintRender {
     }
 
     /** Outline colour for an entity-glow figure: its glow colours (animated) if set, else its glint
-     *  layer-0 colour, else white. */
+     *  layer-0 colour, else white. Shifted by {@link CustomGlintRenderer#GLOW_RING_PHASE_OFFSET} so the
+     *  ring stays out of phase with the body glint's inner tint. */
     public static int outlineColorFor(@Nullable Resolution r) {
-        if (r != null && r.glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors);
-        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0);
+        float off = CustomGlintRenderer.GLOW_RING_PHASE_OFFSET;
+        if (r != null && r.glowColors.length > 0)
+            return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors, 1.0f, true, off);
+        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0, off);
         return 0xFFFFFFFF;
     }
 
