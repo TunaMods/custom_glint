@@ -140,10 +140,12 @@ public final class CustomGlint {
      * (nullable — a glow-only stack has none) plus the two independent glow fields. Codec-serialized for
      * both persistence and network sync.
      */
-    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors) {
-        public static final GlintState EMPTY = new GlintState(null, false, new int[0]);
+    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
+        public static final GlintState EMPTY = new GlintState(null, false, new int[0], 1.0f, true);
 
         public boolean isEmpty() {
+            // glowSpeed / glowInterp are modifiers of an existing glow, meaningless without it, so they don't
+            // count toward emptiness: a stack carrying only a non-default glow speed but no glow is still empty.
             return data == null && !glowing && glowColors.length == 0;
         }
 
@@ -153,8 +155,12 @@ public final class CustomGlint {
                 Codec.INT.listOf().xmap(
                         list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
                         arr -> Arrays.stream(arr).boxed().toList()
-                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors)
-        ).apply(i, (glint, glowing, colors) -> new GlintState(glint.orElse(null), glowing, colors)));
+                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
+                // Glow-outline animation speed + interpolation, kept alongside the glow colors. Default 1.0 /
+                // true so any pre-existing item decodes to the vanilla cycle (they're absent from its tag).
+                Codec.FLOAT.optionalFieldOf("glowSpeed", 1.0f).forGetter(GlintState::glowSpeed),
+                Codec.BOOL.optionalFieldOf("glowInterp", true).forGetter(GlintState::glowInterp)
+        ).apply(i, (glint, glowing, colors, speed, interp) -> new GlintState(glint.orElse(null), glowing, colors, speed, interp)));
 
         public static final Codec<GlintState> CODEC = MAP_CODEC.codec();
         public static final StreamCodec<ByteBuf, GlintState> STREAM_CODEC = ByteBufCodecs.fromCodec(CODEC);
@@ -162,10 +168,11 @@ public final class CustomGlint {
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof GlintState g)) return false;
-            return glowing == g.glowing && Objects.equals(data, g.data) && Arrays.equals(glowColors, g.glowColors);
+            return glowing == g.glowing && glowInterp == g.glowInterp && Float.compare(glowSpeed, g.glowSpeed) == 0
+                    && Objects.equals(data, g.data) && Arrays.equals(glowColors, g.glowColors);
         }
         @Override public int hashCode() {
-            return Objects.hash(data, glowing) * 31 + Arrays.hashCode(glowColors);
+            return Objects.hash(data, glowing, glowSpeed, glowInterp) * 31 + Arrays.hashCode(glowColors);
         }
     }
 
@@ -410,7 +417,9 @@ public final class CustomGlint {
         // glow are independent — applying a new Glint Trim must not nuke a Glow Trim's colors).
         boolean glowing = existing != null && existing.glowing();
         int[] glowColors = existing != null ? existing.glowColors() : new int[0];
-        setState(stack, new GlintState(new Data(layers), glowing, glowColors));
+        float glowSpeed = existing != null ? existing.glowSpeed() : 1.0f;
+        boolean glowInterp = existing == null || existing.glowInterp();
+        setState(stack, new GlintState(new Data(layers), glowing, glowColors, glowSpeed, glowInterp));
     }
 
     public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -437,7 +446,7 @@ public final class CustomGlint {
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
         GlintState s = stateOrEmpty(stack);
-        setState(stack, new GlintState(s.data(), glowing, s.glowColors()));
+        setState(stack, new GlintState(s.data(), glowing, s.glowColors(), s.glowSpeed(), s.glowInterp()));
     }
 
     /** True iff the stack would render a glow outline ({@code isGlowing || hasGlowColors}). */
@@ -463,13 +472,31 @@ public final class CustomGlint {
     /** Sets glowColors AND glowing=true. Independent of any glint Data on the stack. */
     public static void setGlowColors(ItemStack stack, int[] colors) {
         GlintState s = stateOrEmpty(stack);
-        setState(stack, new GlintState(s.data(), true, colors));
+        setState(stack, new GlintState(s.data(), true, colors, s.glowSpeed(), s.glowInterp()));
     }
 
     public static void clearGlowColors(ItemStack stack) {
         GlintState s = stack.get(CustomGlintComponents.GLINT.get());
         if (s == null || s.glowColors().length == 0) return;
-        setState(stack, new GlintState(s.data(), s.glowing(), new int[0]));
+        setState(stack, new GlintState(s.data(), s.glowing(), new int[0], s.glowSpeed(), s.glowInterp()));
+    }
+
+    /** Glow-outline animation speed (how fast the outline cycles its glow colors), default 1.0. */
+    public static float getGlowSpeed(ItemStack stack) {
+        return stateOrEmpty(stack).glowSpeed();
+    }
+
+    /** Whether the glow outline blends smoothly between its colors (default true) or steps hard between them. */
+    public static boolean getGlowInterpolate(ItemStack stack) {
+        return stateOrEmpty(stack).glowInterp();
+    }
+
+    /** Sets the glow outline's animation speed + interpolation (kept alongside {@code glowColors}). Only
+     *  meaningful on a glowing stack — {@link GlintState#isEmpty()} ignores these, so calling it on an
+     *  otherwise-empty stack still stores nothing. */
+    public static void setGlowAnim(ItemStack stack, float speed, boolean interpolate) {
+        GlintState s = stateOrEmpty(stack);
+        setState(stack, new GlintState(s.data(), s.glowing(), s.glowColors(), speed, interpolate));
     }
 
     public static ItemStack glinted(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -591,7 +618,7 @@ public final class CustomGlint {
     /** Sets the glint layers, preserving the entity's existing glow flags. Auto-syncs to trackers. */
     public static void writeEntity(LivingEntity entity, Layer[] layers) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors()));
+        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
     public static void removeEntity(LivingEntity entity) {
@@ -604,7 +631,7 @@ public final class CustomGlint {
 
     public static void setEntityGlowing(LivingEntity entity, boolean glowing) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors()));
+        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
     /** Per-entity Glow Trim colors — drive the outline color animation independently of any
@@ -620,13 +647,13 @@ public final class CustomGlint {
     /** Sets glowColors AND glowing=true on the entity. Auto-syncs to tracking clients (no manual broadcast). */
     public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), true, colors));
+        setEntityState(entity, new GlintState(cur.data(), true, colors, cur.glowSpeed(), cur.glowInterp()));
     }
 
     public static void clearEntityGlowColors(LivingEntity entity) {
         GlintState cur = entityState(entity);
         if (cur.glowColors().length == 0) return;
-        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0]));
+        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0], cur.glowSpeed(), cur.glowInterp()));
     }
 
     /** The stack's glint state as a CompoundTag (empty if none) — the bridge format shared with entity
@@ -672,7 +699,7 @@ public final class CustomGlint {
 
     /** A glint tag holding just these layers (no glow flags). */
     public static CompoundTag toTag(Layer[] layers) {
-        return stateToTag(new GlintState(new Data(layers), false, new int[0]));
+        return stateToTag(new GlintState(new Data(layers), false, new int[0], 1.0f, true));
     }
 
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();

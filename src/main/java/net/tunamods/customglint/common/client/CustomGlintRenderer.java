@@ -927,13 +927,33 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Animates through an int[] color array using game time. Default speed=1, interpolate=true. */
     public static int computeAnimatedGlowColor(int[] colors) {
-        if (colors.length == 0) return 0xFFFFFFFF;
-        if (colors.length == 1) return colors[0];
+        return computeAnimatedGlowColor(colors, 1.0f, true);
+    }
+
+    /** As above at a chosen {@code speed} (a higher speed cycles faster, mirroring the glint layer speed) and
+     *  either blending between colors ({@code interpolate}) or stepping hard between them. Uses GAME time — the
+     *  glow OUTLINE (ring/halo) animates on this so it matches the in-world clock. */
+    public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        float totalTicks = 20.0f * colors.length;
-        float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        return computeAnimatedGlowColorAt(colors, gameTime, speed, interpolate);
+    }
+
+    /** WALL-CLOCK variant of {@link #computeAnimatedGlowColor}, ticked off {@code Util.getMillis} instead of
+     *  game time. The trim texture's tinted edge ("white × rgb") uses this so it runs on a DIFFERENT clock than
+     *  the game-time glow outline — the edge and the ring/halo show different colours at the same moment. */
+    public static int computeAnimatedGlowColorGui(int[] colors, float speed, boolean interpolate) {
+        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate);
+    }
+
+    private static int computeAnimatedGlowColorAt(int[] colors, long timeTicks, float speed, boolean interpolate) {
+        if (colors.length == 0) return 0xFFFFFFFF;
+        if (colors.length == 1) return colors[0];
+        if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
+        float totalTicks = (20.0f * colors.length) / speed;
+        float t = (timeTicks % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
+        if (!interpolate) return colors[idx];
         float frac = t - (int) t;
         int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
         int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
@@ -947,7 +967,19 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  layer-0 colour, else white. Shared by the flat-item and special-item glow-outline capture paths. */
     public static int resolveGlowColor(ItemStack stack) {
         int[] glowColors = CustomGlint.getGlowColors(stack);
-        if (glowColors.length > 0) return computeAnimatedGlowColor(glowColors);
+        if (glowColors.length > 0)
+            return computeAnimatedGlowColor(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));
+        CustomGlint.Data glint = CustomGlint.read(stack);
+        return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
+    }
+
+    /** Wall-clock (GUI) counterpart of {@link #resolveGlowColor}, for the trim TEXTURE tint. Animates the glow
+     *  colours on wall-clock so the tinted edge ("white × rgb") desyncs from the game-time glow outline — the
+     *  edge and the ring show different colours at once. Auto glow follows glint layer 0 (already wall-clock). */
+    public static int resolveGlowColorGui(ItemStack stack) {
+        int[] glowColors = CustomGlint.getGlowColors(stack);
+        if (glowColors.length > 0)
+            return computeAnimatedGlowColorGui(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));
         CustomGlint.Data glint = CustomGlint.read(stack);
         return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
     }

@@ -64,6 +64,8 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
         result.setCount(1);
         CustomGlint.setGlowColors(result, colors);
         CustomGlint.setGlowing(result, true);
+        // Carry the trim's glow-cycle speed + interpolation onto the item so its outline animates as designed.
+        CustomGlint.setGlowAnim(result, CustomGlint.getGlowSpeed(template), CustomGlint.getGlowInterpolate(template));
         return result;
     }
 
