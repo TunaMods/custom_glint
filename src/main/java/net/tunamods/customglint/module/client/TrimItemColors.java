@@ -36,9 +36,10 @@ public final class TrimItemColors {
         event.register((stack, tintIndex) -> {
             if (tintIndex != 1) return 0xFFFFFFFF;
             if (!GlintTrimItem.isGlowing(stack)) return 0xFFFFFFFF;
-            // Explicit glow colours win; otherwise the glow is "auto" and follows the glint colours.
+            // Explicit glow colours win; otherwise the glow is "auto" and follows layer 1's glint colours
+            // (never the focused-layer editing colours, which the flat getColors would return).
             int[] glow = CustomGlint.getGlowColors(stack);
-            if (glow.length == 0) glow = GlintTrimItem.getColors(stack);
+            if (glow.length == 0) glow = GlintTrimItem.getBaseLayerColors(stack);
             if (glow.length == 0) return 0xFFFFFFFF;
             return 0xFF000000 | (CustomGlintRenderer.computeAnimatedGlowColor(glow,
                     CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack)) & 0xFFFFFF);

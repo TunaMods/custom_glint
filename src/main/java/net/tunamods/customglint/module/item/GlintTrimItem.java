@@ -159,6 +159,16 @@ public class GlintTrimItem extends Item {
         return stack.getTag().getIntArray(COLORS_TAG);
     }
 
+    /** Colours of the first glint layer (layer 1 in the editor's 1-indexed terms), read from the
+     *  authoritative multi-layer preview Data. The flat {@link #getColors} array tracks whichever layer is
+     *  focused in the editor, so the auto-glow tint must not use it — the glow always follows layer 1.
+     *  Falls back to the flat colours for a bare trim that has no preview Data yet. */
+    public static int[] getBaseLayerColors(ItemStack stack) {
+        CustomGlint.Data data = CustomGlint.read(stack);
+        if (data != null && data.layers().length > 0) return data.layers()[0].colors();
+        return getColors(stack);
+    }
+
     public static boolean addColor(ItemStack stack, int color) {
         int[] current = getColors(stack);
         if (current.length >= 8) return false;
