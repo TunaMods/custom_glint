@@ -94,7 +94,7 @@ public class GlintTrimItem extends Item {
 
     /** The color array to bake into the preview glint: chromatic passes the raw list (an empty list renders
      *  with the white/grey/dark-grey "empty" palette), every other design needs at least one color. */
-    private static int[] writeColors(ResourceLocation pattern, int[] colors) {
+    public static int[] writeColors(ResourceLocation pattern, int[] colors) {
         if (CustomGlint.isChromatic(pattern)) return colors;
         return colors.length > 0 ? colors : new int[]{0xFFFFFFFF};
     }

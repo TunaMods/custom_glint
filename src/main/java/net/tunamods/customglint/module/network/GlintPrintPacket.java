@@ -18,7 +18,8 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
                                boolean glow, boolean glowAuto, boolean named, String name,
                                boolean simultaneous, int scrollDir, float scrollOffset, boolean interpolate,
                                int glowHex, int nameHex, int[][] shardDyes, int[] donorColors,
-                               CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous)
+                               CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                               boolean glowBase, int[][] glowShardDyes)
         implements CustomPacketPayload {
 
     /** Cap on each of the below/above extra-layer arrays (mirrors GlintTableMenu's own decode cap). */
@@ -48,6 +49,9 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
                 GlintApplyPacket.writeLayers(buf, pkt.belowLayers);
                 GlintApplyPacket.writeLayers(buf, pkt.aboveLayers);
                 buf.writeBoolean(pkt.sourceSimultaneous);
+                buf.writeBoolean(pkt.glowBase);
+                buf.writeVarInt(pkt.glowShardDyes.length);
+                for (int[] shard : pkt.glowShardDyes) buf.writeVarIntArray(shard);
             },
             buf -> new GlintPrintPacket(buf.readUtf(), buf.readFloat(), buf.readFloat(), buf.readVarInt(),
                     buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readUtf(32767), buf.readBoolean(),
@@ -55,7 +59,8 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
                     buf.readInt(), buf.readInt(),
                     readShardDyes(buf), readCappedVarIntArray(buf, 8),
                     GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
-                    GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean())
+                    GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(),
+                    buf.readBoolean(), readShardDyes(buf))
     );
 
     private static int[][] readShardDyes(FriendlyByteBuf buf) {
@@ -94,7 +99,11 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
     public static void handle(GlintPrintPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name, pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex, pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous);
+                if (pkt.glowBase) {
+                    m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
+                } else {
+                    m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name, pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex, pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous, pkt.glowShardDyes);
+                }
             }
         });
     }
