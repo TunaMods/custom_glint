@@ -99,6 +99,8 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             Component.literal("Craft with two Glint Trims to merge their layer arrays into a single multi-layer trim (up to 8 layers)."));
         registration.addIngredientInfo(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
             Component.literal("Craft with any glinted item to strip all glint data from it."));
+        registration.addIngredientInfo(ModItems.RAINBOW_DYE.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
+            Component.literal("Use it in the Glint Table to give a color shard any custom hex color — one Rainbow Dye is consumed per custom color."));
 
         IVanillaRecipeFactory factory = registration.getVanillaRecipeFactory();
         List<RecipeHolder<CraftingRecipe>> crafting = new ArrayList<>();
