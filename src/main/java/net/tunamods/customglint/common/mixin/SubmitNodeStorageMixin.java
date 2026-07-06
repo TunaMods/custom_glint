@@ -69,7 +69,8 @@ public class SubmitNodeStorageMixin {
         }
         if (cg_glowingItem()) {
             EntityGlintRender.queueSpecialModelOutline(model, state, poseStack.last(), lightCoords,
-                    GlintCarrier.SUBMIT_GLINT.get(), cg_glowingFlag(), GlintCarrier.SUBMIT_GLOW_COLORS.get());
+                    GlintCarrier.SUBMIT_GLINT.get(), cg_glowingFlag(), GlintCarrier.SUBMIT_GLOW_COLORS.get(),
+                    cg_glowSpeed(), cg_glowInterp());
         }
         CustomGlint.Data glint = GlintCarrier.SUBMIT_GLINT.get();
         if (glint != null && cg_firstGlintForToken()) {
@@ -91,7 +92,8 @@ public class SubmitNodeStorageMixin {
         if (cg_addingGlint) return; // our own glint nodes, submitted below, don't recurse
         if (cg_glowingItem()) {
             EntityGlintRender.queueSpecialPartOutline(modelPart, poseStack.last(), lightCoords,
-                    GlintCarrier.SUBMIT_GLINT.get(), cg_glowingFlag(), GlintCarrier.SUBMIT_GLOW_COLORS.get());
+                    GlintCarrier.SUBMIT_GLINT.get(), cg_glowingFlag(), GlintCarrier.SUBMIT_GLOW_COLORS.get(),
+                    cg_glowSpeed(), cg_glowInterp());
         }
         CustomGlint.Data glint = GlintCarrier.SUBMIT_GLINT.get();
         if (glint != null && cg_firstGlintForToken()) {
@@ -156,5 +158,18 @@ public class SubmitNodeStorageMixin {
     private static boolean cg_glowingItem() {
         int[] gc = GlintCarrier.SUBMIT_GLOW_COLORS.get();
         return cg_glowingFlag() || (gc != null && gc.length > 0);
+    }
+
+    /** The submitting item's stored glow-cycle speed / interpolation (default 1.0 / true when unset). */
+    @org.spongepowered.asm.mixin.Unique
+    private static float cg_glowSpeed() {
+        Float s = GlintCarrier.SUBMIT_GLOW_SPEED.get();
+        return s != null ? s : 1.0f;
+    }
+
+    @org.spongepowered.asm.mixin.Unique
+    private static boolean cg_glowInterp() {
+        Boolean i = GlintCarrier.SUBMIT_GLOW_INTERP.get();
+        return i == null || i;
     }
 }

@@ -30,6 +30,8 @@ public final class GlintCarrier {
      */
     public static final ThreadLocal<Boolean> SUBMIT_GLOWING = new ThreadLocal<>();
     public static final ThreadLocal<int[]> SUBMIT_GLOW_COLORS = new ThreadLocal<>();
+    public static final ThreadLocal<Float> SUBMIT_GLOW_SPEED = new ThreadLocal<>();
+    public static final ThreadLocal<Boolean> SUBMIT_GLOW_INTERP = new ThreadLocal<>();
 
     /**
      * A fresh identity token per {@code ItemStackRenderState.submit} call, used as the outline GROUP key
@@ -42,7 +44,8 @@ public final class GlintCarrier {
 
     /** Saved outer-submit context, so a nested {@code submit(...)} restores (not clears) the enclosing
      *  item's glint/glow when it returns. */
-    private record SubmitFrame(CustomGlint.Data glint, Boolean glowing, int[] glowColors, Object token) {}
+    private record SubmitFrame(CustomGlint.Data glint, Boolean glowing, int[] glowColors, Object token,
+                               Float glowSpeed, Boolean glowInterp) {}
     private static final ThreadLocal<ArrayDeque<SubmitFrame>> SUBMIT_STACK = ThreadLocal.withInitial(ArrayDeque::new);
 
     /**
@@ -52,12 +55,16 @@ public final class GlintCarrier {
      * while an outer item's submit is still on the stack, the inner pop restores the outer item's context
      * instead of wiping it, without it the rest of the outer item's geometry would lose its glint/glow.
      */
-    public static void pushSubmit(CustomGlint.Data glint, boolean glowing, int[] glowColors, Object token) {
-        SUBMIT_STACK.get().push(new SubmitFrame(SUBMIT_GLINT.get(), SUBMIT_GLOWING.get(), SUBMIT_GLOW_COLORS.get(), SUBMIT_TOKEN.get()));
+    public static void pushSubmit(CustomGlint.Data glint, boolean glowing, int[] glowColors, Object token,
+            float glowSpeed, boolean glowInterp) {
+        SUBMIT_STACK.get().push(new SubmitFrame(SUBMIT_GLINT.get(), SUBMIT_GLOWING.get(), SUBMIT_GLOW_COLORS.get(),
+                SUBMIT_TOKEN.get(), SUBMIT_GLOW_SPEED.get(), SUBMIT_GLOW_INTERP.get()));
         SUBMIT_GLINT.set(glint);
         SUBMIT_GLOWING.set(glowing);
         SUBMIT_GLOW_COLORS.set(glowColors);
         SUBMIT_TOKEN.set(token);
+        SUBMIT_GLOW_SPEED.set(glowSpeed);
+        SUBMIT_GLOW_INTERP.set(glowInterp);
     }
 
     /** Restores the context saved by the matching {@link #pushSubmit}; clears to null at the outermost frame. */
@@ -69,11 +76,15 @@ public final class GlintCarrier {
             SUBMIT_GLOWING.remove();
             SUBMIT_GLOW_COLORS.remove();
             SUBMIT_TOKEN.remove();
+            SUBMIT_GLOW_SPEED.remove();
+            SUBMIT_GLOW_INTERP.remove();
         } else {
             setOrRemove(SUBMIT_GLINT, prev.glint());
             setOrRemove(SUBMIT_GLOWING, prev.glowing());
             setOrRemove(SUBMIT_GLOW_COLORS, prev.glowColors());
             setOrRemove(SUBMIT_TOKEN, prev.token());
+            setOrRemove(SUBMIT_GLOW_SPEED, prev.glowSpeed());
+            setOrRemove(SUBMIT_GLOW_INTERP, prev.glowInterp());
         }
     }
 
@@ -93,6 +104,8 @@ public final class GlintCarrier {
         SUBMIT_GLOWING.remove();
         SUBMIT_GLOW_COLORS.remove();
         SUBMIT_TOKEN.remove();
+        SUBMIT_GLOW_SPEED.remove();
+        SUBMIT_GLOW_INTERP.remove();
         SUBMIT_STACK.get().clear();
     }
 

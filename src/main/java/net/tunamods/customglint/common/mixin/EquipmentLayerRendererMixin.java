@@ -117,7 +117,7 @@ public class EquipmentLayerRendererMixin {
             Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
             if (tex != null) {
                 EntityGlintRender.queueArmorOutline(model, state, poseStack.last(), tex, lightCoords,
-                        glint, glowing, glowColors);
+                        glint, glowing, glowColors, glintState.glowSpeed(), glintState.glowInterp());
             }
         }
     }

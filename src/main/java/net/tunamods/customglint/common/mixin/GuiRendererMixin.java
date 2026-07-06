@@ -65,12 +65,20 @@ public class GuiRendererMixin {
         boolean hasColors = gc != null && gc.length > 0;
         if (!glowing && !hasColors) return;
 
+        // Use game time (computeAnimatedGlowColor), NOT the wall-clock GUI variant, so the halo cycles in
+        // lockstep with the trim's tinted edge texture (GlowTintSource, also game time) and the in-world ring.
+        // A wall-clock halo drifts against the game-time tint, so the two show different colours at once.
         int color;
         if (hasColors) {
-            color = CustomGlintRenderer.computeAnimatedGlowColorGui(gc);
+            color = CustomGlintRenderer.computeAnimatedGlowColor(gc, holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp());
         } else {
+            // Auto glow follows glint layer 0's colours on the SAME glow clock as the tint (GlowTintSource
+            // animates those same colours with computeAnimatedGlowColor), not the glint's own animation.
             CustomGlint.Data glint = holder.customglint$getGlint();
-            color = glint != null ? CustomGlintRenderer.computeAnimatedColorGui(glint, 0) : 0xFFFFFFFF;
+            color = (glint != null && glint.layers().length > 0)
+                    ? CustomGlintRenderer.computeAnimatedGlowColor(glint.layers()[0].colors(),
+                            holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp())
+                    : 0xFFFFFFFF;
         }
 
         // Pack guiScale into the colour's alpha byte. The shader needs the slot UV size s; the atlas slot is

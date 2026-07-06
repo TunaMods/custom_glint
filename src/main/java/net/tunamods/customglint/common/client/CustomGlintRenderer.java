@@ -1211,23 +1211,35 @@ public final class CustomGlintRenderer {
 
     /** Animates through an int[] color array using game time. Default speed=1, interpolate=true. */
     public static int computeAnimatedGlowColor(int[] colors) {
+        return computeAnimatedGlowColor(colors, 1.0f, true);
+    }
+
+    /** As above at a chosen {@code speed} (a higher speed cycles faster, mirroring the glint layer speed) and
+     *  either blending between colors ({@code interpolate}) or stepping hard between them. */
+    public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        return computeAnimatedGlowColorAt(colors, gameTime);
+        return computeAnimatedGlowColorAt(colors, gameTime, speed, interpolate);
     }
 
     /** GUI variant of {@link #computeAnimatedGlowColor}: wall-clock ticks so a multi-color glow halo keeps
      *  animating on off-world GUI icons (see {@link #computeAnimatedColorGui}). */
     public static int computeAnimatedGlowColorGui(int[] colors) {
-        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L);
+        return computeAnimatedGlowColorGui(colors, 1.0f, true);
     }
 
-    private static int computeAnimatedGlowColorAt(int[] colors, long gameTime) {
+    public static int computeAnimatedGlowColorGui(int[] colors, float speed, boolean interpolate) {
+        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate);
+    }
+
+    private static int computeAnimatedGlowColorAt(int[] colors, long gameTime, float speed, boolean interpolate) {
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
-        float totalTicks = 20.0f * colors.length;
+        if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
+        float totalTicks = (20.0f * colors.length) / speed;
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         int idx = (int) t % colors.length;
+        if (!interpolate) return colors[idx];
         float frac = t - (int) t;
         int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
         int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);

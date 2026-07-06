@@ -39,18 +39,21 @@ public class ItemModelResolverMixin {
         // outlines. The deferred item draw reads these back off the ItemSubmit node to queue the ring.
         holder.customglint$setGlowing(glowing);
         holder.customglint$setGlowColors(glowColors);
+        holder.customglint$setGlowSpeed(state.glowSpeed());
+        holder.customglint$setGlowInterp(state.glowInterp());
 
         // The GUI renders items into an atlas cached by getModelIdentity() (see GuiItemAtlas), the
         // glint is NOT part of vanilla's identity, so two items of the same base type + foil state
         // share one cached slot. Without this, giving a glinted item freezes the editor preview on
         // that config. Fold the glint config into the identity so each distinct look gets its own slot.
         if (glint != null || glowing) {
-            output.appendModelIdentityElement(cg_identity(glint, glowing, glowColors));
+            output.appendModelIdentityElement(cg_identity(glint, glowing, glowColors, state.glowSpeed(), state.glowInterp()));
         }
     }
 
     @org.spongepowered.asm.mixin.Unique
-    private static String cg_identity(CustomGlint.Data glint, boolean glowing, int[] glowColors) {
+    private static String cg_identity(CustomGlint.Data glint, boolean glowing, int[] glowColors,
+            float glowSpeed, boolean glowInterp) {
         StringBuilder sb = new StringBuilder("customglint:");
         if (glint != null) {
             for (CustomGlint.Layer l : glint.layers()) {
@@ -60,7 +63,8 @@ public class ItemModelResolverMixin {
                   .append(Arrays.toString(l.colors())).append(';');
             }
         }
-        sb.append("glow=").append(glowing).append(Arrays.toString(glowColors));
+        sb.append("glow=").append(glowing).append(Arrays.toString(glowColors))
+          .append(',').append(glowSpeed).append(',').append(glowInterp);
         return sb.toString();
     }
 }

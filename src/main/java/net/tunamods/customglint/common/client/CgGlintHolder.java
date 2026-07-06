@@ -31,6 +31,14 @@ public interface CgGlintHolder {
 
     default void customglint$setGlowColors(int[] glowColors) {}
 
+    default float customglint$getGlowSpeed() { return 1.0f; }
+
+    default void customglint$setGlowSpeed(float speed) {}
+
+    default boolean customglint$getGlowInterp() { return true; }
+
+    default void customglint$setGlowInterp(boolean interp) {}
+
     /**
      * True when this item's glint is drawn as a LIVE GUI overlay rather than baked into the cached atlas
      * icon. Set by {@code CuboidItemModelWrapperMixin} for flat items rendered in the {@code GUI} context:

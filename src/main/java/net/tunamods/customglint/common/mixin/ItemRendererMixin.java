@@ -84,7 +84,8 @@ public class ItemRendererMixin {
             // off the item, most visible under Iris, which renders the hand inside the level framegraph).
             boolean heldFp = submit.displayContext() != null && submit.displayContext().firstPerson();
             EntityGlintRender.queueItemOutline(submit.quads(), submit.pose(), submit.lightCoords(),
-                    holder.customglint$getGlint(), glowing, glowColors, heldFp);
+                    holder.customglint$getGlint(), glowing, glowColors,
+                    holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp(), heldFp);
         }
         // Chromatic glint layers can't draw in-phase under a pack (Iris → flat white); queue them for the
         // post-Iris overlay drain (world drain for 3rd-person/dropped, hand drain for first-person). Non-

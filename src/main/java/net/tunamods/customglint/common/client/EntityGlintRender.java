@@ -252,7 +252,7 @@ public final class EntityGlintRender {
 
     /** Animated glow-outline colour for an entity: glowColors first, then glint layer 0, else white. */
     public static int outlineColorFor(Resolution r) {
-        return resolveOutlineColor(r.data, r.glowColors);
+        return resolveOutlineColor(r.data, r.glowColors, 1.0f, true);
     }
 
     /**
@@ -375,7 +375,7 @@ public final class EntityGlintRender {
     @SuppressWarnings("rawtypes")
     public static void queueArmorOutline(Model model, Object state,
             PoseStack.Pose pose, Identifier texture, int light, @Nullable CustomGlint.Data glint,
-            boolean glowing, int[] glowColors) {
+            boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
         if (model == null || state == null || texture == null || pose == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.entityOutlines() || beyondOutlineDistance(pose)) return;
@@ -386,7 +386,7 @@ public final class EntityGlintRender {
         // outline (LivingEntityRendererMixin) and the armor layer (EquipmentLayerRenderer.renderLayers)
         // receive the same render-state instance per entity, so the identities match.
         MODEL_OUTLINES.add(new ModelOutlineJob(model, state, texture, pose.copy(), light,
-                resolveOutlineColor(glint, gc), state, true));
+                resolveOutlineColor(glint, gc, glowSpeed, glowInterp), state, true));
     }
 
     /**
@@ -397,27 +397,29 @@ public final class EntityGlintRender {
      */
     @SuppressWarnings("rawtypes")
     public static void queueSpecialModelOutline(Model model, Object state,
-            PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
+            PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors,
+            float glowSpeed, boolean glowInterp) {
         if (model == null || state == null || pose == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
         ModelOutlineJob job = new ModelOutlineJob(model, state, WHITE, pose.copy(), light,
-                resolveOutlineColor(glint, gc), cg_itemGroup(), false);
+                resolveOutlineColor(glint, gc, glowSpeed, glowInterp), cg_itemGroup(), false);
         (inFirstPersonHand ? HELD_FP_MODEL_OUTLINES : MODEL_OUTLINES).add(job);
     }
 
     /** {@link net.minecraft.client.model.geom.ModelPart} variant of {@link #queueSpecialModelOutline}
      *  for special items that submit a single part (e.g. trident). White.png silhouette. */
     public static void queueSpecialPartOutline(ModelPart part,
-            PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors) {
+            PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors,
+            float glowSpeed, boolean glowInterp) {
         if (part == null || pose == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
-        PartOutlineJob job = new PartOutlineJob(part, pose.copy(), light, resolveOutlineColor(glint, gc),
+        PartOutlineJob job = new PartOutlineJob(part, pose.copy(), light, resolveOutlineColor(glint, gc, glowSpeed, glowInterp),
                 cg_itemGroup());
         (inFirstPersonHand ? HELD_FP_PART_OUTLINES : PART_OUTLINES).add(job);
     }
@@ -441,13 +443,14 @@ public final class EntityGlintRender {
      *     drain never composites their view-space pose against the world projection.
      */
     public static void queueItemOutline(List<BakedQuad> quads, PoseStack.Pose pose, int light,
-            @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors, boolean heldFirstPerson) {
+            @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp,
+            boolean heldFirstPerson) {
         if (quads == null || quads.isEmpty() || pose == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.itemOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
-        ItemOutlineJob job = new ItemOutlineJob(quads, pose.copy(), light, resolveOutlineColor(glint, gc));
+        ItemOutlineJob job = new ItemOutlineJob(quads, pose.copy(), light, resolveOutlineColor(glint, gc, glowSpeed, glowInterp));
         (heldFirstPerson ? HELD_FP_OUTLINES : ITEM_OUTLINES).add(job);
     }
 
@@ -1277,7 +1280,7 @@ public final class EntityGlintRender {
         }
 
         if (r.glowing || r.glowColors.length > 0)
-            queueItemOutline(quads, poseStack.last(), light, r.data, r.glowing, r.glowColors, false);
+            queueItemOutline(quads, poseStack.last(), light, r.data, r.glowing, r.glowColors, 1.0f, true, false);
     }
 
     /** Flattens a block-model layer's parts into their {@link BakedQuad}s (all directions + the null/general
@@ -1309,8 +1312,9 @@ public final class EntityGlintRender {
         });
     }
 
-    private static int resolveOutlineColor(@Nullable CustomGlint.Data data, int[] glowColors) {
-        if (glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(glowColors);
+    private static int resolveOutlineColor(@Nullable CustomGlint.Data data, int[] glowColors,
+            float glowSpeed, boolean glowInterp) {
+        if (glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(glowColors, glowSpeed, glowInterp);
         if (data != null) return CustomGlintRenderer.computeAnimatedColor(data, 0);
         return 0xFFFFFFFF;
     }
