@@ -113,6 +113,7 @@
   "screen.customglint.glint_table.tip.glow": "Adds a glowing outline around the item.",
   "screen.customglint.glint_table.tip.glow_na": "A Glow Trim in the main slot already sets the glow.",
   "screen.customglint.glint_table.tip.glow_mode": "Auto matches the glow to your first color; Manual lets you dye it.",
+  "screen.customglint.glint_table.tip.glow_mode_manual": "Right-click Manual to set colors.",
   "screen.customglint.glint_table.tip.glow_mode_off": "Turn Glow on to use this.",
   "screen.customglint.glint_table.tip.name": "Gives the printed trim a custom, colored name.",
   "screen.customglint.glint_table.tip.speed": "How fast the glint animates.",

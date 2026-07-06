@@ -2295,7 +2295,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                     }
                 })
                 .tip(() -> modGlow
-                        ? tipLines("screen.customglint.glint_table.tip.glow_mode")
+                        ? tipLines("screen.customglint.glint_table.tip.glow_mode", "screen.customglint.glint_table.tip.glow_mode_manual")
                         : tipLines("screen.customglint.glint_table.tip.glow_mode", "screen.customglint.glint_table.tip.glow_mode_off")));
 
         // Glow / Name toggles: freely usable (no material/ownership gate); the missing glowstone / name tag
