@@ -159,6 +159,7 @@
   "screen.customglint.glint_table.issue.layer_missing_color": "Capa sin color",
   "screen.customglint.glint_table.issue.too_many_colors": "Demasiados colores (máx. 8)",
   "screen.customglint.glint_table.issue.no_multilayer": "Aquí no se puede reconstruir un adorno de varias capas",
+  "screen.customglint.glint_table.issue.name_needs": "El nombre necesita %s",
   "screen.customglint.glint_table.issue.glow_manual_needs": "El brillo (Manual) necesita un color: añade un tinte o cambia el brillo a Auto",
   "screen.customglint.glint_table.add_layer_cap": "El adorno a fusionar tiene demasiadas capas (máx. %s en total)",
   "screen.customglint.glint_table.hint.pick_main": "Clic izquierdo: crear con este diseño",

@@ -159,6 +159,7 @@
   "screen.customglint.glint_table.issue.layer_missing_color": "Layer missing color",
   "screen.customglint.glint_table.issue.too_many_colors": "Too many colors (max 8)",
   "screen.customglint.glint_table.issue.no_multilayer": "Can't rebuild a multi-layer trim here",
+  "screen.customglint.glint_table.issue.name_needs": "Name needs %s",
   "screen.customglint.glint_table.issue.glow_manual_needs": "Glow (Manual) needs a color, add a dye or switch Glow to Auto",
   "screen.customglint.glint_table.add_layer_cap": "Merge trim has too many layers (max %s total)",
   "screen.customglint.glint_table.hint.pick_main": "Left-click: build with this design",
