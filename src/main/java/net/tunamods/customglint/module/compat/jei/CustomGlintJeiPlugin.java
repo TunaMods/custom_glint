@@ -5,6 +5,7 @@ import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.builder.IIngredientAcceptor;
+import mezz.jei.api.ingredients.subtypes.UidContext;
 import mezz.jei.api.recipe.category.extensions.vanilla.smithing.ISmithingCategoryExtension;
 import mezz.jei.api.recipe.vanilla.IJeiShapedRecipeBuilder;
 import mezz.jei.api.recipe.vanilla.IVanillaRecipeFactory;
@@ -24,12 +25,15 @@ import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.ShapelessRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingTransformRecipe;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay;
 import net.minecraft.world.item.crafting.display.SlotDisplay;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.ModComponents;
+import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
 import java.util.ArrayList;
@@ -61,11 +65,33 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
-        // Every Glint Trim is the same Item; its design/colors/glow live in the TRIM config component. Without
-        // this, JEI treats all trims as one subtype and collapses the whole design selection (including the
-        // trim ingredient-info page below) into a single entry.
-        registration.registerFromDataComponentTypes(ModItems.GLINT_TRIM.get(), ModComponents.TRIM.get());
-        registration.registerFromDataComponentTypes(ModItems.GLOW_TRIM.get(), ModComponents.GLOW_TRIM.get());
+        // Every Glint Trim is the same Item; its design/colors/glow live in NBT. Without a subtype interpreter
+        // JEI keys all trims to one subtype and collapses the whole design selection (and the trim ingredient-
+        // info page below) into a single entry. Key off pattern + colors + glow rather than the whole component
+        // so a chromatic trim's random per-stack seed doesn't split identical designs.
+        //
+        // Only split for the INGREDIENT context (the ingredient list / bookmarks). For RECIPE lookup return NONE
+        // so every trim shares one subtype — clicking any trim then surfaces all the trim-modifying display
+        // recipes (tear / dye / merge / duplicate / speed / scale / opacity / glow / smithing), which each use a
+        // fixed sample design and would otherwise only match that exact design+colors.
+        // getSubtypeData returns null for "no subtype", the sentinel that collapses trims to one entry.
+        registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), (stack, ctx) -> {
+            if (ctx == UidContext.Recipe) return null;
+            Identifier pattern = GlintTrimItem.getPattern(stack);
+            if (pattern == null) return null;
+            StringBuilder key = new StringBuilder(pattern.toString());
+            for (int color : GlintTrimItem.getColors(stack)) key.append(',').append(color);
+            if (GlintTrimItem.isGlowing(stack)) key.append(":glow");
+            return key.toString();
+        });
+        registration.registerSubtypeInterpreter(ModItems.GLOW_TRIM.get(), (stack, ctx) -> {
+            if (ctx == UidContext.Recipe) return null;
+            int[] colors = GlowTrimItem.getColors(stack);
+            if (colors.length == 0) return null;
+            StringBuilder key = new StringBuilder();
+            for (int color : colors) key.append(color).append(',');
+            return key.toString();
+        });
     }
 
     @Override
@@ -106,63 +132,80 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         List<RecipeHolder<CraftingRecipe>> crafting = new ArrayList<>();
         List<RecipeHolder<SmithingRecipe>> smithing = new ArrayList<>();
 
-        // Tear: tear + colored trim -> same trim in the other render mode.
-        addTear(crafting, factory, "jei_tear_sim_0", true,  CustomGlint.WAVE,    new int[]{CustomGlint.RED, CustomGlint.BLUE});
-        addTear(crafting, factory, "jei_tear_sim_1", true,  CustomGlint.STRIPES, new int[]{CustomGlint.GREEN, CustomGlint.YELLOW});
-        addTear(crafting, factory, "jei_tear_sim_2", true,  CustomGlint.SPARKLE, new int[]{CustomGlint.PURPLE, CustomGlint.MAGENTA, CustomGlint.PINK});
-        addTear(crafting, factory, "jei_tear_seq_0", false, CustomGlint.WAVE,    new int[]{CustomGlint.RED, CustomGlint.BLUE});
-        addTear(crafting, factory, "jei_tear_seq_1", false, CustomGlint.STRIPES, new int[]{CustomGlint.GREEN, CustomGlint.YELLOW});
-        addTear(crafting, factory, "jei_tear_seq_2", false, CustomGlint.SPARKLE, new int[]{CustomGlint.PURPLE, CustomGlint.MAGENTA, CustomGlint.PINK});
+        // Tear: tear + colored trim -> same trim in the other render mode. One pair (sim + seq) per design.
+        Identifier[] tearDesigns = { CustomGlint.WAVE, CustomGlint.STRIPES, CustomGlint.SPARKLE, CustomGlint.VANILLA, CustomGlint.CRYSTAL, CustomGlint.SWIRL };
+        int[][] tearColors = {
+            {0xFFFF0000, 0xFF0000FF},
+            {0xFF00FF00, 0xFFFFFF00},
+            {0xFF8800CC, 0xFFFF00FF, 0xFFFF80A0},
+            {0xFFFF0000, 0xFFFF8000, 0xFFFFFF00, 0xFF00FF00},
+            {0xFF00FFFF, 0xFF00AAFF, 0xFF0000FF, 0xFF8800CC, 0xFFFF80A0},
+            {0xFFFF0000, 0xFFFF8000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF, 0xFF8800CC, 0xFFFF80A0},
+        };
+        for (int i = 0; i < tearDesigns.length; i++) {
+            addTear(crafting, factory, "jei_tear_sim_" + i, true,  tearDesigns[i], tearColors[i]);
+            addTear(crafting, factory, "jei_tear_seq_" + i, false, tearDesigns[i], tearColors[i]);
+        }
 
         // Dye: blank trim + dye -> trim with that color.
-        addDye(crafting, factory, "jei_dye_0", CustomGlint.WAVE,    Items.RED_DYE,    CustomGlint.RED);
-        addDye(crafting, factory, "jei_dye_1", CustomGlint.STRIPES, Items.BLUE_DYE,   CustomGlint.BLUE);
-        addDye(crafting, factory, "jei_dye_2", CustomGlint.SPARKLE, Items.CYAN_DYE,   CustomGlint.CYAN);
-        addDye(crafting, factory, "jei_dye_3", CustomGlint.CRYSTAL, Items.PURPLE_DYE, CustomGlint.PURPLE);
-        addDye(crafting, factory, "jei_dye_4", CustomGlint.SWIRL,   Items.LIME_DYE,   CustomGlint.LIME);
+        addDye(crafting, factory, "jei_dye_0", CustomGlint.WAVE,    Items.RED_DYE,    GlintTrimItem.DYE_COLORS[14]);
+        addDye(crafting, factory, "jei_dye_1", CustomGlint.STRIPES, Items.BLUE_DYE,   GlintTrimItem.DYE_COLORS[11]);
+        addDye(crafting, factory, "jei_dye_2", CustomGlint.SPARKLE, Items.CYAN_DYE,   GlintTrimItem.DYE_COLORS[9]);
+        addDye(crafting, factory, "jei_dye_3", CustomGlint.VANILLA, Items.YELLOW_DYE, GlintTrimItem.DYE_COLORS[4]);
+        addDye(crafting, factory, "jei_dye_4", CustomGlint.CRYSTAL, Items.PURPLE_DYE, GlintTrimItem.DYE_COLORS[10]);
+        addDye(crafting, factory, "jei_dye_5", CustomGlint.SWIRL,   Items.LIME_DYE,   GlintTrimItem.DYE_COLORS[5]);
 
         // Merge: several single-color trims -> one multi-color trim.
-        int[] mergePalette = { CustomGlint.RED, CustomGlint.BLUE, CustomGlint.CYAN, CustomGlint.YELLOW, CustomGlint.PURPLE, CustomGlint.GREEN };
-        for (int n = 2; n <= 6; n++) {
+        int[] mergePalette = { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
+        for (int n = 2; n <= 8; n++) {
             int[] colors = new int[n];
             System.arraycopy(mergePalette, 0, colors, 0, n);
             addMerge(crafting, factory, "jei_merge_" + (n - 2), CustomGlint.WAVE, colors);
         }
 
-        // Duplicate: one trim -> two of the same trim.
-        addDuplicate(crafting, factory, "jei_duplicate_0", CustomGlint.WAVE, CustomGlint.RED);
+        // Duplicate: one trim -> two of the same trim; blank trim -> two blank trims.
+        addDuplicate(crafting, factory, "jei_duplicate_0", CustomGlint.WAVE, 0xFFFF0000);
+        addBlankDuplicate(crafting, factory, "jei_duplicate_1", CustomGlint.WAVE);
 
         // Layer tear: layer tear + two trims -> one two-layer trim.
-        addLayer(crafting, factory, "jei_layer_0", CustomGlint.WAVE,    CustomGlint.RED,  CustomGlint.SPARKLE, CustomGlint.BLUE);
-        addLayer(crafting, factory, "jei_layer_1", CustomGlint.STRIPES, CustomGlint.LIME, CustomGlint.SWIRL,   CustomGlint.PURPLE);
+        addLayer(crafting, factory, "jei_layer_0", CustomGlint.WAVE,    0xFFFF0000, CustomGlint.SPARKLE, 0xFF0000FF);
+        addLayer(crafting, factory, "jei_layer_1", CustomGlint.VANILLA, 0xFFFF8000, CustomGlint.CRYSTAL, 0xFF00FFFF);
+        addLayer(crafting, factory, "jei_layer_2", CustomGlint.STRIPES, 0xFF00FF00, CustomGlint.SWIRL,   0xFF8800CC);
 
         // Black tear: black tear + glinted item -> clean item.
-        addBlackTear(crafting, factory, "jei_black_0", Items.DIAMOND_SWORD,      CustomGlint.WAVE,    CustomGlint.RED);
-        addBlackTear(crafting, factory, "jei_black_1", Items.GOLDEN_CHESTPLATE,  CustomGlint.SPARKLE, CustomGlint.LIGHT_BLUE);
-        addBlackTear(crafting, factory, "jei_black_2", Items.BOW,                CustomGlint.STRIPES, CustomGlint.YELLOW);
+        addBlackTear(crafting, factory, "jei_black_0", Items.DIAMOND_SWORD,      CustomGlint.WAVE,    0xFFFF0000);
+        addBlackTear(crafting, factory, "jei_black_1", Items.GOLDEN_CHESTPLATE,  CustomGlint.SPARKLE, 0xFF00AAFF);
+        addBlackTear(crafting, factory, "jei_black_2", Items.BOW,                CustomGlint.STRIPES, 0xFFFFFF00);
+        addBlackTear(crafting, factory, "jei_black_3", Items.BOOK,               CustomGlint.VANILLA, 0xFF8800CC);
 
         // Speed: trim + redstone -> trim with faster animation (count = ticks).
-        addAmount(crafting, factory, "jei_speed_2", CustomGlint.WAVE, CustomGlint.ORANGE, Items.REDSTONE, 2, true);
-        addAmount(crafting, factory, "jei_speed_5", CustomGlint.WAVE, CustomGlint.ORANGE, Items.REDSTONE, 5, true);
+        for (int n = 1; n <= 8; n++) {
+            addAmount(crafting, factory, "jei_speed_" + n, CustomGlint.WAVE, 0xFFFF4400, Items.REDSTONE, n, true);
+        }
 
         // Scale: trim + slime ball -> trim with larger pattern (visibly different tiling).
-        addAmount(crafting, factory, "jei_scale_1", CustomGlint.SPARKLE, CustomGlint.LIGHT_BLUE, Items.SLIME_BALL, 1, false);
-        addAmount(crafting, factory, "jei_scale_3", CustomGlint.SPARKLE, CustomGlint.LIGHT_BLUE, Items.SLIME_BALL, 3, false);
-        addAmount(crafting, factory, "jei_scale_6", CustomGlint.SPARKLE, CustomGlint.LIGHT_BLUE, Items.SLIME_BALL, 6, false);
+        for (int n = 1; n <= 8; n++) {
+            addAmount(crafting, factory, "jei_scale_" + n, CustomGlint.SPARKLE, 0xFF00AAFF, Items.SLIME_BALL, n, false);
+        }
+
+        // Opacity: trim + glass -> trim with lower alpha (more glass = more transparent, 8 = fully faded).
+        for (int n = 1; n <= 8; n++) {
+            addAlpha(crafting, factory, "jei_alpha_" + n, CustomGlint.CRYSTAL, 0xFF00FFFF, n);
+        }
 
         // Glow trim: trim + glowstone dust -> the glowing variant.
-        addGlow(crafting, factory, "jei_glow_0", CustomGlint.WAVE,    CustomGlint.RED);
-        addGlow(crafting, factory, "jei_glow_1", CustomGlint.SPARKLE, CustomGlint.LIGHT_BLUE);
-        addGlow(crafting, factory, "jei_glow_2", CustomGlint.AURORA,  CustomGlint.YELLOW);
+        addGlow(crafting, factory, "jei_glow_0", CustomGlint.WAVE,    0xFFFF0000);
+        addGlow(crafting, factory, "jei_glow_1", CustomGlint.SPARKLE, 0xFF00AAFF);
+        addGlow(crafting, factory, "jei_glow_2", CustomGlint.AURORA,  0xFFFFDD00);
 
         registration.addRecipes(RecipeTypes.CRAFTING, crafting);
 
         // Smithing: trim + base item + glowstone dust -> the base item carrying the glint.
-        addSmithing(smithing, "jei_smithing_0", CustomGlint.WAVE,    new int[]{CustomGlint.RED},                              Items.DIAMOND_SWORD,      true);
-        addSmithing(smithing, "jei_smithing_1", CustomGlint.CRYSTAL, new int[]{CustomGlint.CYAN, CustomGlint.LIGHT_BLUE},     Items.DIAMOND_CHESTPLATE, true);
-        addSmithing(smithing, "jei_smithing_2", CustomGlint.AURORA,  new int[]{CustomGlint.ORANGE, CustomGlint.YELLOW},       Items.BOW,                true);
-        addSmithing(smithing, "jei_smithing_3", CustomGlint.SWIRL,   new int[]{CustomGlint.RED, CustomGlint.LIME, CustomGlint.BLUE}, Items.ELYTRA,       false);
-        addSmithing(smithing, "jei_smithing_4", CustomGlint.VANILLA, new int[]{CustomGlint.ORANGE},                           Items.ENCHANTED_BOOK,     true);
+        addSmithing(smithing, "jei_smithing_0", CustomGlint.WAVE,    new int[]{0xFFFF0000},                                                 Items.DIAMOND_SWORD,      true);
+        addSmithing(smithing, "jei_smithing_1", CustomGlint.CRYSTAL, new int[]{0xFF00FFFF, 0xFF00AAFF},                                     Items.DIAMOND_CHESTPLATE, true);
+        addSmithing(smithing, "jei_smithing_2", CustomGlint.AURORA,  new int[]{0xFFFF6600, 0xFFFFDD00},                                     Items.BOW,                true);
+        addSmithing(smithing, "jei_smithing_3", CustomGlint.SWIRL,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF}, Items.ELYTRA,             false);
+        addSmithing(smithing, "jei_smithing_4", CustomGlint.VANILLA, new int[]{0xFFFFAA00},                                                 Items.ENCHANTED_BOOK,     true);
 
         registration.addRecipes(RecipeTypes.SMITHING, smithing);
     }
@@ -174,19 +217,19 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // A tear flips the render mode: the simultaneous tear takes a sequential trim and outputs a
         // simultaneous one (and vice versa). Input is the opposite mode, output is the tear's mode.
         ItemStack tear = (simultaneous ? ModItems.GLINT_TEAR_SIMULTANEOUS : ModItems.GLINT_TEAR_SEQUENTIAL).get().getDefaultInstance();
-        craft(out, f, id, trimMode(design, colors, simultaneous), tear, trimMode(design, colors, !simultaneous));
+        craftShapeless(out, f, id, trimMode(design, colors, simultaneous), tear, trimMode(design, colors, !simultaneous));
     }
 
     private void addDye(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                         Identifier design, Item dye, int color) {
-        craft(out, f, id, trim(design, new int[]{color}), trim(design, new int[0]), new ItemStack(dye));
+        craftShapeless(out, f, id, trim(design, new int[]{color}), trim(design, new int[0]), new ItemStack(dye));
     }
 
     private void addMerge(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                           Identifier design, int[] colors) {
         ItemStack[] inputs = new ItemStack[colors.length];
         for (int i = 0; i < colors.length; i++) inputs[i] = trim(design, new int[]{colors[i]});
-        craft(out, f, id, trim(design, colors), inputs);
+        craftShapeless(out, f, id, trim(design, colors), inputs);
     }
 
     private void addDuplicate(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
@@ -218,13 +261,13 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ItemStack result = trim1.copy();
         result.setCount(1);
         CustomGlint.write(result, combined);
-        craft(out, f, id, result, ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance(), trim1, trim2);
+        craftShapeless(out, f, id, result, ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance(), trim1, trim2);
     }
 
     private void addBlackTear(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                               Item base, Identifier design, int color) {
         ItemStack glinted = CustomGlint.glinted(base, design, new int[]{color});
-        craft(out, f, id, new ItemStack(base), ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance(), glinted);
+        craftShapeless(out, f, id, new ItemStack(base), ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance(), glinted);
     }
 
     private void addAmount(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
@@ -235,14 +278,40 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ItemStack[] inputs = new ItemStack[count + 1];
         inputs[0] = trim(design, new int[]{color});
         for (int i = 0; i < count; i++) inputs[i + 1] = new ItemStack(reagent);
-        craft(out, f, id, result, inputs);
+        craftShapeless(out, f, id, result, inputs);
     }
 
     private void addGlow(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                          Identifier design, int color) {
         ItemStack result = trim(design, new int[]{color});
         GlintTrimItem.setGlowing(result, true);
-        craft(out, f, id, result, trim(design, new int[]{color}), new ItemStack(Items.GLOWSTONE_DUST));
+        CustomGlint.setGlowing(result, true); // render-level flag that drives the glow outline (mirrors GlintGlowTrimRecipe)
+        craftShapeless(out, f, id, result, trim(design, new int[]{color}), new ItemStack(Items.GLOWSTONE_DUST));
+    }
+
+    private void addAlpha(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
+                          Identifier design, int color, int count) {
+        // Mirrors GlintTrimAlphaRecipe.assemble: N glass fades the trim's color, 8 glass = fully transparent.
+        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+        GlintTrimItem.setPattern(result, design);
+        int alpha = Math.round(count * 255f / 8f);
+        GlintTrimItem.setColors(result, new int[]{ (alpha << 24) | (color & 0xFFFFFF) });
+        ItemStack[] inputs = new ItemStack[count + 1];
+        inputs[0] = trim(design, new int[]{color});
+        for (int i = 0; i < count; i++) inputs[i + 1] = new ItemStack(Items.GLASS);
+        craftShapeless(out, f, id, result, inputs);
+    }
+
+    private void addBlankDuplicate(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
+                                   Identifier design) {
+        // Mirrors GlintTrimBlankDuplicateRecipe: a blank (colorless) trim center, glowstone below, diamonds
+        // elsewhere -> two blank trims.
+        ItemStack trim = trim(design, new int[0]);
+        ItemStack result = trim.copy();
+        result.setCount(2);
+        ItemStack d = new ItemStack(Items.DIAMOND);
+        ItemStack g = new ItemStack(Items.GLOWSTONE_DUST);
+        craft(out, f, id, result, d, d, d, d, trim, d, d, g, d);
     }
 
     private void addSmithing(List<RecipeHolder<SmithingRecipe>> out, String id,
@@ -361,5 +430,35 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             builder.pattern(row.toString());
         }
         out.add(new RecipeHolder<CraftingRecipe>(key(id), builder.build()));
+    }
+
+    /**
+     * Build a SHAPELESS crafting display. JEI's crafting category reads {@link CraftingRecipe#display()} and
+     * branches on {@link ShapelessCraftingRecipeDisplay} vs the shaped display, so a {@link ShapelessRecipe}
+     * whose {@code display()} carries the colored {@link SlotDisplay}s renders as a shapeless craft with the
+     * glint previews intact. Unlike {@link #craft}, this doesn't use the factory (there is no shapeless builder);
+     * {@code f} is kept in the signature only so the builder helpers call it the same way.
+     */
+    private void craftShapeless(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
+                               ItemStack result, ItemStack... inputs) {
+        List<Ingredient> ingredients = new ArrayList<>();
+        List<SlotDisplay> inputDisplays = new ArrayList<>();
+        for (ItemStack in : inputs) {
+            ingredients.add(Ingredient.of(in.getItem()));
+            inputDisplays.add(display(in));
+        }
+        SlotDisplay resultDisplay = display(result);
+        CraftingRecipe recipe = new ShapelessRecipe(
+                new Recipe.CommonInfo(true),
+                new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),
+                ItemStackTemplate.fromNonEmptyStack(result),
+                ingredients) {
+            @Override
+            public List<RecipeDisplay> display() {
+                return List.<RecipeDisplay>of(new ShapelessCraftingRecipeDisplay(
+                        inputDisplays, resultDisplay, new SlotDisplay.ItemSlotDisplay(Items.CRAFTING_TABLE)));
+            }
+        };
+        out.add(new RecipeHolder<CraftingRecipe>(key(id), recipe));
     }
 }
