@@ -128,7 +128,6 @@
   "screen.customglint.glint_table.print": "Imprimir Adorno",
   "screen.customglint.glint_table.nothing": "Nada",
   "screen.customglint.glint_table.consume_line": "%s ×%s",
-  "screen.customglint.glint_table.consume_line_blocks": "%s ×%s  o  %s ×%s",
   "screen.customglint.glint_table.interpolation": "Interpolación: %s",
   "screen.customglint.glint_table.true": "Sí",
   "screen.customglint.glint_table.false": "No",

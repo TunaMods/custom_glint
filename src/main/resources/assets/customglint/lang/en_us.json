@@ -128,7 +128,6 @@
   "screen.customglint.glint_table.print": "Print Trim",
   "screen.customglint.glint_table.nothing": "Nothing",
   "screen.customglint.glint_table.consume_line": "%s ×%s",
-  "screen.customglint.glint_table.consume_line_blocks": "%s ×%s  or  %s ×%s",
   "screen.customglint.glint_table.interpolation": "Interpolation: %s",
   "screen.customglint.glint_table.true": "True",
   "screen.customglint.glint_table.false": "False",

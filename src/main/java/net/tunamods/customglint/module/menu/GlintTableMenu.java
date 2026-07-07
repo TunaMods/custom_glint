@@ -138,10 +138,9 @@ public class GlintTableMenu extends AbstractContainerMenu {
         // into a library deposit + ghost preview, so these slots never hold a real item and it can't get stuck
         // where it couldn't be pulled back out. They still exist for layout (the ghost draws over them).
         addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  s -> false,                      SLOT_MAX)); // 8 main (left of center, aligned to the grids' top row)
-        // Speed/scale can cost more than a 64 stack on extreme multi-layer builds, so these two slots also take
-        // the compressed block (worth 9), which fits far more cost in one slot. See materialUnits / consumeUnits.
-        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL) || s.is(Items.SLIME_BLOCK), SLOT_MAX)); // 12 scale
-        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE) || s.is(Items.REDSTONE_BLOCK), SLOT_MAX)); // 10 speed
+        // Speed (redstone) and scale (slime ball) cost is capped at one 64 stack per slot; loose items only.
+        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL), SLOT_MAX)); // 12 scale
+        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE),   SLOT_MAX)); // 10 speed
         addSlot(new FilteredSlot(container, SLOT_GLASS,     54,  154, s -> s.is(Items.GLASS),           SLOT_MAX)); // 11 opacity
         addSlot(new FilteredSlot(container, SLOT_GLOWSTONE, 233, 154, s -> s.is(Items.GLOWSTONE_DUST),  SLOT_MAX)); // 13
         addSlot(new FilteredSlot(container, SLOT_NAMETAG,   267, 154, s -> s.is(Items.NAME_TAG),         1)); // 14 (boolean gate, one only)
@@ -501,9 +500,9 @@ public class GlintTableMenu extends AbstractContainerMenu {
         for (CustomGlint.Layer l : aboveLayers) { redCost += CustomGlint.stepCost(l.speed()); slimeCost += CustomGlint.stepCost(l.patternScale()); glassCost += layerGlass(l); }
 
         // Validate every required material is present before consuming anything.
-        if (redCost > 0 && materialUnits(SLOT_REDSTONE, Items.REDSTONE, Items.REDSTONE_BLOCK) < redCost) return;
-        if (slimeCost > 0 && materialUnits(SLOT_SLIME, Items.SLIME_BALL, Items.SLIME_BLOCK) < slimeCost) return;
-        if (glassCost > 0 && container.getItem(SLOT_GLASS).getCount() < glassCost) return; // glass has no block form (caps at 64)
+        if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return;   // caps at 64
+        if (slimeCost > 0 && container.getItem(SLOT_SLIME).getCount() < slimeCost) return;  // caps at 64
+        if (glassCost > 0 && container.getItem(SLOT_GLASS).getCount() < glassCost) return;  // caps at 64
         // A base trim already carries its glow / name / glow-color, so re-printing them is free; only
         // glow/name that wasn't there needs the glowstone / name tag / glow-color dye.
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
@@ -609,8 +608,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
 
         // Consume the cost.
-        consumeUnits(sp, SLOT_REDSTONE, redCost, Items.REDSTONE, Items.REDSTONE_BLOCK);
-        consumeUnits(sp, SLOT_SLIME, slimeCost, Items.SLIME_BALL, Items.SLIME_BLOCK);
+        if (redCost > 0) container.removeItem(SLOT_REDSTONE, redCost);
+        if (slimeCost > 0) container.removeItem(SLOT_SLIME, slimeCost);
         if (glassCost > 0) container.removeItem(SLOT_GLASS, glassCost);
         for (int i = 0; i < 16; i++) if (dyeUsed[i] > 0) container.removeItem(SLOT_DYE_START + i, dyeUsed[i]);
         if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded); // one per custom-hex colour
@@ -647,7 +646,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (!(player instanceof ServerPlayer sp)) return;
         float safeSpeed = Float.isFinite(speed) ? Math.max(0.10f, Math.min(8.0f, speed)) : 1.0f;
         int redCost = CustomGlint.stepCost(safeSpeed); // glow-cycle speed off 1× costs redstone, like a glint layer
-        if (redCost > 0 && materialUnits(SLOT_REDSTONE, Items.REDSTONE, Items.REDSTONE_BLOCK) < redCost) return;
+        if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return; // caps at 64
 
         // Resolve the glow colours from the selected shards (opaque — glow has no opacity dimension), tracking
         // which dyes to consume. A shard whose dye isn't present (or short) is skipped; a custom-hex shard
@@ -694,7 +693,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
 
         // Consume the cost.
-        consumeUnits(sp, SLOT_REDSTONE, redCost, Items.REDSTONE, Items.REDSTONE_BLOCK);
+        if (redCost > 0) container.removeItem(SLOT_REDSTONE, redCost);
         for (int i = 0; i < 16; i++) if (dyeUsed[i] > 0) container.removeItem(SLOT_DYE_START + i, dyeUsed[i]);
         if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded);
         if (named && !name.isEmpty() && (nameDye != null || nameRainbow)) container.removeItem(SLOT_NAME_DYE, 1);
@@ -796,32 +795,6 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return !player.level().isClientSide();
     }
 
-    /** How many material units a slot holds, counting the compressed block as 9 (speed/scale slots accept the
-     *  block so an extreme build's cost can exceed a 64 stack). A slot holding neither form counts as 0. */
-    private int materialUnits(int slot, Item loose, Item block) {
-        ItemStack s = container.getItem(slot);
-        if (s.is(loose)) return s.getCount();
-        if (s.is(block)) return s.getCount() * 9;
-        return 0;
-    }
-
-    /** Consume {@code cost} units of a material, breaking 9× blocks as needed and refunding the change to the
-     *  player as loose items so the net cost is exact. Assumes {@link #materialUnits} already confirmed enough. */
-    private void consumeUnits(ServerPlayer sp, int slot, int cost, Item loose, Item block) {
-        if (cost <= 0) return;
-        if (container.getItem(slot).is(block)) {
-            int blocksNeeded = (cost + 8) / 9; // ceil
-            container.removeItem(slot, blocksNeeded);
-            int refund = blocksNeeded * 9 - cost;
-            if (refund > 0) {
-                ItemStack change = new ItemStack(loose, refund);
-                if (!sp.addItem(change)) sp.drop(change, false);
-            }
-        } else {
-            container.removeItem(slot, cost); // loose items: exact
-        }
-    }
-
     /** Right-click on a dye slot is reserved for the screen's color-selection gesture, so block its
      *  pickup/place at the menu level (runs on both sides), the screen's click-swallow alone misses
      *  release/drag edge cases under fast spam. Left-click and shift still behave normally. */
@@ -877,8 +850,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (isLayerTear(stack))             return new int[]{SLOT_LAYER_TEAR};
         if (isSimTear(stack))               return new int[]{SLOT_TEAR};
         if (isSeqTear(stack))               return new int[]{SLOT_TEAR_SEQ};
-        if (stack.is(Items.SLIME_BALL) || stack.is(Items.SLIME_BLOCK))   return new int[]{SLOT_SLIME};
-        if (stack.is(Items.REDSTONE) || stack.is(Items.REDSTONE_BLOCK))  return new int[]{SLOT_REDSTONE};
+        if (stack.is(Items.SLIME_BALL))     return new int[]{SLOT_SLIME};
+        if (stack.is(Items.REDSTONE))       return new int[]{SLOT_REDSTONE};
         if (stack.is(Items.GLASS))          return new int[]{SLOT_GLASS};
         if (stack.is(Items.GLOWSTONE_DUST)) return new int[]{SLOT_GLOWSTONE};
         if (stack.is(Items.NAME_TAG))       return new int[]{SLOT_NAMETAG};

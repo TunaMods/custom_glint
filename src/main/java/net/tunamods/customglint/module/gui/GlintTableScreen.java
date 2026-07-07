@@ -1372,22 +1372,15 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return new ItemStack(GlintTableMenu.DYE_ITEMS[idx]);
     }
 
-    /** Ghost for a slot that accepts both a loose material and its 9× compressed block: alternate between the
-     *  two forms so the hint shows the slot takes either (matches the redstone/slime cost being paid in either). */
-    private static ItemStack cyclingForms(Item loose, Item block) {
-        return new ItemStack((Util.getMillis() / 1500) % 2 == 0 ? loose : block);
-    }
-
     /** The faint "what goes here" hint item for a table slot, or EMPTY for none. */
     private ItemStack ghostFor(int containerSlot) {
         if (containerSlot >= GlintTableMenu.SLOT_DYE_START
                 && containerSlot < GlintTableMenu.SLOT_DYE_START + 16) {
             return new ItemStack(GlintTableMenu.DYE_ITEMS[containerSlot - GlintTableMenu.SLOT_DYE_START]);
         }
-        // Redstone / slime take either the loose item or its 9× block, so their ghost cycles both forms.
-        if (containerSlot == GlintTableMenu.SLOT_REDSTONE) return cyclingForms(Items.REDSTONE, Items.REDSTONE_BLOCK);
-        if (containerSlot == GlintTableMenu.SLOT_SLIME)    return cyclingForms(Items.SLIME_BALL, Items.SLIME_BLOCK);
         return switch (containerSlot) {
+            case GlintTableMenu.SLOT_REDSTONE  -> new ItemStack(Items.REDSTONE);
+            case GlintTableMenu.SLOT_SLIME     -> new ItemStack(Items.SLIME_BALL);
             case GlintTableMenu.SLOT_GLASS     -> new ItemStack(Items.GLASS);
             case GlintTableMenu.SLOT_GLOWSTONE -> new ItemStack(Items.GLOWSTONE_DUST);
             case GlintTableMenu.SLOT_NAMETAG   -> new ItemStack(Items.NAME_TAG);
@@ -2511,33 +2504,17 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return lines;
     }
 
-    /** One material line for {@link #printTooltip}: name + amount, green when the slot holds enough (counting
-     *  the 9× block form for the speed/scale slots), red when short. When a redstone/slime cost tops one stack,
-     *  the line also shows the block equivalent, since loose items can't cover it. */
+    /** One material line for {@link #printTooltip}: name + amount, green when the slot holds enough, red when
+     *  short. Costs cap at one 64 stack per slot. */
     private void reqLine(List<Component> lines, Component name, int need, int slotConst) {
         int have = slotUnits(slotConst);
-        Item block = slotConst == GlintTableMenu.SLOT_REDSTONE ? Items.REDSTONE_BLOCK
-                   : slotConst == GlintTableMenu.SLOT_SLIME ? Items.SLIME_BLOCK : null;
         ChatFormatting color = have >= need ? ChatFormatting.GREEN : ChatFormatting.RED;
-        lines.add(block != null && need > 64
-                ? Component.translatable("screen.customglint.glint_table.consume_line_blocks",
-                        name, need, itemName(block), (need + 8) / 9).withStyle(color) // ceil blocks; change refunded on print
-                : Component.translatable("screen.customglint.glint_table.consume_line", name, need).withStyle(color));
+        lines.add(Component.translatable("screen.customglint.glint_table.consume_line", name, need).withStyle(color));
     }
 
-    /** Units a material slot holds toward its cost: the speed (redstone) and scale (slime) slots count their
-     *  compressed block as 9, so an extreme build's cost can be paid past a 64 stack; other slots count 1:1. */
+    /** Units a material slot holds toward its cost (1:1, capped at a 64 stack). */
     private int slotUnits(int slotConst) {
-        ItemStack s = menu.slots.get(slotConst).getItem();
-        if (slotConst == GlintTableMenu.SLOT_REDSTONE) return unitsOf(s, Items.REDSTONE, Items.REDSTONE_BLOCK);
-        if (slotConst == GlintTableMenu.SLOT_SLIME)    return unitsOf(s, Items.SLIME_BALL, Items.SLIME_BLOCK);
-        return s.getCount();
-    }
-
-    private static int unitsOf(ItemStack s, Item loose, Item block) {
-        if (s.is(loose)) return s.getCount();
-        if (s.is(block)) return s.getCount() * 9;
-        return 0;
+        return menu.slots.get(slotConst).getItem().getCount();
     }
 
     // ── Beveled widgets ───────────────────────────────────────────────────────
