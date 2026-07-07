@@ -409,12 +409,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return name != null && GlintStoredSyncPacket.CLIENT_STORED.contains(name);
     }
 
-    private ItemStack mergeDonor(ItemStack base) {
-        if (!(base.getItem() instanceof GlintTrimItem) || donorColors().length == 0) return base;
-        return GlintTrimItem.mergeColors(base, donorStack());
-    }
-
-    /** The active base trim WITHOUT the merge donor folded in (main slot, else the selected/printed trim). */
+    /** The active base trim — main slot, else the selected/printed trim with the modifier build state applied.
+     *  The merge-slot donor is NEVER folded in: an uncommitted donor is a live preview only (its own stacked
+     *  layer in the preview box), costing / counting nothing against the active layer until {@code +} commits it. */
     private ItemStack activeBase() {
         ItemStack main = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         if (!main.isEmpty()) return main;
@@ -424,7 +421,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private ItemStack activeTrim() {
         if (frameMemo && frameActiveTrim != null) return frameActiveTrim;
-        ItemStack result = mergeDonor(activeBase());
+        ItemStack result = activeBase();
         if (frameMemo) frameActiveTrim = result;
         return result;
     }
@@ -443,16 +440,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
      *  trim shows its 4 layers, and a merge donor only joins once {@code +} commits it into the layer stack. */
     private ItemStack committedTrim() { return buildStack(false); }
 
-    /** Assemble the multi-layer trim. With {@code includeDonor} the merge donor is folded in (the live preview:
-     *  the merge slot's design(s) shown STACKED on the main, or colour-folded when it can't stack); without it,
-     *  only the committed layers (the main slot). No layer tear / ownership needed to preview — printing an
+    /** Assemble the multi-layer trim. With {@code includeDonor} the merge donor is shown STACKED on top as its
+     *  own layer(s) (the live preview); without it, only the committed layers (the main slot). The donor is
+     *  never colour-folded into the active layer. No layer tear / ownership needed to preview — printing an
      *  unowned or tear-less stack is still blocked. */
     private ItemStack buildStack(boolean includeDonor) {
         CustomGlint.Layer[] pending = includeDonor ? donorLayers() : new CustomGlint.Layer[0];
         boolean stackDonor = pending.length > 0;
-        // A stackable donor uses the un-merged base so it isn't also colour-folded into the active layer;
-        // otherwise the preview folds any donor colours in via activeTrim. committedTrim never has a donor.
-        ItemStack active = includeDonor ? (stackDonor ? activeBase() : activeTrim()) : activeBase();
+        ItemStack active = activeBase();
         if (lowerLayers.isEmpty() && upperLayers.isEmpty() && !stackDonor) return active;
         List<CustomGlint.Layer> all = new ArrayList<>(lowerLayers);
         boolean activeValid = active.getItem() instanceof GlintTrimItem;
@@ -1748,10 +1743,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 && (selectedMain == null || !GlintStoredSyncPacket.CLIENT_STORED.contains(selectedMain))) return false;
         if (!donorOwned()) return false;
 
+        // The merge-slot donor is NOT counted against the active layer's colours: an uncommitted donor is
+        // preview-only and prints nothing until [+] commits it as its own layer, so it can't overflow the cap.
         int baseColorCount = fromBase ? GlintTrimItem.getColors(base).length : 0;
         if (anyLayerColorless(baseColorCount)) return false;
-        int mainCount = fromBase ? baseColorCount : countSelectedDyes();
-        if (mainCount + donorColors().length > 8) return false;
 
         ItemStack repro = reproSource();
         if (!repro.isEmpty()) {
@@ -1813,8 +1808,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // Flag a missing colour on ANY layer (active or a committed one), so the hint shows no matter which
         // layer is currently open — not just when the colourless layer happens to be the one being edited.
         if (anyLayerColorless(baseColorCount)) out.add(Component.translatable("screen.customglint.glint_table.issue.layer_missing_color"));
-        int mainCount = fromBase ? baseColorCount : countSelectedDyes();
-        if (mainCount + donorColors().length > 8) out.add(Component.translatable("screen.customglint.glint_table.issue.too_many_colors"));
 
         ItemStack repro = reproSource();
         if (!repro.isEmpty()) {
