@@ -2,7 +2,8 @@
   "parent": "customglint:root",
   "display": {
     "icon": {
-      "item": "minecraft:diamond_sword"
+      "item": "minecraft:diamond_sword",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/sparkle.png\",colors:[I;-32768]}]}}"
     },
     "title": {
       "translate": "advancement.customglint.smithing.title"

@@ -2,7 +2,8 @@
   "parent": "customglint:collect_10",
   "display": {
     "icon": {
-      "item": "customglint:glint_trim"
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/hexagon.png\",colors:[I;-16776961]}]}}"
     },
     "title": {
       "translate": "advancement.customglint.collect_20.title"

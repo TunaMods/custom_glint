@@ -1,7 +1,8 @@
 {
   "display": {
     "icon": {
-      "item": "customglint:glint_trim"
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/sparkle.png\",colors:[I;-16711681]}]}}"
     },
     "title": {
       "translate": "advancement.customglint.root.title"

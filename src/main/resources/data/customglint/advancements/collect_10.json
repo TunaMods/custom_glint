@@ -2,7 +2,8 @@
   "parent": "customglint:collect_5",
   "display": {
     "icon": {
-      "item": "customglint:glint_trim"
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/swirl.png\",colors:[I;-16711936]}]}}"
     },
     "title": {
       "translate": "advancement.customglint.collect_10.title"

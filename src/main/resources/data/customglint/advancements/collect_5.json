@@ -2,7 +2,8 @@
   "parent": "customglint:root",
   "display": {
     "icon": {
-      "item": "customglint:glint_trim"
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/stars.png\",colors:[I;-256]}]}}"
     },
     "title": {
       "translate": "advancement.customglint.collect_5.title"

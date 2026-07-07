@@ -2,7 +2,8 @@
   "parent": "customglint:ratatouille",
   "display": {
     "icon": {
-      "item": "customglint:glint_trim"
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/sparkle.png\",colors:[I;-65536]},{design:\"customglint:textures/glint/swirl.png\",colors:[I;-16711936]},{design:\"customglint:textures/glint/aurora.png\",colors:[I;-16776961]}]}}"
     },
     "title": {
       "translate": "advancement.customglint.like_ogres.title"
