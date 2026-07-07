@@ -26,6 +26,9 @@ Fixed:
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
+- JEI now lists every trim design, and clicking any trim shows all its recipes again (coloring, speed, scale, opacity, duplicating, merging)
+- The opacity recipe (a trim plus glass) now shows in JEI
+- The glow trim recipes in JEI now show the glow outline on their result
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
