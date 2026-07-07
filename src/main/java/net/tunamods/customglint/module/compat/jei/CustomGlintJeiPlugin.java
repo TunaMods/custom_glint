@@ -27,6 +27,7 @@ import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimBlankDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
@@ -291,6 +292,39 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
     }
 
+    private static class AlphaDisplay extends GlintTrimAlphaRecipe {
+        private final ResourceLocation design;
+        private final int color; // opaque base (0xFFrrggbb); the glass count sets the alpha channel
+        private final int count;
+
+        AlphaDisplay(ResourceLocation id, ResourceLocation design, int color, int count) {
+            super(id, CraftingBookCategory.MISC);
+            this.design = design; this.color = color; this.count = count;
+        }
+
+        @Override public boolean isSpecial() { return false; }
+
+        @Override
+        public NonNullList<Ingredient> getIngredients() {
+            ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
+            GlintTrimItem.setPattern(trim, design);
+            GlintTrimItem.addColor(trim, color);
+            NonNullList<Ingredient> list = NonNullList.create();
+            list.add(Ingredient.of(trim));
+            for (int i = 0; i < count; i++) list.add(Ingredient.of(Items.GLASS));
+            return list;
+        }
+
+        @Override
+        public ItemStack getResultItem(RegistryAccess r) {
+            ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+            GlintTrimItem.setPattern(result, design);
+            int alpha = Math.round(count * 255f / 8f); // mirrors GlintTrimAlphaRecipe.assemble
+            GlintTrimItem.setColors(result, new int[]{ (alpha << 24) | (color & 0xFFFFFF) });
+            return result;
+        }
+    }
+
     private static class BlackTearDisplay extends GlintBlackTearRecipe {
         private final ItemStack glinted;
 
@@ -523,6 +557,12 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             scaleDisplays.add(new ScaleDisplay(CustomGlint.res("jei_scale_" + n), sparkle, 0xFF00AAFF, n));
         }
         registration.addRecipes(RecipeTypes.CRAFTING, scaleDisplays);
+
+        List<CraftingRecipe> alphaDisplays = new ArrayList<>();
+        for (int n = 1; n <= 8; n++) {
+            alphaDisplays.add(new AlphaDisplay(CustomGlint.res("jei_alpha_" + n), crystal, 0xFF00FFFF, n));
+        }
+        registration.addRecipes(RecipeTypes.CRAFTING, alphaDisplays);
 
         List<CraftingRecipe> glowTrimDisplays = new ArrayList<>();
         glowTrimDisplays.add(new GlowTrimDisplay(CustomGlint.res("jei_glow_0"), wave,    0xFFFF0000));
