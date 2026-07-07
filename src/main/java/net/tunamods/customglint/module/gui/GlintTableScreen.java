@@ -635,15 +635,20 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
         ResourceLocation pat = GlintTrimItem.getPattern(s);
         if (pat != null) {
-            boolean sim = menu.slots.get(activeTearSlot()).hasItem() && tearSimultaneous;
             CustomGlint.write(s, pat, GlintTrimItem.writeColors(pat, GlintTrimItem.getColors(s)), GlintTrimItem.getSpeed(s), modInterpolate,
-                    GlintTrimItem.getScale(s), sim, GlintTrimItem.getScrollDir(s), GlintTrimItem.getScrollOffset(s), GlintTrimItem.getSeed(s));
+                    GlintTrimItem.getScale(s), activeSim(), GlintTrimItem.getScrollDir(s), GlintTrimItem.getScrollOffset(s), GlintTrimItem.getSeed(s));
         }
         return s;
     }
 
     private int modAlpha() {
         return Math.round(255f - modOpacity * (255f - ALPHA_MIN) / 8f);
+    }
+
+    /** Whether the ACTIVE layer is simultaneous. It follows the tear toggle directly — the preview reflects the
+     *  chosen mode whether or not a tear is in the slot; the tear is only required (and consumed) at print. */
+    private boolean activeSim() {
+        return tearSimultaneous;
     }
 
     private int[] buildColors() {
