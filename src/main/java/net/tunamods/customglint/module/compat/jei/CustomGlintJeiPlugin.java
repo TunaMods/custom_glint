@@ -419,6 +419,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             GlintTrimItem.setPattern(result, design);
             GlintTrimItem.addColor(result, color);
             GlintTrimItem.setGlowing(result, true);
+            CustomGlint.setGlowing(result, true); // render-level flag that drives the glow outline (mirrors GlintGlowTrimRecipe)
             return result;
         }
     }
