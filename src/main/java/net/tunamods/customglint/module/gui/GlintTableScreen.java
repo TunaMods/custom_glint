@@ -482,8 +482,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         boolean sim = false;
         CustomGlint.Data d = CustomGlint.read(a);
         if (d != null && d.layers().length > 0) sim = d.layers()[0].simultaneous();
+        // Carry the trim's committed (stable) chromatic seed. Without it the layer arrives unseeded (seed 0),
+        // and activeLayerIcon's per-frame setPattern() rolls a fresh random seed that leaks in via
+        // carryChromaticSeeds — making the active-layer chip's oil-slick reshuffle every frame.
         return new CustomGlint.Layer(design, colors, GlintTrimItem.getSpeed(a), modInterpolate,
-                GlintTrimItem.getScale(a), sim, GlintTrimItem.getScrollDir(a), GlintTrimItem.getScrollOffset(a));
+                GlintTrimItem.getScale(a), sim, GlintTrimItem.getScrollDir(a), GlintTrimItem.getScrollOffset(a),
+                GlintTrimItem.getSeed(a));
     }
 
     private void loadControlsFromLayer(CustomGlint.Layer l) {
