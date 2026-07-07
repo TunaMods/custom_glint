@@ -6,6 +6,7 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.constants.VanillaTypes;
+import mezz.jei.api.ingredients.subtypes.IIngredientSubtypeInterpreter;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
 import net.minecraft.core.NonNullList;
@@ -394,6 +395,25 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
+        // Every Glint Trim is the same Item; its design / colors / glow live in NBT. Without a subtype
+        // interpreter JEI keys all trims to one subtype and collapses the whole design selection (and the
+        // trim ingredient-info page below) into a single entry. Key off pattern + colors + glow rather than
+        // the whole tag so a chromatic trim's random per-stack seed doesn't split identical designs.
+        registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), (stack, ctx) -> {
+            ResourceLocation pattern = GlintTrimItem.getPattern(stack);
+            if (pattern == null) return IIngredientSubtypeInterpreter.NONE;
+            StringBuilder key = new StringBuilder(pattern.toString());
+            for (int color : GlintTrimItem.getColors(stack)) key.append(',').append(color);
+            if (GlintTrimItem.isGlowing(stack)) key.append(":glow");
+            return key.toString();
+        });
+        registration.registerSubtypeInterpreter(ModItems.GLOW_TRIM.get(), (stack, ctx) -> {
+            int[] colors = net.tunamods.customglint.module.item.GlowTrimItem.getColors(stack);
+            if (colors.length == 0) return IIngredientSubtypeInterpreter.NONE;
+            StringBuilder key = new StringBuilder();
+            for (int color : colors) key.append(color).append(',');
+            return key.toString();
+        });
     }
 
     @Override
