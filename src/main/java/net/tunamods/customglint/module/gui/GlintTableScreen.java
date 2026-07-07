@@ -1185,12 +1185,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return new ItemStack(GlintTableMenu.DYE_ITEMS[idx]);
     }
 
-    /** Ghost for a slot that accepts both a loose material and its 9× compressed block: alternate between the
-     *  two forms so the hint shows the slot takes either (matches the redstone/slime cost being paid in either). */
-    private static ItemStack cyclingForms(Item loose, Item block) {
-        return new ItemStack((Util.getMillis() / 1500) % 2 == 0 ? loose : block);
-    }
-
     // The constant ghost hints (materials, palette dyes, tears) never change, but the tear ghosts run a
     // full CustomGlint.write through getDefaultInstance(); cache them so renderBg doesn't rebuild every
     // frame. The two cycling-dye wells animate and are rebuilt per call below.
@@ -1199,9 +1193,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private ItemStack ghostFor(int containerSlot) {
         if (containerSlot == GlintTableMenu.SLOT_NAME_DYE) return cyclingDyeGhost(0);
         if (containerSlot == GlintTableMenu.SLOT_GLOW_DYE) return cyclingDyeGhost(8);
-        // Redstone / slime take either the loose item or its 9× block, so their ghost cycles both forms.
-        if (containerSlot == GlintTableMenu.SLOT_REDSTONE) return cyclingForms(Items.REDSTONE, Items.REDSTONE_BLOCK);
-        if (containerSlot == GlintTableMenu.SLOT_SLIME)    return cyclingForms(Items.SLIME_BALL, Items.SLIME_BLOCK);
         return GHOST_CACHE.computeIfAbsent(containerSlot, GlintTableScreen::buildGhost);
     }
 
@@ -1210,6 +1201,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             return new ItemStack(GlintTableMenu.DYE_ITEMS[containerSlot - GlintTableMenu.SLOT_DYE_START]);
         }
         return switch (containerSlot) {
+            case GlintTableMenu.SLOT_REDSTONE  -> new ItemStack(Items.REDSTONE);
+            case GlintTableMenu.SLOT_SLIME     -> new ItemStack(Items.SLIME_BALL);
             case GlintTableMenu.SLOT_GLASS     -> new ItemStack(Items.GLASS);
             case GlintTableMenu.SLOT_GLOWSTONE -> new ItemStack(Items.GLOWSTONE_DUST);
             case GlintTableMenu.SLOT_NAMETAG   -> new ItemStack(Items.NAME_TAG);
@@ -1217,7 +1210,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             case GlintTableMenu.SLOT_TEAR_SEQ  -> ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance();
             case GlintTableMenu.SLOT_LAYER_TEAR -> ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance();
             case GlintTableMenu.SLOT_RAINBOW_DYE -> ModItems.RAINBOW_DYE.get().getDefaultInstance();
-            // SLOT_NAME_DYE / SLOT_GLOW_DYE / SLOT_REDSTONE / SLOT_SLIME animate and are handled in ghostFor.
+            // SLOT_NAME_DYE / SLOT_GLOW_DYE animate and are handled in ghostFor.
             default -> ItemStack.EMPTY;
         };
     }
