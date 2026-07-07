@@ -911,11 +911,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             drawSectionLabels(g);
             if (hexBox != null && hexBox.isVisible()) hexBox.render(g, mx, my, dt);
             // The import picker is modal, drawn on top of everything else in the window. Push it above the
-            // item-icon Z layer (renderItem draws at Z≈150) so the panel background isn't pierced by the
-            // slot/grid/preview item icons underneath it.
+            // whole item-icon Z stack so the panel isn't pierced by anything underneath: vanilla slot counts
+            // sit at Z≈300, and the layer-shard / preview icons (drawScaledIcon / drawPreview translate to
+            // Z 200, then renderItem adds ~150) reach Z≈350. Z 400 clears them all.
             if (showImportPicker) {
                 g.pose().pushPose();
-                g.pose().translate(0, 0, 300);
+                g.pose().translate(0, 0, 400);
                 renderImportPicker(g, mx, my, dt);
                 g.pose().popPose();
             }
@@ -2091,9 +2092,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (importMsg == null || Util.getMillis() >= importMsgUntil) return;
         int tw = font.width(importMsg);
         int cx = leftPos + imageWidth / 2, ty = topPos + 18;
-        // Push above the item-icon Z layer (and the Z-300 import panel) so the confirmation isn't buried.
+        // Push above the item-icon Z layer (and the Z-400 import panel) so the confirmation isn't buried.
         g.pose().pushPose();
-        g.pose().translate(0, 0, 350);
+        g.pose().translate(0, 0, 450);
         g.fill(cx - tw / 2 - 3, ty - 2, cx + tw / 2 + 3, ty + 10, 0xE0000000);
         g.drawString(font, importMsg, cx - tw / 2, ty, 0xFFFFFFFF, false);
         g.pose().popPose();
