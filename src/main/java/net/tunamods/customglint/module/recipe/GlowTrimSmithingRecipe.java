@@ -37,7 +37,10 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public boolean isBaseIngredient(ItemStack stack) {
+        // Glowstone is the addition, never the base. Excluding it here lets the smithing menu's shift-click
+        // router fall through to the addition slot instead of short-circuiting on the (occupied) base slot.
         return !stack.isEmpty()
+                && !stack.is(Items.GLOWSTONE_DUST)
                 && !(stack.getItem() instanceof GlowTrimItem)
                 && !(stack.getItem() instanceof GlintTrimItem);
     }
