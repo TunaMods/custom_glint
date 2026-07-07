@@ -398,11 +398,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return selectedDonor;
     }
 
-    private int[] donorColors() {
-        ItemStack d = donorStack();
-        return d.getItem() instanceof GlintTrimItem ? GlintTrimItem.getColors(d) : new int[0];
-    }
-
     private boolean donorOwned() {
         if (menu.slots.get(GlintTableMenu.SLOT_TRIM_B).getItem().getItem() instanceof GlintTrimItem) return true;
         if (selectedDonor.isEmpty() || selectedDonorPrinted) return true;
@@ -410,12 +405,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return name != null && GlintStoredSyncPacket.CLIENT_STORED.contains(name);
     }
 
-    private ItemStack mergeDonor(ItemStack base) {
-        if (!(base.getItem() instanceof GlintTrimItem) || donorColors().length == 0) return base;
-        return GlintTrimItem.mergeColors(base, donorStack());
-    }
-
-    /** The active base trim WITHOUT the merge donor folded in (main slot, else the selected/printed trim). */
+    /** The active base trim (main slot, else the selected/printed trim). The merge donor is never folded in. */
     private ItemStack activeBase() {
         ItemStack main = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         if (!main.isEmpty()) return main;
@@ -425,7 +415,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private ItemStack activeTrim() {
         if (frameMemo && frameActiveTrim != null) return frameActiveTrim;
-        ItemStack result = mergeDonor(activeBase());
+        // The merge donor is previewed STACKED (see computePreviewSource) and committed as its own separate
+        // layer(s) via [+] / auto-add on print — it never colour-folds into the active layer, so the layer-1
+        // chip and the active controls reflect only the base trim.
+        ItemStack result = activeBase();
         if (frameMemo) frameActiveTrim = result;
         return result;
     }
@@ -1771,7 +1764,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         int baseColorCount = fromBase ? GlintTrimItem.getColors(base).length : 0;
         if (anyLayerColorless(baseColorCount)) return false;
         int mainCount = fromBase ? baseColorCount : countSelectedDyes();
-        if (mainCount + donorColors().length > 8) return false;
+        if (mainCount > 8) return false;
 
         ItemStack repro = reproSource();
         if (!repro.isEmpty()) {
@@ -1832,7 +1825,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // layer is currently open — not just when the colourless layer happens to be the one being edited.
         if (anyLayerColorless(baseColorCount)) out.add(Component.translatable("screen.customglint.glint_table.issue.layer_missing_color"));
         int mainCount = fromBase ? baseColorCount : countSelectedDyes();
-        if (mainCount + donorColors().length > 8) out.add(Component.translatable("screen.customglint.glint_table.issue.too_many_colors"));
+        if (mainCount > 8) out.add(Component.translatable("screen.customglint.glint_table.issue.too_many_colors"));
 
         ItemStack repro = reproSource();
         if (!repro.isEmpty()) {
@@ -2801,8 +2794,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             return;
         }
         // Commit the previewed merge donor into real stacked layers (one per layer, one tear each) so the
-        // printed trim matches the stacked preview. Only fires when owned + enough tears (canAddLayer);
-        // otherwise the donor stays a colour-merge fallback.
+        // printed trim matches the stacked preview. Only fires when owned + enough tears (canAddLayer); a donor
+        // that can't be stacked simply contributes nothing (it is never colour-folded into the active layer).
         if (canAddLayer()) addLayer();
         src = activeTrim();
         if (src.isEmpty() || !(src.getItem() instanceof GlintTrimItem)) return;
@@ -2814,7 +2807,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         CustomGlint.Layer[] above = upperLayers.toArray(new CustomGlint.Layer[0]);
         PacketDistributor.sendToServer(new GlintPrintPacket(
                 design.toString(), modSpeed, modScale, modOpacity, modGlow, glowAuto, modNamed, trimName, tearSimultaneous,
-                modScrollDir, modScrollOffset, modInterpolate, glowHex, nameHex, shardDyes, donorColors(), below, above, activeSourceSim,
+                modScrollDir, modScrollOffset, modInterpolate, glowHex, nameHex, shardDyes, new int[0], below, above, activeSourceSim,
                 false, glowShardDyes));
     }
 

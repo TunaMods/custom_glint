@@ -419,12 +419,6 @@ public class GlintTableMenu extends AbstractContainerMenu {
         ItemStack base = container.getItem(SLOT_TRIM);
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
 
-        // Donor (merge-slot) colors are taken from the ACTUAL trim in the merge slot, never from the packet,
-        // a modified client could otherwise inject arbitrary free colors. Mirrors the client's donorColors()
-        // and GlintTrimMergeRecipe: only a Glint Trim contributes colors.
-        ItemStack donor = container.getItem(SLOT_TRIM_B);
-        donorColors = donor.getItem() instanceof GlintTrimItem ? GlintTrimItem.getColors(donor) : new int[0];
-
         // Printing from a design selection requires the player to own that design; a physical trim in the
         // slot is always owned (and placing it already stored its design).
         if (!fromBase && !ownsDesign(sp, design)) return;
@@ -489,9 +483,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
         // At least one color is required: the placed trim's existing colors, or a newly selected dye.
         if (baseColors.length + newColors.size() == 0) return;
-        // The merge slot's (donor) colors are folded in for free (mirrors GlintTrimMergeRecipe); the
-        // combined total can't exceed 8 layers.
-        if (baseColors.length + newColors.size() + donorColors.length > 8) return;
+        if (baseColors.length + newColors.size() > 8) return;
 
         // Flat cost: one material per LAYER (active + every extra layer) that tunes speed/scale off 1× or sets
         // any opacity, so the cost is the total for the whole trim, not just the active layer.
@@ -561,7 +553,6 @@ public class GlintTableMenu extends AbstractContainerMenu {
             trim = new ItemStack(ModItems.GLINT_TRIM.get());
         }
         for (int c : newColors) GlintTrimItem.addColor(trim, c);
-        for (int c : donorColors) GlintTrimItem.addColor(trim, c); // merge-slot colors, free (recipe parity)
         GlintTrimItem.setSpeed(trim, speed);
         GlintTrimItem.setScale(trim, scale);
         GlintTrimItem.setScrollDir(trim, scrollDir);
