@@ -27,6 +27,7 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintTearApplyRecipe;
@@ -292,6 +293,40 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
     }
 
+    private static class AlphaDisplay extends GlintTrimAlphaRecipe {
+        private final ResourceLocation design;
+        private final int color;
+        private final int count;
+
+        AlphaDisplay(ResourceLocation id, ResourceLocation design, int color, int count) {
+            super(CraftingBookCategory.MISC);
+            this.design = design; this.color = color; this.count = count;
+        }
+
+        @Override public boolean isSpecial() { return false; }
+
+        @Override
+        public NonNullList<Ingredient> getIngredients() {
+            ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
+            GlintTrimItem.setPattern(trim, design);
+            GlintTrimItem.addColor(trim, color);
+            NonNullList<Ingredient> list = NonNullList.create();
+            list.add(Ingredient.of(trim));
+            for (int i = 0; i < count; i++) list.add(Ingredient.of(Items.GLASS));
+            return list;
+        }
+
+        @Override
+        public ItemStack getResultItem(HolderLookup.Provider r) {
+            // Mirrors GlintTrimAlphaRecipe.assemble: N glass sets the alpha, 8 glass = fully opaque.
+            ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
+            GlintTrimItem.setPattern(result, design);
+            int alpha = Math.round(count * 255f / 8f);
+            GlintTrimItem.setColors(result, new int[]{ (alpha << 24) | (color & 0xFFFFFF) });
+            return result;
+        }
+    }
+
     private static class BlackTearDisplay extends GlintBlackTearRecipe {
         private final ItemStack glinted;
 
@@ -401,13 +436,20 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // subtype interpreter JEI collapses all trims into one entry, hiding every design variant. The config
         // records are value-equal (List<Integer> colors), so returning the component distinguishes each variant.
         // (JEI 19.21 has no registerFromDataComponentTypes — that's a newer-JEI helper.)
+        //
+        // Split by the component ONLY for the INGREDIENT context (the ingredient list / bookmarks). For RECIPE
+        // lookup return null (one shared subtype) so clicking ANY trim surfaces every trim-modifying display
+        // recipe (tear / dye / merge / duplicate / speed / scale / opacity / glow / smithing) — each is built
+        // from a fixed sample design+colors and would otherwise only match that exact variant, hiding the rest.
         registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), new ISubtypeInterpreter<>() {
             @Override
             public Object getSubtypeData(ItemStack stack, UidContext context) {
+                if (context == UidContext.Recipe) return null;
                 return stack.get(ModComponents.TRIM.get());
             }
             @Override
             public String getLegacyStringSubtypeInfo(ItemStack stack, UidContext context) {
+                if (context == UidContext.Recipe) return "";
                 Object c = stack.get(ModComponents.TRIM.get());
                 return c == null ? "" : c.toString();
             }
@@ -415,10 +457,12 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         registration.registerSubtypeInterpreter(ModItems.GLOW_TRIM.get(), new ISubtypeInterpreter<>() {
             @Override
             public Object getSubtypeData(ItemStack stack, UidContext context) {
+                if (context == UidContext.Recipe) return null;
                 return stack.get(ModComponents.GLOW_TRIM.get());
             }
             @Override
             public String getLegacyStringSubtypeInfo(ItemStack stack, UidContext context) {
+                if (context == UidContext.Recipe) return "";
                 Object c = stack.get(ModComponents.GLOW_TRIM.get());
                 return c == null ? "" : c.toString();
             }
@@ -429,6 +473,8 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     public void registerRecipes(IRecipeRegistration registration) {
         registration.addIngredientInfo(new ItemStack(ModItems.GLINT_WAND.get()), VanillaTypes.ITEM_STACK,
             Component.literal("Right-click to open the Glint Editor and paint animated enchantment glints onto any item."));
+        registration.addIngredientInfo(new ItemStack(ModItems.GLINT_TABLE_ITEM.get()), VanillaTypes.ITEM_STACK,
+            Component.literal("Place it down and right-click to open the slot-based trim builder. Store designs, paint them with dyes, set brightness and animation, then print finished Glint Trims to apply at a smithing table."));
         List<ItemStack> trimVariants = new ArrayList<>();
         for (String patternName : GlintTrimItem.PATTERNS) {
             ItemStack trimVariant = new ItemStack(ModItems.GLINT_TRIM.get());
@@ -524,6 +570,12 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             scaleDisplays.add(new ScaleDisplay(CustomGlint.res("jei_scale_" + n), sparkle, 0xFF00AAFF, n));
         }
         registration.addRecipes(RecipeTypes.CRAFTING, wrapCrafting(scaleDisplays));
+
+        List<CraftingRecipe> alphaDisplays = new ArrayList<>();
+        for (int n = 1; n <= 8; n++) {
+            alphaDisplays.add(new AlphaDisplay(CustomGlint.res("jei_alpha_" + n), crystal, 0xFF00FFFF, n));
+        }
+        registration.addRecipes(RecipeTypes.CRAFTING, wrapCrafting(alphaDisplays));
 
         List<CraftingRecipe> glowTrimDisplays = new ArrayList<>();
         glowTrimDisplays.add(new GlowTrimDisplay(CustomGlint.res("jei_glow_0"), wave,    0xFFFF0000));
