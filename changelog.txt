@@ -22,10 +22,11 @@ Fixed:
 - Every color on every layer of a printed trim now costs its own dye, counted separately each time a shade is reused (a matching dye per shade, a Rainbow Dye per custom color); the Print tooltip lists the dyes and the button waits until you have them
 - The Glint Table's Import list now draws above item icons and glint effects instead of being hidden behind them
 - The Glint Table's "add a color" warning shows whenever any layer is missing a color, not only the layer you are editing
-- A glowing item's inventory halo now cycles in step with its tinted edge instead of drifting out of sync
+- A glowing items outline now properly un-synced
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
+- The smithing table now accepts any item in the center slot for a Glint or Glow Trim, instead of only a few
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
