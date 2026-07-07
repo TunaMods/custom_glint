@@ -13,7 +13,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
-/** Crafting: GlintTrimItem (center, with pattern + ≥1 color) + 8 Glowstone Dust → same trim with glowing=true. */
+/** Crafting (shapeless): a GlintTrimItem (with pattern + ≥1 color) + 8 Glowstone Dust → same trim with glowing=true. */
 public class GlintGlowTrimRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintGlowTrimRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintGlowTrimRecipe::new);
@@ -24,24 +24,32 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingContainer pInv, Level pLevel) {
-        if (pInv.getWidth() != 3 || pInv.getHeight() != 3) return false;
-        for (int i = 0; i < 9; i++) {
+        ItemStack trim = ItemStack.EMPTY;
+        int glowstone = 0;
+        for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
-            if (i == 4) {
-                if (!(s.getItem() instanceof GlintTrimItem)) return false;
-                if (GlintTrimItem.getPattern(s) == null) return false;
-                if (GlintTrimItem.getColors(s).length == 0) return false;
+            if (s.isEmpty()) continue;
+            if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null
+                    && GlintTrimItem.getColors(s).length > 0) {
+                if (!trim.isEmpty()) return false;
+                trim = s;
+            } else if (s.is(Items.GLOWSTONE_DUST)) {
+                glowstone++;
             } else {
-                if (!s.is(Items.GLOWSTONE_DUST)) return false;
+                return false;
             }
         }
-        return true;
+        return !trim.isEmpty() && glowstone == 8;
     }
 
     @Override
     public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
-        ItemStack trim = pInv.getItem(4);
-        if (trim.isEmpty() || !(trim.getItem() instanceof GlintTrimItem)) return ItemStack.EMPTY;
+        ItemStack trim = ItemStack.EMPTY;
+        for (int i = 0; i < pInv.getContainerSize(); i++) {
+            ItemStack s = pInv.getItem(i);
+            if (s.getItem() instanceof GlintTrimItem) { trim = s; break; }
+        }
+        if (trim.isEmpty()) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
         GlintTrimItem.setGlowing(result, true);
@@ -51,7 +59,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
 
     @Override
     public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth >= 3 && pHeight >= 3;
+        return pWidth * pHeight >= 9;
     }
 
     @Override

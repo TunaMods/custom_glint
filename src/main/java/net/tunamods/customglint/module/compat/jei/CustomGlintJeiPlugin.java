@@ -405,11 +405,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
             GlintTrimItem.setPattern(trim, design);
             GlintTrimItem.addColor(trim, color);
-            NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
-            for (int i = 0; i < 9; i++) {
-                if (i == 4) list.set(i, Ingredient.of(trim));
-                else list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));
-            }
+            NonNullList<Ingredient> list = NonNullList.create();
+            list.add(Ingredient.of(trim));
+            for (int i = 0; i < 8; i++) list.add(Ingredient.of(Items.GLOWSTONE_DUST));
             return list;
         }
 
