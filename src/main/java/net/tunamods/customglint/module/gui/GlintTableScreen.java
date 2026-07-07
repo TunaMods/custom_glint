@@ -1694,25 +1694,23 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-    private boolean speedTuned() { return Math.abs(modSpeed - 1.0f) > 0.001f; }
-    private boolean scaleTuned() { return Math.abs(modScale - 1.0f) > 0.001f; }
-
     private int[] layerCosts() {
-        // A Glow Trim has no pattern scale or opacity, so those cost nothing for it — only its glow-cycle speed
-        // (redstone) counts.
+        // The whole trim's material cost {redstone, slime, glass}, cumulative across every layer: one redstone /
+        // slime per ± step off 1× and one glass per opacity level, tallied for the active layer and every
+        // committed layer (mirrors GlintTableMenu.print). A Glow Trim has no pattern scale or opacity, so only
+        // its glow-cycle speed (redstone) counts.
         boolean glow = glowMainSelected();
-        int red = speedTuned() ? 1 : 0;
-        int slime = glow ? 0 : (scaleTuned() ? 1 : 0);
-        int glass = glow ? 0 : (modOpacity > 0 ? 1 : 0);
+        int red = CustomGlint.stepCost(modSpeed);
+        int slime = glow ? 0 : CustomGlint.stepCost(modScale);
+        int glass = glow ? 0 : modOpacity;
         if (!glow) {
-            for (CustomGlint.Layer l : lowerLayers) { red += layerTunedSpeed(l); slime += layerTunedScale(l); glass += layerTranslucent(l); }
-            for (CustomGlint.Layer l : upperLayers) { red += layerTunedSpeed(l); slime += layerTunedScale(l); glass += layerTranslucent(l); }
+            for (CustomGlint.Layer l : lowerLayers) { red += CustomGlint.stepCost(l.speed()); slime += CustomGlint.stepCost(l.patternScale()); glass += layerGlass(l); }
+            for (CustomGlint.Layer l : upperLayers) { red += CustomGlint.stepCost(l.speed()); slime += CustomGlint.stepCost(l.patternScale()); glass += layerGlass(l); }
         }
         return new int[]{red, slime, glass};
     }
-    private static int layerTunedSpeed(CustomGlint.Layer l) { return Math.abs(l.speed() - 1.0f) > 0.001f ? 1 : 0; }
-    private static int layerTunedScale(CustomGlint.Layer l) { return Math.abs(l.patternScale() - 1.0f) > 0.001f ? 1 : 0; }
-    private static int layerTranslucent(CustomGlint.Layer l) { int[] c = l.colors(); return (c.length > 0 && ((c[0] >>> 24) & 0xFF) < 255) ? 1 : 0; }
+    /** A committed layer's glass cost, from the opacity level baked into its first colour's alpha. */
+    private static int layerGlass(CustomGlint.Layer l) { int[] c = l.colors(); return c.length > 0 ? CustomGlint.glassCost((c[0] >>> 24) & 0xFF) : 0; }
 
     /** Committed layers that need a mode tear of the given mode ({@code sim} = simultaneous, else sequential):
      *  only a layer with ≥2 colors counts. A single-colour layer renders identically either way, so it costs no
