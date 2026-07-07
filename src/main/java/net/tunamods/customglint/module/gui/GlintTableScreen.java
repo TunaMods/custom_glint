@@ -1775,9 +1775,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return true;
     }
 
-    /** Structural blockers only (bad config, ownership, color count) — shown red in the print tooltip. The
-     *  material shortfalls (redstone/slime/glass/glowstone/name tag/tears) are NOT listed here: they render as
-     *  the always-visible cost breakdown that turns green per-line as each is satisfied. */
+    /** Structural blockers only (bad config, ownership, color count, plus the name-tag gate and manual-glow
+     *  colour choice) — shown red in the print tooltip. The consumed material shortfalls (redstone/slime/glass/
+     *  glowstone/tears) are NOT listed here: they render as the always-visible cost breakdown that turns green
+     *  per-line as each is satisfied. */
     private List<Component> printIssues() {
         List<Component> out = new ArrayList<>();
         ItemStack src = activeTrim();
@@ -1815,7 +1816,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             if (d != null && d.layers().length > 1) out.add(Component.translatable("screen.customglint.glint_table.issue.no_multilayer"));
         }
 
+        // The name tag and the manual-glow colour aren't in the Consumes list (a gate / a colour choice), so
+        // they stay here as structural blockers.
+        boolean baseNamed = fromBase && base.hasCustomHoverName();
         boolean baseHasGlowColors = fromBase && CustomGlint.getGlowColors(base).length > 0;
+        if (modNamed && !baseNamed && !menu.slots.get(GlintTableMenu.SLOT_NAMETAG).hasItem())
+            out.add(Component.translatable("screen.customglint.glint_table.issue.name_needs", itemName(Items.NAME_TAG)));
         if (modGlow && !glowAuto && glowColorCount() == 0 && !baseHasGlowColors)
             out.add(Component.translatable("screen.customglint.glint_table.issue.glow_manual_needs"));
         return out;
@@ -1836,7 +1842,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         ItemStack base = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
-        boolean baseNamed = fromBase && base.hasCustomHoverName();
         boolean any = false;
         // Dyes for every colour across all layers (cumulative — a shade reused costs a dye each time), plus one
         // rainbow dye per custom / non-dye colour.
@@ -1849,7 +1854,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (cost[1] > 0)             { reqLine(lines, itemName(Items.SLIME_BALL), cost[1], GlintTableMenu.SLOT_SLIME); any = true; }
         if (cost[2] > 0)             { reqLine(lines, itemName(Items.GLASS), cost[2], GlintTableMenu.SLOT_GLASS); any = true; }
         if (modGlow && !baseGlowing) { reqLine(lines, itemName(Items.GLOWSTONE_DUST), totalLayers(), GlintTableMenu.SLOT_GLOWSTONE); any = true; }
-        if (modNamed && !baseNamed)  { reqLine(lines, itemName(Items.NAME_TAG), 1, GlintTableMenu.SLOT_NAMETAG); any = true; }
         int extraLayers = lowerLayers.size() + upperLayers.size();
         if (extraLayers > 0)         { reqLine(lines, itemName(ModItems.GLINT_LAYER_TEAR.get()), extraLayers, GlintTableMenu.SLOT_LAYER_TEAR); any = true; }
         int simTears = simTearCost();
