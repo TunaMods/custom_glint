@@ -7,6 +7,7 @@ import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.mojang.serialization.MapCodec;
 import java.util.List;
 import java.util.Optional;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.Identifier;
@@ -91,7 +92,13 @@ public class GlintTrimSmithingRecipe extends SimpleSmithingRecipe {
 
     @Override
     public Ingredient baseIngredient() {
-        return Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA);
+        // The smithing table's base slot only accepts items that some recipe's base ingredient lists
+        // (via RecipePropertySet.SMITHING_BASE). Any item can carry a glint, so advertise every item
+        // except the trims themselves so the slot lets anything in. matches() still gates the output.
+        return Ingredient.of(BuiltInRegistries.ITEM.stream()
+                .filter(i -> i != Items.AIR
+                        && !(i instanceof GlintTrimItem)
+                        && !(i instanceof GlowTrimItem)));
     }
 
     @Override
