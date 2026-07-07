@@ -7,6 +7,7 @@ import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.ingredients.subtypes.IIngredientSubtypeInterpreter;
+import mezz.jei.api.ingredients.subtypes.UidContext;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
 import net.minecraft.core.NonNullList;
@@ -399,7 +400,13 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // interpreter JEI keys all trims to one subtype and collapses the whole design selection (and the
         // trim ingredient-info page below) into a single entry. Key off pattern + colors + glow rather than
         // the whole tag so a chromatic trim's random per-stack seed doesn't split identical designs.
+        //
+        // Only split for the INGREDIENT context (the ingredient list / bookmarks). For RECIPE lookup return
+        // NONE so every trim shares one subtype — clicking any trim then surfaces all the trim-modifying
+        // display recipes (speed / scale / dye / duplicate / merge / smithing), which each use a fixed sample
+        // design and would otherwise only match that exact design+colors.
         registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), (stack, ctx) -> {
+            if (ctx == UidContext.Recipe) return IIngredientSubtypeInterpreter.NONE;
             ResourceLocation pattern = GlintTrimItem.getPattern(stack);
             if (pattern == null) return IIngredientSubtypeInterpreter.NONE;
             StringBuilder key = new StringBuilder(pattern.toString());
@@ -408,6 +415,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             return key.toString();
         });
         registration.registerSubtypeInterpreter(ModItems.GLOW_TRIM.get(), (stack, ctx) -> {
+            if (ctx == UidContext.Recipe) return IIngredientSubtypeInterpreter.NONE;
             int[] colors = net.tunamods.customglint.module.item.GlowTrimItem.getColors(stack);
             if (colors.length == 0) return IIngredientSubtypeInterpreter.NONE;
             StringBuilder key = new StringBuilder();
