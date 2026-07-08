@@ -15,7 +15,6 @@ import net.neoforged.neoforge.common.loot.LootModifier;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -228,51 +227,30 @@ public class GlintTrimLootModifier extends LootModifier {
         ResourceLocation tableId = context.getQueriedLootTableId();
         if (tableId == null || !tableId.getPath().startsWith("chests/")) return generatedLoot;
 
-        // Trims: 22% for 1st (semi-rare), 12% conditional for 2nd (~2.6% overall, rare), 8% conditional for 3rd (~0.2% overall, very rare)
+        // Trims: cascading rolls (22% for 1st, 12% for 2nd, 8% for 3rd). Safe to cascade now that loot trims
+        // are always blank — same design/type stacks, so extra rolls don't clutter the inventory.
         int trimCount = 0;
         if (context.getRandom().nextFloat() < 0.22f) trimCount++;
         if (trimCount > 0 && context.getRandom().nextFloat() < 0.12f) trimCount++;
         if (trimCount > 1 && context.getRandom().nextFloat() < 0.08f) trimCount++;
 
         for (int t = 0; t < trimCount; t++) {
+            // Glow trims share this pool as the rarer variant (~1 in 4 trim drops). Both drop blank.
+            if (context.getRandom().nextFloat() < 0.25f) {
+                generatedLoot.add(new ItemStack(ModItems.GLOW_TRIM.get()));
+                continue;
+            }
             String pattern = selectPattern(context);
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
             // designFromName resolves the special sentinels (vanilla, chromatic) as well as the textures/glint
             // designs — the old manual ".png" build turned "chromatic" into a bogus path so rolled chromatic
             // trims dropped blank.
             GlintTrimItem.setPattern(trim, CustomGlint.designFromName(pattern));
-            if (context.getRandom().nextFloat() < 0.25f) {
-                int colorCount = 1 + context.getRandom().nextInt(3);
-                for (int i = 0; i < colorCount; i++)
-                    GlintTrimItem.addColor(trim, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
-            }
             generatedLoot.add(trim);
         }
 
-        // Glow Trims: 18% for 1st, 10% for 2nd, 5% for 3rd
-        if (context.getRandom().nextFloat() < 0.18f) {
-            ItemStack glowTrim = new ItemStack(ModItems.GLOW_TRIM.get());
-            int colorCount = 1 + context.getRandom().nextInt(3);
-            for (int i = 0; i < colorCount; i++)
-                GlowTrimItem.addColor(glowTrim, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
-            generatedLoot.add(glowTrim);
-            if (context.getRandom().nextFloat() < 0.10f) {
-                ItemStack glowTrim2 = new ItemStack(ModItems.GLOW_TRIM.get());
-                colorCount = 1 + context.getRandom().nextInt(3);
-                for (int i = 0; i < colorCount; i++)
-                    GlowTrimItem.addColor(glowTrim2, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
-                generatedLoot.add(glowTrim2);
-                if (context.getRandom().nextFloat() < 0.05f) {
-                    ItemStack glowTrim3 = new ItemStack(ModItems.GLOW_TRIM.get());
-                    colorCount = 1 + context.getRandom().nextInt(3);
-                    for (int i = 0; i < colorCount; i++)
-                        GlowTrimItem.addColor(glowTrim3, GlintTrimItem.DYE_COLORS[context.getRandom().nextInt(GlintTrimItem.DYE_COLORS.length)]);
-                    generatedLoot.add(glowTrim3);
-                }
-            }
-        }
-
-        // Each tear type independently: 20% for 1st, 10% for 2nd, 5% for 3rd
+        // Tears and rainbow dye stack to 64 and get consumed in bulk, so they keep the cascading rolls: 20% for
+        // 1st, 10% for 2nd, 5% for 3rd. Each tear type rolls independently.
         if (context.getRandom().nextFloat() < 0.20f) {
             generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
             if (context.getRandom().nextFloat() < 0.10f) {
@@ -306,7 +284,6 @@ public class GlintTrimLootModifier extends LootModifier {
             }
         }
 
-        // Rainbow Dye: same 20% / 10% / 5% cascade as the tears
         if (context.getRandom().nextFloat() < 0.20f) {
             generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
             if (context.getRandom().nextFloat() < 0.10f) {
