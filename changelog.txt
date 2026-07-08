@@ -12,7 +12,8 @@ Added:
 - Save Design in the wand editor: save your current build to the server so anyone can import it later through the wand or the Glint Table (delete saved designs from the Import list with the trash icon)
 - Hover tooltips on every button and control, in both the wand editor and the Glint Table
 - Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
-- Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
+- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it — trims go to its library, materials into its slots
+- Trim Powder: smelt a trim you don't want into powder, then craft 4 powder with 2 Glowstone Dust for a fresh random trim
 
 Fixed:
 - The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
@@ -22,11 +23,10 @@ Fixed:
 - Every color on every layer of a printed trim now costs its own dye, counted separately each time a shade is reused (a matching dye per shade, a Rainbow Dye per custom color); the Print tooltip lists the dyes and the button waits until you have them
 - The Glint Table's Import list now draws above item icons and glint effects instead of being hidden behind them
 - The Glint Table's "add a color" warning shows whenever any layer is missing a color, not only the layer you are editing
-- A glowing items outline now properly un-synced
+- A glowing item's inventory halo now cycles in step with its tinted edge instead of drifting out of sync
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
-- The smithing table now accepts any item in the center slot for a Glint or Glow Trim, instead of only a few
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
@@ -36,9 +36,11 @@ Altered:
 - The Glint Table's main slot shows the trim you are building with all its committed layers; a trim in the merge slot only joins the preview until you commit it with the + button
 - Making a trim glow now costs one glowstone per layer
 - Sequential multi-color layers now cost a sequential tear, matching how simultaneous layers cost a simultaneous tear
+- Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
 
 Compat:
 - Fixed Shader Pack Outline duplication with certain shader packs
+- Improved JEI compatibility
 
 [1.6.0]
 
