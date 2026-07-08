@@ -29,6 +29,9 @@ public final class GlintTableClientInit {
     }
 
     private static void onClientSetup(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> MenuScreens.register(ModMenuTypes.GLINT_TABLE_MENU.get(), GlintTableScreen::new));
+        event.enqueueWork(() -> {
+            MenuScreens.register(ModMenuTypes.GLINT_TABLE_MENU.get(), GlintTableScreen::new);
+            MenuScreens.register(ModMenuTypes.GLINT_BAG_MENU.get(), net.tunamods.customglint.module.gui.GlintBagScreen::new);
+        });
     }
 }

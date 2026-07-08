@@ -25,6 +25,8 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +81,42 @@ public class CustomGlintMod {
         MinecraftForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         MinecraftForge.EVENT_BUS.addListener(this::onPlayerJoin);
         MinecraftForge.EVENT_BUS.addListener(this::onItemCrafted);
+        MinecraftForge.EVENT_BUS.addListener(this::onItemPickup);
+    }
+
+    /** Route Glint loot items straight into a Glint Bag the player is carrying, so a looting run doesn't fill
+     *  the main inventory. Anything the bags can't hold (full, or a bag is absent) falls through to vanilla
+     *  pickup. */
+    private void onItemPickup(net.minecraftforge.event.entity.player.EntityItemPickupEvent event) {
+        Player player = event.getEntity();
+        if (player.level().isClientSide) return;
+        net.minecraft.world.entity.item.ItemEntity itemEntity = event.getItem();
+        ItemStack picked = itemEntity.getItem();
+        if (picked.isEmpty() || !net.tunamods.customglint.module.item.GlintBagItem.isAutoCollectable(picked)) return;
+
+        int before = picked.getCount();
+        ItemStack remaining = picked;
+        net.minecraft.world.entity.player.Inventory inv = player.getInventory();
+        for (int i = 0; i < inv.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack bag = inv.getItem(i);
+            if (!(bag.getItem() instanceof net.tunamods.customglint.module.item.GlintBagItem)) continue;
+            if (!net.tunamods.customglint.module.item.GlintBagItem.isAutoCollect(bag)) continue;
+            net.minecraftforge.items.IItemHandler handler =
+                    bag.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER).orElse(null);
+            if (handler == null) continue;
+            remaining = net.minecraftforge.items.ItemHandlerHelper.insertItemStacked(handler, remaining, false);
+        }
+
+        int inserted = before - remaining.getCount();
+        if (inserted <= 0) return; // no bag / no room — let vanilla handle it
+
+        player.take(itemEntity, inserted); // pickup animation + sound for the portion the bag took
+        if (remaining.isEmpty()) {
+            itemEntity.discard();
+            event.setCanceled(true);
+        } else {
+            itemEntity.setItem(remaining); // vanilla picks up whatever the bags couldn't hold
+        }
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -91,6 +129,11 @@ public class CustomGlintMod {
      *  qualifying Glint Trim. The Glint Table print fires the same triggers from {@code GlintTableMenu#print}. */
     private void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        // A crafted Glint Bag gets the same Golden glow trim its creative/JEI icon shows.
+        if (event.getCrafting().getItem() instanceof net.tunamods.customglint.module.item.GlintBagItem) {
+            net.tunamods.customglint.module.item.GlintBagItem.applyGoldenGlint(event.getCrafting());
+            return;
+        }
         if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;
         if (GlintTrimItem.getColors(event.getCrafting()).length >= 8) {
             ModTriggers.EIGHT_COLOR_TRIM.trigger(sp);

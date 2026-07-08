@@ -17,6 +17,9 @@ public final class ModMenuTypes {
     public static final RegistryObject<MenuType<GlintTableMenu>> GLINT_TABLE_MENU =
             MENU_TYPES.register("glint_table", () -> IForgeMenuType.create(GlintTableMenu::new));
 
+    public static final RegistryObject<MenuType<GlintBagMenu>> GLINT_BAG_MENU =
+            MENU_TYPES.register("glint_bag", () -> IForgeMenuType.create(GlintBagMenu::new));
+
     public static void register(IEventBus bus) {
         MENU_TYPES.register(bus);
     }

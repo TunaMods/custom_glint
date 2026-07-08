@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:smelting",
+  "category": "misc",
+  "ingredient": { "item": "customglint:glow_trim" },
+  "result": "customglint:trim_powder",
+  "experience": 0.1,
+  "cookingtime": 200
+}
