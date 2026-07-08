@@ -28,6 +28,8 @@ import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
@@ -412,9 +414,10 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
             GlintTrimItem.setPattern(trim, design);
             GlintTrimItem.addColor(trim, color);
-            NonNullList<Ingredient> list = NonNullList.create();
-            list.add(Ingredient.of(trim));
-            for (int i = 0; i < 8; i++) list.add(Ingredient.of(Items.GLOWSTONE_DUST));
+            // 3x3 shaped: trim in the center, glowstone all around it.
+            NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
+            for (int i = 0; i < 9; i++)
+                list.set(i, i == 4 ? Ingredient.of(trim) : Ingredient.of(Items.GLOWSTONE_DUST));
             return list;
         }
 
@@ -456,18 +459,83 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
         @Override
         public void setRecipe(IRecipeLayoutBuilder builder, ICraftingGridHelper helper, IFocusGroup focuses) {
-            helper.createAndSetInputs(builder, inputs, 3, 2);
+            helper.createAndSetInputs(builder, inputs, 0, 0); // 0,0 → shapeless layout
             helper.createAndSetOutputs(builder, outputs); // multiple stacks in one slot → JEI rotates them
         }
 
         @Override public ResourceLocation getRegistryName() { return id; }
-        @Override public int getWidth() { return 3; }
-        @Override public int getHeight() { return 2; }
+        @Override public int getWidth() { return 0; }
+        @Override public int getHeight() { return 0; }
+    }
+
+    // Lays a display recipe's ingredients out on a fixed grid (honoring EMPTY positions) so JEI renders it
+    // shaped instead of packing the ingredients shapelessly. Reads the recipe's own ingredients + result.
+    private static class ShapedGridExtension implements ICraftingCategoryExtension {
+        private final ResourceLocation id;
+        private final int width, height;
+        private final List<List<ItemStack>> inputs = new ArrayList<>();
+        private final List<ItemStack> outputs;
+
+        ShapedGridExtension(CraftingRecipe recipe, int width, int height) {
+            this.id = recipe.getId();
+            this.width = width;
+            this.height = height;
+            for (Ingredient ing : recipe.getIngredients())
+                inputs.add(List.of(ing.getItems()));
+            outputs = List.of(recipe.getResultItem(RegistryAccess.EMPTY));
+        }
+
+        @Override
+        public void setRecipe(IRecipeLayoutBuilder builder, ICraftingGridHelper helper, IFocusGroup focuses) {
+            helper.createAndSetInputs(builder, inputs, width, height);
+            helper.createAndSetOutputs(builder, outputs);
+        }
+
+        @Override public ResourceLocation getRegistryName() { return id; }
+        @Override public int getWidth() { return width; }
+        @Override public int getHeight() { return height; }
+    }
+
+    // The Glow Trim + dye display cycles all 16 dyes in the input slot; give the output slot the matching 16
+    // colored Glow Trims (same order) so the result rotates in step with the dye being shown.
+    private static class GlowDyeExtension implements ICraftingCategoryExtension {
+        private final ResourceLocation id;
+        private final List<List<ItemStack>> inputs = new ArrayList<>();
+        private final List<ItemStack> outputs = new ArrayList<>();
+
+        GlowDyeExtension(GlowDyeDisplay recipe) {
+            this.id = recipe.getId();
+            inputs.add(List.of(new ItemStack(ModItems.GLOW_TRIM.get()))); // blank Glow Trim (no rotation)
+            List<ItemStack> dyes = new ArrayList<>();
+            for (int i = 0; i < GlintTableMenu.DYE_ITEMS.length; i++) {
+                dyes.add(new ItemStack(GlintTableMenu.DYE_ITEMS[i]));
+                ItemStack out = new ItemStack(ModItems.GLOW_TRIM.get());
+                GlowTrimItem.addColor(out, GlintTrimItem.DYE_COLORS[i]); // DYE_ITEMS[i] and DYE_COLORS[i] share the dye's id
+                outputs.add(out);
+            }
+            inputs.add(dyes);
+        }
+
+        @Override
+        public void setRecipe(IRecipeLayoutBuilder builder, ICraftingGridHelper helper, IFocusGroup focuses) {
+            helper.createAndSetInputs(builder, inputs, 0, 0);
+            helper.createAndSetOutputs(builder, outputs); // 16 outputs cycle in sync with the 16 input dyes
+        }
+
+        @Override public ResourceLocation getRegistryName() { return id; }
+        @Override public int getWidth() { return 0; }
+        @Override public int getHeight() { return 0; }
     }
 
     @Override
     public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
-        registration.getCraftingCategory().addCategoryExtension(TrimPowderDisplay.class, TrimPowderExtension::new);
+        var crafting = registration.getCraftingCategory();
+        crafting.addCategoryExtension(TrimPowderDisplay.class, TrimPowderExtension::new);
+        // Show the 3x3 shaped recipes with their real layout (diamond ring / glowstone ring, trim in the middle).
+        crafting.addCategoryExtension(DuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(BlankDuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(GlowTrimDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(GlowDyeDisplay.class, GlowDyeExtension::new);
     }
 
     // Display-only: the real GlowTrimDyeRecipe is isSpecial()=true (JEI skips it). The parent already supplies
