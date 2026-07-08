@@ -65,19 +65,22 @@ public class GuiRendererMixin {
         boolean hasColors = gc != null && gc.length > 0;
         if (!glowing && !hasColors) return;
 
-        // Use game time (computeAnimatedGlowColor), NOT the wall-clock GUI variant, so the halo cycles in
-        // lockstep with the trim's tinted edge texture (GlowTintSource, also game time) and the in-world ring.
-        // A wall-clock halo drifts against the game-time tint, so the two show different colours at once.
+        // Use game time (computeAnimatedGlowColor), NOT the wall-clock GUI variant, so the halo runs on the
+        // same clock as the trim's tinted edge texture (GlowTintSource, also game time) and the in-world ring.
+        // The halo carries GLOW_RING_PHASE_OFFSET (half a cycle) so it sits out of phase with the edge: when
+        // the edge is on one colour the ring is half a step behind it, matching the in-world outline ring.
         int color;
         if (hasColors) {
-            color = CustomGlintRenderer.computeAnimatedGlowColor(gc, holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp());
+            color = CustomGlintRenderer.computeAnimatedGlowColor(gc, holder.customglint$getGlowSpeed(),
+                    holder.customglint$getGlowInterp(), CustomGlintRenderer.GLOW_RING_PHASE_OFFSET);
         } else {
             // Auto glow follows glint layer 0's colours on the SAME glow clock as the tint (GlowTintSource
-            // animates those same colours with computeAnimatedGlowColor), not the glint's own animation.
+            // animates those same colours), offset by the ring phase, not the glint's own animation.
             CustomGlint.Data glint = holder.customglint$getGlint();
             color = (glint != null && glint.layers().length > 0)
                     ? CustomGlintRenderer.computeAnimatedGlowColor(glint.layers()[0].colors(),
-                            holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp())
+                            holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp(),
+                            CustomGlintRenderer.GLOW_RING_PHASE_OFFSET)
                     : 0xFFFFFFFF;
         }
 

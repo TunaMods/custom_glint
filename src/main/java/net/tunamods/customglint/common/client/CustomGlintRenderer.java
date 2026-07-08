@@ -1173,9 +1173,16 @@ public final class CustomGlintRenderer {
     }
 
     public static int computeAnimatedColor(Data glint, int layerIdx) {
+        return computeAnimatedColor(glint, layerIdx, 0.0f);
+    }
+
+    /** As {@link #computeAnimatedColor(Data,int)} but shifts the colour loop by {@code phaseFraction} of a
+     *  full cycle (0.5 = half a loop), so the glow outline ring can run out of phase with the surface tint
+     *  (see {@link #GLOW_RING_PHASE_OFFSET}). */
+    public static int computeAnimatedColor(Data glint, int layerIdx, float phaseFraction) {
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        return computeAnimatedColorAt(glint, layerIdx, gameTime);
+        return computeAnimatedColorAt(glint, layerIdx, gameTime, phaseFraction);
     }
 
     /** GUI variant of {@link #computeAnimatedColor}: animates off wall-clock ticks ({@code Util.getMillis()/50})
@@ -1183,10 +1190,10 @@ public final class CustomGlintRenderer {
      *  inventory screens), where {@code getGameTime()} is pinned to 0 and the world variant would freeze on
      *  color 0. The world path stays on game time so it still pauses with the game. */
     public static int computeAnimatedColorGui(Data glint, int layerIdx) {
-        return computeAnimatedColorAt(glint, layerIdx, Util.getMillis() / 50L);
+        return computeAnimatedColorAt(glint, layerIdx, Util.getMillis() / 50L, 0.0f);
     }
 
-    private static int computeAnimatedColorAt(Data glint, int layerIdx, long gameTime) {
+    private static int computeAnimatedColorAt(Data glint, int layerIdx, long gameTime, float phaseFraction) {
         Layer[] layers = glint.layers();
         // A decoded Data may legally hold zero layers ({"layers":[]} via give-NBT / datapack / crafted
         // packet, Data.CODEC sets no minimum). Call sites that pass a fixed index 0 only null-check, so
@@ -1198,6 +1205,8 @@ public final class CustomGlintRenderer {
         if (colors.length == 1) return colors[0];
         float totalTicks = (20.0f * colors.length) / layer.speed();
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        // Shift by phaseFraction of the loop and wrap back into [0, length).
+        t = (((t + phaseFraction * colors.length) % colors.length) + colors.length) % colors.length;
         int idx = (int) t % colors.length;
         if (!layer.interpolate()) return colors[idx];
         float frac = t - (int) t;
@@ -1217,9 +1226,22 @@ public final class CustomGlintRenderer {
     /** As above at a chosen {@code speed} (a higher speed cycles faster, mirroring the glint layer speed) and
      *  either blending between colors ({@code interpolate}) or stepping hard between them. */
     public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
+        return computeAnimatedGlowColor(colors, speed, interpolate, 0.0f);
+    }
+
+    /** Phase offset (fraction of a full colour loop) applied to the glow OUTLINE ring so it never shows the
+     *  same colour as the item's surface/edge tint at the same instant. Half a cycle = maximum contrast:
+     *  when the edge is on one colour, the ring sits half a step behind it. The surface tint
+     *  ({@link net.tunamods.customglint.module.client.GlowTintSource}) animates at offset 0; the ring
+     *  ({@code GuiRendererMixin} halo, {@code EntityGlintRender} outline) at this offset. */
+    public static final float GLOW_RING_PHASE_OFFSET = 0.5f;
+
+    /** As {@link #computeAnimatedGlowColor(int[],float,boolean)} but shifts the loop by {@code phaseFraction}
+     *  of a full cycle (0.5 = half a loop), for the out-of-phase glow ring. */
+    public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate, float phaseFraction) {
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        return computeAnimatedGlowColorAt(colors, gameTime, speed, interpolate);
+        return computeAnimatedGlowColorAt(colors, gameTime, speed, interpolate, phaseFraction);
     }
 
     /** GUI variant of {@link #computeAnimatedGlowColor}: wall-clock ticks so a multi-color glow halo keeps
@@ -1229,15 +1251,17 @@ public final class CustomGlintRenderer {
     }
 
     public static int computeAnimatedGlowColorGui(int[] colors, float speed, boolean interpolate) {
-        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate);
+        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate, 0.0f);
     }
 
-    private static int computeAnimatedGlowColorAt(int[] colors, long gameTime, float speed, boolean interpolate) {
+    private static int computeAnimatedGlowColorAt(int[] colors, long gameTime, float speed, boolean interpolate, float phaseFraction) {
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
         if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
         float totalTicks = (20.0f * colors.length) / speed;
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        // Shift by phaseFraction of the loop and wrap back into [0, length).
+        t = (((t + phaseFraction * colors.length) % colors.length) + colors.length) % colors.length;
         int idx = (int) t % colors.length;
         if (!interpolate) return colors[idx];
         float frac = t - (int) t;

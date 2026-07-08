@@ -1314,8 +1314,11 @@ public final class EntityGlintRender {
 
     private static int resolveOutlineColor(@Nullable CustomGlint.Data data, int[] glowColors,
             float glowSpeed, boolean glowInterp) {
-        if (glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(glowColors, glowSpeed, glowInterp);
-        if (data != null) return CustomGlintRenderer.computeAnimatedColor(data, 0);
+        // The outline ring runs half a cycle out of phase with the item's surface tint (GLOW_RING_PHASE_OFFSET),
+        // so a multi-colour glow shows two colours at once, the ring lags the surface by half a step.
+        if (glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(glowColors, glowSpeed, glowInterp,
+                CustomGlintRenderer.GLOW_RING_PHASE_OFFSET);
+        if (data != null) return CustomGlintRenderer.computeAnimatedColor(data, 0, CustomGlintRenderer.GLOW_RING_PHASE_OFFSET);
         return 0xFFFFFFFF;
     }
 
