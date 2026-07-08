@@ -53,15 +53,10 @@ public class TrimPowderRecipe extends CustomRecipe {
     public ItemStack assemble(CraftingContainer inv, RegistryAccess registryAccess) {
         RandomSource random = RandomSource.create();
         ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
-        // Mirror the loot roll: a random design, sometimes 1–3 random colors. designFromName handles the
-        // vanilla/chromatic sentinels the same way the loot modifier does.
+        // Random design only — always blank (no colors), matching how loot trims drop, so recycled trims stay
+        // stackable. designFromName handles the vanilla/chromatic sentinels the same way the loot modifier does.
         String name = GlintTrimItem.PATTERNS.get(random.nextInt(GlintTrimItem.PATTERNS.size()));
         GlintTrimItem.setPattern(trim, CustomGlint.designFromName(name));
-        if (random.nextFloat() < 0.30f) {
-            int colorCount = 1 + random.nextInt(3);
-            for (int i = 0; i < colorCount; i++)
-                GlintTrimItem.addColor(trim, GlintTrimItem.DYE_COLORS[random.nextInt(GlintTrimItem.DYE_COLORS.length)]);
-        }
         return trim;
     }
 
