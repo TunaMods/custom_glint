@@ -127,6 +127,10 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             Component.literal("Craft with any glinted item to strip all glint data from it."));
         registration.addIngredientInfo(ModItems.RAINBOW_DYE.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
             Component.literal("Use it in the Glint Table to give a color shard any custom hex color — one Rainbow Dye is consumed per custom color."));
+        registration.addIngredientInfo(ModItems.GLINT_BAG.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
+            Component.literal("Holds Glint Trims, Tears, Rainbow Dye and Glint Table materials. Auto-collects glint loot as you play (shift-right-click to toggle). Shift-right-click a Glint Table to unload trims into its library and materials into its slots."));
+        registration.addIngredientInfo(new ItemStack(ModItems.TRIM_POWDER.get()), VanillaTypes.ITEM_STACK,
+            Component.literal("Smelt an unwanted Glint or Glow Trim into Trim Powder. Craft 4 Trim Powder with 2 Glowstone Dust to get a fresh random Glint Trim."));
 
         IVanillaRecipeFactory factory = registration.getVanillaRecipeFactory();
         List<RecipeHolder<CraftingRecipe>> crafting = new ArrayList<>();
@@ -198,6 +202,24 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         addGlow(crafting, factory, "jei_glow_1", CustomGlint.SPARKLE, 0xFF00AAFF);
         addGlow(crafting, factory, "jei_glow_2", CustomGlint.AURORA,  0xFFFFDD00);
 
+        // Glow Trim dyeing: blank Glow Trim + dye -> Glow Trim with that color.
+        addGlowDye(crafting, factory, "jei_glow_dye_0", Items.RED_DYE,    GlintTrimItem.DYE_COLORS[14]);
+        addGlowDye(crafting, factory, "jei_glow_dye_1", Items.BLUE_DYE,   GlintTrimItem.DYE_COLORS[11]);
+        addGlowDye(crafting, factory, "jei_glow_dye_2", Items.YELLOW_DYE, GlintTrimItem.DYE_COLORS[4]);
+
+        // Glow Trim merge: several single-color Glow Trims -> one multi-color Glow Trim.
+        int[] glowMergePalette = { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
+        for (int n = 2; n <= 8; n++) {
+            int[] colors = new int[n];
+            System.arraycopy(glowMergePalette, 0, colors, 0, n);
+            addGlowMerge(crafting, factory, "jei_glow_merge_" + (n - 2), colors);
+        }
+
+        // Trim Powder recycle: 4 Trim Powder + 2 Glowstone Dust -> a fresh random Glint Trim. The output is
+        // rolled at craft time, so a blank sample trim stands in for the "random" result (the item's info
+        // page spells out that it's random).
+        addPowderCraft(crafting, factory, "jei_trim_powder");
+
         registration.addRecipes(RecipeTypes.CRAFTING, crafting);
 
         // Smithing: trim + base item + glowstone dust -> the base item carrying the glint.
@@ -206,6 +228,11 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         addSmithing(smithing, "jei_smithing_2", CustomGlint.AURORA,  new int[]{0xFFFF6600, 0xFFFFDD00},                                     Items.BOW,                true);
         addSmithing(smithing, "jei_smithing_3", CustomGlint.SWIRL,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF}, Items.ELYTRA,             false);
         addSmithing(smithing, "jei_smithing_4", CustomGlint.VANILLA, new int[]{0xFFFFAA00},                                                 Items.ENCHANTED_BOOK,     true);
+
+        // Glow smithing: Glow Trim + base item + glowstone dust -> the base item with a colored outline glow.
+        addGlowSmithing(smithing, "jei_glow_smithing_0", new int[]{0xFFFF0000},             Items.DIAMOND_SWORD);
+        addGlowSmithing(smithing, "jei_glow_smithing_1", new int[]{0xFF00AAFF, 0xFF00FFFF}, Items.DIAMOND_CHESTPLATE);
+        addGlowSmithing(smithing, "jei_glow_smithing_2", new int[]{0xFFFFDD00},             Items.ELYTRA);
 
         registration.addRecipes(RecipeTypes.SMITHING, smithing);
     }
@@ -283,10 +310,13 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     private void addGlow(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                          Identifier design, int color) {
+        // Mirrors GlintGlowTrimRecipe: a colored trim in the center surrounded by 8 Glowstone Dust (shaped).
         ItemStack result = trim(design, new int[]{color});
         GlintTrimItem.setGlowing(result, true);
         CustomGlint.setGlowing(result, true); // render-level flag that drives the glow outline (mirrors GlintGlowTrimRecipe)
-        craftShapeless(out, f, id, result, trim(design, new int[]{color}), new ItemStack(Items.GLOWSTONE_DUST));
+        ItemStack t = trim(design, new int[]{color});
+        ItemStack g = new ItemStack(Items.GLOWSTONE_DUST);
+        craft(out, f, id, result, g, g, g, g, t, g, g, g, g);
     }
 
     private void addAlpha(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
@@ -319,7 +349,48 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ItemStack trim = trim(design, colors);
         ItemStack result = new ItemStack(base);
         CustomGlint.write(result, design, colors, 1.0f, true, 1.0f, simultaneous);
-        out.add(new RecipeHolder<SmithingRecipe>(key(id), new GlintSmithingDisplay(trim, base, result)));
+        out.add(new RecipeHolder<SmithingRecipe>(key(id), new GlintSmithingDisplay(trim, ModItems.GLINT_TRIM.get(), base, result)));
+    }
+
+    // ---- glow trim recipes ----------------------------------------------------------------------
+
+    /** A Glow Trim stack carrying the given colors (renders its glowing outline preview via setColors). */
+    private static ItemStack glowTrim(int[] colors) {
+        ItemStack s = new ItemStack(ModItems.GLOW_TRIM.get());
+        if (colors.length > 0) GlowTrimItem.setColors(s, colors);
+        return s;
+    }
+
+    /** Dye: blank Glow Trim + dye -> Glow Trim with that color (mirrors GlowTrimDyeRecipe). */
+    private void addGlowDye(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
+                            Item dye, int color) {
+        craftShapeless(out, f, id, glowTrim(new int[]{color}), glowTrim(new int[0]), new ItemStack(dye));
+    }
+
+    /** Merge: several single-color Glow Trims -> one multi-color Glow Trim (mirrors GlowTrimMergeRecipe). */
+    private void addGlowMerge(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
+                              int[] colors) {
+        ItemStack[] inputs = new ItemStack[colors.length];
+        for (int i = 0; i < colors.length; i++) inputs[i] = glowTrim(new int[]{colors[i]});
+        craftShapeless(out, f, id, glowTrim(colors), inputs);
+    }
+
+    /** Trim Powder recycle: 4 Trim Powder + 2 Glowstone Dust -> a random Glint Trim (mirrors
+     *  TrimPowderRecipe). Shown with a blank sample trim as the stand-in output. */
+    private void addPowderCraft(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id) {
+        ItemStack powder = new ItemStack(ModItems.TRIM_POWDER.get());
+        ItemStack glow = new ItemStack(Items.GLOWSTONE_DUST);
+        craftShapeless(out, f, id, trim(CustomGlint.WAVE, new int[0]), powder, powder, powder, powder, glow, glow);
+    }
+
+    /** Smithing: Glow Trim (template) + base + Glowstone Dust -> base carrying the glow outline (mirrors
+     *  GlowTrimSmithingRecipe; leaves any existing glint on the base untouched). */
+    private void addGlowSmithing(List<RecipeHolder<SmithingRecipe>> out, String id, int[] colors, Item base) {
+        ItemStack template = glowTrim(colors);
+        ItemStack result = new ItemStack(base);
+        CustomGlint.setGlowColors(result, colors);
+        CustomGlint.setGlowing(result, true);
+        out.add(new RecipeHolder<SmithingRecipe>(key(id), new GlintSmithingDisplay(template, ModItems.GLOW_TRIM.get(), base, result)));
     }
 
     /**
@@ -332,9 +403,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         private final Item baseItem;
         private final ItemStack resultStack;
 
-        GlintSmithingDisplay(ItemStack trimStack, Item baseItem, ItemStack resultStack) {
+        GlintSmithingDisplay(ItemStack trimStack, Item templateItem, Item baseItem, ItemStack resultStack) {
             super(new Recipe.CommonInfo(true),
-                Optional.of(Ingredient.of(ModItems.GLINT_TRIM.get())),
+                Optional.of(Ingredient.of(templateItem)),
                 Ingredient.of(baseItem),
                 Optional.of(Ingredient.of(Items.GLOWSTONE_DUST)),
                 ItemStackTemplate.fromNonEmptyStack(resultStack));
