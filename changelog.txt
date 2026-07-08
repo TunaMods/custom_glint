@@ -28,11 +28,6 @@ Fixed:
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
-- JEI now lists every trim design, and clicking any trim shows all its recipes again (coloring, speed, scale, opacity, duplicating, merging)
-- The opacity recipe (a trim plus glass) now shows in JEI
-- The glow trim recipes in JEI now show the glow outline on their result
-- A glowing item's outline in JEI recipe views now draws behind the tooltip instead of over it
-- Glow Trims now show their dyeing recipe in JEI
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
@@ -43,6 +38,9 @@ Altered:
 - Making a trim glow now costs one glowstone per layer
 - Sequential multi-color layers now cost a sequential tear, matching how simultaneous layers cost a simultaneous tear
 - Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
+
+[Compat]
+- Improved JEI compatibility
 
 
 [1.6.0]
