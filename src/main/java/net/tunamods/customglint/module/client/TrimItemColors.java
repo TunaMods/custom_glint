@@ -34,8 +34,11 @@ public final class TrimItemColors {
         }, ModItems.GLOW_TRIM.get());
 
         event.register((stack, tintIndex) -> {
-            if (tintIndex != 1) return 0xFFFFFFFF;
-            if (!GlintTrimItem.isGlowing(stack)) return 0xFFFFFFFF;
+            // The glowing trim uses the single-layer glint_trim_glow model (layer0 / tintindex 0 — the combined
+            // glow_glint_trim sprite), so tint that layer, NOT tintindex 1. A two-layer body/edge model would
+            // double-render the edge under the Glint Table preview (which composites its own glow overlay).
+            if (tintIndex != 0) return 0xFFFFFFFF;
+            if (!GlintTrimItem.isGlowing(stack)) return 0xFFFFFFFF; // non-glowing trims stay untinted
             // Explicit glow colours win; otherwise the glow is "auto" and follows layer 1's glint colours
             // (never the focused-layer editing colours, which the flat getColors would return).
             int[] glow = CustomGlint.getGlowColors(stack);
