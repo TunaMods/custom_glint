@@ -13,6 +13,8 @@ Added:
 - Hover tooltips on every button and control, in both the wand editor and the Glint Table
 - Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
 - Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
+- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it — trims go to its library, materials into its slots
+- Trim Powder: smelt a trim you don't want into powder, then craft 4 powder with 2 Glowstone Dust for a fresh random trim
 
 Fixed:
 - The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
@@ -29,6 +31,8 @@ Fixed:
 - JEI now lists every trim design, and clicking any trim shows all its recipes again (coloring, speed, scale, opacity, duplicating, merging)
 - The opacity recipe (a trim plus glass) now shows in JEI
 - The glow trim recipes in JEI now show the glow outline on their result
+- A glowing item's outline in JEI recipe views now draws behind the tooltip instead of over it
+- Glow Trims now show their dyeing recipe in JEI
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
@@ -38,6 +42,7 @@ Altered:
 - The Glint Table's main slot shows the trim you are building with all its committed layers; a trim in the merge slot only joins the preview until you commit it with the + button
 - Making a trim glow now costs one glowstone per layer
 - Sequential multi-color layers now cost a sequential tear, matching how simultaneous layers cost a simultaneous tear
+- Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
 
 
 [1.6.0]
