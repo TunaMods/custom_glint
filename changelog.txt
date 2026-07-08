@@ -33,7 +33,7 @@ Fixed:
 - The glow trim recipes in JEI now show the glow outline on their result
 - A glowing item's outline in JEI recipe views now draws behind the tooltip instead of over it
 - Glow Trims now show their dyeing recipe in JEI
-- The Glint Table can now be crafted again
+- Fixed glint table recipe
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
