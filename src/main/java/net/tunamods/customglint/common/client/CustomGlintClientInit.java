@@ -6,6 +6,7 @@ import net.minecraftforge.client.event.ContainerScreenEvent;
 import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.RenderTooltipEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
@@ -69,11 +70,16 @@ public final class CustomGlintClientInit {
         //   - screen post catches non-container screens (e.g. the wand editor preview) and anything queued
         //     after the foreground (a dragged glowing item).
         //   - render-gui post covers the in-game HUD hotbar when no screen is open.
+        //   - tooltip pre catches non-container screens (JEI recipe views) whose only other drain is the
+        //     screen-post one — which runs AFTER the screen's own tooltip, so the ring would draw over it.
+        //     Draining just before any tooltip keeps the ring under it; a no-op where the queue already drained.
         MinecraftForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->
                 GlowOutlineRenderer.drainGui());
         MinecraftForge.EVENT_BUS.addListener((ScreenEvent.Render.Post event) ->
                 GlowOutlineRenderer.drainGui());
         MinecraftForge.EVENT_BUS.addListener((RenderGuiEvent.Post event) ->
+                GlowOutlineRenderer.drainGui());
+        MinecraftForge.EVENT_BUS.addListener((RenderTooltipEvent.Pre event) ->
                 GlowOutlineRenderer.drainGui());
     }
 
