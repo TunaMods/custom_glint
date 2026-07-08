@@ -4,10 +4,15 @@ import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
 import mezz.jei.api.constants.VanillaTypes;
+import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
+import mezz.jei.api.gui.ingredient.ICraftingGridHelper;
 import mezz.jei.api.ingredients.subtypes.ISubtypeInterpreter;
 import mezz.jei.api.ingredients.subtypes.UidContext;
+import mezz.jei.api.recipe.IFocusGroup;
+import mezz.jei.api.recipe.category.extensions.vanilla.crafting.ICraftingCategoryExtension;
 import mezz.jei.api.registration.IRecipeRegistration;
 import mezz.jei.api.registration.ISubtypeRegistration;
+import mezz.jei.api.registration.IVanillaCategoryExtensionRegistration;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
 import net.minecraft.network.chat.Component;
@@ -24,8 +29,10 @@ import net.minecraft.world.item.crafting.SmithingRecipeInput;
 import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimAlphaRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
@@ -37,6 +44,8 @@ import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
+import net.tunamods.customglint.module.recipe.GlowTrimDyeRecipe;
+import net.tunamods.customglint.module.recipe.TrimPowderRecipe;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -421,8 +430,88 @@ public class CustomGlintJeiPlugin implements IModPlugin {
             GlintTrimItem.setPattern(result, design);
             GlintTrimItem.addColor(result, color);
             GlintTrimItem.setGlowing(result, true);
+            // The glow outline is driven by the api glint component's glowing flag, not the trim's own flag —
+            // mirror GlintGlowTrimRecipe.assemble, which sets both, so the JEI result shows the real outline.
+            CustomGlint.setGlowing(result, true);
             return result;
         }
+    }
+
+    // Display-only: the real TrimPowderRecipe is isSpecial()=true (JEI skips it, and its output is random); this
+    // flips that off so JEI renders the recycle recipe. The extension below drives its slots.
+    private static class TrimPowderDisplay extends TrimPowderRecipe {
+        TrimPowderDisplay() { super(CraftingBookCategory.MISC); }
+        @Override public boolean isSpecial() { return false; }
+    }
+
+    // Custom crafting layout for the recycle recipe: 4 powder + 2 glowstone in, and the output slot cycles a
+    // blank trim of every design — since the real result is random, showing one design would be misleading.
+    private static class TrimPowderExtension implements ICraftingCategoryExtension<TrimPowderDisplay> {
+        private final List<List<ItemStack>> inputs = new ArrayList<>();
+        private final List<ItemStack> outputs = new ArrayList<>();
+
+        TrimPowderExtension() {
+            for (int i = 0; i < 4; i++) inputs.add(List.of(new ItemStack(ModItems.TRIM_POWDER.get())));
+            for (int i = 0; i < 2; i++) inputs.add(List.of(new ItemStack(Items.GLOWSTONE_DUST)));
+            for (String name : GlintTrimItem.PATTERNS) {
+                ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
+                GlintTrimItem.setPattern(trim, CustomGlint.designFromName(name));
+                outputs.add(trim);
+            }
+        }
+
+        @Override
+        public void setRecipe(RecipeHolder<TrimPowderDisplay> holder, IRecipeLayoutBuilder builder,
+                              ICraftingGridHelper helper, IFocusGroup focuses) {
+            helper.createAndSetInputs(builder, inputs, 3, 2);
+            helper.createAndSetOutputs(builder, outputs); // multiple stacks in one slot → JEI rotates them
+        }
+
+        @Override public int getWidth(RecipeHolder<TrimPowderDisplay> holder) { return 3; }
+        @Override public int getHeight(RecipeHolder<TrimPowderDisplay> holder) { return 2; }
+    }
+
+    @Override
+    public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
+        registration.getCraftingCategory().addExtension(TrimPowderDisplay.class, new TrimPowderExtension());
+        registration.getCraftingCategory().addExtension(GlowDyeDisplay.class, new GlowDyeExtension());
+    }
+
+    // Display-only: the real GlowTrimDyeRecipe is isSpecial()=true (JEI skips it). The extension below drives
+    // its slots so the result tracks the cycling dye instead of showing a single fixed color.
+    private static class GlowDyeDisplay extends GlowTrimDyeRecipe {
+        GlowDyeDisplay() { super(CraftingBookCategory.MISC); }
+        @Override public boolean isSpecial() { return false; }
+    }
+
+    // Custom layout for Glow Trim + dye: a blank Glow Trim plus the dye slot cycling all 16 dyes, and the result
+    // slot cycling the matching colored Glow Trim. Both the dye and result lists are in DyeColor order and the
+    // same length (16), so JEI's shared cycle timer advances them in lockstep — dye N shows result N.
+    private static class GlowDyeExtension implements ICraftingCategoryExtension<GlowDyeDisplay> {
+        private final List<List<ItemStack>> inputs = new ArrayList<>();
+        private final List<ItemStack> outputs = new ArrayList<>();
+
+        GlowDyeExtension() {
+            inputs.add(List.of(new ItemStack(ModItems.GLOW_TRIM.get()))); // blank Glow Trim (static)
+            List<ItemStack> dyes = new ArrayList<>();
+            for (int i = 0; i < 16; i++) dyes.add(new ItemStack(GlintTableMenu.DYE_ITEMS[i]));
+            inputs.add(dyes);
+            for (int i = 0; i < 16; i++) {
+                ItemStack trim = new ItemStack(ModItems.GLOW_TRIM.get());
+                GlowTrimItem.addColor(trim, GlintTrimItem.DYE_COLORS[i]);
+                outputs.add(trim);
+            }
+        }
+
+        @Override
+        public void setRecipe(RecipeHolder<GlowDyeDisplay> holder, IRecipeLayoutBuilder builder,
+                              ICraftingGridHelper helper, IFocusGroup focuses) {
+            helper.createAndSetInputs(builder, inputs, 2, 1);
+            helper.createAndSetOutputs(builder, outputs);
+        }
+
+        @Override public int getWidth(RecipeHolder<GlowDyeDisplay> holder) { return 2; }
+        @Override public int getHeight(RecipeHolder<GlowDyeDisplay> holder) { return 1; }
     }
 
     @Override
@@ -583,6 +672,11 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         glowTrimDisplays.add(new GlowTrimDisplay(CustomGlint.res("jei_glow_2"), aurora,  0xFFFFDD00));
         registration.addRecipes(RecipeTypes.CRAFTING, wrapCrafting(glowTrimDisplays));
 
+        // Glow Trim + dye → colored Glow Trim (one entry; the dye slot cycles all 16).
+        List<CraftingRecipe> glowDyeDisplays = new ArrayList<>();
+        glowDyeDisplays.add(new GlowDyeDisplay());
+        registration.addRecipes(RecipeTypes.CRAFTING, wrapCrafting(glowDyeDisplays));
+
         ItemStack st0 = new ItemStack(ModItems.GLINT_TRIM.get()); GlintTrimItem.setPattern(st0, wave);    GlintTrimItem.addColor(st0, 0xFFFF0000);
         ItemStack st1 = new ItemStack(ModItems.GLINT_TRIM.get()); GlintTrimItem.setPattern(st1, crystal); GlintTrimItem.addColor(st1, 0xFF00FFFF); GlintTrimItem.addColor(st1, 0xFF00AAFF);
         ItemStack st2 = new ItemStack(ModItems.GLINT_TRIM.get()); GlintTrimItem.setPattern(st2, aurora);  GlintTrimItem.addColor(st2, 0xFFFF6600); GlintTrimItem.addColor(st2, 0xFFFFDD00);
@@ -595,6 +689,12 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         smithingDisplays.add(new SmithingDisplay(CustomGlint.res("jei_smithing_3"), st3, swirl,   new int[]{0xFFFF0000, 0xFFFFFF00, 0xFF00FF00, 0xFF00FFFF, 0xFF0000FF},          Items.ELYTRA,             false));
         smithingDisplays.add(new SmithingDisplay(CustomGlint.res("jei_smithing_4"), st4, vanilla, new int[]{0xFFFFAA00},                                                          Items.ENCHANTED_BOOK,     true));
         registration.addRecipes(RecipeTypes.SMITHING, wrapSmithing(smithingDisplays));
+
+        registration.addIngredientInfo(new ItemStack(ModItems.TRIM_POWDER.get()), VanillaTypes.ITEM_STACK,
+            Component.literal("Recycled from unwanted trims: smelt a Glint or Glow Trim to get it. Craft 4 with 2 Glowstone Dust for a fresh random Glint Trim."));
+        List<CraftingRecipe> trimPowderDisplays = new ArrayList<>();
+        trimPowderDisplays.add(new TrimPowderDisplay());
+        registration.addRecipes(RecipeTypes.CRAFTING, wrapCrafting(trimPowderDisplays));
     }
 
     // JEI 19 takes RecipeHolder<T> rather than bare recipes. Our display recipes are synthetic
