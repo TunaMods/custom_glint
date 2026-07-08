@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "S": { "item": "minecraft:string" },
+    "L": { "item": "minecraft:leather" },
+    "G": { "item": "customglint:glint_trim" }
+  },
+  "pattern": [
+    "S S",
+    "LGL",
+    "LLL"
+  ],
+  "result": {
+    "id": "customglint:glint_bag",
+    "count": 1
+  }
+}

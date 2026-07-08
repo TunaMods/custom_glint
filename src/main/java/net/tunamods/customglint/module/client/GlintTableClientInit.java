@@ -4,6 +4,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.tunamods.customglint.module.gui.GlintBagScreen;
 import net.tunamods.customglint.module.gui.GlintTableScreen;
 import net.tunamods.customglint.module.menu.ModMenuTypes;
 import net.tunamods.customglint.module.network.GlintPrintedSyncPacket;
@@ -26,5 +27,6 @@ public final class GlintTableClientInit {
 
     private static void onRegisterScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenuTypes.GLINT_TABLE_MENU.get(), GlintTableScreen::new);
+        event.register(ModMenuTypes.GLINT_BAG_MENU.get(), GlintBagScreen::new);
     }
 }

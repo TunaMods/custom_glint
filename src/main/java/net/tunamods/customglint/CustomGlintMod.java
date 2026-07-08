@@ -11,20 +11,33 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintBagItem;
 import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
 import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlockEntities;
@@ -60,6 +73,7 @@ public class CustomGlintMod {
 
     public CustomGlintMod(IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::registerCapabilities);
 
         ModItems.register(modEventBus);
         ModComponents.register(modEventBus);
@@ -88,12 +102,64 @@ public class CustomGlintMod {
         NeoForge.EVENT_BUS.addListener(this::onAddReloadListeners);
         NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
         NeoForge.EVENT_BUS.addListener(this::onItemCrafted);
+        NeoForge.EVENT_BUS.addListener(this::onItemPickup);
+    }
+
+    /** Expose the Glint Bag's contents as an item-handler capability, backed by the stack's
+     *  {@code minecraft:container} component (see {@link GlintBagItem#createHandler}). */
+    private void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerItem(Capabilities.ItemHandler.ITEM,
+                (stack, ctx) -> GlintBagItem.createHandler(stack), ModItems.GLINT_BAG.get());
+    }
+
+    /** Route Glint loot items straight into a Glint Bag the player is carrying, so a looting run doesn't fill
+     *  the main inventory. Anything the bags can't hold (full, or a bag is absent) falls through to vanilla
+     *  pickup. */
+    private void onItemPickup(ItemEntityPickupEvent.Pre event) {
+        Player player = event.getPlayer();
+        if (player.level().isClientSide) return;
+        ItemEntity itemEntity = event.getItemEntity();
+        ItemStack picked = itemEntity.getItem();
+        if (picked.isEmpty() || !GlintBagItem.isAutoCollectable(picked)) return;
+
+        int before = picked.getCount();
+        ItemStack remaining = picked;
+        Inventory inv = player.getInventory();
+        for (int i = 0; i < inv.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack bag = inv.getItem(i);
+            if (!(bag.getItem() instanceof GlintBagItem)) continue;
+            if (!GlintBagItem.isAutoCollect(bag)) continue;
+            IItemHandler handler = bag.getCapability(Capabilities.ItemHandler.ITEM);
+            if (handler == null) continue;
+            remaining = ItemHandlerHelper.insertItemStacked(handler, remaining, false);
+        }
+
+        int inserted = before - remaining.getCount();
+        if (inserted <= 0) return; // no bag / no room — let vanilla handle it
+
+        // Play the pickup pop + fly-to-player animation for the portion the bag absorbed; the vanilla pickup
+        // path is denied below, so it wouldn't do it for us.
+        player.take(itemEntity, inserted);
+        player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
+                SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.2f,
+                ((player.getRandom().nextFloat() - player.getRandom().nextFloat()) * 0.7f + 1.0f) * 2.0f);
+        if (remaining.isEmpty()) {
+            itemEntity.discard();
+        } else {
+            itemEntity.setItem(remaining); // vanilla picks up whatever the bags couldn't hold, next tick
+        }
+        event.setCanPickup(TriState.FALSE); // we've handled this touch — don't also add to the main inventory
     }
 
     /** Award the color/layer trim advancements when a crafting-table recipe (dye / merge / layer) yields a
      *  qualifying Glint Trim. The Glint Table print fires the same triggers from {@code GlintTableMenu#print}. */
     private void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        // A crafted Glint Bag gets the same Golden glow trim its creative/JEI icon shows.
+        if (event.getCrafting().getItem() instanceof GlintBagItem) {
+            GlintBagItem.applyGoldenGlint(event.getCrafting());
+            return;
+        }
         if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;
         if (GlintTrimItem.getColors(event.getCrafting()).length >= 8) {
             ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);

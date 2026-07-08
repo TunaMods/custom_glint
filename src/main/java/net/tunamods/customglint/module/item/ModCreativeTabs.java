@@ -30,11 +30,13 @@ public final class ModCreativeTabs {
             })
             .displayItems((parameters, output) -> {
                 output.accept(ModItems.GLINT_WAND.get());
+                output.accept(ModItems.GLINT_BAG.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
                 output.accept(ModItems.RAINBOW_DYE.get().getDefaultInstance());
+                output.accept(ModItems.TRIM_POWDER.get());
                 output.accept(new ItemStack(ModItems.GLINT_TABLE_ITEM.get()));
                 output.accept(new ItemStack(ModItems.GLOW_TRIM.get()));
                 for (String pattern : GlintTrimItem.PATTERNS) {
