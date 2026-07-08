@@ -13,7 +13,8 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
-/** Crafting (shapeless): a GlintTrimItem (with pattern + ≥1 color) + 8 Glowstone Dust → same trim with glowing=true. */
+/** Crafting (shaped): a GlintTrimItem (with pattern + ≥1 color) in the center, surrounded by 8 Glowstone Dust
+ *  → same trim with glowing=true. */
 public class GlintGlowTrimRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintGlowTrimRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintGlowTrimRecipe::new);
@@ -24,22 +25,18 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingContainer pInv, Level pLevel) {
-        ItemStack trim = ItemStack.EMPTY;
-        int glowstone = 0;
-        for (int i = 0; i < pInv.getContainerSize(); i++) {
+        if (pInv.getWidth() != 3 || pInv.getHeight() != 3) return false;
+        for (int i = 0; i < 9; i++) {
             ItemStack s = pInv.getItem(i);
-            if (s.isEmpty()) continue;
-            if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null
-                    && GlintTrimItem.getColors(s).length > 0) {
-                if (!trim.isEmpty()) return false;
-                trim = s;
-            } else if (s.is(Items.GLOWSTONE_DUST)) {
-                glowstone++;
+            if (i == 4) {
+                if (!(s.getItem() instanceof GlintTrimItem)) return false;
+                if (GlintTrimItem.getPattern(s) == null) return false;
+                if (GlintTrimItem.getColors(s).length == 0) return false;
             } else {
-                return false;
+                if (!s.is(Items.GLOWSTONE_DUST)) return false;
             }
         }
-        return !trim.isEmpty() && glowstone == 8;
+        return true;
     }
 
     @Override
