@@ -15,6 +15,7 @@ import mezz.jei.api.registration.ISubtypeRegistration;
 import mezz.jei.api.registration.IVanillaCategoryExtensionRegistration;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -463,18 +464,42 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         @Override
         public void setRecipe(RecipeHolder<TrimPowderDisplay> holder, IRecipeLayoutBuilder builder,
                               ICraftingGridHelper helper, IFocusGroup focuses) {
-            helper.createAndSetInputs(builder, inputs, 3, 2);
+            helper.createAndSetInputs(builder, inputs, 0, 0); // 0,0 → shapeless layout
             helper.createAndSetOutputs(builder, outputs); // multiple stacks in one slot → JEI rotates them
         }
 
-        @Override public int getWidth(RecipeHolder<TrimPowderDisplay> holder) { return 3; }
-        @Override public int getHeight(RecipeHolder<TrimPowderDisplay> holder) { return 2; }
+        // Width/height 0 marks the recipe shapeless (arrangement doesn't matter), so JEI packs the ingredients
+        // and draws the shapeless indicator.
+        @Override public int getWidth(RecipeHolder<TrimPowderDisplay> holder) { return 0; }
+        @Override public int getHeight(RecipeHolder<TrimPowderDisplay> holder) { return 0; }
     }
 
     @Override
     public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
         registration.getCraftingCategory().addExtension(TrimPowderDisplay.class, new TrimPowderExtension());
         registration.getCraftingCategory().addExtension(GlowDyeDisplay.class, new GlowDyeExtension());
+        // Force a shaped 3x3 layout (positional, no shapeless indicator) for the recipes whose ingredients sit
+        // in fixed slots; otherwise JEI renders these CustomRecipes as shapeless.
+        registration.getCraftingCategory().addExtension(GlowTrimDisplay.class, new ShapedDisplayExtension<GlowTrimDisplay>());
+        registration.getCraftingCategory().addExtension(DuplicateDisplay.class, new ShapedDisplayExtension<DuplicateDisplay>());
+        registration.getCraftingCategory().addExtension(BlankDuplicateDisplay.class, new ShapedDisplayExtension<BlankDuplicateDisplay>());
+    }
+
+    // Renders a fixed 3x3 shaped layout for a display recipe whose getIngredients() is a 9-slot positional list
+    // (glow-trim-plus-glowstone and the duplicate recipes), so JEI shows them shaped instead of shapeless.
+    private static class ShapedDisplayExtension<R extends CraftingRecipe> implements ICraftingCategoryExtension<R> {
+        @Override
+        public void setRecipe(RecipeHolder<R> holder, IRecipeLayoutBuilder builder,
+                              ICraftingGridHelper helper, IFocusGroup focuses) {
+            R recipe = holder.value();
+            List<List<ItemStack>> inputs = new ArrayList<>();
+            for (Ingredient ing : recipe.getIngredients()) inputs.add(List.of(ing.getItems()));
+            helper.createAndSetInputs(builder, inputs, 3, 3);
+            helper.createAndSetOutputs(builder, List.of(recipe.getResultItem(RegistryAccess.EMPTY)));
+        }
+
+        @Override public int getWidth(RecipeHolder<R> holder) { return 3; }
+        @Override public int getHeight(RecipeHolder<R> holder) { return 3; }
     }
 
     // Display-only: the real GlowTrimDyeRecipe is isSpecial()=true (JEI skips it). The extension below drives
@@ -506,12 +531,12 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         @Override
         public void setRecipe(RecipeHolder<GlowDyeDisplay> holder, IRecipeLayoutBuilder builder,
                               ICraftingGridHelper helper, IFocusGroup focuses) {
-            helper.createAndSetInputs(builder, inputs, 2, 1);
-            helper.createAndSetOutputs(builder, outputs);
+            helper.createAndSetInputs(builder, inputs, 0, 0);
+            helper.createAndSetOutputs(builder, outputs); // 16 outputs cycle in sync with the 16 input dyes
         }
 
-        @Override public int getWidth(RecipeHolder<GlowDyeDisplay> holder) { return 2; }
-        @Override public int getHeight(RecipeHolder<GlowDyeDisplay> holder) { return 1; }
+        @Override public int getWidth(RecipeHolder<GlowDyeDisplay> holder) { return 0; }
+        @Override public int getHeight(RecipeHolder<GlowDyeDisplay> holder) { return 0; }
     }
 
     @Override
