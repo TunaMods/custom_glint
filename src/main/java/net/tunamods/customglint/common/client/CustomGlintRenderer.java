@@ -902,6 +902,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     public static int computeAnimatedColor(Data glint, int layerIdx) {
+        return computeAnimatedColor(glint, layerIdx, 0.0f);
+    }
+
+    /** As {@link #computeAnimatedColor(Data, int)} but shifted by {@code phaseFraction} of a full colour loop.
+     *  The glow OUTLINE ring passes {@link #GLOW_RING_PHASE_OFFSET} so it lands on a different point of the
+     *  cycle than the item's own animated tint — you see two colours at once instead of one. */
+    public static int computeAnimatedColor(Data glint, int layerIdx, float phaseFraction) {
         if (glint == null || layerIdx < 0 || layerIdx >= glint.layers().length) return 0xFFFFFFFF;
         Layer layer = glint.layers()[layerIdx];
         int[] colors = layer.colors();
@@ -914,6 +921,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         long gameTime = Util.getMillis() / 50L;
         float totalTicks = (20.0f * colors.length) / layer.speed();
         float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        t = ((t + phaseFraction * colors.length) % colors.length + colors.length) % colors.length;
         int idx = (int) t % colors.length;
         if (!layer.interpolate()) return colors[idx];
         float frac = t - (int) t;
@@ -925,6 +933,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    /** Phase offset (fraction of a full colour loop) applied to the glow OUTLINE ring so it never shows the
+     *  same colour as the item's own animated tint at the same instant. Half a cycle = maximum contrast: when
+     *  the inner tint is on one colour, the ring is on the opposite side of the loop, so a multi-colour glow
+     *  shows two different colours at once instead of one. Mirrors the 1.20.1 GLOW_RING_PHASE_OFFSET. */
+    public static final float GLOW_RING_PHASE_OFFSET = 0.5f;
+
     /** Animates through an int[] color array using game time. Default speed=1, interpolate=true. */
     public static int computeAnimatedGlowColor(int[] colors) {
         return computeAnimatedGlowColor(colors, 1.0f, true);
@@ -934,24 +948,30 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  either blending between colors ({@code interpolate}) or stepping hard between them. Uses GAME time — the
      *  glow OUTLINE (ring/halo) animates on this so it matches the in-world clock. */
     public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
+        return computeAnimatedGlowColor(colors, speed, interpolate, 0.0f);
+    }
+
+    /** As above but shifted by {@code phaseFraction} of a full colour loop (see {@link #GLOW_RING_PHASE_OFFSET}). */
+    public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate, float phaseFraction) {
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        return computeAnimatedGlowColorAt(colors, gameTime, speed, interpolate);
+        return computeAnimatedGlowColorAt(colors, gameTime, speed, interpolate, phaseFraction);
     }
 
     /** WALL-CLOCK variant of {@link #computeAnimatedGlowColor}, ticked off {@code Util.getMillis} instead of
      *  game time. The trim texture's tinted edge ("white × rgb") uses this so it runs on a DIFFERENT clock than
      *  the game-time glow outline — the edge and the ring/halo show different colours at the same moment. */
     public static int computeAnimatedGlowColorGui(int[] colors, float speed, boolean interpolate) {
-        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate);
+        return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate, 0.0f);
     }
 
-    private static int computeAnimatedGlowColorAt(int[] colors, long timeTicks, float speed, boolean interpolate) {
+    private static int computeAnimatedGlowColorAt(int[] colors, long timeTicks, float speed, boolean interpolate, float phaseFraction) {
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
         if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
         float totalTicks = (20.0f * colors.length) / speed;
         float t = (timeTicks % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
+        t = ((t + phaseFraction * colors.length) % colors.length + colors.length) % colors.length;
         int idx = (int) t % colors.length;
         if (!interpolate) return colors[idx];
         float frac = t - (int) t;
@@ -966,6 +986,19 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Resolves a glowing item's outline colour: its glow colours (animated) if set, else its glint
      *  layer-0 colour, else white. Shared by the flat-item and special-item glow-outline capture paths. */
     public static int resolveGlowColor(ItemStack stack) {
+        int[] glowColors = CustomGlint.getGlowColors(stack);
+        if (glowColors.length > 0)
+            return computeAnimatedGlowColor(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack), GLOW_RING_PHASE_OFFSET);
+        CustomGlint.Data glint = CustomGlint.read(stack);
+        return glint != null ? computeAnimatedColor(glint, 0, GLOW_RING_PHASE_OFFSET) : 0xFFFFFFFF;
+    }
+
+    /** Edge/inner-tint colour for a glowing item's trim texture ("white × rgb"). Same resolution as
+     *  {@link #resolveGlowColor} but at phase 0, so the tinted edge sits exactly {@link #GLOW_RING_PHASE_OFFSET}
+     *  behind the outline ring — a stable half-step (edge red while the ring is blue, and back). Critically it
+     *  uses the SAME clock as the ring per branch (game-time for explicit glow colours, wall-clock for the glint
+     *  layer-0 fallback), so the half-step never drifts the way a wall-vs-game-clock split would. */
+    public static int resolveGlowColorTint(ItemStack stack) {
         int[] glowColors = CustomGlint.getGlowColors(stack);
         if (glowColors.length > 0)
             return computeAnimatedGlowColor(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));

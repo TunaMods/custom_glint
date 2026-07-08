@@ -233,8 +233,9 @@ public final class EntityGlintRender {
      *  layer-0 colour, else white. Also used by the armor-outline path so body + armor of one figure
      *  ring in the same colour. */
     public static int outlineColorFor(@Nullable Resolution r) {
-        if (r != null && r.glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors);
-        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0);
+        float off = CustomGlintRenderer.GLOW_RING_PHASE_OFFSET;
+        if (r != null && r.glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors, 1.0f, true, off);
+        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0, off);
         return 0xFFFFFFFF;
     }
 
