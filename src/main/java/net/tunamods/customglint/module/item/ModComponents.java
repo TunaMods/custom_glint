@@ -78,6 +78,13 @@ public final class ModComponents {
                     .persistent(Codec.BOOL)
                     .networkSynchronized(ByteBufCodecs.BOOL));
 
+    /** Glint Bag auto-collect flag. Absent (default) = on; present false = off. Drives the pickup hook, the
+     *  inventory sweep, and the golden glint/glow that marks the bag as active. */
+    public static final Supplier<DataComponentType<Boolean>> BAG_AUTO_COLLECT =
+            DATA_COMPONENTS.registerComponentType("bag_auto_collect", b -> b
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
+
     public static void register(IEventBus modEventBus) {
         DATA_COMPONENTS.register(modEventBus);
     }

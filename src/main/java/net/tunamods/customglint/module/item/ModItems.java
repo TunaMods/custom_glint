@@ -37,6 +37,12 @@ public final class ModItems {
     public static final DeferredItem<RainbowDyeItem> RAINBOW_DYE = ITEMS.registerItem("rainbow_dye",
             props -> new RainbowDyeItem(props.stacksTo(64)));
 
+    public static final DeferredItem<GlintBagItem> GLINT_BAG = ITEMS.registerItem("glint_bag",
+            props -> new GlintBagItem(props.stacksTo(1)));
+
+    public static final DeferredItem<TrimPowderItem> TRIM_POWDER = ITEMS.registerItem("trim_powder",
+            props -> new TrimPowderItem(props.stacksTo(64)));
+
     /** BlockItem for the Glint Table, registered last so its block holder already exists. */
     public static final DeferredItem<BlockItem> GLINT_TABLE_ITEM =
             ITEMS.registerSimpleBlockItem(ModBlocks.GLINT_TABLE_BLOCK);

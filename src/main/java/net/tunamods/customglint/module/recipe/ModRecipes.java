@@ -43,6 +43,8 @@ public final class ModRecipes {
             RECIPE_SERIALIZERS.register("glow_trim_merge", () -> GlowTrimMergeRecipe.SERIALIZER);
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
             RECIPE_SERIALIZERS.register("glow_trim_smithing", () -> GlowTrimSmithingRecipe.SERIALIZER);
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<TrimPowderRecipe>> TRIM_POWDER_CRAFT_SERIALIZER =
+            RECIPE_SERIALIZERS.register("trim_powder_craft", () -> TrimPowderRecipe.SERIALIZER);
 
     public static void register(IEventBus bus) {
         RECIPE_SERIALIZERS.register(bus);

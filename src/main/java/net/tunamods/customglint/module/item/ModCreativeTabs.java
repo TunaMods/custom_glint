@@ -36,6 +36,8 @@ public final class ModCreativeTabs {
                 output.accept(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
                 output.accept(ModItems.RAINBOW_DYE.get().getDefaultInstance());
+                output.accept(ModItems.GLINT_BAG.get().getDefaultInstance());
+                output.accept(new ItemStack(ModItems.TRIM_POWDER.get()));
                 output.accept(new ItemStack(ModItems.GLOW_TRIM.get()));
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());

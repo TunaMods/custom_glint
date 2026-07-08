@@ -18,6 +18,9 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.tunamods.customglint.module.item.GlintBagItem;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
@@ -249,7 +252,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (unlocked) {
             cleaned = consolidateGhosts(cleaned); // the just-unlocked real shadows any other matching ghost
             sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
-            PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
+            if (!deferLibrarySync) PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
             return true;
         }
 
@@ -260,7 +263,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         cleaned.add(one);
         cleaned = consolidateGhosts(cleaned); // the new real shadows any matching import ghost
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
-        PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
+        if (!deferLibrarySync) PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
         return true;
     }
 
@@ -767,7 +770,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         List<String> updated = new ArrayList<>(stored);
         updated.add(name);
         sp.setData(ModAttachments.STORED_DESIGNS.get(), updated);
-        PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+        if (!deferLibrarySync) PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
         checkDesignAdvancements(sp);
         return true;
     }
@@ -882,6 +885,96 @@ public class GlintTableMenu extends AbstractContainerMenu {
         carried.shrink(1);
         setCarried(carried);
     }
+
+    /**
+     * Bulk-deposit a Glint Bag's contents into the player's libraries (shift-right-click the table with a bag).
+     * Empty trims register their design into the stored-design palette; painted trims go into the printed
+     * library. Only the first of each new design/config is consumed from the bag — once it's registered, the
+     * remaining duplicates stay in the bag (there's nothing left to learn from them).
+     */
+    public static void depositBagContents(ServerPlayer sp, ItemStack bag) {
+        IItemHandler handler = GlintBagItem.createHandler(bag);
+
+        // A bag can carry dozens of trims; syncing on every store would burst a packet per deposit. Defer the
+        // library sync through the loop, then push the stored/printed state once at the end.
+        int storedBefore = sp.getData(ModAttachments.STORED_DESIGNS.get()).size();
+        boolean printedChanged = false;
+        deferLibrarySync = true;
+        try {
+            for (int i = 0; i < handler.getSlots(); i++) {
+                if (!isAnyTrim(handler.getStackInSlot(i))) continue;
+                // Deposit one at a time; each newly-stored copy is consumed, and the moment a copy is a
+                // duplicate (or the library is full) we stop on this slot, leaving the rest in the bag.
+                while (true) {
+                    ItemStack s = handler.getStackInSlot(i);
+                    if (s.isEmpty()) break;
+                    boolean stored;
+                    if (isPainted(s)) {
+                        stored = storePrinted(sp, s);
+                        storeTrimDesigns(sp, s);
+                        if (stored) printedChanged = true;
+                    } else if (designName(s) != null) {
+                        stored = storeDesign(sp, designName(s));
+                    } else break;
+                    if (!stored) break;
+                    handler.extractItem(i, 1, false);
+                }
+            }
+        } finally {
+            deferLibrarySync = false;
+        }
+
+        List<String> storedNow = sp.getData(ModAttachments.STORED_DESIGNS.get());
+        if (storedNow.size() != storedBefore) {
+            PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(storedNow)));
+            checkDesignAdvancements(sp);
+        }
+        if (printedChanged) {
+            List<ItemStack> printed = new ArrayList<>();
+            for (ItemStack s : sp.getData(ModAttachments.PRINTED_TRIMS.get())) if (!s.isEmpty()) printed.add(s);
+            PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(printed));
+        }
+
+        depositBagMaterials(sp, handler);
+    }
+
+    /**
+     * Move the bag's table materials (dyes, redstone, slime, glass, glowstone, name tag, tears, rainbow dye)
+     * into the player's Glint Table slots, so shift-right-clicking the table also stocks it. Trims are handled
+     * by the library deposit above and skipped here. Each material fills its own slot up to the slot's cap; the
+     * remainder stays in the bag.
+     */
+    private static void depositBagMaterials(ServerPlayer sp, IItemHandler handler) {
+        SimpleContainer table = new SimpleContainer(TABLE_SIZE);
+        sp.getData(ModAttachments.GLINT_TABLE_CONTENTS.get()).copyInto(table.getItems());
+        boolean changed = false;
+        for (int i = 0; i < handler.getSlots(); i++) {
+            ItemStack s = handler.getStackInSlot(i);
+            if (s.isEmpty() || isAnyTrim(s)) continue; // trims go to the library, not the build slots
+            int[] targets = candidateSlots(s);
+            if (targets.length == 0) continue; // not a table material
+            int slot = targets[0];
+            int cap = slot == SLOT_NAMETAG ? 1 : SLOT_MAX;
+            ItemStack cur = table.getItem(slot);
+            if (!cur.isEmpty() && !ItemStack.isSameItemSameComponents(cur, s)) continue; // occupied by something else
+            int space = cap - cur.getCount();
+            if (space <= 0) continue;
+            ItemStack pulled = handler.extractItem(i, Math.min(space, s.getCount()), false);
+            if (pulled.isEmpty()) continue;
+            if (cur.isEmpty()) {
+                table.setItem(slot, pulled);
+            } else {
+                cur.grow(pulled.getCount());
+                table.setItem(slot, cur);
+            }
+            changed = true;
+        }
+        if (changed) sp.setData(ModAttachments.GLINT_TABLE_CONTENTS.get(), ItemContainerContents.fromItems(table.getItems()));
+    }
+
+    /** When true (only during {@link #depositBagContents}), the library store helpers mutate + persist but skip
+     *  their per-call client sync, so a bulk deposit can push one combined sync instead of one per item. */
+    private static boolean deferLibrarySync = false;
 
     /** Withdraw (server): shift-click a trim in the printed library pulls one copy into the player's
      *  inventory and removes it from the library. If the inventory is full, the trim stays put (no-op). */
