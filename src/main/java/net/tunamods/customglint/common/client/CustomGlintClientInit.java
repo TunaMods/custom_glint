@@ -2,10 +2,12 @@ package net.tunamods.customglint.common.client;
 
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.tunamods.customglint.common.CustomGlintApiMod;
 
@@ -39,6 +41,15 @@ public final class CustomGlintClientInit {
             CustomGlintRenderer.resetStencilSlots();
             GlowOutlineRenderer.beginFrame();
         });
+
+        // JEI (and other overlays) draw their ingredient-list icons in ScreenEvent.Render.Post, AFTER the
+        // container screen's own batched-glint drains (AbstractContainerScreenMixin, before its tooltip). Those
+        // overlay icons route their glint into the same batched source but nothing drained it there, so it drew
+        // a frame late at the wrong depth — the icons looked blank. Drain once more at LOWEST priority, after
+        // JEI's own Render.Post handler has drawn (and depth-committed) its icons; a no-op when the batch is
+        // empty (every non-overlay screen already drained it).
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, (ScreenEvent.Render.Post event) ->
+                CustomGlintRenderer.drainGuiGlint());
 
         // Drain world-space item glow outlines after weather, where the live world projection /
         // modelview still match what the items were drawn with (the camera modelview hasn't been
