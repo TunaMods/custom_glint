@@ -35,6 +35,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -202,10 +203,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         addGlow(crafting, factory, "jei_glow_1", CustomGlint.SPARKLE, 0xFF00AAFF);
         addGlow(crafting, factory, "jei_glow_2", CustomGlint.AURORA,  0xFFFFDD00);
 
-        // Glow Trim dyeing: blank Glow Trim + dye -> Glow Trim with that color.
-        addGlowDye(crafting, factory, "jei_glow_dye_0", Items.RED_DYE,    GlintTrimItem.DYE_COLORS[14]);
-        addGlowDye(crafting, factory, "jei_glow_dye_1", Items.BLUE_DYE,   GlintTrimItem.DYE_COLORS[11]);
-        addGlowDye(crafting, factory, "jei_glow_dye_2", Items.YELLOW_DYE, GlintTrimItem.DYE_COLORS[4]);
+        // Glow Trim dyeing: blank Glow Trim + any dye -> Glow Trim with that color. One consolidated entry
+        // whose dye slot and result slot cycle all 16 dyes in lockstep.
+        addGlowDyeCycling(crafting, factory, "jei_glow_dye");
 
         // Glow Trim merge: several single-color Glow Trims -> one multi-color Glow Trim.
         int[] glowMergePalette = { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
@@ -361,10 +361,33 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         return s;
     }
 
-    /** Dye: blank Glow Trim + dye -> Glow Trim with that color (mirrors GlowTrimDyeRecipe). */
-    private void addGlowDye(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
-                            Item dye, int color) {
-        craftShapeless(out, f, id, glowTrim(new int[]{color}), glowTrim(new int[0]), new ItemStack(dye));
+    /** Dye: blank Glow Trim + any dye -> Glow Trim with that color (mirrors GlowTrimDyeRecipe). Built as one
+     *  shapeless display whose dye slot and result slot are {@link SlotDisplay.Composite}s of all 16 dyes/colors
+     *  in the same order, so JEI cycles them in lockstep — dye N shows the Glow Trim in color N. Mirrors the
+     *  consolidated cycling dye entry on 1.21.1. */
+    private void addGlowDyeCycling(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id) {
+        Item[] dyes = GlintTableMenu.DYE_ITEMS;
+        List<SlotDisplay> dyeDisplays = new ArrayList<>();
+        List<SlotDisplay> resultDisplays = new ArrayList<>();
+        for (int i = 0; i < dyes.length; i++) {
+            dyeDisplays.add(display(new ItemStack(dyes[i])));
+            resultDisplays.add(display(glowTrim(new int[]{GlintTrimItem.DYE_COLORS[i]})));
+        }
+        List<SlotDisplay> inputDisplays = List.of(display(glowTrim(new int[0])), new SlotDisplay.Composite(dyeDisplays));
+        SlotDisplay resultDisplay = new SlotDisplay.Composite(resultDisplays);
+        List<Ingredient> ingredients = List.of(Ingredient.of(ModItems.GLOW_TRIM.get()), Ingredient.of((net.minecraft.world.level.ItemLike[]) dyes));
+        CraftingRecipe recipe = new ShapelessRecipe(
+                new Recipe.CommonInfo(true),
+                new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),
+                ItemStackTemplate.fromNonEmptyStack(glowTrim(new int[]{GlintTrimItem.DYE_COLORS[0]})),
+                ingredients) {
+            @Override
+            public List<RecipeDisplay> display() {
+                return List.<RecipeDisplay>of(new ShapelessCraftingRecipeDisplay(
+                        inputDisplays, resultDisplay, new SlotDisplay.ItemSlotDisplay(Items.CRAFTING_TABLE)));
+            }
+        };
+        out.add(new RecipeHolder<CraftingRecipe>(key(id), recipe));
     }
 
     /** Merge: several single-color Glow Trims -> one multi-color Glow Trim (mirrors GlowTrimMergeRecipe). */
