@@ -29,6 +29,7 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
 import net.tunamods.customglint.module.recipe.GlintLayerTearRecipe;
@@ -496,6 +497,37 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         @Override public int getHeight() { return height; }
     }
 
+    // The Glow Trim + dye display cycles all 16 dyes in the input slot; give the output slot the matching 16
+    // colored Glow Trims (same order) so the result rotates in step with the dye being shown.
+    private static class GlowDyeExtension implements ICraftingCategoryExtension {
+        private final ResourceLocation id;
+        private final List<List<ItemStack>> inputs = new ArrayList<>();
+        private final List<ItemStack> outputs = new ArrayList<>();
+
+        GlowDyeExtension(GlowDyeDisplay recipe) {
+            this.id = recipe.getId();
+            inputs.add(List.of(new ItemStack(ModItems.GLOW_TRIM.get()))); // blank Glow Trim (no rotation)
+            List<ItemStack> dyes = new ArrayList<>();
+            for (int i = 0; i < GlintTableMenu.DYE_ITEMS.length; i++) {
+                dyes.add(new ItemStack(GlintTableMenu.DYE_ITEMS[i]));
+                ItemStack out = new ItemStack(ModItems.GLOW_TRIM.get());
+                GlowTrimItem.addColor(out, GlintTrimItem.DYE_COLORS[i]); // DYE_ITEMS[i] and DYE_COLORS[i] share the dye's id
+                outputs.add(out);
+            }
+            inputs.add(dyes);
+        }
+
+        @Override
+        public void setRecipe(IRecipeLayoutBuilder builder, ICraftingGridHelper helper, IFocusGroup focuses) {
+            helper.createAndSetInputs(builder, inputs, 0, 0);
+            helper.createAndSetOutputs(builder, outputs); // 16 outputs cycle in sync with the 16 input dyes
+        }
+
+        @Override public ResourceLocation getRegistryName() { return id; }
+        @Override public int getWidth() { return 0; }
+        @Override public int getHeight() { return 0; }
+    }
+
     @Override
     public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
         var crafting = registration.getCraftingCategory();
@@ -504,35 +536,14 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         crafting.addCategoryExtension(DuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
         crafting.addCategoryExtension(BlankDuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
         crafting.addCategoryExtension(GlowTrimDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(GlowDyeDisplay.class, GlowDyeExtension::new);
     }
 
-    // Display-only: the real GlowTrimDyeRecipe is isSpecial()=true (JEI skips it). Each entry pins one dye →
-    // one colored Glow Trim; a few sample colors are shown rather than cycling all 16 (mirrors the glint dye).
+    // Display-only: the real GlowTrimDyeRecipe is isSpecial()=true (JEI skips it). The parent already supplies
+    // the ingredients (a blank Glow Trim + any dye) and a colored result, so flipping the flag is enough.
     private static class GlowDyeDisplay extends GlowTrimDyeRecipe {
-        private final Item dye;
-        private final int dyeColor;
-
-        GlowDyeDisplay(ResourceLocation id, Item dye, int dyeColor) {
-            super(id, CraftingBookCategory.MISC);
-            this.dye = dye; this.dyeColor = dyeColor;
-        }
-
+        GlowDyeDisplay(ResourceLocation id) { super(id, CraftingBookCategory.MISC); }
         @Override public boolean isSpecial() { return false; }
-
-        @Override
-        public NonNullList<Ingredient> getIngredients() {
-            NonNullList<Ingredient> list = NonNullList.create();
-            list.add(Ingredient.of(new ItemStack(ModItems.GLOW_TRIM.get())));
-            list.add(Ingredient.of(dye));
-            return list;
-        }
-
-        @Override
-        public ItemStack getResultItem(RegistryAccess r) {
-            ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
-            GlowTrimItem.addColor(result, dyeColor);
-            return result;
-        }
     }
 
     // Several single-color Glow Trims → one multi-color Glow Trim (mirrors GlowTrimMergeRecipe / the glint
@@ -754,12 +765,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         glowTrimDisplays.add(new GlowTrimDisplay(CustomGlint.res("jei_glow_2"), aurora,  0xFFFFDD00));
         registration.addRecipes(RecipeTypes.CRAFTING, glowTrimDisplays);
 
-        // Glow Trim + dye → colored Glow Trim (red / blue / yellow examples, mirroring the glint dye layout).
-        List<CraftingRecipe> glowDyeDisplays = new ArrayList<>();
-        glowDyeDisplays.add(new GlowDyeDisplay(CustomGlint.res("jei_glow_dye_0"), Items.RED_DYE,    GlintTrimItem.DYE_COLORS[14]));
-        glowDyeDisplays.add(new GlowDyeDisplay(CustomGlint.res("jei_glow_dye_1"), Items.BLUE_DYE,   GlintTrimItem.DYE_COLORS[11]));
-        glowDyeDisplays.add(new GlowDyeDisplay(CustomGlint.res("jei_glow_dye_2"), Items.YELLOW_DYE, GlintTrimItem.DYE_COLORS[4]));
-        registration.addRecipes(RecipeTypes.CRAFTING, glowDyeDisplays);
+        // Glow Trim + dye → colored Glow Trim (one entry; the dye slot cycles all 16).
+        registration.addRecipes(RecipeTypes.CRAFTING,
+            List.of(new GlowDyeDisplay(CustomGlint.res("jei_glow_dye"))));
 
         // Glow Trim merge: several single-color Glow Trims → one multi-color Glow Trim (stacks like the glint merge).
         int[] glowMergeColors = { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
