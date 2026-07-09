@@ -1,5 +1,7 @@
 package net.tunamods.customglint.common.client;
 
+import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
+
 import net.tunamods.customglint.common.CustomGlint;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -151,10 +153,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         }
     }
 
-
-    /** TEMPORARY diagnostic: the mask target's GL framebuffer id (0 if not yet created). */
-    public static int debugMaskFboId() { return maskTarget != null ? maskTarget.frameBufferId : 0; }
-
     /** Force the main render target's ALPHA channel to fully opaque (1.0), leaving RGB untouched.
      *
      *  <p>EnhancedVisuals' blood splatters ({@code VisualTypeParticle} → {@code position_tex_col_smooth},
@@ -177,6 +175,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void release() {
         if (maskTarget != null) { maskTarget.destroyBuffers(); maskTarget = null; }
         texSilhouetteRTs.clear();
+        texSilhouetteTriRTs.clear();
         rtTextureCache.clear();
     }
 
@@ -186,10 +185,19 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // against the scene depth (Sampler1, bound by the drain just before the flush). The shader
     // alpha-discards against the bound texture so the mask traces the real shape.
     private static RenderType buildSilhouetteRT(String name, ResourceLocation tex) {
+        return buildSilhouetteRT(name, tex, VertexFormat.Mode.QUADS);
+    }
+
+    // Mode-parameterised variant. Epic Fight (and any renderer that draws through a TRIANGLES-mode
+    // RenderType) pushes a triangle-list vertex stream; replaying that stream through a QUADS buffer
+    // scrambles the topology, so its silhouette is traced through a TRIANGLES-mode RT instead. The
+    // silhouette shader reads only Position/Color/UV0, so the primitive mode is the only thing that
+    // has to match the captured stream.
+    private static RenderType buildSilhouetteRT(String name, ResourceLocation tex, VertexFormat.Mode mode) {
         return RenderType.create(
                 name,
                 DefaultVertexFormat.NEW_ENTITY,
-                VertexFormat.Mode.QUADS,
+                mode,
                 1024,
                 false,
                 false,
@@ -224,13 +232,22 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 t -> buildSilhouetteRT("customglint:glow_silhouette_tex_" + t, t));
     }
 
+    // TRIANGLES-mode counterpart of {@link #silhouetteTexRT}, for triangle-list silhouette captures
+    // (Epic Fight patched entity meshes). Cached separately; cleared on resource reload.
+    private static final Map<ResourceLocation, RenderType> texSilhouetteTriRTs = new HashMap<>();
+
+    private static RenderType silhouetteTexTriangleRT(ResourceLocation tex) {
+        return texSilhouetteTriRTs.computeIfAbsent(tex,
+                t -> buildSilhouetteRT("customglint:glow_silhouette_tri_" + t, t, VertexFormat.Mode.TRIANGLES));
+    }
+
     // ── RenderType → texture resolution (for special-item silhouettes) ──────────
     // A BEWLR (trident, shield, modded custom renderers) draws its model through RenderTypes bound to the
     // item's OWN texture, whose alpha is the real shape. Read that texture off the composite state via the
     // accessor mixins; WHITE_TEXTURE (full fill) for non-composite / textureless RTs. Cached per RenderType.
     private static final Map<RenderType, ResourceLocation> rtTextureCache = new IdentityHashMap<>();
 
-    static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
+    public static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
         ResourceLocation r = rtTextureCache.get(rt);
         if (r != null) return r;
         r = reflectRenderTypeTexture(rt);
@@ -320,8 +337,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // Special / 3D BEWLR items: camera-relative {@code [x,y,z,u,v]} per vertex (QUADS order) captured by
     // re-rendering the item into a record-only buffer, traced against {@code tex}. All buckets of one item
     // share a {@code key} so the multi-texture item composes as ONE ring.
+    // {@code triangles}: replay the captured stream through a TRIANGLES-mode silhouette RT rather than
+    // the default QUADS (set for Epic Fight patched-entity meshes, whose draw is a triangle list).
     private record ModelJob(float[] data, int len, ResourceLocation tex, Matrix4f modelView,
-                            int color, int key, int category, float[] anchor, int[] scissor) {}
+                            int color, int key, int category, float[] anchor, int[] scissor, boolean triangles) {}
 
     private static final List<ItemJob> worldJobs = new ArrayList<>();
     private static final List<ItemJob> heldFpJobs = new ArrayList<>();
@@ -412,7 +431,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 || ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
                 || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
         ModelJob job = new ModelJob(copy, len, tex, modelView, color, key, fp ? CAT_HELD_FP : CAT_ITEM,
-                gui ? anchor : null, gui ? captureScissor() : null);
+                gui ? anchor : null, gui ? captureScissor() : null, false);
         if (gui) modelGuiJobs.add(job);
         else if (fp) { snapshotHeldFpProjection(); modelFpJobs.add(job); }
         else modelWorldJobs.add(job);
@@ -430,7 +449,26 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (len < 20 || tex == null) return;              // need at least one quad (4 verts * 5 floats)
         float[] copy = new float[len];
         System.arraycopy(data, 0, copy, 0, len);
-        modelWorldJobs.add(new ModelJob(copy, len, tex, modelView, color, key, category, null, null));
+        modelWorldJobs.add(new ModelJob(copy, len, tex, modelView, color, key, category, null, null, false));
+    }
+
+    /** TRIANGLES-mode counterpart of {@link #queueModelOutline}, for a silhouette captured from a
+     *  triangle-list draw (Epic Fight patched-entity meshes route through a TRIANGLES-mode RenderType).
+     *  {@code data} is camera-relative {@code [x,y,z,u,v]} per vertex in triangle-list order; the vertex
+     *  count is trimmed to a multiple of 3 so the deferred TRIANGLES draw never leaves a partial primitive.
+     *  Same {@code key} scheme as {@link #queueModelOutline} — the body mesh + every worn/patched layer of
+     *  one figure share a key and compose as ONE ring. Drained with the world items at {@code AFTER_WEATHER}. */
+    public static void queueModelOutlineTriangles(float[] data, int len, ResourceLocation tex, Matrix4f modelView,
+                                                  int color, int key, int category) {
+        if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
+        if (tex == null) return;
+        int verts = len / 5;
+        verts -= verts % 3;               // TRIANGLES: whole primitives only
+        int usable = verts * 5;
+        if (usable < 15) return;          // need at least one triangle (3 verts * 5 floats)
+        float[] copy = new float[usable];
+        System.arraycopy(data, 0, copy, 0, usable);
+        modelWorldJobs.add(new ModelJob(copy, usable, tex, modelView, color, key, category, null, null, true));
     }
 
     /** Per-frame reset; called from the RenderTickEvent.START listener. */
@@ -451,7 +489,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** Drain world-space item outlines at {@code RenderLevelStageEvent.AFTER_WEATHER}, where the live
      *  projection is the world one the items were drawn with. Used off-pack only — under a shader pack the
      *  drain is deferred to {@link #drainWorldShaderPack()} (see that method). */
-    public static void drainWorld() { GlowOutlineDebug.drainSource = "world"; drain(worldJobs, modelWorldJobs, RenderSystem.getProjectionMatrix()); }
+    public static void drainWorld() { drain(worldJobs, modelWorldJobs, RenderSystem.getProjectionMatrix()); }
 
     // Snapshot of the hand-FOV projection taken when a first-person held item is captured (inside the hand
     // pass, where it is drawn). Replayed at the drain instead of the live projection: under a shader pack Iris
@@ -474,7 +512,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** Drain first-person held-item outlines at the RETURN of {@code renderItemInHand}, replaying the
      *  hand-FOV projection snapshotted when the item was drawn (see {@link #snapshotHeldFpProjection()}). */
     public static void drainHeldFp() {
-        GlowOutlineDebug.drainSource = "heldFp";
         drain(heldFpJobs, modelFpJobs, heldFpProjValid ? HELD_FP_PROJ : RenderSystem.getProjectionMatrix(), false);
         heldFpProjValid = false;
     }
@@ -530,9 +567,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (prevScissor) GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, prevBox);
 
         snapshotAmbientState();
-        GlowOutlineDebug.markGlowActive();
-        GlowOutlineDebug.log("drainGui.enter");
-        GlowOutlineDebug.logMainCenterPixel("drainGui.enter");
         try {
             ensureTarget(main.width, main.height);
             // GUI is drained immediately while the GUI ortho matrices are live, so accumulate under the LIVE
@@ -547,7 +581,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             RenderSystem.colorMask(true, true, true, true);
             maskTarget.clear(Minecraft.ON_OSX);
             maskTarget.bindWrite(true);
-            GlowOutlineDebug.log("drainGui.maskBound");
             RenderSystem.setShaderTexture(1, 0); // GUI: no scene-depth occlusion (stale world depth would erase icons)
             itemBoxes.clear();
 
@@ -577,7 +610,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             MASK_BUFFERS.endBatch();
             RenderSystem.setShaderTexture(1, 0);
 
-            if (!itemBoxes.isEmpty() && !GlowOutlineDebug.SKIP_COMPOSITE) {
+            if (!itemBoxes.isEmpty()) {
                 // Each icon carries its OWN ring reach in framebuffer texels (box.snap). SearchRadius is the kernel
                 // bound = the widest reach present; each pass then limits to its own reach via ThicknessScale =
                 // snap / SearchRadius, so a thinned 3D icon rings thinner than a flat icon in the same drain.
@@ -590,11 +623,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 }
                 compositeEnd();
             }
-            GlowOutlineDebug.log("drainGui.composited");
-            GlowOutlineDebug.logMainCenterPixel("drainGui.composited");
         } catch (Throwable t) {
-            // TEMPORARY diagnostic: surface any swallowed throw (the finally normally rethrows).
-            LOGGER.error("[glowdebug] drainGui threw", t);
+            // Surface any throw here (the finally restores state either way): a swallowed throw after
+            // maskTarget.bindWrite() would otherwise leave the mask bound and blacken the frame.
+            LOGGER.error("[{}] glow GUI drain failed", MOD_ID, t);
         } finally {
             // ALWAYS hand control back with the MAIN target bound and GL state at defaults. If a RenderType
             // flush throws after maskTarget.bindWrite() (observed under EnhancedVisuals + embeddium), the
@@ -605,8 +637,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             else RenderSystem.disableScissor();
             guiJobs.clear();
             modelGuiJobs.clear();
-            GlowOutlineDebug.log("drainGui.exit");
-            GlowOutlineDebug.dumpGlState("drainGui.exit(pre-EV)");
         }
     }
 
@@ -666,28 +696,18 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
         ensureTarget(main.width, main.height);
         snapshotAmbientState();
-        GlowOutlineDebug.markGlowActive();
-        GlowOutlineDebug.log("drain.enter");
-        GlowOutlineDebug.logMainCenterPixel("drain.enter");
         try {
             int searchRadius = accumulate(jobs, models, main, proj, sceneOcclusion);
-            GlowOutlineDebug.log("drain.accumulated");
-            GlowOutlineDebug.logMainCenterPixel("drain.preComposite");
-            if (!GlowOutlineDebug.SKIP_COMPOSITE) composite(main, itemBoxes, searchRadius, proj.m22(), proj.m32());
-            else main.bindWrite(true);
-            GlowOutlineDebug.log("drain.composited");
-            GlowOutlineDebug.logMainCenterPixel("drain.postComposite");
+            composite(main, itemBoxes, searchRadius, proj.m22(), proj.m32());
         } catch (Throwable t) {
-            // TEMPORARY diagnostic: surface any swallowed throw (the finally normally rethrows).
-            LOGGER.error("[glowdebug] drain threw", t);
+            // Surface any throw here (the finally restores state either way): a swallowed throw between
+            // accumulate() (which binds the mask) and composite() (which rebinds main) would otherwise leave
+            // the mask bound for the rest of the frame → black screen under EnhancedVisuals' fullscreen pass.
+            LOGGER.error("[{}] glow world drain failed", MOD_ID, t);
         } finally {
-            // See bindMainAndResetState: a throw between accumulate() (which binds the mask) and composite()
-            // (which rebinds main) would otherwise leave the mask bound for the rest of the frame → black
-            // screen under EnhancedVisuals' end-of-frame fullscreen pass.
             bindMainAndResetState(main, false);
             jobs.clear();
             models.clear();
-            GlowOutlineDebug.log("drain.exit");
         }
     }
 
@@ -748,7 +768,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // multi-texture item's buckets share one id → one unified ring.
         for (ModelJob job : models) {
             resetCamBox();
-            VertexConsumer tc = MASK_BUFFERS.getBuffer(silhouetteTexRT(job.tex));
+            VertexConsumer tc = MASK_BUFFERS.getBuffer(
+                    job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
             int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
             SilhouetteConsumer sc = new SilhouetteConsumer(tc, r, g, b, job.key);
             emitModel(sc, job);

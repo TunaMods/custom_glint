@@ -106,6 +106,14 @@ public final class EntityGlintRender {
         return CustomGlint.getEntityGlint(entity.getType());
     }
 
+    /** Public view of {@link #resolveData}: the entity's glint data (per-instance NBT, else the
+     *  {@link CustomGlint#ENTITY_GLINTS} type registry), or null. Used by render-path compat (Epic Fight)
+     *  that installs its own glint fan-out and needs the same resolution the core buffer wrapper uses. */
+    @Nullable
+    public static CustomGlint.Data glintDataFor(LivingEntity entity) {
+        return resolveData(entity);
+    }
+
     private static void fillPremul(float[] buf, int argb) {
         float a = ((argb >> 24) & 0xFF) / 255.0f;
         buf[0] = ((argb >> 16) & 0xFF) / 255.0f * a;
@@ -290,10 +298,18 @@ public final class EntityGlintRender {
     public static final class GlintWrappingBufferSource implements MultiBufferSource {
         final MultiBufferSource delegate;
         final CustomGlint.Data glint;
+        // TRIANGLES-mode glint RTs instead of QUADS — for renderers whose entity draw is a triangle list
+        // (Epic Fight patched meshes). A quad glint RT fed a triangle stream shatters into facets.
+        final boolean triangles;
 
         GlintWrappingBufferSource(MultiBufferSource delegate, CustomGlint.Data glint) {
+            this(delegate, glint, false);
+        }
+
+        public GlintWrappingBufferSource(MultiBufferSource delegate, CustomGlint.Data glint, boolean triangles) {
             this.delegate = delegate;
             this.glint = glint;
+            this.triangles = triangles;
         }
 
         @Override
@@ -318,12 +334,22 @@ public final class EntityGlintRender {
             // the body renders invisible (the dilated outline ring still appears because its
             // stencil-write pass re-renders the model into its own dedicated fixed builder).
             // Acquiring `base` last leaves it as the current active builder when the model writes.
+            // A translucent base surface (e.g. the slime's outer shell) needs its glint tagged for shader-mod
+            // late render: under Oculus/Iris the translucent geometry is deferred past the point our glint
+            // would otherwise flush, so the shell paints over the glint and it vanishes (shaders off is fine).
+            // The translucent glint variants are distinct RT instances tagged into the late bucket; opaque
+            // entity glint keeps its own untagged instance so its working order is unchanged.
+            boolean translucent = isTranslucent(rt);
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                    RenderType crt = translucent
+                            ? CustomGlintRenderer.forChromaticEntityGlintTranslucent(glint, layerIdx, triangles)
+                            : triangles
+                                ? CustomGlintRenderer.forChromaticEntityGlintTriangles(glint, layerIdx)
+                                : CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
                     if (crt != null) list.add(delegate.getBuffer(crt));
                     continue;
                 }
@@ -331,13 +357,21 @@ public final class EntityGlintRender {
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         fillPremul(buf, colors[i]);
-                        RenderType grt = CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
+                        RenderType grt = translucent
+                                ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, i, triangles)
+                                : triangles
+                                    ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, i)
+                                    : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
                         if (grt != null) list.add(delegate.getBuffer(grt));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
                     fillPremul(buf, color);
-                    RenderType grt = CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
+                    RenderType grt = translucent
+                            ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, 0, triangles)
+                            : triangles
+                                ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, 0)
+                                : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
                     if (grt != null) list.add(delegate.getBuffer(grt));
                 }
             }
@@ -352,5 +386,12 @@ public final class EntityGlintRender {
             // Cover entity_cutout_no_cull / entity_solid / entity_translucent / etc.
             return name.startsWith("entity_") || name.startsWith("RenderType[entity_");
         }
+
+        /** entity_translucent / entity_translucent_cull / item_entity_translucent_cull — the shader mod defers
+         *  these to a later pass than our fixed glint buffer, so their glint must be shader-late-tagged. */
+        private static boolean isTranslucent(RenderType rt) {
+            return rt.toString().contains("translucent");
+        }
     }
+
 }
