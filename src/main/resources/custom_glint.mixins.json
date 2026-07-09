@@ -17,6 +17,7 @@
     "LivingEntityRendererMixin",
     "RenderBuffersMixin",
     "RenderLayerMixin",
+    "SlimeOuterLayerMixin",
     "TextureStateShardAccessor"
   ],
   "injectors": {
