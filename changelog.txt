@@ -41,6 +41,9 @@ Altered:
 
 [Compat]
 - Improved JEI compatibility
+- Enhanced Visuals: a glowing item no longer turns the whole screen black, and blood and other damage effects no longer draw black boxes
+- Gnetum: animated glints and glow outlines no longer freeze or flicker on the hotbar under its HUD caching
+- Punchy: the held-item glow outline now renders correctly with its first-person animations
 
 
 [1.6.0]
