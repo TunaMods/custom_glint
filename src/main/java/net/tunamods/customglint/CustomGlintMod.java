@@ -16,6 +16,8 @@ import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
@@ -47,6 +49,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 @Mod(CustomGlintMod.MOD_ID)
 public class CustomGlintMod {
     public static final String MOD_ID = "customglint";
+    public static final Logger LOGGER = LogUtils.getLogger();
 
     private final List<String> dataPackDesigns = new ArrayList<>();
 

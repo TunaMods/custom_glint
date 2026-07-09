@@ -8,6 +8,8 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.fml.ModList;
+import net.tunamods.customglint.CustomGlintMod;
 
 /**
  * Standalone-only Ice & Fire compat. Renderer-touching configuration (BEWLR outline offsets /
@@ -27,6 +29,8 @@ public final class IceAndFireCompat {
     static final String HIPPOCAMPUS_CLASS = "com.github.alexthe666.iceandfire.entity.EntityHippocampus";
 
     public static void register() {
+        if (ModList.get().isLoaded("iceandfire")) CustomGlintMod.LOGGER.info("[customglint] Ice and Fire compat enabled");
+
         // Renderer overrides — client-only.
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> IceAndFireClientCompat::run);
 
