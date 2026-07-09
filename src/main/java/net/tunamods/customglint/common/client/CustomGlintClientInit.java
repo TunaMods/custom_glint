@@ -42,27 +42,8 @@ public final class CustomGlintClientInit {
                 CustomGlintRenderer.pendingFrameStencilClear = true;
                 CustomGlintRenderer.resetStencilSlots();
                 GlowOutlineRenderer.beginFrame();
-                GlowOutlineDebug.frameTick();
-            } else {
-                GlowOutlineDebug.log("renderTick.END"); // after the whole frame incl. EV + blit setup
-                GlowOutlineDebug.logMainCenterPixel("renderTick.END");
             }
         });
-
-        // TEMPORARY diagnostic: bracket EnhancedVisuals' RenderGuiEvent.Post render. HIGHEST runs before all
-        // NORMAL-priority listeners (EV + our drainGui); LOWEST runs after them. Reading main's centre pixel
-        // at both points isolates WHETHER main is already black before EV (scene lost) or EV blacks it.
-        MinecraftForge.EVENT_BUS.addListener(net.minecraftforge.eventbus.api.EventPriority.HIGHEST,
-                (RenderGuiEvent.Post event) -> {
-                    GlowOutlineDebug.log("guiPost.HIGHEST(pre-EV)");
-                    GlowOutlineDebug.logMainCenterPixel("guiPost.HIGHEST(pre-EV)");
-                    GlowOutlineDebug.dumpGlState("guiPost.HIGHEST(baseline)");
-                });
-        MinecraftForge.EVENT_BUS.addListener(net.minecraftforge.eventbus.api.EventPriority.LOWEST,
-                (RenderGuiEvent.Post event) -> {
-                    GlowOutlineDebug.log("guiPost.LOWEST(post-EV)");
-                    GlowOutlineDebug.logMainCenterPixel("guiPost.LOWEST(post-EV)");
-                });
 
         // Drain world-space item glow outlines after weather, where the live world projection / modelview
         // still match what the items were drawn with and the opaque scene depth is committed for the
@@ -93,9 +74,9 @@ public final class CustomGlintClientInit {
         //     screen-post one — which runs AFTER the screen's own tooltip, so the ring would draw over it.
         //     Draining just before any tooltip keeps the ring under it; a no-op where the queue already drained.
         MinecraftForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->
-                { GlowOutlineDebug.drainSource = "containerFg"; GlowOutlineRenderer.drainGui(); });
+                GlowOutlineRenderer.drainGui());
         MinecraftForge.EVENT_BUS.addListener((ScreenEvent.Render.Post event) ->
-                { GlowOutlineDebug.drainSource = "screenPost"; GlowOutlineRenderer.drainGui(); });
+                GlowOutlineRenderer.drainGui());
         // LOWEST so this HUD drain runs AFTER EnhancedVisuals' own RenderGuiEvent.Post pass (NORMAL). EV
         // drives its shader visuals through a PostChain that reads + rewrites the main target; if our drain
         // binds an offscreen FBO earlier in this same event, EV's subsequent PostChain pass turns the whole
@@ -105,14 +86,13 @@ public final class CustomGlintClientInit {
         // so they don't need this.)
         MinecraftForge.EVENT_BUS.addListener(net.minecraftforge.eventbus.api.EventPriority.LOWEST,
                 (RenderGuiEvent.Post event) -> {
-                    GlowOutlineDebug.drainSource = "renderGuiPost";
                     GlowOutlineRenderer.drainGui();
                     // Last thing before the frame blits: restore main-target alpha to opaque so EnhancedVisuals'
                     // alpha-reducing blood splatters don't present as black boxes on an alpha-composited window.
                     GlowOutlineRenderer.forceMainAlphaOpaque();
                 });
         MinecraftForge.EVENT_BUS.addListener((RenderTooltipEvent.Pre event) ->
-                { GlowOutlineDebug.drainSource = "tooltipPre"; GlowOutlineRenderer.drainGui(); });
+                GlowOutlineRenderer.drainGui());
     }
 
     private static void onRegisterClientReloadListeners(RegisterClientReloadListenersEvent event) {
