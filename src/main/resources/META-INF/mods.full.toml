@@ -8,6 +8,8 @@ config="custom_glint.iceandfire.mixins.json"
 config="custom_glint.epicknights.mixins.json"
 [[mixins]]
 config="custom_glint.sophisticatedbackpacks.mixins.json"
+[[mixins]]
+config="custom_glint.epicfight.mixins.json"
 
 [[mods]]
 modId="${mod_id}"
