@@ -23,6 +23,7 @@ import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
+import net.tunamods.customglint.common.client.GnetumHudCompat;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -59,6 +60,13 @@ public class ItemRendererMixin {
     private static void cg_onRenderHead(ItemStack stack, ItemDisplayContext ctx, boolean lh,
             PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
         CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
+        // Gnetum caches the in-game HUD per element and re-renders each only every few frames; a glinted /
+        // glowing item in a HUD slot needs its element live every frame or the glint freezes and the glow
+        // ring flickers. Tell gnetum to stop caching whatever HUD element it is mid-render of (the hotbar).
+        // No-op off gnetum, off the HUD, or once that element is already dropped.
+        if (ctx == ItemDisplayContext.GUI && (CustomGlint.has(stack) || CustomGlint.isGlowing(stack))) {
+            GnetumHudCompat.disableHudCachingForCurrentElement();
+        }
     }
 
     // ── Stack clear (RETURN) ─────────────────────────────────────────────────
