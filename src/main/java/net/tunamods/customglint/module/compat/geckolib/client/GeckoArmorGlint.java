@@ -35,6 +35,14 @@ public final class GeckoArmorGlint {
     private static final ThreadLocal<EntityGlintRender.CapturingModelConsumer> PENDING_GLOW = new ThreadLocal<>();
 
     public static void stash(Entity entity, ItemStack stack) {
+        // Only fan glint / capture glow while the 3D world is rendering. The inventory player preview also
+        // routes GeckoLib armor through actuallyRender, but under the GUI ortho our entity-space glint/glow
+        // would stretch into a giant projected ray, so skip it (wrapGlint sees a null stack and no-ops).
+        if (!CustomGlintRenderer.isRenderingWorld()) {
+            CURRENT_STACK.set(null);
+            CURRENT_ENTITY.set(null);
+            return;
+        }
         CURRENT_STACK.set(stack);
         CURRENT_ENTITY.set(entity instanceof LivingEntity ? (LivingEntity) entity : null);
     }

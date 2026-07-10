@@ -41,6 +41,7 @@ public final class CustomGlintClientInit {
             if (event.phase == TickEvent.Phase.START) {
                 CustomGlintRenderer.pendingFrameStencilClear = true;
                 CustomGlintRenderer.resetStencilSlots();
+                CustomGlintRenderer.setRenderingWorld(false);
                 GlowOutlineRenderer.beginFrame();
             }
         });

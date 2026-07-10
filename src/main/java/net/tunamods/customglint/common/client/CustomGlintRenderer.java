@@ -1227,4 +1227,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return false;
         }
     }
+
+    // True only between LevelRenderer.renderLevel HEAD and RETURN — i.e. while the 3D world (and the
+    // entities in it) are being drawn. Compat that re-renders worn armor/curios through a mod's own
+    // renderer (Mekanism special armor, Artifacts) uses this to skip the inventory player preview and
+    // GUI item icons, whose GUI-ortho context would otherwise stretch our entity-space glint/glow into a
+    // giant projected ray. Set by LevelRendererMixin; reset each frame at RenderTick START.
+    private static volatile boolean renderingWorld = false;
+
+    public static boolean isRenderingWorld() { return renderingWorld; }
+
+    public static void setRenderingWorld(boolean value) { renderingWorld = value; }
 }

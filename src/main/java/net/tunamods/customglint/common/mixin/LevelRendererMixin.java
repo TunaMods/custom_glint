@@ -36,11 +36,28 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = LevelRenderer.class, priority = 1500)
 public class LevelRendererMixin {
 
+    @Inject(method = "m_109599_", at = @At("HEAD"), require = 0)
+    private void cg_markWorldRenderStart_srg(PoseStack pose, float partialTick, long finishNano,
+            boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, LightTexture light,
+            Matrix4f projection, CallbackInfo ci) {
+        CustomGlintRenderer.setRenderingWorld(true);
+    }
+
     @Inject(method = "m_109599_", at = @At("RETURN"), require = 0)
     private void cg_drainGlowUnderShaders_srg(PoseStack pose, float partialTick, long finishNano,
             boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, LightTexture light,
             Matrix4f projection, CallbackInfo ci) {
+        CustomGlintRenderer.setRenderingWorld(false);
         if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.drainWorldShaderPack();
+    }
+
+    @Inject(
+        method = "renderLevel(Lcom/mojang/blaze3d/vertex/PoseStack;FJZLnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/GameRenderer;Lnet/minecraft/client/renderer/LightTexture;Lorg/joml/Matrix4f;)V",
+        at = @At("HEAD"), require = 0, remap = false)
+    private void cg_markWorldRenderStart_named(PoseStack pose, float partialTick, long finishNano,
+            boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, LightTexture light,
+            Matrix4f projection, CallbackInfo ci) {
+        CustomGlintRenderer.setRenderingWorld(true);
     }
 
     @Inject(
@@ -49,6 +66,7 @@ public class LevelRendererMixin {
     private void cg_drainGlowUnderShaders_named(PoseStack pose, float partialTick, long finishNano,
             boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, LightTexture light,
             Matrix4f projection, CallbackInfo ci) {
+        CustomGlintRenderer.setRenderingWorld(false);
         if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.drainWorldShaderPack();
     }
 }
