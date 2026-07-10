@@ -46,6 +46,7 @@ Altered:
 - Gnetum: animated glints and glow outlines no longer freeze or flicker on the hotbar under its HUD caching
 - Punchy: the held-item glow outline now renders correctly with its first-person animations
 - Epic Fight: glowing entities keep their glow outline while Epic Fight renders them with its own animations
+- Iron's Spells 'n Spellbooks and other GeckoLib armor: worn armor now takes custom glints and glow outlines
 
 
 [1.6.0]
