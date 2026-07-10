@@ -4,8 +4,9 @@ Minecraft 1.20.1 / Forge 47.x - MIT license (attribution required)
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
 on held items, armor, elytra, horse armor, and any LivingEntity. Glints can also
-project a colored stencil outline through the "glowing" flag. NBT-driven; 55
-built-in designs, extensible via data packs.
+project an independently-animated colored outline through the "glowing" flag.
+NBT-driven; 56 built-in designs (54 texture PNGs, vanilla, and the procedural
+Chromatic), extensible via data packs.
 
 
 ================================================================================
@@ -17,9 +18,11 @@ built-in designs, extensible via data packs.
       Bundle this via jarJar.
 
   custom_glint-<ver>.jar       (modid: customglint + customglint_api)
-      Full standalone download. Adds wand, Glint Trim / Glow Trim / Tear
-      items, recipes, /glint command, loot modifiers, JEI integration.
-      The api jar is nested inside via META-INF/jarjar/.
+      Full standalone download. Adds the Glint Wand, the Glint Table block,
+      Glint Trim / Glow Trim / Tear items, Glint Bag, Trim Powder, Rainbow
+      Dye, recipes, advancements, shared server blueprints, the /glint
+      command, loot modifiers, and JEI integration. The api jar is nested
+      inside via META-INF/jarjar/.
 
 Mod developers depend on the api coord. The full jar is the user-facing
 Modrinth / CurseForge download.
@@ -39,12 +42,12 @@ In build.gradle:
     }
 
     dependencies {
-        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.6.0")
-        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.6.0")
+        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.7.0")
+        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.7.0")
 
         jarJar(group: 'net.tunamods.customglint', name: 'custom-glint-api',
-               version: '[1.6.0,2.0)') {
-            jarJar.ranged(it, '[1.6.0,2.0)')
+               version: '[1.7.0,2.0)') {
+            jarJar.ranged(it, '[1.7.0,2.0)')
         }
     }
 
@@ -72,7 +75,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
     [[dependencies.yourmodid]]
         modId="customglint_api"
         mandatory=true
-        versionRange="[1.4,)"
+        versionRange="[1.7,)"
         ordering="NONE"
         side="BOTH"
 
@@ -100,9 +103,17 @@ or loaded from the standalone.
 All on net.tunamods.customglint.common.CustomGlint.
 
   CustomGlint.write(stack, design, colors, speed, interpolate, scale, simultaneous);
+  CustomGlint.write(stack, design, colors, speed, interpolate, scale, simultaneous,
+                    scrollDir, scrollOffset);                  // + scroll animation
   CustomGlint.write(stack, new CustomGlint.Layer[]{ ... });   // multi-layer
   CustomGlint.write(stack, design, colors);                   // shorthand
   CustomGlint.write(stack, design, color);                    // single-color shorthand
+
+Each Layer carries design, colors, speed, interpolate, patternScale,
+simultaneous, and a scroll direction + offset (CustomGlint.SCROLL_STATIC,
+SCROLL_E, SCROLL_NE, ...). MAX_LAYERS and MAX_COLORS_PER_LAYER are both 8.
+The CHROMATIC design is procedural; use CustomGlint.ensureChromaticSeeds(layers)
+so each chromatic layer gets a stable random seed.
 
   boolean has = CustomGlint.has(stack);
   CustomGlint.Data data = CustomGlint.read(stack);
@@ -122,6 +133,11 @@ All on net.tunamods.customglint.common.CustomGlint.
   CustomGlint.getGlowColors(stack);
   CustomGlint.hasGlowColors(stack);
   CustomGlint.clearGlowColors(stack);
+
+  // Glow animation, independent of the glint's own speed/interpolate.
+  CustomGlint.setGlowAnim(stack, 1.0f, true);   // speed, smooth-blend
+  CustomGlint.getGlowSpeed(stack);
+  CustomGlint.getGlowInterpolate(stack);
 
 
 Auto-apply registries
@@ -197,14 +213,17 @@ client-only helper:
 ================================================================================
 
 Colors: CustomGlint.RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE,
-PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK. Custom hex via
-CustomGlint.color("FFD700"). The alpha byte is a brightness multiplier
-(0xFF full, 0x00 invisible); blend mode is additive.
+PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK (these match
+Minecraft's dye colors). Custom hex via CustomGlint.color("FFD700"). The alpha
+byte is a brightness multiplier (0xFF full, 0x00 invisible); blend mode is
+additive. Near-black (RGB below ~0x18) renders invisible, so a black slot
+leaves a deliberate gap in a design.
 
-Designs: 55 ResourceLocation constants on CustomGlint (e.g. WAVE, SPARKLE,
-AURORA). Iterate with CustomGlint.PATTERNS.
+Designs: 56 ResourceLocation constants on CustomGlint (e.g. WAVE, SPARKLE,
+AURORA), including VANILLA and the procedural CHROMATIC. Iterate with
+CustomGlint.PATTERNS.
 
-Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (55).
+Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (56).
 
 
 ================================================================================
@@ -226,6 +245,42 @@ Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (55
 NOT wired automatically: BEWLR renderers that bypass ItemRenderer.getFoilBuffer
 and call MultiBufferSource.getBuffer(RenderType) themselves. Drive the pipeline
 directly via the hooks below if your mod ships one.
+
+
+================================================================================
+  Specifically supported mods
+================================================================================
+
+These integrations ship in the FULL standalone jar only, NOT in the bundled
+api jar. Each targets the other mod by class name with a soft mixin (no hard
+dependency) and no-ops when the mod is absent, so they never affect a modpack
+that lacks them.
+
+  Ice and Fire          - troll weapons, death worm gauntlets, dragon armor,
+                          hippogryph armor, and hippocampus armor take glints
+                          and glow outlines.
+  Epic Knights          - armor decoration overlays (capes, tabards, trims)
+  (magistuarmory)         glint; chestplate outlines trace the visible armor.
+  Epic Fight            - glowing entities keep their glow outline while Epic
+                          Fight renders them with its own animated meshes.
+  Sophisticated          - backpacks glint across all of their render passes.
+  Backpacks
+  ElytraSlot            - elytra worn in the dedicated Curios slot glint like
+                          a chestplate elytra.
+  First-Person Model    - held-item glow outlines stay aligned in the 3.5D
+                          body view.
+  Punchy                - held-item glow outlines render with its first-person
+                          animations.
+  Gnetum                - animated glints and glow outlines don't freeze on the
+                          hotbar under its HUD caching.
+  Enhanced Visuals      - a glowing item no longer blacks out the screen; blood
+                          and damage overlays draw correctly.
+  Iris / Oculus         - glow outlines render consistently under shader packs.
+  JEI                   - all Glint Trim, Glow Trim, Tear, smithing, powder,
+                          and Rainbow Dye recipes/pages show in the recipe view.
+
+Modded armor and held items that go through the normal ItemRenderer / armor
+layer flow are handled automatically without a per-mod integration.
 
 
 ================================================================================
@@ -284,7 +339,9 @@ list on join and /reload.
 
 Tag key: "customglint".
 speed: 1.0 = 20 ticks / color. interpolate: 1b = smooth. simultaneous: 1b = all
-colors at once. Alpha byte of each color int = brightness.
+colors at once. Alpha byte of each color int = brightness. Optional per-layer
+scrollDir (int, 0 = static) and scrollOffset (float) drive the scroll animation;
+chromatic layers also store a seed (int).
 
 Colors in [I;...] are signed 32-bit ints. Any color with alpha >= 0x80 (i.e.
 every full-brightness color) is negative in this form; the leading 0xFF makes
