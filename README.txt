@@ -263,6 +263,9 @@ that lacks them.
   (magistuarmory)         glint; chestplate outlines trace the visible armor.
   Epic Fight            - glowing entities keep their glow outline while Epic
                           Fight renders them with its own animated meshes.
+  Iron's Spells         - GeckoLib-rendered armor takes glints and glow
+  ('n Spellbooks)         outlines while worn; also covers other mods whose
+                          armor draws through GeckoLib's GeoArmorRenderer.
   Sophisticated          - backpacks glint across all of their render passes.
   Backpacks
   ElytraSlot            - elytra worn in the dedicated Curios slot glint like
