@@ -25,7 +25,10 @@ version = mod_version
 group = mod_group_id
 
 base {
-    archivesName = 'custom-glint'
+    // Player-facing downloadable jar name. Display name is "Glint & Glamour"; filenames can't hold '&',
+    // so hyphenate. The API jar has its own archiveBaseName 'glint-and-glamour-api' below — that is the
+    // jarJar / maven coordinate downstream mods depend on; keep the two in sync if renamed again.
+    archivesName = 'Glint-and-Glamour'
 }
 // Mojang ships Java 17 to end users in 1.18+, so your mod should target Java 17.
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -203,10 +206,10 @@ tasks.named('processResources', ProcessResources).configure {
 // META-INF/jarjar/, so a player who installs only the full jar still gets the api loaded.
 // --------------------------------------------------------------------------------------------
 
-def apiJarName = "custom-glint-api-${mod_version}.jar"
+def apiJarName = "glint-and-glamour-api-${mod_version}.jar"
 
 tasks.register('apiJar', Jar) {
-    archiveBaseName = 'custom-glint-api'
+    archiveBaseName = 'glint-and-glamour-api'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn 'classes', 'processResources'
 
@@ -240,7 +243,7 @@ tasks.register('apiJar', Jar) {
                 'Specification-Title'     : 'customglint_api',
                 'Specification-Vendor'    : mod_authors,
                 'Specification-Version'   : '1',
-                'Implementation-Title'    : 'custom-glint-api',
+                'Implementation-Title'    : 'glint-and-glamour-api',
                 'Implementation-Version'  : mod_version,
                 'Implementation-Vendor'   : mod_authors,
                 'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
@@ -281,7 +284,7 @@ tasks.register('stageApiInFullJar') {
         new File(jarjarDir, 'metadata.json').text = groovy.json.JsonOutput.prettyPrint("""{
   "jars": [
     {
-      "identifier": { "group": "net.tunamods.customglint", "artifact": "custom-glint-api" },
+      "identifier": { "group": "net.tunamods.customglint", "artifact": "glint-and-glamour-api" },
       "version": { "range": "[${mod_version},2.0)", "artifactVersion": "${mod_version}" },
       "path": "META-INF/jarjar/${apiJarName}",
       "isObfuscated": false
@@ -347,7 +350,7 @@ publishing {
             artifact jar
         }
         register('mavenJavaApi', MavenPublication) {
-            artifactId = 'custom-glint-api'
+            artifactId = 'glint-and-glamour-api'
             artifact apiJar
         }
     }

@@ -1,4 +1,4 @@
-Custom Glints - developer documentation
+Glint & Glamour - developer documentation
 Minecraft 1.20.1 / Forge 47.x - MIT license (attribution required)
 ================================================================================
 
@@ -13,11 +13,11 @@ Chromatic), extensible via data packs.
   Two artifacts
 ================================================================================
 
-  custom-glint-api-<ver>.jar   (modid: customglint_api)
+  glint-and-glamour-api-<ver>.jar   (modid: customglint_api)
       Rendering pipeline + Java API. No wand, recipes, or /glint command.
       Bundle this via jarJar.
 
-  custom_glint-<ver>.jar       (modid: customglint + customglint_api)
+  Glint-and-Glamour-<ver>.jar       (modid: customglint + customglint_api)
       Full standalone download. Adds the Glint Wand, the Glint Table block,
       Glint Trim / Glow Trim / Tear items, Glint Bag, Trim Powder, Rainbow
       Dye, recipes, advancements, shared server blueprints, the /glint
@@ -36,16 +36,16 @@ In build.gradle:
 
     repositories {
         maven {
-            name = "TunaMods Custom Glints"
+            name = "TunaMods Glint & Glamour"
             url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo"
         }
     }
 
     dependencies {
-        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.7.0")
-        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.7.0")
+        compileOnly fg.deobf("net.tunamods.customglint:glint-and-glamour-api:1.7.0")
+        runtimeOnly fg.deobf("net.tunamods.customglint:glint-and-glamour-api:1.7.0")
 
-        jarJar(group: 'net.tunamods.customglint', name: 'custom-glint-api',
+        jarJar(group: 'net.tunamods.customglint', name: 'glint-and-glamour-api',
                version: '[1.7.0,2.0)') {
             jarJar.ranged(it, '[1.7.0,2.0)')
         }
