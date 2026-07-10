@@ -12,6 +12,8 @@ config="custom_glint.sophisticatedbackpacks.mixins.json"
 config="custom_glint.epicfight.mixins.json"
 [[mixins]]
 config="custom_glint.geckolib.mixins.json"
+[[mixins]]
+config="custom_glint.immersivearmors.mixins.json"
 
 [[mods]]
 modId="${mod_id}"

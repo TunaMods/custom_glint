@@ -75,6 +75,7 @@ public class CustomGlintMod {
         FirstPersonCompat.register();
         EpicKnightsCompat.register();
         net.tunamods.customglint.module.compat.geckolib.GeckoLibArmorCompat.register();
+        net.tunamods.customglint.module.compat.immersivearmors.ImmersiveArmorsCompat.register();
 
         // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
         // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so
