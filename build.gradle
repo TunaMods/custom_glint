@@ -346,7 +346,7 @@ tasks.named('jar', Jar).configure {
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
-            artifactId = 'custom_glint'
+            artifactId = 'glint-and-glamour'
             artifact jar
         }
         register('mavenJavaApi', MavenPublication) {
