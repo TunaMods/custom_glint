@@ -266,6 +266,9 @@ that lacks them.
   Iron's Spells         - GeckoLib-rendered armor takes glints and glow
   ('n Spellbooks)         outlines while worn; also covers other mods whose
                           armor draws through GeckoLib's GeoArmorRenderer.
+  Immersive Armors      - the mod's layered armor takes glints and glow
+                          outlines while worn, even though it draws each piece
+                          with its own model instead of the vanilla armor layer.
   Sophisticated          - backpacks glint across all of their render passes.
   Backpacks
   ElytraSlot            - elytra worn in the dedicated Curios slot glint like
