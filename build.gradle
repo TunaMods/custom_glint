@@ -213,6 +213,12 @@ def generateApiJarJarMetadata = tasks.register('generateApiJarJarMetadata') {
     def versionStr = mod_version.toString()
     def groupStr = mod_group_id.toString()
     def nestedName = apiJarName
+    // Without declared inputs the task is UP-TO-DATE forever once it has written the file, so a version
+    // bump left a stale metadata.json pointing at a nested jar that no longer exists (FML: "contained no
+    // existing paths"). Key the task on the values it writes so it regenerates when any of them change.
+    inputs.property('versionStr', versionStr)
+    inputs.property('groupStr', groupStr)
+    inputs.property('nestedName', nestedName)
     doLast {
         def f = outFile.get().asFile
         f.parentFile.mkdirs()
