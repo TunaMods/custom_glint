@@ -31,6 +31,7 @@ modId="customglint_api"
 version="${mod_version}"
 displayName="Glint & Glamour API"
 logoFile="customglint.png"
+logoBlur=false
 authors="${mod_authors}"
 description='''The rendering pipeline and NBT API for Glint & Glamour. Other mods bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
 
@@ -47,6 +48,7 @@ displayName="${mod_name}" #mandatory
 #displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
 # A file name (in the root of the mod JAR) containing a logo for display
 logoFile="customglint.png" #optional
+logoBlur=false #optional
 # A text field displayed in the mod UI
 #credits="" #optional
 # A text field displayed in the mod UI
