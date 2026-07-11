@@ -36,7 +36,10 @@ repositories {
 }
 
 base {
-    archivesName = mod_id
+    // Player-facing downloadable jar name. Display name is "Glint & Glamour"; filenames can't hold '&',
+    // so hyphenate. The API jar has its own archiveBaseName 'glint-and-glamour-api' below — that is the
+    // jarJar / maven coordinate downstream mods depend on; keep the two in sync if renamed again.
+    archivesName = 'Glint-and-Glamour'
 }
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
@@ -172,14 +175,14 @@ neoForge.ideSyncTask generateModMetadata
 // refmap to stage (Mixin treats the absent refmap as identity, which is correct under Mojmap).
 // --------------------------------------------------------------------------------------------
 
-def apiJarName = "custom-glint-api-${mod_version}.jar"
+def apiJarName = "glint-and-glamour-api-${mod_version}.jar"
 def modMetadataDir = layout.buildDirectory.dir("generated/sources/modMetadata/META-INF")
 
 def apiJarTask = tasks.register('apiJar', Jar) {
-    archiveBaseName = 'custom-glint-api'
+    archiveBaseName = 'glint-and-glamour-api'
     // Tag the built file with the MC version to tell it apart from the 26.1.2 build locally. This is
     // only the build/libs filename; the maven publication and the jarjar nesting both rename it back
-    // to custom-glint-api-${mod_version}.jar, so the published coordinate stays the bare version.
+    // to glint-and-glamour-api-${mod_version}.jar, so the published coordinate stays the bare version.
     archiveVersion = "${mod_version}-${minecraft_version}"
     archiveClassifier = ''
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -224,7 +227,7 @@ def generateApiJarJarMetadata = tasks.register('generateApiJarJarMetadata') {
         f.parentFile.mkdirs()
         f.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([
                 jars: [[
-                        identifier  : [group: groupStr, artifact: 'custom-glint-api'],
+                        identifier  : [group: groupStr, artifact: 'glint-and-glamour-api'],
                         version     : [range: "[${versionStr},2.0)".toString(), artifactVersion: versionStr],
                         path        : "META-INF/jarjar/${nestedName}".toString(),
                         isObfuscated: false
@@ -276,11 +279,11 @@ tasks.named('jar', Jar).configure {
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
-            artifactId = 'custom_glint'
+            artifactId = 'glint-and-glamour'
             artifact jar
         }
         register('mavenJavaApi', MavenPublication) {
-            artifactId = 'custom-glint-api'
+            artifactId = 'glint-and-glamour-api'
             artifact apiJar
         }
     }
