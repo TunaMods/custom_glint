@@ -34,7 +34,6 @@ Fixed:
 - A glowing item's outline in JEI recipe views now draws behind the tooltip instead of over it
 - Glow Trims now show their dyeing recipe in JEI
 - Fixed glint table recipe
-- A glinted or glowing slime now shows its effect correctly on its translucent outer shell under a shader pack, instead of appearing dim or drawing inside-out
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
@@ -50,7 +49,6 @@ Altered:
 - Punchy: the held-item glow outline now renders correctly with its first-person animations, including under shader packs
 - Gnetum: works out of the box, no compatibility patch needed
 - Enhanced Visuals: works out of the box, no compatibility patch needed
-- Epic Fight: entity glints no longer render as broken triangles
 - Epic Fight: glowing entities keep their glow outline while Epic Fight renders them with its own animations
 
 [1.6.0]
