@@ -174,6 +174,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (maskTarget != null) { maskTarget.destroyBuffers(); maskTarget = null; }
         if (worldDeferredMask != null) { worldDeferredMask.destroyBuffers(); worldDeferredMask = null; }
         texSilhouetteRTs.clear();
+        texSilhouetteTriRTs.clear();
         rtTextureCache.clear();
     }
 
@@ -187,10 +188,17 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  fragment wins), no blend; the shader alpha-discards against {@code tex} so the mask traces the real
      *  shape. The name must be unique per texture (RenderType identity includes it). */
     private static RenderType buildSilhouetteRT(String name, ResourceLocation tex) {
+        return buildSilhouetteRT(name, tex, VertexFormat.Mode.QUADS);
+    }
+
+    // {@code mode} lets a caller build a TRIANGLES-mode silhouette RT for a silhouette captured from a
+    // triangle-list draw (Epic Fight patched-entity meshes) — a QUADS RT fed triangle-list vertices
+    // reassembles them wrong and the mask shatters.
+    private static RenderType buildSilhouetteRT(String name, ResourceLocation tex, VertexFormat.Mode mode) {
         return RenderType.create(
                 name,
                 DefaultVertexFormat.NEW_ENTITY,
-                VertexFormat.Mode.QUADS,
+                mode,
                 1024,
                 false,
                 false,
@@ -234,6 +242,15 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 t -> buildSilhouetteRT("customglint:glow_silhouette_tex_" + t, t));
     }
 
+    // TRIANGLES-mode counterpart of silhouetteTexRT, for triangle-list silhouette captures (Epic Fight
+    // patched-entity meshes). Cached separately; cleared on resource reload.
+    private static final Map<ResourceLocation, RenderType> texSilhouetteTriRTs = new HashMap<>();
+
+    private static RenderType silhouetteTexTriangleRT(ResourceLocation tex) {
+        return texSilhouetteTriRTs.computeIfAbsent(tex,
+                t -> buildSilhouetteRT("customglint:glow_silhouette_tri_" + t, t, VertexFormat.Mode.TRIANGLES));
+    }
+
     // ── RenderType → texture resolution (for special-item silhouettes) ──────────
     // A BEWLR (trident, shield, IaF/EK custom renderers) draws its model through RenderTypes bound to the
     // item's OWN texture, whose alpha is the real shape. To trace that shape (instead of white-filling the
@@ -246,7 +263,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private static Field cgTextureStateField;
     private static Field cgTextureField;
 
-    static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
+    public static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
         ResourceLocation r = rtTextureCache.get(rt);
         if (r != null) return r;
         r = reflectRenderTypeTexture(rt);
@@ -396,7 +413,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // shape against {@code tex}. Each job carries an explicit {@code key} from {@link #glowKeyFor} so a
     // figure's body + all its armor share one id and compose as ONE ring.
     private record ModelJob(float[] data, int len, ResourceLocation tex, int color, int key, int category,
-                            int priority, float[] anchor) {}
+                            int priority, float[] anchor, boolean triangles) {}
 
     private static final List<ItemJob> worldJobs = new ArrayList<>();
     private static final List<ItemJob> heldFpJobs = new ArrayList<>();
@@ -449,7 +466,26 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (len < 20 || tex == null) return; // need at least one quad (4 verts * 5 floats)
         float[] copy = new float[len];
         System.arraycopy(data, 0, copy, 0, len);
-        modelWorldJobs.add(new ModelJob(copy, len, tex, color, key, category, priority, null));
+        modelWorldJobs.add(new ModelJob(copy, len, tex, color, key, category, priority, null, false));
+    }
+
+    /** TRIANGLES-mode counterpart of {@link #queueModelOutline}, for a silhouette captured from a
+     *  triangle-list draw (Epic Fight patched-entity meshes route through a TRIANGLES-mode RenderType).
+     *  {@code data} is camera-relative {@code [x,y,z,u,v]} per vertex in triangle-list order; the vertex
+     *  count is trimmed to a multiple of 3 so the deferred TRIANGLES draw never leaves a partial primitive.
+     *  Same {@code key} scheme as {@link #queueModelOutline} — the body mesh + every worn/patched layer of
+     *  one figure share a key and compose as ONE ring. Drained with the world items at {@code AFTER_WEATHER}. */
+    public static void queueModelOutlineTriangles(float[] data, int len, ResourceLocation tex, int color, int key,
+                                                  int category, int priority) {
+        if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
+        if (tex == null) return;
+        int verts = len / 5;
+        verts -= verts % 3;               // TRIANGLES: whole primitives only
+        int usable = verts * 5;
+        if (usable < 15) return;          // need at least one triangle (3 verts * 5 floats)
+        float[] copy = new float[usable];
+        System.arraycopy(data, 0, copy, 0, usable);
+        modelWorldJobs.add(new ModelJob(copy, usable, tex, color, key, category, priority, null, true));
     }
 
     // Set for the duration of the first-person hand pass (armed at the HEAD of
@@ -508,7 +544,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         float[] copy = new float[len];
         System.arraycopy(data, 0, copy, 0, len);
         ModelJob job = new ModelJob(copy, len, tex, color, key, itemCategory(ctx), 0,
-                ctx == ItemDisplayContext.GUI ? anchor : null);
+                ctx == ItemDisplayContext.GUI ? anchor : null, false);
         if (ctx == ItemDisplayContext.GUI) modelGuiJobs.add(job);
         else if (isFpContext(ctx)) { snapshotHeldFpMatrices(); modelFpJobs.add(job); }
         else modelWorldJobs.add(job);
@@ -636,7 +672,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // its real shape against its own texture, not a square model hull.
         for (ModelJob job : modelGuiJobs) {
             resetCamBox();
-            VertexConsumer tc = MASK_BUFFERS.getBuffer(silhouetteTexRT(job.tex));
+            VertexConsumer tc = MASK_BUFFERS.getBuffer(
+                    job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
             int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
             SilhouetteConsumer sc = new SilhouetteConsumer(tc, r, g, b, job.key);
             emitModel(sc, job);
@@ -804,7 +841,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // a figure's body + armor — or a multi-texture item's buckets — share one id → one unified ring.
         for (ModelJob job : models) {
             resetCamBox();
-            VertexConsumer mc2 = MASK_BUFFERS.getBuffer(silhouetteTexRT(job.tex));
+            VertexConsumer mc2 = MASK_BUFFERS.getBuffer(
+                    job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
             int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
             SilhouetteConsumer sc = new SilhouetteConsumer(mc2, r, g, b, job.key);
             emitModel(sc, job);
