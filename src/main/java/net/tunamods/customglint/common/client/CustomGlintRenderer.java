@@ -1124,6 +1124,59 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
     }
 
+    // Under a shader pack the first-person hand is not drawn via GameRenderer.renderItemInHand /
+    // ItemInHandRenderer.renderHandsWithItems — Iris relocates it into its own HAND_SOLID / HAND_TRANSLUCENT
+    // phase inside the gbuffer pass, with a THIRD_PERSON display context. So our renderItemInHand /
+    // renderHandsWithItems flags never arm and the held item misroutes to the world outline queue. Iris exposes
+    // the current phase; when it is a HAND phase the item being drawn IS the FP held item. Reflective — no dep.
+    private static volatile boolean IRIS_PHASE_LOOKUP_DONE = false;
+    private static volatile Method IRIS_GET_PIPELINE_MANAGER = null;
+    private static volatile Method IRIS_GET_PIPELINE_NULLABLE = null;
+    private static volatile Method IRIS_GET_PHASE = null;
+    private static volatile Object IRIS_PHASE_HAND_SOLID = null;
+    private static volatile Object IRIS_PHASE_HAND_TRANSLUCENT = null;
+
+    /** True while Iris is in its HAND_SOLID / HAND_TRANSLUCENT phase, i.e. drawing the first-person hand item
+     *  under a shader pack. False when no shader mod is present / not resolvable / not the hand phase. */
+    public static boolean isShaderHandPass() {
+        if (!IRIS_PHASE_LOOKUP_DONE) {
+            synchronized (CustomGlintRenderer.class) {
+                if (!IRIS_PHASE_LOOKUP_DONE) {
+                    try {
+                        Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
+                        IRIS_GET_PIPELINE_MANAGER = iris.getMethod("getPipelineManager");
+                        Class<?> pm = Class.forName("net.irisshaders.iris.pipeline.PipelineManager");
+                        IRIS_GET_PIPELINE_NULLABLE = pm.getMethod("getPipelineNullable");
+                        Class<?> wrp = Class.forName("net.irisshaders.iris.pipeline.WorldRenderingPipeline");
+                        IRIS_GET_PHASE = wrp.getMethod("getPhase");
+                        Class<?> phase = Class.forName("net.irisshaders.iris.pipeline.WorldRenderingPhase");
+                        for (Object c : phase.getEnumConstants()) {
+                            String n = ((Enum<?>) c).name();
+                            if (n.equals("HAND_SOLID")) IRIS_PHASE_HAND_SOLID = c;
+                            else if (n.equals("HAND_TRANSLUCENT")) IRIS_PHASE_HAND_TRANSLUCENT = c;
+                        }
+                    } catch (Throwable ignored) {
+                        IRIS_GET_PIPELINE_MANAGER = null;
+                        IRIS_GET_PHASE = null;
+                    }
+                    IRIS_PHASE_LOOKUP_DONE = true;
+                }
+            }
+        }
+        if (IRIS_GET_PIPELINE_MANAGER == null || IRIS_GET_PIPELINE_NULLABLE == null || IRIS_GET_PHASE == null)
+            return false;
+        try {
+            Object pm = IRIS_GET_PIPELINE_MANAGER.invoke(null);
+            if (pm == null) return false;
+            Object pipe = IRIS_GET_PIPELINE_NULLABLE.invoke(pm);
+            if (pipe == null) return false;
+            Object ph = IRIS_GET_PHASE.invoke(pipe);
+            return ph == IRIS_PHASE_HAND_SOLID || ph == IRIS_PHASE_HAND_TRANSLUCENT;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     // Under shader mods, every RenderType is mixed in to implement BlendingStateHolder with a
     // TransparencyType field (default GENERAL_TRANSPARENT). The batched FullyBufferedMultiBuffer-
     // Source flushes by TransparencyType in enum order (OPAQUE → OPAQUE_DECAL → GENERAL_TRANSPARENT

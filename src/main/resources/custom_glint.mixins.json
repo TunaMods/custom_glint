@@ -6,6 +6,7 @@
   "client": [
     "AbstractContainerScreenMixin",
     "ElytraLayerMixin",
+    "GameRendererMixin",
     "GuiGraphicsMixin",
     "GuiMixin",
     "HorseArmorLayerMixin",

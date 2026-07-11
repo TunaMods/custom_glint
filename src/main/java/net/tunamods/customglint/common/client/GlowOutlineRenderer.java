@@ -27,6 +27,7 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import net.tunamods.customglint.common.CustomGlint;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
 import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
@@ -422,6 +423,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  drawn hand item. */
     public static void queueHeldFpItem(List<BakedQuad> quads, PoseStack.Pose pose, int light, int color) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
+        snapshotHeldFpMatrices();
         heldFpJobs.add(new ItemJob(quads, pose, light, color, CAT_HELD_FP, null));
     }
 
@@ -450,11 +452,50 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         modelWorldJobs.add(new ModelJob(copy, len, tex, color, key, category, priority, null));
     }
 
+    // Set for the duration of the first-person hand pass (armed at the HEAD of
+    // ItemInHandRenderer.renderHandsWithItems / GameRenderer.renderItemInHand). FP-replacing mods (Punchy,
+    // First-Person Model) draw the held item with a THIRD_PERSON display context during that pass; this flag
+    // lets the capture route it to the FP held queue (drained under the hand-FOV matrices) instead of the
+    // world queue, and the drain point clears it.
+    private static boolean fpHandPass = false;
+
+    /** Arm/disarm the first-person hand pass (see {@link #isFpHand()}). */
+    public static void setFpHandPass(boolean active) { fpHandPass = active; }
+
+    /** True when the item currently being drawn belongs to the first-person hand: either our own hand-pass
+     *  flag is armed (vanilla / Punchy / FPM off-pack), or Iris is in its HAND phase (under a shader pack the
+     *  hand is drawn there — inside the gbuffer pass, outside renderItemInHand/renderHandsWithItems — so the
+     *  flag never arms). Used to treat a THIRD_PERSON-context held item (Punchy / FPM / Iris draw it that way)
+     *  as first-person so it routes to the FP queue. */
+    public static boolean isFpHand() { return fpHandPass || CustomGlintRenderer.isShaderHandPass(); }
+
+    /** True for a native first-person hand context, or any item captured inside the hand pass. */
+    static boolean isFpContext(ItemDisplayContext ctx) {
+        return ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || isFpHand();
+    }
+
     /** CAT_HELD_FP for a first-person hand item, else CAT_ITEM. */
     static int itemCategory(ItemDisplayContext ctx) {
-        boolean fp = ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
-                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
-        return fp ? CAT_HELD_FP : CAT_ITEM;
+        return isFpContext(ctx) ? CAT_HELD_FP : CAT_ITEM;
+    }
+
+    // Modelview a first-person held item is DRAWN under, snapshotted when it is queued (inside the hand pass).
+    // Under a shader pack the drain runs at renderItemInHand RETURN, where vanilla has already popped the
+    // hand modelview back to the world one — replaying under that detaches the ring and free-floats it near
+    // the player. The PROJECTION is deliberately NOT snapshotted: at renderItemInHand RETURN the live
+    // RenderSystem projection is still the fixed hand-FOV projection (vanilla set it at the method HEAD and
+    // never restores it), which is exactly what the hand was drawn under. Overriding it with Iris's gbuffer
+    // (world) projection instead made the ring drift on sprint, when the world FOV diverges from the hand's.
+    private static final Matrix4f HELD_FP_MV = new Matrix4f();
+    private static boolean heldFpMatricesValid = false;
+
+    /** Capture the live RenderSystem modelview the first-person hand item is drawn under (the hand pass sets
+     *  it once and every hand item shares it). */
+    private static void snapshotHeldFpMatrices() {
+        HELD_FP_MV.set(RenderSystem.getModelViewMatrix());
+        heldFpMatricesValid = true;
     }
 
     /** Queue one textured item silhouette bucket under an explicit outline {@code key}. A multi-texture item
@@ -469,8 +510,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         ModelJob job = new ModelJob(copy, len, tex, color, key, itemCategory(ctx), 0,
                 ctx == ItemDisplayContext.GUI ? anchor : null);
         if (ctx == ItemDisplayContext.GUI) modelGuiJobs.add(job);
-        else if (ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
-                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND) modelFpJobs.add(job);
+        else if (isFpContext(ctx)) { snapshotHeldFpMatrices(); modelFpJobs.add(job); }
         else modelWorldJobs.add(job);
     }
 
@@ -486,6 +526,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         glowIdCounter = 0;
         guiMaskCleared = false;
         worldDeferredPending = false;
+        heldFpMatricesValid = false;
     }
 
     // ── Drain ──────────────────────────────────────────────────────────────────
@@ -494,7 +535,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  {@code RenderLevelStageEvent.AFTER_WEATHER}, where the live projection / modelview are the world
      *  ones the items and entities were drawn with. */
     public static void drainWorld() {
-        drain(worldJobs, modelWorldJobs);
+        drain(worldJobs, modelWorldJobs, true);
     }
 
     /** Drain first-person held item outlines. Called at the RETURN of
@@ -504,7 +545,27 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  hand items have already been flushed ({@code endBatch}) by that point, so the ring composites over
      *  them. */
     public static void drainHeldFp() {
-        drain(heldFpJobs, modelFpJobs);
+        if (heldFpJobs.isEmpty() && modelFpJobs.isEmpty()) { heldFpMatricesValid = false; return; }
+        // Under a shader pack the drain runs at renderItemInHand RETURN, where the live modelview has been
+        // popped back to the world one; replaying the captured hand modelview puts the silhouette back on the
+        // hand item. The live projection there is still the fixed hand-FOV one the hand drew under, so it is
+        // left untouched (overriding it drifted the ring on sprint). Off-pack the drain point already has the
+        // correct live matrices, so keep that proven path untouched.
+        if (heldFpMatricesValid && CustomGlintRenderer.isShaderPackActive()) {
+            Matrix4fStack mv = RenderSystem.getModelViewStack();
+            mv.pushMatrix();
+            mv.set(HELD_FP_MV);
+            RenderSystem.applyModelViewMatrix();
+            try {
+                drain(heldFpJobs, modelFpJobs, false);
+            } finally {
+                mv.popMatrix();
+                RenderSystem.applyModelViewMatrix();
+            }
+        } else {
+            drain(heldFpJobs, modelFpJobs, false);
+        }
+        heldFpMatricesValid = false;
     }
 
     /** Drain GUI / inventory / HUD item outlines. Called per item from {@code ItemRendererMixin} at the
@@ -627,7 +688,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  per-job key drives the shader's per-category {@code THICKNESS[]}, and the composite kernel radius for
      *  the whole pass is the widest category present (a source can never ring past its own thickness, so a
      *  larger kernel only costs unused taps — never a wrong ring). */
-    private static void drain(List<ItemJob> jobs, List<ModelJob> models) {
+    private static void drain(List<ItemJob> jobs, List<ModelJob> models, boolean sceneOcclusion) {
         if (jobs.isEmpty() && models.isEmpty()) return;
         if (silhouetteShader == null || compositeShader == null) {
             jobs.clear(); models.clear(); return;
@@ -635,7 +696,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
         Matrix4f proj = RenderSystem.getProjectionMatrix();
         ensureTarget(main.width, main.height);
-        int searchRadius = accumulate(jobs, models, main, itemBoxes, maskTarget);
+        int searchRadius = accumulate(jobs, models, main, itemBoxes, maskTarget, sceneOcclusion);
         composite(main, itemBoxes, searchRadius, proj.m22(), proj.m32(), maskTarget, 0);
         jobs.clear();
         models.clear();
@@ -664,7 +725,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
         Matrix4f proj = RenderSystem.getProjectionMatrix();
         worldDeferredMask = ensureTarget(worldDeferredMask, main.width, main.height);
-        worldDeferredSearchRadius = accumulate(worldJobs, modelWorldJobs, main, worldDeferredBoxes, worldDeferredMask);
+        worldDeferredSearchRadius = accumulate(worldJobs, modelWorldJobs, main, worldDeferredBoxes, worldDeferredMask, true);
         worldDeferredProjA = proj.m22();
         worldDeferredProjB = proj.m32();
         worldDeferredPending = true;
@@ -693,7 +754,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  through {@code ProjMat*ModelViewMat} and {@link SilhouetteConsumer} projects each vertex). Returns the
      *  composite kernel radius (the widest category present). Leaves the mask bound for writing. */
     private static int accumulate(List<ItemJob> jobs, List<ModelJob> models, RenderTarget main, List<Box> outBoxes,
-                                  TextureTarget mask) {
+                                  TextureTarget mask, boolean sceneOcclusion) {
         beginAccumulation(main.width, main.height);
 
         int searchRadius = 1;
@@ -713,7 +774,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // Bind the main depth texture to sampler unit 1 so the silhouette shader can occlude fragments
         // that are behind the scene. Safe to read here: we're writing the MASK, not the main target.
         // (shaderTextures[1] persists across both silhouette RTs' draws; the RT setup only touches unit 0.)
-        RenderSystem.setShaderTexture(1, main.getDepthTextureId());
+        // sceneOcclusion=false leaves it unbound (unit 1 = 0) for the always-foreground first-person held
+        // item: under a shader pack the hand item's own imprecise depth would otherwise occlude its own ring,
+        // flipping in/out per frame (flicker) and shifting as the scene depth changes while you run.
+        RenderSystem.setShaderTexture(1, sceneOcclusion ? main.getDepthTextureId() : 0);
         // Under a shader pack the reconstructed scene distance is imprecise at grazing edges and the error
         // grows with distance, so the per-fragment occlusion flips in/out each frame (the dragon "inner-scale"
         // flicker). Give the occlusion a distance-scaled tolerance under a pack so grazing edges stay visible

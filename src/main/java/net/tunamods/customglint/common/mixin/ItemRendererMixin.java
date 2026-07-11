@@ -229,8 +229,12 @@ public class ItemRendererMixin {
         // again, whose RETURN re-enters this method).
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
         boolean gui = ctx == ItemDisplayContext.GUI;
-        boolean firstPerson = ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
-                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
+        // FP-replacing mods (Punchy, First-Person Model) draw the held item with a THIRD_PERSON display
+        // context during the first-person hand pass; isFpHand() routes it to the FP held queue (drained
+        // under the hand-FOV projection) instead of the world queue.
+        boolean firstPerson = !gui && (ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || GlowOutlineRenderer.isFpHand());
         if (model == null) return;
         if (!CustomGlint.hasGlowEffect(stack)) return;
 
