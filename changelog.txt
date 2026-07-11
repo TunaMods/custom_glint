@@ -45,6 +45,9 @@ Altered:
 - Sequential multi-color layers now cost a sequential tear, matching how simultaneous layers cost a simultaneous tear
 - Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
 
+[Compat]
+- Punchy: the held-item glow outline now renders correctly with its first-person animations, including under shader packs
+
 [1.6.0]
 
 - Added the Glint Table: a block for building and printing trims with a slot-based editor, crafted from iron blocks, a crafting table, a smithing table, and a Glint Trim
