@@ -269,6 +269,11 @@ that lacks them.
   Immersive Armors      - the mod's layered armor takes glints and glow
                           outlines while worn, even though it draws each piece
                           with its own model instead of the vanilla armor layer.
+  Mekanism              - the MekaSuit, Jetpacks, Free Runners and their armored
+                          variants, and the Scuba tank and mask take glints and
+                          glow outlines while worn.
+  Artifacts             - belts, necklaces, gloves, boots and other artifacts
+                          worn in Curios slots take glints and glow outlines.
   Sophisticated          - backpacks glint across all of their render passes.
   Backpacks
   ElytraSlot            - elytra worn in the dedicated Curios slot glint like
@@ -297,28 +302,29 @@ Client-only. Gate any reference with FMLEnvironment / DistExecutor.
 
   import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
-  int argb = CustomGlintRenderer.outlineColor(stack);
+  // Glow color for an item, from its glow-color or glint NBT (white if neither)
+  int argb  = CustomGlintRenderer.resolveGlowColor(stack);
+  int frame = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
 
-  // RenderType factories (cached, self-register into fixedBuffers)
+  // Glint RenderType factories (cached, self-register into fixedBuffers). Pick the
+  // one whose depth matches the base draw, or the EQUAL-depth glint z-fights:
+  //   forGlint           - held items and BEWLR models
+  //   forArmorGlint      - armorCutoutNoCull surfaces (view-offset depth)
+  //   forHorseArmorGlint - entityCutoutNoCull surfaces (no polygon offset)
   RenderType rt  = CustomGlintRenderer.forGlint(glint, layerIdx, frameColor, isItem, colorIdx);
   RenderType rtA = CustomGlintRenderer.forArmorGlint(glint, layerIdx, frameColor, colorIdx);
   RenderType rtH = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
 
-  // Two-pass stencil outline for entity / armor models
-  CustomGlintRenderer.doModelOutline(poseStack, bufferSource, packedLight,
-      model, modelTexture, glint, equipmentSlot);
-
-  // Stencil outline for an item (BEWLR + flat-sprite paths)
-  CustomGlintRenderer.doItemOutline(stack, displayContext, poseStack,
-      bufferSource, packedLight, overlay);
-
   // Public ThreadLocals
-  CustomGlintRenderer.CURRENT_ITEM_STACK
-  CustomGlintRenderer.IN_OUTLINE
-  CustomGlintRenderer.COLOR_BUF
+  CustomGlintRenderer.CURRENT_ITEM_STACK   // set while an item is rendering
+  CustomGlintRenderer.IN_OUTLINE           // recursion guard during outline capture
+  CustomGlintRenderer.COLOR_BUF            // scratch float[4] for a frame color
 
-  // Optional gate to suppress outlines (true = skip)
-  CustomGlintRenderer.outlineSuppressor = () -> shouldSuppress();
+The glow outline is a post-process pass, captured automatically from the vanilla
+item, armor, and entity draws — there is no per-call outline draw method. A
+custom renderer that bypasses the item-foil buffer drives it the way the bundled
+mod compat does: fan the glint through a RenderType factory above, and route the
+same mesh into GlowOutlineRenderer to capture its silhouette.
 
 
 ================================================================================
