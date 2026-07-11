@@ -76,6 +76,22 @@ public final class EntityGlintRender {
         return new GlintWrappingBufferSource(original, data);
     }
 
+    /**
+     * Re-wrap the buffer for an Epic Fight patched entity. Epic Fight draws its body mesh through a
+     * TRIANGLES-mode {@code entity_*} RenderType, but its render receives the buffer already wrapped by the
+     * core {@link #wrapForEntity} (installed on vanilla {@code LivingEntityRenderer.render}, whose HEAD runs
+     * before Epic Fight cancels that render from {@code RenderLivingEvent.Pre}). That core wrapper fans the
+     * glint through QUADS RTs, so the triangle stream shatters into facets. Strip it and re-install a
+     * TRIANGLES-mode glint wrapper. No-op (returns the unwrapped buffer) when the entity has no glint.
+     */
+    public static MultiBufferSource rewrapTriangles(LivingEntity entity, MultiBufferSource buffer) {
+        MultiBufferSource raw = unwrap(buffer);
+        if (entity.isInvisible()) return raw;
+        CustomGlint.Data data = resolveData(entity);
+        if (data == null) return raw;
+        return new GlintWrappingBufferSource(raw, data, true);
+    }
+
     // ── Glow outline capture ────────────────────────────────────────────────────────
     // Each glowing model (entity body, an entity-surface layer, or a worn-armor piece) is re-rendered into
     // a record-only buffer (capturing camera-relative [x,y,z,u,v]) and queued, tracing the real shape
@@ -280,10 +296,18 @@ public final class EntityGlintRender {
     public static final class GlintWrappingBufferSource implements MultiBufferSource {
         final MultiBufferSource delegate;
         final CustomGlint.Data glint;
+        // Fan the glint through TRIANGLES-mode RTs instead of QUADS — for renderers whose entity draw is a
+        // triangle list (Epic Fight patched meshes). A QUADS glint RT fed a triangle stream shatters.
+        final boolean triangles;
 
         GlintWrappingBufferSource(MultiBufferSource delegate, CustomGlint.Data glint) {
+            this(delegate, glint, false);
+        }
+
+        public GlintWrappingBufferSource(MultiBufferSource delegate, CustomGlint.Data glint, boolean triangles) {
             this.delegate = delegate;
             this.glint = glint;
+            this.triangles = triangles;
         }
 
         @Override
@@ -307,12 +331,23 @@ public final class EntityGlintRender {
             // non-building state. Subsequent vertex writes to `base` then drop on the floor and
             // the body renders invisible. Acquiring `base` last leaves it as the current active
             // builder when the model writes.
+            // A translucent base surface (the slime's outer shell = entity_translucent) needs its glint tagged
+            // for shader-mod late render ONLY under a shader pack: there the translucent geometry is deferred and
+            // its depth is re-sorted, so an opaque EQUAL-depth glint tests against the wrong reference and
+            // vanishes; the LEQUAL / OPAQUE_DECAL variant fixes that. Off-pack there is no reorder, so LEQUAL
+            // alone would just drop the shell's self-occlusion (back faces show through) — off-pack the shell
+            // writes its own depth and the normal EQUAL path self-occludes correctly, so keep it.
+            boolean translucent = isTranslucent(rt) && CustomGlintRenderer.isShaderPackActive();
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                    RenderType crt = translucent
+                            ? CustomGlintRenderer.forChromaticEntityGlintTranslucent(glint, layerIdx, triangles)
+                            : triangles
+                                ? CustomGlintRenderer.forChromaticEntityGlintTriangles(glint, layerIdx)
+                                : CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
                     if (crt != null) list.add(delegate.getBuffer(crt));
                     continue;
                 }
@@ -320,13 +355,21 @@ public final class EntityGlintRender {
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         fillPremul(buf, colors[i]);
-                        RenderType grt = CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
+                        RenderType grt = translucent
+                                ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, i, triangles)
+                                : triangles
+                                    ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, i)
+                                    : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
                         if (grt != null) list.add(delegate.getBuffer(grt));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
                     fillPremul(buf, color);
-                    RenderType grt = CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
+                    RenderType grt = translucent
+                            ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, 0, triangles)
+                            : triangles
+                                ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, 0)
+                                : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
                     if (grt != null) list.add(delegate.getBuffer(grt));
                 }
             }
@@ -353,6 +396,12 @@ public final class EntityGlintRender {
             boolean verdict = name.startsWith("entity_") || name.startsWith("RenderType[entity_");
             GLINT_RT_VERDICT.put(rt, verdict);
             return verdict;
+        }
+
+        /** A translucent base surface (e.g. the slime's outer shell renders through entity_translucent_cull).
+         *  Its glint routes to the LEQUAL / OPAQUE_DECAL variant so it survives under a shader pack. */
+        private static boolean isTranslucent(RenderType rt) {
+            return rt.toString().contains("translucent");
         }
     }
 

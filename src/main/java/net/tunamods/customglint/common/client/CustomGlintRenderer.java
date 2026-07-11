@@ -453,17 +453,32 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  exactly mirroring the texture-glint depth setup so the EQUAL_DEPTH_TEST pass lines up. */
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering) {
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS);
+    }
+
+    // {@code mode} lets a caller request a TRIANGLES-mode RT for renderers that draw a triangle list (Epic
+    // Fight's skinned meshes) instead of vanilla QUADS — a QUADS RT fed a triangle stream shatters into facets.
+    private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
+                                          RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode) {
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false);
+    }
+
+    // {@code lateForShaders} routes a translucent-surface chromatic glint (slime outer shell) into the
+    // OPAQUE_DECAL shader bucket with LEQUAL depth — see forHorseArmorGlint for the full slime rationale.
+    private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
+                                          RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
+                                          boolean lateForShaders) {
         int[] colors = chromaticColors(layer.colors());
         final int colorCount = Math.min(colors.length, 8);
         final ResourceLocation white = getWhiteTexture();
         final ResourceLocation palette = getPaletteTexture(colors);
         String key = tag + "|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
-                + "|" + layer.seed() + "|" + scaleU + "|" + scaleV;
+                + "|" + layer.seed() + "|" + scaleU + "|" + scaleV + "|" + mode + (lateForShaders ? "|late" : "");
         RenderType cached = BY_CHROMATIC.computeIfAbsent(key, k -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":custom_chromatic|" + k.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
-                    VertexFormat.Mode.QUADS,
+                    mode,
                     256,
                     false,
                     false,
@@ -481,10 +496,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            .setWriteMaskState(COLOR_WRITE)
+                            // Translucent slime-shell variant writes depth to self-occlude (see forHorseArmorGlint).
+                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
                             .setCullState(NO_CULL)
-                            .setDepthTestState(EQUAL_DEPTH_TEST)
-                            .setLayeringState(layering)
+                            .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
+                            // Translucent shell: nudge depth toward the camera so the shell doesn't overdraw/dim
+                            // the glint texels (see forHorseArmorGlint). Opaque chromatic keeps its layering.
+                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : layering)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_texturing|" + k.hashCode(),
                                     () -> setChromaticMatrix(layer, scaleU, scaleV, colorCount), RenderSystem::resetTextureMatrix))
@@ -493,6 +511,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return rt;
         });
         registerLiveFixedBuffer(cached);
+        if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
         return cached;
     }
 
@@ -527,6 +546,22 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticShader == null) return null;
         return chromaticRT(glint.layers()[layerIdx], "entity|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
                 NO_LAYERING);
+    }
+
+    /** TRIANGLES-mode entity-body chromatic glint, for renderers that draw through a triangle-list
+     *  RenderType (Epic Fight patched meshes). A QUADS chromatic RT fed a triangle stream shatters. */
+    public static RenderType forChromaticEntityGlintTriangles(Data glint, int layerIdx) {
+        if (chromaticShader == null) return null;
+        return chromaticRT(glint.layers()[layerIdx], "entity|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
+                NO_LAYERING, VertexFormat.Mode.TRIANGLES);
+    }
+
+    /** Translucent-surface entity chromatic glint (slime outer shell) — LEQUAL depth + OPAQUE_DECAL shader
+     *  bucket so it survives the deferred translucent geometry under a pack. See {@link #forEntityGlintTranslucent}. */
+    public static RenderType forChromaticEntityGlintTranslucent(Data glint, int layerIdx, boolean triangles) {
+        if (chromaticShader == null) return null;
+        return chromaticRT(glint.layers()[layerIdx], "entity|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
+                NO_LAYERING, triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS, true);
     }
 
     /**
@@ -673,13 +708,46 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
     }
 
+    /** TRIANGLES-mode entity-body glint, for renderers that draw through a triangle-list RenderType (Epic
+     *  Fight patched meshes). A QUADS glint RT fed a triangle vertex stream reassembles the primitives wrong
+     *  and shatters into facets; matching the primitive mode assembles it correctly. */
+    public static RenderType forEntityGlintTriangles(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx, VertexFormat.Mode.TRIANGLES);
+    }
+
+    /**
+     * Entity glint for a TRANSLUCENT base surface (the slime's outer shell). Under a shader pack (Iris)
+     * translucent entity geometry is deferred to a later pass than our fixed glint buffer would otherwise
+     * flush, and the shell's depth is re-sorted per frame — so an EQUAL-depth glint tests against the wrong
+     * reference (flicker / dropout) or the shell paints over it entirely (the glint vanishes). This variant
+     * is a DISTINCT RT with LEQUAL depth tagged into the OPAQUE_DECAL bucket, so it flushes right after the
+     * opaque pass but BEFORE the translucent shell, testing against stable opaque depth. A no-op without a
+     * shader pack; opaque entity glint keeps its own EQUAL instance so its working ordering is unchanged.
+     */
+    public static RenderType forEntityGlintTranslucent(Data glint, int layerIdx, float[] frameColor, int colorIdx,
+                                                       boolean triangles) {
+        return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx,
+                triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS, true);
+    }
+
     // Horse armor uses entityCutoutNoCull (no polygon offset / no VIEW_OFFSET_Z_LAYERING).
     // forArmorGlint uses EQUAL + VIEW_OFFSET_Z_LAYERING — wrong offset → invisible on horses.
     // This variant keeps EQUAL + NO_LAYERING so depth matches, and scale 1.0 matches forArmorGlint visually.
     public static RenderType forHorseArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx, VertexFormat.Mode.QUADS, false);
+    }
+
+    public static RenderType forHorseArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx,
+                                                VertexFormat.Mode mode) {
+        return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx, mode, false);
+    }
+
+    public static RenderType forHorseArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx,
+                                                VertexFormat.Mode mode, boolean lateForShaders) {
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
-        String key = "horse|" + layerKey(layer) + "|" + colorIdx + "|" + layerIdx;
+        String key = "horse|" + layerKey(layer) + "|" + colorIdx + "|" + layerIdx + "|" + mode
+                + (lateForShaders ? "|late" : "");
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = BY_HORSE_ARMOR_GLINT.computeIfAbsent(key, k -> {
@@ -687,7 +755,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             RenderType rt = RenderType.create(
                     MOD_ID + ":custom_horse_armor_glint|" + k.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
-                    VertexFormat.Mode.QUADS,
+                    mode,
                     256,
                     false,
                     false,
@@ -703,10 +771,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            .setWriteMaskState(COLOR_WRITE)
+                            // Translucent slime-shell variant WRITES depth (in the OPAQUE_DECAL pass) so its own
+                            // front faces occlude its back faces (nearest-wins, view-independent) — a stable
+                            // self-occlusion the shell's Iris-re-sorted depth can't give. Opaque glint writes
+                            // colour only (its EQUAL test already self-occludes against the body's depth).
+                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
                             .setCullState(NO_CULL)
-                            .setDepthTestState(EQUAL_DEPTH_TEST)
-                            .setLayeringState(NO_LAYERING)
+                            // Opaque entity glint tests EQUAL (matches the body's own depth). The translucent
+                            // slime-shell variant tests LEQUAL: front faces pass against stable opaque depth
+                            // (OPAQUE_DECAL) and then against their own writes, so back faces are occluded.
+                            .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
+                            // Translucent shell: nudge the glint's written depth toward the camera so the shell's
+                            // own LEQUAL depth test discards the shell fragments AT the glint texels — the glint
+                            // punches through the shell (full brightness) instead of being painted over and dimmed
+                            // by the later GENERAL_TRANSPARENT shell pass. Opaque glint keeps NO_LAYERING.
+                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : NO_LAYERING)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_horse_armor_glint_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx), RenderSystem::resetTextureMatrix))
@@ -715,6 +794,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return rt;
         });
         registerLiveFixedBuffer(cached);
+        if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
         return cached;
     }
 
@@ -1215,6 +1295,43 @@ public final class CustomGlintRenderer extends RenderStateShard {
         }
         if (SHADER_TT_SET != null && SHADER_TT_LINES != null) {
             try { SHADER_TT_SET.invoke(rt, SHADER_TT_LINES); } catch (Throwable ignored) {}
+        }
+        SHADER_TT_TAGGED.add(rt);
+    }
+
+    // OPAQUE_DECAL counterpart of tagAsLateRenderForShaders. The FullyBufferedMultiBufferSource flushes by
+    // TransparencyType in enum order (OPAQUE → OPAQUE_DECAL → GENERAL_TRANSPARENT → DECAL → WATER_MASK → LINES).
+    // Tagging a glint OPAQUE_DECAL makes it flush right AFTER opaque geometry but BEFORE the GENERAL_TRANSPARENT
+    // pass that draws translucent bases (the slime outer shell). So the glint depth-tests against a buffer
+    // holding only stable opaque geometry — never the shell's own Iris-re-sorted translucent depth, which is what
+    // made a LINES-tagged shell glint flicker with camera angle and drop out at distance. Reflective, no compileOnly.
+    private static volatile boolean SHADER_TT_OD_LOOKUP_DONE = false;
+    private static volatile Method SHADER_TT_OD_SET = null;
+    private static volatile Object SHADER_TT_OPAQUE_DECAL = null;
+
+    public static void tagAsOpaqueDecalForShaders(RenderType rt) {
+        if (rt == null) return;
+        if (SHADER_TT_TAGGED.contains(rt)) return;
+        if (!SHADER_TT_OD_LOOKUP_DONE) {
+            synchronized (CustomGlintRenderer.class) {
+                if (!SHADER_TT_OD_LOOKUP_DONE) {
+                    try {
+                        Class<?> ttCls = Class.forName("net.irisshaders.batchedentityrendering.impl.TransparencyType");
+                        Class<?> bshCls = Class.forName("net.irisshaders.batchedentityrendering.impl.BlendingStateHolder");
+                        SHADER_TT_OD_SET = bshCls.getMethod("setTransparencyType", ttCls);
+                        @SuppressWarnings({"rawtypes", "unchecked"})
+                        Object od = Enum.valueOf((Class<? extends Enum>) ttCls, "OPAQUE_DECAL");
+                        SHADER_TT_OPAQUE_DECAL = od;
+                    } catch (Throwable ignored) {
+                        SHADER_TT_OD_SET = null;
+                        SHADER_TT_OPAQUE_DECAL = null;
+                    }
+                    SHADER_TT_OD_LOOKUP_DONE = true;
+                }
+            }
+        }
+        if (SHADER_TT_OD_SET != null && SHADER_TT_OPAQUE_DECAL != null) {
+            try { SHADER_TT_OD_SET.invoke(rt, SHADER_TT_OPAQUE_DECAL); } catch (Throwable ignored) {}
         }
         SHADER_TT_TAGGED.add(rt);
     }
