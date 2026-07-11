@@ -47,6 +47,7 @@ Altered:
 
 [Compat]
 - Punchy: the held-item glow outline now renders correctly with its first-person animations, including under shader packs
+- Gnetum: works out of the box, no compatibility patch needed
 
 [1.6.0]
 
