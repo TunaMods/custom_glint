@@ -434,12 +434,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            .setWriteMaskState(COLOR_WRITE)
+                            // Translucent shell (slime) chromatic glint WRITES depth so its own front faces occlude
+                            // its back faces (see forHorseArmorGlint); opaque chromatic writes colour only.
+                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
                             .setCullState(NO_CULL)
                             // Translucent shell (slime) chromatic glint: LEQUAL against the stable opaque depth it
                             // tests under the OPAQUE_DECAL tag below (see forHorseArmorGlint for the full rationale).
                             .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
-                            .setLayeringState(layering)
+                            // Translucent shell: nudge depth toward the camera so the shell doesn't overdraw/dim
+                            // the glint texels (see forHorseArmorGlint). Opaque chromatic keeps its layering.
+                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : layering)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_texturing|" + k.hashCode(),
                                     () -> setChromaticMatrix(layer, scaleU, scaleV, colorCount), RenderSystem::resetTextureMatrix))
@@ -623,7 +627,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            .setWriteMaskState(COLOR_WRITE)
+                            // Translucent shell WRITES depth (in the OPAQUE_DECAL pass) so its own front faces
+                            // occlude its back faces on a nearest-wins basis — a view-independent self-occlusion the
+                            // shell's Iris-re-sorted depth can't give (without it the far side's glint bleeds through
+                            // the near side and faces flip in/out as the camera orbits). Opaque glint writes colour only.
+                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
                             .setCullState(NO_CULL)
                             // Translucent base surface (slime outer shell = entity_translucent). The hard part under
                             // shaders is the DEPTH REFERENCE, not the glint's own geometry: if the glint flushes after the
@@ -636,7 +644,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             // faces behind a nearer opaque body (another slime, this slime's own inner cube) are occluded.
                             // Stable reference → no flicker, correct at every range. Opaque entity glint keeps EQUAL.
                             .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
-                            .setLayeringState(NO_LAYERING)
+                            // Translucent shell: nudge the glint's written depth toward the camera so the shell's
+                            // own LEQUAL depth test discards the shell fragments AT the glint texels — the glint
+                            // punches through the shell (full brightness) instead of being painted over and dimmed
+                            // by the later GENERAL_TRANSPARENT shell pass. Opaque glint keeps NO_LAYERING.
+                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : NO_LAYERING)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_horse_armor_glint_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx, 1.0f), RenderSystem::resetTextureMatrix))
