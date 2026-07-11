@@ -14,6 +14,14 @@ config="custom_glint.sophisticatedbackpacks.mixins.json"
 config="custom_glint.elytraslot.mixins.json"
 [[mixins]]
 config="custom_glint.epicfight.mixins.json"
+[[mixins]]
+config="custom_glint.mekanism.mixins.json"
+[[mixins]]
+config="custom_glint.geckolib.mixins.json"
+[[mixins]]
+config="custom_glint.immersivearmors.mixins.json"
+[[mixins]]
+config="custom_glint.artifacts.mixins.json"
 
 # --- Full mod ---
 [[mods]]
