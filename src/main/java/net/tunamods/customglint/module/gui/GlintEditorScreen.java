@@ -793,22 +793,37 @@ public class GlintEditorScreen extends Screen {
      *  then build the merged list from whatever is already synced. */
     private void scanGlintConfigs() {
         PacketDistributor.sendToServer(new GlintWandRequestBlueprintsPacket());
-        localGlints.clear();
-        try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
-            if (Files.exists(configDir)) {
-                // try-with-resources: Files.list holds an open directory handle that must be closed, else
-                // each open of the Import picker leaks one OS file descriptor.
-                try (var stream = Files.list(configDir)) {
-                    stream.filter(p -> p.toString().endsWith(".json"))
-                        .map(p -> p.getFileName().toString().replace(".json", ""))
-                        .forEach(localGlints::add);
-                }
-            }
-        } catch (Exception e) {
-            // Silently fail if config dir doesn't exist
-        }
+        // Show whatever we already have (last-known local names + the already-synced server pool) at once,
+        // then refresh the local names below. The server reply lands asynchronously and rebuilds again.
         rebuildImportList();
+        // Read the personal-trims directory off the render thread. The first listing after a fresh launch
+        // hits a cold OS file cache and stalls the frame if done inline — a visible spike on the first Import
+        // click, gone on later clicks once the cache is warm. The io pool absorbs that; the result is applied
+        // back on the client thread, slotting into the same "rebuild when the data shows up" flow the async
+        // server sync already uses.
+        Minecraft mc = this.minecraft;
+        Util.ioPool().execute(() -> {
+            List<String> found = new ArrayList<>();
+            try {
+                Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+                if (Files.exists(configDir)) {
+                    // try-with-resources: Files.list holds an open directory handle that must be closed, else
+                    // each open of the Import picker leaks one OS file descriptor.
+                    try (var stream = Files.list(configDir)) {
+                        stream.filter(p -> p.toString().endsWith(".json"))
+                            .map(p -> p.getFileName().toString().replace(".json", ""))
+                            .forEach(found::add);
+                    }
+                }
+            } catch (Exception e) {
+                // Silently fail if config dir doesn't exist
+            }
+            mc.execute(() -> {
+                localGlints.clear();
+                localGlints.addAll(found);
+                rebuildImportList();
+            });
+        });
     }
 
     /** Rebuild the Import list from both sources — personal local trims and the synced server pool — then
