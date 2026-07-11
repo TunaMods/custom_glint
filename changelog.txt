@@ -50,6 +50,10 @@ Altered:
 - Gnetum: works out of the box, no compatibility patch needed
 - Enhanced Visuals: works out of the box, no compatibility patch needed
 - Epic Fight: glowing entities keep their glow outline while Epic Fight renders them with its own animations
+- Iron's Spells 'n Spellbooks and other GeckoLib armor: worn armor now takes custom glints and glow outlines
+- Immersive Armors: the mod's layered armor now takes custom glints and glow outlines while worn
+- Mekanism: the MekaSuit, Jetpacks, Free Runners and their armored variants, and the Scuba tank and mask now take custom glints and glow outlines while worn
+- Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
 
 [1.6.0]
 
