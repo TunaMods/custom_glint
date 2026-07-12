@@ -36,6 +36,7 @@ Fixed:
 - A glowing item's outline in JEI recipe views now draws behind the tooltip instead of over it
 - Glow Trims now show their dyeing recipe in JEI
 - Fixed glint table recipe
+- Chromatic glint designs now render with a shader pack installed instead of turning invisible
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
