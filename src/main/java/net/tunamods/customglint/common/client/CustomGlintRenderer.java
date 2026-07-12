@@ -186,6 +186,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  {@code applyGlint} tell a HUD/GUI icon apart from a world/held item so the HUD glint can be routed
      *  to the batched {@link #guiGlintBuffer} source instead of drawing inline per item. */
     public static final ThreadLocal<ItemDisplayContext> CURRENT_CTX = new ThreadLocal<>();
+    // True while a special / 3D BEWLR item (shield, trident) is rendering. Those call getFoilBuffer with
+    // noEntity=true (so applyGlint sees isItem=true = the flat-item atlas scale), but they're 3D models whose
+    // UV spans a large region, so the atlas scale reads far too dense — and mismatches the shader-pack special
+    // overlay. Set at render HEAD from the model's isCustomRenderer() so chromatic can pick the special scale.
+    public static final ThreadLocal<Boolean> CURRENT_IS_SPECIAL = ThreadLocal.withInitial(() -> Boolean.FALSE);
     public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     // ── HUD glint batching ──────────────────────────────────────────────────────
@@ -553,7 +558,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticShader == null) return null;
         // Flat item: uvScale = atlasW/16 (per-axis atlasH/16) cancels the block-atlas sprite compression so a
         // 16px sprite spans patternScale UV units → DENSITY(7)·patternScale cells per icon, GUI + world alike
-        // (26.1.2's value). 3D items (trident) keep uvScale 1.0.
+        // (26.1.2's value). 3D items keep uvScale 1.0. (Special BEWLR items — shield/trident — take the denser
+        // special-item scale via forChromaticSpecialGlint instead, so applyGlint routes them there.)
         float scaleU = 1.0f, scaleV = 1.0f;
         if (isItem) {
             ensureAtlasDims();
@@ -561,6 +567,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
             scaleV = cachedAtlasH / 16.0f;
         }
         return chromaticRT(glint.layers()[layerIdx], "item|" + isItem + "|L" + layerIdx, scaleU, scaleV, NO_LAYERING);
+    }
+
+    /** In-phase chromatic glint for a special 3D BEWLR item (shield/trident): the special-item noise scale
+     *  ({@link #CHROMATIC_SPECIAL_ITEM_UV_SCALE}), so it matches the shader-pack overlay
+     *  ({@link #forChromaticSpecialGlintOverlay}) — same slick on and off a pack. NO_LAYERING like the 3D item. */
+    public static RenderType forChromaticSpecialGlint(Data glint, int layerIdx) {
+        if (chromaticShader == null) return null;
+        return chromaticRT(glint.layers()[layerIdx], "special|L" + layerIdx,
+                CHROMATIC_SPECIAL_ITEM_UV_SCALE, CHROMATIC_SPECIAL_ITEM_UV_SCALE, NO_LAYERING);
     }
 
     /** Worn-armor chromatic glint (EQUAL depth + VIEW_OFFSET_Z_LAYERING, matching armorCutoutNoCull). */

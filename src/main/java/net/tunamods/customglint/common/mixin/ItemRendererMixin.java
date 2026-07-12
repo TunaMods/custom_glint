@@ -54,6 +54,7 @@ public class ItemRendererMixin {
             PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
         CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
         CustomGlintRenderer.CURRENT_CTX.set(ctx);
+        CustomGlintRenderer.CURRENT_IS_SPECIAL.set(model != null && model.isCustomRenderer());
     }
 
     // ── Stack clear + item outline (RETURN) ─────────────────────────────────
@@ -69,6 +70,7 @@ public class ItemRendererMixin {
         cg_captureGlowOutline(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pCombinedLight, pModel);
         CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
         CustomGlintRenderer.CURRENT_CTX.remove();
+        CustomGlintRenderer.CURRENT_IS_SPECIAL.remove();
     }
 
     // ── getFoilBuffer intercepts ─────────────────────────────────────────────
@@ -176,7 +178,11 @@ public class ItemRendererMixin {
                 // first-person, GUI) are captured for the post-Iris overlay in cg_captureGlowOutline instead.
                 boolean divertedItem = isItem && CustomGlintRenderer.isShaderPackActive();
                 if (!divertedItem) {
-                    RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
+                    // Special 3D BEWLR items (shield/trident) take the special-item scale so the in-phase draw
+                    // matches the shader-pack overlay; flat/held items keep the atlas/3D scale.
+                    RenderType crt = CustomGlintRenderer.CURRENT_IS_SPECIAL.get()
+                            ? CustomGlintRenderer.forChromaticSpecialGlint(glint, layerIdx)
+                            : CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
                     if (crt != null) cg_addDistinct(list, cg_glintBuf(buffer, crt, guiHud));
                 }
                 continue;
