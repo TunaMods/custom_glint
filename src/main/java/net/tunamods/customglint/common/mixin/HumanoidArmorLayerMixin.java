@@ -127,8 +127,17 @@ public class HumanoidArmorLayerMixin {
             List<VertexConsumer> list = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                    if (crt != null) list.add(buffer.getBuffer(crt));
+                    // Under a shader pack the in-phase chromatic program is hijacked (flat white / nothing), so
+                    // capture the armor model and defer the slick to the post-Iris overlay drain instead.
+                    if (CustomGlintRenderer.isShaderPackActive()) {
+                        ResourceLocation ctex = cg_armorTexture(entity, stack, slot);
+                        if (ctex != null) {
+                            EntityGlintRender.captureChromaticModel(entity, rendererModel, ctex, poseStack, packedLight, glint, layerIdx);
+                        }
+                    } else {
+                        RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                        if (crt != null) list.add(buffer.getBuffer(crt));
+                    }
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();

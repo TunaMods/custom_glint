@@ -24,5 +24,8 @@ public class GuiGraphicsMixin {
     @Inject(method = "flush", at = @At("RETURN"), require = 0, remap = false)
     private void cg_drainGuiOutline(CallbackInfo ci) {
         GlowOutlineRenderer.drainGui();
+        // Chromatic GUI icons can't draw in-phase under a shader pack; drain their post-Iris overlay here,
+        // while the GUI ortho matrices are still live. No-op off-pack / when nothing was captured.
+        GlowOutlineRenderer.drainChromaticGui();
     }
 }

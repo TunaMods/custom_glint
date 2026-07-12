@@ -61,8 +61,14 @@ public final class CustomGlintClientInit {
         // to the main target. Off-pack, do the whole drain immediately as before.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
-                if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.accumulateWorld();
-                else GlowOutlineRenderer.drainWorld();
+                if (CustomGlintRenderer.isShaderPackActive()) {
+                    GlowOutlineRenderer.accumulateWorld();
+                    // Chromatic can't draw in-phase under a pack; render the slick into its own target now
+                    // (matrices live, scene depth committed) and defer the blit to renderLevel TAIL.
+                    GlowOutlineRenderer.accumulateChromaticWorld();
+                } else {
+                    GlowOutlineRenderer.drainWorld();
+                }
             }
         });
     }

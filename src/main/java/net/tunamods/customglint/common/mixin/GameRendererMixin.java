@@ -40,6 +40,8 @@ public class GameRendererMixin {
         at = @At("RETURN"), require = 0, remap = false
     )
     private void cg_drainHeldFp(Camera camera, float partialTick, Matrix4f projectionMatrix, CallbackInfo ci) {
+        // Chromatic FIRST (it reads the shared HELD_FP_MV snapshot that drainHeldFp then clears), then the ring.
+        GlowOutlineRenderer.drainChromaticFp();
         GlowOutlineRenderer.drainHeldFp();
         GlowOutlineRenderer.setFpHandPass(false);
     }

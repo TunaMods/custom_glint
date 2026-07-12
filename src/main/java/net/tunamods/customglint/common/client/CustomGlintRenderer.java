@@ -85,12 +85,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         for (RenderType rt : BY_MOUNT_ARMOR_GLINT.values()) evictRt(rt);
         for (RenderType rt : BY_MOUNT_ARMOR_MASK.values())  evictRt(rt);
         for (RenderType rt : BY_CHROMATIC.values())         evictRt(rt);
+        for (RenderType rt : BY_CHROMATIC_OVERLAY.values()) evictRt(rt);
         BY_GLINT_ITEM.clear();
         BY_ARMOR_GLINT.clear();
         BY_HORSE_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_MASK.clear();
         BY_CHROMATIC.clear();
+        BY_CHROMATIC_OVERLAY.clear();
         GLINT_COLORS.clear();
         LAYER_KEY_CACHE.clear();
         // Release the chromatic palette strips + white dummy (DynamicTextures registered with the manager).
@@ -346,6 +348,18 @@ public final class CustomGlintRenderer extends RenderStateShard {
             new RenderStateShard.ShaderStateShard(() -> chromaticShader);
     private static final Map<String, RenderType> BY_CHROMATIC = new RtCache();
 
+    // Post-Iris chromatic overlay (shader-pack path only): the in-phase chromatic program is replaced/hijacked
+    // by an active pack, so under a pack the chromatic surfaces are re-rendered AFTER the pack finishes, through
+    // this NEW_ENTITY overlay shader, onto an isolated target that is then composited back (chromaticComposite).
+    // See GlowOutlineRenderer.queueChromaticModel / accumulateChromaticWorld / compositeChromaticWorld.
+    private static ShaderInstance chromaticOverlayShader;
+    private static ShaderInstance chromaticCompositeShader;
+    private static final RenderStateShard.ShaderStateShard CHROMATIC_OVERLAY_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> chromaticOverlayShader);
+    private static final Map<String, RenderType> BY_CHROMATIC_OVERLAY = new RtCache();
+
+    public static ShaderInstance chromaticCompositeShader() { return chromaticCompositeShader; }
+
     /** 1px-tall palette strips (one RGBA texel per colour) bound to Sampler1, keyed by colour set. Bounded
      *  LRU: a creative player cycling colours would otherwise pin one DynamicTexture per distinct set. */
     private static final int PALETTE_CACHE_CAP = 256;
@@ -371,6 +385,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             CustomGlint.res("chromatic"),
                             DefaultVertexFormat.POSITION_TEX),
                     shader -> chromaticShader = shader);
+            // Post-Iris overlay (NEW_ENTITY: replays captured armor/entity vertices) + its fullscreen composite.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("chromatic_overlay"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> chromaticOverlayShader = shader);
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("chromatic_composite"),
+                            DefaultVertexFormat.POSITION_TEX),
+                    shader -> chromaticCompositeShader = shader);
         } catch (Exception e) {
             LOGGER.error("[{}/CustomGlint] failed to register chromatic shader", MOD_ID, e);
         }
@@ -517,8 +542,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Flat item / 3D held-item chromatic glint (EQUAL depth, no polygon offset). isItem mirrors
      *  {@link #forGlint}'s atlas-calibrated scale so the slick density matches the texture glints. */
-    /** Noise UV scale for armor / elytra / horse-armor / entity-body chromatic (26.1.2 CHROMATIC_MODEL_UV_SCALE). */
-    private static final float CHROMATIC_MODEL_UV_SCALE = 8.0f;
+    /** Noise UV scale for armor / elytra / horse-armor / entity-body chromatic. Lower = bigger slick cells.
+     *  The 26.1.2 value (8.0) made the pattern far too dense on models (a body part spans a large UV region,
+     *  unlike a tiny atlas-sprite item), tiny/repeating even at 0.1x patternScale; dropped so the default
+     *  patternScale reads as a large oil-slick and the slider tunes up from there. Items keep their own
+     *  atlas-calibrated scale (atlasW/16), so they're unaffected. */
+    private static final float CHROMATIC_MODEL_UV_SCALE = 0.5f;
 
     public static RenderType forChromaticGlint(Data glint, int layerIdx, boolean isItem) {
         if (chromaticShader == null) return null;
@@ -539,6 +568,103 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticShader == null) return null;
         return chromaticRT(glint.layers()[layerIdx], "armor|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
                 VIEW_OFFSET_Z_LAYERING);
+    }
+
+    /** TRIANGLES-mode worn-armor chromatic glint, for renderers that draw armor through a triangle-list
+     *  RenderType (Epic Fight runs {@code armorCutoutNoCull} through {@code getTriangulated}). Same
+     *  {@code VIEW_OFFSET_Z_LAYERING} as {@link #forChromaticArmorGlint}; only the primitive mode differs. */
+    public static RenderType forChromaticArmorGlintTriangles(Data glint, int layerIdx) {
+        if (chromaticShader == null) return null;
+        return chromaticRT(glint.layers()[layerIdx], "armor|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
+                VIEW_OFFSET_Z_LAYERING, VertexFormat.Mode.TRIANGLES);
+    }
+
+    /**
+     * Post-Iris chromatic overlay RenderType for worn armor / entity bodies (shader-pack path). Drawn during
+     * the deferred drain into the offscreen chromatic target, NOT in-phase: NEW_ENTITY format (replays captured
+     * {@code [x,y,z,u,v]} vertices), Sampler0 = the model texture (cutout alpha-test), Sampler1 = the palette,
+     * Sampler2 = scene depth (bound by the drain). Occlusion + cutout are decided in-shader, so no GPU depth
+     * test and no polygon offset; {@code NO_CULL} + the in-shader front-surface test keep only visible faces.
+     * {@code mode} follows the captured topology (TRIANGLES for Epic Fight skinned armor, QUADS otherwise).
+     */
+    public static RenderType forChromaticArmorGlintOverlay(Data glint, int layerIdx, ResourceLocation modelTex,
+            VertexFormat.Mode mode) {
+        return chromaticOverlayRT(glint, layerIdx, "armor_ov", CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
+                modelTex, mode);
+    }
+
+    /**
+     * Post-Iris chromatic overlay for flat / quad items (held third-person, dropped, item frames). Sampler0 =
+     * the block atlas (the item sprite's alpha carves the cutout, like the glow item silhouette), and the noise
+     * scale cancels the atlas-sprite compression ({@code atlasW/16}, per-axis) so the slick density matches the
+     * in-phase item chromatic. QUADS (baked item quads replayed as {@code [x,y,z,u,v]}).
+     */
+    public static RenderType forChromaticItemGlintOverlay(Data glint, int layerIdx) {
+        ensureAtlasDims();
+        return chromaticOverlayRT(glint, layerIdx, "item_ov", cachedAtlasW / 16.0f, cachedAtlasH / 16.0f,
+                net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS, VertexFormat.Mode.QUADS);
+    }
+
+    /** Noise scale for special 3D BEWLR items (trident/shield). These are much smaller than an armor surface,
+     *  so the big-surface model scale ({@link #CHROMATIC_MODEL_UV_SCALE}) reads far too coarse on them; a
+     *  higher scale gives a denser slick, and the patternScale slider tunes up from here. */
+    private static final float CHROMATIC_SPECIAL_ITEM_UV_SCALE = 3.0f;
+
+    /** Post-Iris chromatic overlay for a special 3D item (trident/shield), tracing its own {@code tex}. Uses
+     *  the denser special-item noise scale so a small item isn't a coarse blob (see the constant). */
+    public static RenderType forChromaticSpecialGlintOverlay(Data glint, int layerIdx, ResourceLocation tex) {
+        return chromaticOverlayRT(glint, layerIdx, "special_ov", CHROMATIC_SPECIAL_ITEM_UV_SCALE,
+                CHROMATIC_SPECIAL_ITEM_UV_SCALE, tex, VertexFormat.Mode.QUADS);
+    }
+
+    private static RenderType chromaticOverlayRT(Data glint, int layerIdx, String tag, float scaleU, float scaleV,
+            ResourceLocation surfaceTex, VertexFormat.Mode mode) {
+        if (chromaticOverlayShader == null) return null;
+        Layer layer = glint.layers()[layerIdx];
+        int[] colors = chromaticColors(layer.colors());
+        final int colorCount = Math.min(colors.length, 8);
+        final ResourceLocation palette = getPaletteTexture(colors);
+        final ResourceLocation tex = surfaceTex != null ? surfaceTex : getWhiteTexture();
+        String key = tag + "|" + layerKey(layer) + "|" + tex + "|" + mode;
+        return BY_CHROMATIC_OVERLAY.computeIfAbsent(key, k -> RenderType.create(
+                MOD_ID + ":custom_chromatic_overlay|" + k.hashCode(),
+                DefaultVertexFormat.NEW_ENTITY,
+                mode,
+                1024,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(CHROMATIC_OVERLAY_SHADER_SHARD)
+                        .setTextureState(new TextureStateShard(tex, false, false) {
+                            @Override public void setupRenderState() {
+                                RenderSystem.setShaderTexture(0, tex);
+                                RenderSystem.setShaderTexture(1, palette);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                            @Override public void clearRenderState() {
+                                super.clearRenderState();
+                                RenderSystem.setShaderTexture(1, 0);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                        })
+                        // Depth WRITE + LEQUAL against the target's own depth: where two chromatic pieces cover
+                        // the same pixel (chestplate skirt over leggings waistband), the NEARER surface wins and
+                        // draws once — without this both wrote and the additive composite doubled them into a
+                        // bright seam whose winner flipped with the view angle. (Back faces also fail LEQUAL, a
+                        // free second guard alongside the in-shader scene occlusion.) The target depth is cleared
+                        // each frame in accumulateChromaticWorld. Scene-vs-world occlusion still rides Sampler2.
+                        .setWriteMaskState(COLOR_DEPTH_WRITE)
+                        .setCullState(NO_CULL)
+                        .setDepthTestState(LEQUAL_DEPTH_TEST)
+                        .setLayeringState(NO_LAYERING)
+                        // Straight write into the cleared isolated target (NOT additive) so it holds exactly the
+                        // slick rgb + alpha=1 where drawn — the composite then adds that to the scene. Additive
+                        // here left the target alpha near 0, so the SRC_ALPHA composite multiplied it to nothing.
+                        .setTransparencyState(NO_TRANSPARENCY)
+                        .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_overlay_texturing|" + k.hashCode(),
+                                () -> setChromaticMatrix(layer, scaleU, scaleV, colorCount),
+                                RenderSystem::resetTextureMatrix))
+                        .createCompositeState(false)));
     }
 
     /** Horse-armor / entity-body chromatic glint (EQUAL depth + NO_LAYERING, matching entityCutoutNoCull). */
@@ -647,9 +773,25 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        return forArmorGlint(glint, layerIdx, frameColor, colorIdx, VertexFormat.Mode.QUADS);
+    }
+
+    /** TRIANGLES-mode worn-armor glint, for renderers that draw armor through a triangle-list RenderType
+     *  (Epic Fight runs {@code armorCutoutNoCull} through {@code EpicFightRenderTypes.getTriangulated}). Keeps
+     *  {@code forArmorGlint}'s EQUAL + {@code VIEW_OFFSET_Z_LAYERING} depth so the glint aligns with the
+     *  offset-written armor depth; only the primitive mode differs (a QUADS RT fed a triangle stream shatters
+     *  into facets). */
+    public static RenderType forArmorGlintTriangles(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        return forArmorGlint(glint, layerIdx, frameColor, colorIdx, VertexFormat.Mode.TRIANGLES);
+    }
+
+    public static RenderType forArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx,
+            VertexFormat.Mode mode) {
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
-        String key = "armor|" + layerKey(layer) + "|" + colorIdx;
+        // Key MUST include the primitive mode — a QUADS and a TRIANGLES RT for the same layer/color are
+        // distinct fixed buffers; collapsing them would trip Mixin's "Duplicate delegates" guard.
+        String key = "armor|" + layerKey(layer) + "|" + colorIdx + "|" + mode;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
@@ -657,7 +799,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             RenderType rt = RenderType.create(
                     MOD_ID + ":custom_armor_glint|" + k.hashCode(),
                     DefaultVertexFormat.POSITION_TEX,
-                    VertexFormat.Mode.QUADS,
+                    mode,
                     256,
                     false,
                     false,

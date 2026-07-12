@@ -95,10 +95,18 @@ public class ElytraLayerMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
+        List<Integer> chromaPackLayers = new ArrayList<>();
+        boolean pack = CustomGlintRenderer.isShaderPackActive();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             if (CustomGlint.isChromatic(layers[layerIdx])) {
-                RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                if (crt != null) list.add(buffer.getBuffer(crt));
+                // Under a shader pack chromatic can't draw in-phase; capture the elytra for the post-Iris
+                // overlay drain instead (see EntityGlintRender.captureChromaticModel).
+                if (pack) {
+                    chromaPackLayers.add(layerIdx);
+                } else {
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(buffer.getBuffer(crt));
+                }
                 continue;
             }
             int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
@@ -123,13 +131,24 @@ public class ElytraLayerMixin {
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }
-        if (list.isEmpty()) return;
-        VertexConsumer combined = list.size() == 1 ? list.get(0)
-                : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-        // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset.
+        if (list.isEmpty() && chromaPackLayers.isEmpty()) return;
+        // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset for
+        // both the in-phase glint draw and the chromatic capture (so the captured verts match the drawn wings).
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        if (!list.isEmpty()) {
+            VertexConsumer combined = list.size() == 1 ? list.get(0)
+                    : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        }
+        if (!chromaPackLayers.isEmpty()) {
+            ResourceLocation ctex = ((ElytraLayer) (Object) self).getElytraTexture(stack, entity);
+            if (ctex != null) {
+                for (int li : chromaPackLayers) {
+                    EntityGlintRender.captureChromaticModel(entity, elytraModel, ctex, poseStack, packedLight, glint, li);
+                }
+            }
+        }
         poseStack.popPose();
     }
 

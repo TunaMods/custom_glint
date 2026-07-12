@@ -26,5 +26,7 @@ public class LevelRendererMixin {
     )
     private void cg_compositeDeferredGlowOutline(CallbackInfo ci) {
         GlowOutlineRenderer.compositeWorld();
+        // Blit the deferred chromatic slick over the pack's final image (no-op off-pack / when nothing queued).
+        GlowOutlineRenderer.compositeChromaticWorld();
     }
 }

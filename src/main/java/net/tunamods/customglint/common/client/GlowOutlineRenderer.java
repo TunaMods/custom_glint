@@ -173,6 +173,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void release() {
         if (maskTarget != null) { maskTarget.destroyBuffers(); maskTarget = null; }
         if (worldDeferredMask != null) { worldDeferredMask.destroyBuffers(); worldDeferredMask = null; }
+        if (chromaticTarget != null) { chromaticTarget.destroyBuffers(); chromaticTarget = null; }
         texSilhouetteRTs.clear();
         texSilhouetteTriRTs.clear();
         rtTextureCache.clear();
@@ -563,6 +564,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         guiMaskCleared = false;
         worldDeferredPending = false;
         heldFpMatricesValid = false;
+        chromaticWorldJobs.clear();
+        chromaticFpJobs.clear();
+        chromaticGuiJobs.clear();
+        chromaticPending = false;
     }
 
     // ── Drain ──────────────────────────────────────────────────────────────────
@@ -784,6 +789,217 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // one texel inward over the border to close the hairline gap.
         composite(main, worldDeferredBoxes, worldDeferredSearchRadius, worldDeferredProjA, worldDeferredProjB,
                 worldDeferredMask, 1);
+    }
+
+    // ── Deferred chromatic overlay (shader pack active) ─────────────────────────
+    // Under an Iris/Oculus pack the in-phase chromatic program is hijacked (the procedural slick goes flat
+    // white / never appears — no pack program can recreate the oil-slick). Mirror the glow deferred split:
+    // ACCUMULATE the slick into an isolated target at AFTER_WEATHER (the world matrices are live and the scene
+    // depth is committed for the overlay's in-shader occlusion), then COMPOSITE-blit it over the pack's final
+    // image at renderLevel TAIL. Off-pack nothing is queued (chromatic draws in-phase), so this is inert.
+    private static TextureTarget chromaticTarget;
+    private static final List<ChromaJob> chromaticWorldJobs = new ArrayList<>();
+    private static boolean chromaticPending = false;
+
+    private static final class ChromaJob {
+        final float[] data; final int len; final ResourceLocation tex;
+        final CustomGlint.Data glint; final int layerIdx; final boolean triangles; final boolean isItem;
+        final boolean special; // special 3D item (trident/shield): own texture + the denser special-item scale
+        ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
+                  boolean triangles, boolean isItem, boolean special) {
+            this.data = data; this.len = len; this.tex = tex;
+            this.glint = glint; this.layerIdx = layerIdx; this.triangles = triangles; this.isItem = isItem;
+            this.special = special;
+        }
+    }
+
+    /** Queue a captured chromatic model (camera-relative {@code [x,y,z,u,v]} per vertex, QUADS or TRIANGLES
+     *  order) for the post-Iris overlay drain. Called from the armor chromatic chokepoints ONLY when a shader
+     *  pack is active — off-pack the layer draws in-phase and never reaches here. Trims to whole primitives so
+     *  the deferred draw never leaves a partial quad/triangle. */
+    // Chromatic drain destination: WORLD (renderLevel TAIL), FP hand (renderItemInHand RETURN), GUI (flush).
+    private static final int DEST_WORLD = 0, DEST_FP = 1, DEST_GUI = 2;
+
+    public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
+                                           CustomGlint.Data glint, int layerIdx, boolean triangles) {
+        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_WORLD);
+    }
+
+    /** Special 3D item (trident/shield) tracing its own {@code tex} at the denser special-item noise scale.
+     *  {@code dest}: world (dropped/3rd-person), FP hand, or GUI icon — matches the world/hand item. */
+    public static void queueChromaticSpecial(float[] data, int len, ResourceLocation tex,
+                                             CustomGlint.Data glint, int layerIdx, int dest) {
+        queueChroma(data, len, tex, glint, layerIdx, false, false, true, dest);
+    }
+
+    /** As {@link #queueChromaticModel} but for a flat/quad ITEM (held third-person, dropped, item frame): the
+     *  captured verts are baked item quads and the overlay traces the block atlas (the item overlay RT binds
+     *  the atlas itself). QUADS. */
+    public static void queueChromaticItem(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_WORLD);
+    }
+
+    /** First-person-hand variant of {@link #queueChromaticModel} (worn-armor-style model in the hand). */
+    public static void queueChromaticModelFp(float[] data, int len, ResourceLocation tex,
+                                             CustomGlint.Data glint, int layerIdx, boolean triangles) {
+        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_FP);
+    }
+
+    /** GUI variant for a flat/quad item icon (inventory, hotbar, wand-menu preview). Item scale (atlas). */
+    public static void queueChromaticItemGui(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_GUI);
+    }
+
+    private static void queueChroma(float[] data, int len, ResourceLocation tex,
+                                    CustomGlint.Data glint, int layerIdx, boolean triangles, boolean isItem,
+                                    boolean special, int dest) {
+        if (CustomGlintRenderer.isInShadowPass()) return;
+        if (tex == null || glint == null) return;
+        int verts = len / 5;
+        verts -= verts % (triangles ? 3 : 4);        // whole primitives only
+        int usable = verts * 5;
+        if (usable < (triangles ? 15 : 20)) return;   // need at least one primitive
+        float[] copy = new float[usable];
+        System.arraycopy(data, 0, copy, 0, usable);
+        ChromaJob job = new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, isItem, special);
+        switch (dest) {
+            case DEST_FP -> { chromaticFpJobs.add(job); snapshotHeldFpMatrices(); }
+            case DEST_GUI -> chromaticGuiJobs.add(job);
+            default -> chromaticWorldJobs.add(job);
+        }
+    }
+
+    /** Render {@code jobs} into the isolated chromatic target. {@code sceneOcclusion} binds the main depth on
+     *  unit 2 for the overlay's in-shader wall/self occlusion (world surfaces); the first-person hand item is
+     *  always foreground so it passes false (its own imprecise depth would else flicker its slick). Leaves the
+     *  main target bound. */
+    private static void accumulateChromaJobs(List<ChromaJob> jobs, boolean sceneOcclusion) {
+        RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
+        chromaticTarget = ensureTarget(chromaticTarget, main.width, main.height);
+        // glClear honours the live write masks; the world phase leaves depthMask=false, so force them on.
+        RenderSystem.depthMask(true);
+        RenderSystem.colorMask(true, true, true, true);
+        chromaticTarget.clear(Minecraft.ON_OSX);
+        chromaticTarget.bindWrite(true);
+        // Scene depth -> unit 2 for the overlay's in-shader occlusion. Safe: we write the isolated target, not
+        // the main colour, so there is no read/write feedback. The overlay RT setup only touches units 0/1.
+        RenderSystem.setShaderTexture(2, sceneOcclusion ? main.getDepthTextureId() : 0);
+        for (ChromaJob job : jobs) {
+            RenderType rt;
+            if (job.isItem) rt = CustomGlintRenderer.forChromaticItemGlintOverlay(job.glint, job.layerIdx);
+            else if (job.special) rt = CustomGlintRenderer.forChromaticSpecialGlintOverlay(job.glint, job.layerIdx, job.tex);
+            else rt = CustomGlintRenderer.forChromaticArmorGlintOverlay(job.glint, job.layerIdx, job.tex,
+                    job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS);
+            if (rt == null) continue;
+            VertexConsumer vc = MASK_BUFFERS.getBuffer(rt);
+            float[] d = job.data;
+            for (int i = 0; i + 4 < job.len; i += 5) {
+                vc.addVertex(d[i], d[i + 1], d[i + 2]);
+                vc.setColor(255, 255, 255, 255);
+                vc.setUv(d[i + 3], d[i + 4]);
+                vc.setUv1(0, 0);
+                vc.setUv2(0, 0);
+                vc.setNormal(0.0f, 1.0f, 0.0f);
+            }
+            MASK_BUFFERS.endBatch(); // flush per job so each overlay RT's texture + texture-matrix apply to its own verts
+        }
+        RenderSystem.setShaderTexture(2, 0);
+        main.bindWrite(true);
+    }
+
+    /** Screen-blit the chromatic target over the main target: result.rgb = src + dst - src*dst (brightens like
+     *  a foil, can't exceed 1.0 so a bright slick over lit geometry never clips to white). Shared by the world
+     *  composite + the first-person drain. */
+    private static void blitChromaticTarget() {
+        ShaderInstance shader = CustomGlintRenderer.chromaticCompositeShader();
+        if (shader == null || chromaticTarget == null) return;
+        RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
+        main.bindWrite(true);
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.enableBlend();
+        RenderSystem.blendFuncSeparate(
+                GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_COLOR,
+                GlStateManager.SourceFactor.ZERO, GlStateManager.DestFactor.ONE);
+        RenderSystem.setShader(() -> shader);
+        RenderSystem.setShaderTexture(0, chromaticTarget.getColorTextureId());
+        Tesselator tess = Tesselator.getInstance();
+        BufferBuilder bb = tess.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        bb.addVertex(0.0f, 0.0f, 0.0f).setUv(0.0f, 0.0f);
+        bb.addVertex(1.0f, 0.0f, 0.0f).setUv(1.0f, 0.0f);
+        bb.addVertex(1.0f, 1.0f, 0.0f).setUv(1.0f, 1.0f);
+        bb.addVertex(0.0f, 1.0f, 0.0f).setUv(0.0f, 1.0f);
+        BufferUploader.drawWithShader(bb.buildOrThrow());
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+        RenderSystem.defaultBlendFunc();
+    }
+
+    /** Render the queued world chromatic slicks into the isolated target NOW (world matrices live, scene depth
+     *  bound); the composite blit is deferred to renderLevel TAIL. Called at {@code AFTER_WEATHER} under a pack. */
+    public static void accumulateChromaticWorld() {
+        chromaticPending = false;
+        if (chromaticWorldJobs.isEmpty()) return;
+        accumulateChromaJobs(chromaticWorldJobs, true);
+        chromaticWorldJobs.clear();
+        chromaticPending = true;
+    }
+
+    /** Composite the deferred world chromatic slick onto the (pack-composited) main target. renderLevel TAIL. */
+    public static void compositeChromaticWorld() {
+        if (!chromaticPending) return;
+        chromaticPending = false;
+        blitChromaticTarget();
+    }
+
+    // First-person hand chromatic items: captured during the hand pass, drained at renderItemInHand RETURN
+    // (post-Iris-safe) under the same captured hand modelview (HELD_FP_MV) as the glow FP ring.
+    private static final List<ChromaJob> chromaticFpJobs = new ArrayList<>();
+    // GUI / inventory / HUD icon chromatic items: captured at ItemRenderer.render RETURN, drained at
+    // GuiGraphics.flush() RETURN (GuiGraphicsMixin) while the GUI ortho matrices are still live.
+    private static final List<ChromaJob> chromaticGuiJobs = new ArrayList<>();
+
+    /** Drain the GUI chromatic icons: render into the target under the live GUI ortho matrices (no scene
+     *  occlusion — the GUI is 2D and icons don't overlap) and blit. Called at {@code GuiGraphics.flush} RETURN,
+     *  the same point the glow GUI ring drains, so the ortho projection / modelview match what the icons drew
+     *  under. */
+    public static void drainChromaticGui() {
+        if (chromaticGuiJobs.isEmpty()) return;
+        accumulateChromaJobs(chromaticGuiJobs, false);
+        blitChromaticTarget();
+        chromaticGuiJobs.clear();
+    }
+
+    /** Queue a first-person hand chromatic ITEM (captured baked quads). Snapshots the hand modelview like the
+     *  glow FP path so the drain can re-establish it under a shader pack. */
+    public static void queueChromaticItemFp(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_FP);
+    }
+
+    /** Drain the first-person hand chromatic items. Called at {@code GameRenderer.renderItemInHand} RETURN
+     *  (post-Iris-safe), BEFORE {@link #drainHeldFp} clears the shared FP matrix snapshot. The FP item is
+     *  foreground so no scene occlusion; re-establish the captured hand modelview under a pack exactly like
+     *  drainHeldFp. Reuses the (already world-composited) chromatic target — re-cleared for the hand items. */
+    public static void drainChromaticFp() {
+        if (chromaticFpJobs.isEmpty()) return;
+        if (heldFpMatricesValid && CustomGlintRenderer.isShaderPackActive()) {
+            Matrix4fStack mv = RenderSystem.getModelViewStack();
+            mv.pushMatrix();
+            mv.set(HELD_FP_MV);
+            RenderSystem.applyModelViewMatrix();
+            try {
+                accumulateChromaJobs(chromaticFpJobs, false);
+                blitChromaticTarget();
+            } finally {
+                mv.popMatrix();
+                RenderSystem.applyModelViewMatrix();
+            }
+        } else {
+            accumulateChromaJobs(chromaticFpJobs, false);
+            blitChromaticTarget();
+        }
+        chromaticFpJobs.clear();
     }
 
     /** Accumulate the silhouettes of {@code jobs}+{@code models} into the mask and compute each object's
@@ -1164,6 +1380,25 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             int key = nextGlowKey(itemCategory(ctx)); // one id for the whole item → no seam between textures
             for (Map.Entry<ResourceLocation, float[]> e : data.entrySet()) {
                 addItemModelJob(e.getValue(), counts.get(e.getKey()), e.getKey(), color, ctx, key, anchor);
+            }
+        }
+
+        /** Queue every captured bucket as a CHROMATIC overlay job (special / 3D BEWLR item, shader-pack path):
+         *  each texture bucket traces its own texture's alpha as the cutout, per chromatic layer. World items
+         *  drain at renderLevel TAIL; a first-person-hand item drains at the hand pass. GUI special items are
+         *  deferred (not routed here). */
+        public void queueChromaticGroups(CustomGlint.Data glint, ItemDisplayContext ctx) {
+            boolean gui = ctx == ItemDisplayContext.GUI;
+            boolean fp = isFpContext(ctx);
+            CustomGlint.Layer[] layers = glint.layers();
+            for (int li = 0; li < layers.length; li++) {
+                if (!CustomGlint.isChromatic(layers[li])) continue;
+                for (Map.Entry<ResourceLocation, float[]> e : data.entrySet()) {
+                    // Special 3D items trace their OWN texture at the denser special-item scale, in whichever
+                    // context (world / hand / GUI) so the icon matches the world/hand item.
+                    int dest = gui ? DEST_GUI : (fp ? DEST_FP : DEST_WORLD);
+                    queueChromaticSpecial(e.getValue(), counts.get(e.getKey()), e.getKey(), glint, li, dest);
+                }
             }
         }
 

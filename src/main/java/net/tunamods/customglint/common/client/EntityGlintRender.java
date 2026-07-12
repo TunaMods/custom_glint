@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.CustomGlint.GlintState;
 import net.tunamods.customglint.common.CustomGlintComponents;
@@ -121,6 +122,21 @@ public final class EntityGlintRender {
                 GlowOutlineRenderer.glowKeyFor(identity, category), category, priority);
     }
 
+    /** Capture a posed model for the post-Iris CHROMATIC overlay drain (shader-pack path). Under a pack the
+     *  in-phase chromatic program is hijacked, so any model-based chromatic surface (worn armor, elytra, an
+     *  entity body, a compat armor) re-renders the freshly-posed model into the pooled record-only buffer and
+     *  queues the {@code [x,y,z,u,v]} verts against {@code texture} (its alpha carves the cutout). QUADS order
+     *  (a vanilla {@link Model}); the overlay traces the real shape + occludes in-shader. No-op off-pack (the
+     *  caller gates on {@link CustomGlintRenderer#isShaderPackActive()}) or when the entity is invisible. */
+    public static void captureChromaticModel(LivingEntity entity, Model model, ResourceLocation texture,
+                                             PoseStack pose, int light, CustomGlint.Data glint, int layerIdx) {
+        if (model == null || texture == null || entity.isInvisible()) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, layerIdx, false);
+    }
+
     /** As {@link #captureModelSilhouette} but from raw {@code ModelPart[]}. Epic Knights armor decorations
      *  (plumes, surcoats, crowns) draw via {@code ModelPart.render} + {@code getArmorFoilBuffer}, not a
      *  {@link Model} / {@code renderColoredCutoutModel}, so no generic tee reaches them. Re-renders the parts
@@ -157,7 +173,12 @@ public final class EntityGlintRender {
                                      int light, int overlay, int color) {
         Resolution r = entity.isInvisible() ? null : instanceResolver.resolve(entity);
         boolean glow = r != null && (r.glowing || r.glowColors.length > 0);
-        if (!glow) { model.renderToBuffer(pose, consumer, light, overlay, color); return; }
+        // Under a shader pack the entity body's chromatic layers can't draw in-phase (hijacked), so capture the
+        // body here for the post-Iris overlay drain in the SAME walk as the glow tee. Off-pack the wrapping
+        // buffer draws chromatic in-phase, so this is glow-only there.
+        CustomGlint.Data glint = entity.isInvisible() ? null : resolveData(entity);
+        boolean chromaPack = glint != null && CustomGlintRenderer.isShaderPackActive() && hasChromaticLayer(glint);
+        if (!glow && !chromaPack) { model.renderToBuffer(pose, consumer, light, overlay, color); return; }
         ResourceLocation tex = renderer.getTextureLocation(entity);
         if (tex == null) { model.renderToBuffer(pose, consumer, light, overlay, color); return; }
         CapturingModelConsumer cap = CAPTURE_POOL.get();
@@ -168,9 +189,60 @@ public final class EntityGlintRender {
         } finally {
             cap.delegate = null;
         }
-        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, tex, outlineColorFor(r),
-                GlowOutlineRenderer.glowKeyFor(entity, GlowOutlineRenderer.CAT_ENTITY),
-                GlowOutlineRenderer.CAT_ENTITY, 0);
+        if (glow) {
+            GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, tex, outlineColorFor(r),
+                    GlowOutlineRenderer.glowKeyFor(entity, GlowOutlineRenderer.CAT_ENTITY),
+                    GlowOutlineRenderer.CAT_ENTITY, 0);
+        }
+        if (chromaPack) {
+            CustomGlint.Layer[] layers = glint.layers();
+            for (int li = 0; li < layers.length; li++) {
+                if (CustomGlint.isChromatic(layers[li])) {
+                    GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, tex, glint, li, false);
+                }
+            }
+        }
+    }
+
+    /** True when any layer of {@code glint} is the procedural chromatic design. */
+    public static boolean hasChromaticLayer(CustomGlint.Data glint) {
+        for (CustomGlint.Layer l : glint.layers()) if (CustomGlint.isChromatic(l)) return true;
+        return false;
+    }
+
+    /** Should a worn-armor compat capture the armor silhouette this piece? True when it glows OR (under a
+     *  shader pack) it has a chromatic layer that needs the post-Iris overlay. Compat armors call this to
+     *  decide whether to add the record-only capture consumer to their glint tee. */
+    public static boolean needsArmorCapture(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (CustomGlint.hasGlowEffect(stack)) return true;
+        if (!CustomGlintRenderer.isShaderPackActive()) return false;
+        CustomGlint.Data glint = CustomGlint.read(stack);
+        return glint != null && hasChromaticLayer(glint);
+    }
+
+    /** From a captured worn-armor silhouette ({@code cap}, QUADS {@code [x,y,z,u,v]}), queue the glow ring
+     *  (if glowing) AND the chromatic overlay per chromatic layer (if under a pack). Shared by the compat
+     *  armor modules (GeckoLib / Immersive Armors / Mekanism / Artifacts) so their flush is one call. */
+    public static void flushArmorCapture(CapturingModelConsumer cap, LivingEntity entity, ItemStack stack,
+                                         ResourceLocation tex, int category) {
+        if (cap == null || cap.count <= 0 || tex == null || entity == null || stack == null) return;
+        if (CustomGlint.hasGlowEffect(stack)) {
+            GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, tex,
+                    CustomGlintRenderer.resolveGlowColor(stack),
+                    GlowOutlineRenderer.glowKeyFor(entity, category), category, 0);
+        }
+        if (CustomGlintRenderer.isShaderPackActive()) {
+            CustomGlint.Data glint = CustomGlint.read(stack);
+            if (glint != null) {
+                CustomGlint.Layer[] layers = glint.layers();
+                for (int li = 0; li < layers.length; li++) {
+                    if (CustomGlint.isChromatic(layers[li])) {
+                        GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, tex, glint, li, false);
+                    }
+                }
+            }
+        }
     }
 
     /** Resolved silhouette-capture parameters for a teed model draw. */
@@ -343,12 +415,17 @@ public final class EntityGlintRender {
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = translucent
-                            ? CustomGlintRenderer.forChromaticEntityGlintTranslucent(glint, layerIdx, triangles)
-                            : triangles
-                                ? CustomGlintRenderer.forChromaticEntityGlintTriangles(glint, layerIdx)
-                                : CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
-                    if (crt != null) list.add(delegate.getBuffer(crt));
+                    // Under a shader pack the in-phase chromatic program is hijacked; the entity body is
+                    // captured + queued for the post-Iris overlay drain in renderBodyTee instead. Off-pack,
+                    // draw it in-phase as normal.
+                    if (!CustomGlintRenderer.isShaderPackActive()) {
+                        RenderType crt = translucent
+                                ? CustomGlintRenderer.forChromaticEntityGlintTranslucent(glint, layerIdx, triangles)
+                                : triangles
+                                    ? CustomGlintRenderer.forChromaticEntityGlintTriangles(glint, layerIdx)
+                                    : CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                        if (crt != null) list.add(delegate.getBuffer(crt));
+                    }
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();

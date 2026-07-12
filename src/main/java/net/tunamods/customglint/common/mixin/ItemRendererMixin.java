@@ -17,6 +17,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.joml.Matrix4f;
@@ -171,8 +172,13 @@ public class ItemRendererMixin {
             // Procedural chromatic: one shader-driven draw (the palette + seed ride the RenderType), no
             // per-colour fan-out and no texture sampling.
             if (CustomGlint.isChromatic(layers[layerIdx])) {
-                RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
-                if (crt != null) cg_addDistinct(list, cg_glintBuf(buffer, crt, guiHud));
+                // Under a shader pack the chromatic program is hijacked; flat items in every context (world,
+                // first-person, GUI) are captured for the post-Iris overlay in cg_captureGlowOutline instead.
+                boolean divertedItem = isItem && CustomGlintRenderer.isShaderPackActive();
+                if (!divertedItem) {
+                    RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
+                    if (crt != null) cg_addDistinct(list, cg_glintBuf(buffer, crt, guiHud));
+                }
                 continue;
             }
             // An undyed (empty-palette) non-chromatic layer renders white so the design stays visible without
@@ -236,9 +242,14 @@ public class ItemRendererMixin {
                 || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
                 || GlowOutlineRenderer.isFpHand());
         if (model == null) return;
-        if (!CustomGlint.hasGlowEffect(stack)) return;
+        boolean glow = CustomGlint.hasGlowEffect(stack);
+        // Under a shader pack a chromatic item can't draw in-phase (hijacked); capture its quads here for the
+        // post-Iris overlay drain (world items only for now — GUI / first-person / special items deferred).
+        CustomGlint.Data cgGlint = CustomGlintRenderer.isShaderPackActive() ? CustomGlint.read(stack) : null;
+        boolean chromaPack = cgGlint != null && cg_hasChromatic(cgGlint);
+        if (!glow && !chromaPack) return;
 
-        int color = CustomGlintRenderer.resolveGlowColor(stack);
+        int color = glow ? CustomGlintRenderer.resolveGlowColor(stack) : 0;
         // GUI-only icon anchor (slot centre + on-screen size + texture resolution) for the drain's ring
         // sizing + slot clamp; null for world / first-person (they scissor by silhouette bounds).
         float[] guiAnchor = gui ? cg_guiAnchor(pose, model) : null;
@@ -248,7 +259,11 @@ public class ItemRendererMixin {
         // recursion + suppresses the glint fan-out), capturing its animated, already-transformed
         // geometry — the proven approach from the pre-purge doItemOutline/doBewlrOutline path.
         if (model.isCustomRenderer()) {
-            cg_captureSpecialOutline(stack, ctx, leftHand, pose, light, color, guiAnchor);
+            // Special / 3D BEWLR items (trident, shield): one re-render capture feeds both the glow ring and,
+            // under a pack, the chromatic overlay (per captured texture bucket). GUI special-item chromatic is
+            // deferred inside queueChromaticGroups.
+            cg_captureSpecialOutline(stack, ctx, leftHand, pose, light, color, guiAnchor, glow,
+                    chromaPack ? cgGlint : null);
             return;
         }
 
@@ -270,19 +285,44 @@ public class ItemRendererMixin {
         List<BakedQuad> quads = cg_collectQuads(rendered, null);
         if (quads.isEmpty()) return;
 
-        if (gui) {
-            // Capture in GUI screen space; the ring is drained at GuiGraphics.flush() RETURN (GuiGraphicsMixin)
-            // so it composites AFTER the icon + its slot background are flushed to the main target, while
-            // RenderSystem still holds the GUI ortho projection / modelview the icon was drawn under. The
-            // OUTER pose translation is the icon's slot centre (GuiGraphics translated to it before the
-            // display transform), and its x-axis scale is the icon's on-screen size (16 GUI px in a slot,
-            // 5x that in the wand preview). Pass both so the drain sizes + clamps the ring to the real icon.
-            GlowOutlineRenderer.queueGuiItem(quads, tp.last().copy(), light, color, guiAnchor);
-        } else if (firstPerson) {
-            GlowOutlineRenderer.queueHeldFpItem(quads, tp.last().copy(), light, color);
-        } else {
-            GlowOutlineRenderer.queueWorldItem(quads, tp.last().copy(), light, color);
+        if (glow) {
+            if (gui) {
+                // Capture in GUI screen space; the ring is drained at GuiGraphics.flush() RETURN (GuiGraphicsMixin)
+                // so it composites AFTER the icon + its slot background are flushed to the main target, while
+                // RenderSystem still holds the GUI ortho projection / modelview the icon was drawn under. The
+                // OUTER pose translation is the icon's slot centre (GuiGraphics translated to it before the
+                // display transform), and its x-axis scale is the icon's on-screen size (16 GUI px in a slot,
+                // 5x that in the wand preview). Pass both so the drain sizes + clamps the ring to the real icon.
+                GlowOutlineRenderer.queueGuiItem(quads, tp.last().copy(), light, color, guiAnchor);
+            } else if (firstPerson) {
+                GlowOutlineRenderer.queueHeldFpItem(quads, tp.last().copy(), light, color);
+            } else {
+                GlowOutlineRenderer.queueWorldItem(quads, tp.last().copy(), light, color);
+            }
         }
+
+        // Chromatic overlay capture: expand the baked quads to camera-relative [x,y,z,u,v] under the item's
+        // display transform and queue per chromatic layer. World items drain at renderLevel TAIL; first-person
+        // hand items at the hand pass; GUI icons at GuiGraphics.flush — each under the matrices they drew with.
+        if (chromaPack) {
+            EntityGlintRender.CapturingModelConsumer cap = new EntityGlintRender.CapturingModelConsumer();
+            for (BakedQuad q : quads) {
+                cap.putBulkData(tp.last(), q, 1.0f, 1.0f, 1.0f, 1.0f, light, OverlayTexture.NO_OVERLAY);
+            }
+            CustomGlint.Layer[] ls = cgGlint.layers();
+            for (int li = 0; li < ls.length; li++) {
+                if (!CustomGlint.isChromatic(ls[li])) continue;
+                if (gui) GlowOutlineRenderer.queueChromaticItemGui(cap.data, cap.count, cgGlint, li);
+                else if (firstPerson) GlowOutlineRenderer.queueChromaticItemFp(cap.data, cap.count, cgGlint, li);
+                else GlowOutlineRenderer.queueChromaticItem(cap.data, cap.count, cgGlint, li);
+            }
+        }
+    }
+
+    /** True when any layer of {@code glint} is the procedural chromatic design. */
+    private static boolean cg_hasChromatic(CustomGlint.Data glint) {
+        for (CustomGlint.Layer l : glint.layers()) if (CustomGlint.isChromatic(l)) return true;
+        return false;
     }
 
     /** Capture a special / 3D BEWLR item's silhouette by re-rendering it through renderStatic into a
@@ -296,7 +336,7 @@ public class ItemRendererMixin {
      *  hull; an EK/IaF custom item traces its sprite, not the no-texture model parts). Textureless RTs fall
      *  back to a white fill. queueGroups routes each bucket to the world / FP / GUI drain by {@code ctx}. */
     private static void cg_captureSpecialOutline(ItemStack stack, ItemDisplayContext ctx, boolean leftHand,
-            PoseStack pose, int light, int color, float[] guiAnchor) {
+            PoseStack pose, int light, int color, float[] guiAnchor, boolean glow, CustomGlint.Data chromaGlint) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         PoseStack tp = new PoseStack();
@@ -310,7 +350,8 @@ public class ItemRendererMixin {
         } finally {
             CustomGlintRenderer.IN_OUTLINE.set(false);
         }
-        cap.queueGroups(color, ctx, guiAnchor);
+        if (glow) cap.queueGroups(color, ctx, guiAnchor);
+        if (chromaGlint != null) cap.queueChromaticGroups(chromaGlint, ctx);
     }
 
     /** Icon anchor for the GUI glow drain: {@code [x,y,z]} = the OUTER pose translation (the slot/preview
