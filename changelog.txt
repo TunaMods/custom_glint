@@ -27,6 +27,7 @@ Fixed:
 - /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
+- The Chromatic slick now renders at the same scale on a held item, on worn armor, and on its inventory icon, instead of looking much finer on the item
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
@@ -41,6 +42,8 @@ Altered:
 Compat:
 - Fixed Shader Pack Outline duplication with certain shader packs
 - Improved JEI compatibility
+- Sophisticated Backpacks: a glinted or glowing backpack now shows its glint and outline in hand (including first person), dropped, in the inventory, and worn on your back
+- With a shader pack on, entity glints on slimes and sheep no longer flicker off at some angles or bleed through the model
 
 [1.6.0]
 
