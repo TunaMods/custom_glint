@@ -235,6 +235,27 @@ dedicated mixin, which ships in the standalone mod, not the bundled api jar.
 
 
 ================================================================================
+  Specifically supported mods
+================================================================================
+
+These integrations ship in the FULL standalone jar only, NOT in the bundled
+api jar. Each targets the other mod by class name with a soft mixin (no hard
+dependency) and no-ops when the mod is absent, so they never affect a modpack
+that lacks them.
+
+  Artifacts             - belts, necklaces, gloves, boots and other artifacts
+                          worn in Curios slots take glints and glow outlines.
+  Sophisticated          - backpacks take glints and glow outlines in hand
+  Backpacks               (including first person), dropped, in the inventory,
+                          and worn on the back.
+  JEI                   - Glint Trim, Glow Trim, and Tear items show their
+                          information pages in the recipe view.
+
+Modded armor and held items that go through the normal item / armor draw flow
+are handled automatically without a per-mod integration.
+
+
+================================================================================
   Data-pack designs
 ================================================================================
 
