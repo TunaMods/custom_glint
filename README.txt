@@ -1,4 +1,4 @@
-Custom Glints - developer documentation
+Glint & Glamour - developer documentation
 Minecraft 26.1.2 / NeoForge 26.1.2 - MIT license (attribution required)
 ================================================================================
 
@@ -13,11 +13,11 @@ packs.
   Two artifacts
 ================================================================================
 
-  custom-glint-api-<ver>.jar   (modid: customglint_api)
+  glint-and-glamour-api-<ver>.jar   (modid: customglint_api)
       Rendering pipeline + Java API. No wand, recipes, or /glint command.
       Bundle this via jarJar.
 
-  customglint-<ver>.jar        (modid: customglint + customglint_api)
+  Glint-and-Glamour-<ver>.jar       (modid: customglint + customglint_api)
       Full standalone download. Adds wand, Glint Trim / Glow Trim / Tear
       items, recipes, /glint command, loot modifiers, JEI integration.
       The api jar is nested inside via META-INF/jarjar/.
@@ -34,13 +34,13 @@ In build.gradle:
 
     repositories {
         maven {
-            name = "TunaMods Custom Glints"
+            name = "TunaMods Glint & Glamour"
             url = "https://raw.githubusercontent.com/TunaMods/custom_glint/26.1.2/mcmodsrepo"
         }
     }
 
     dependencies {
-        jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
+        jarJar(implementation("net.tunamods.customglint:glint-and-glamour-api")) {
             version {
                 strictly "[1.7.0,2.0)"
                 prefer "1.7.0"

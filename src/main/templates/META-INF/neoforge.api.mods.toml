@@ -11,10 +11,10 @@ config="custom_glint.mixins.json"
 [[mods]]
 modId="customglint_api"
 version="${mod_version}"
-displayName="Custom Glints API"
+displayName="Glint & Glamour API"
 logoFile="customglint.png"
 authors="${mod_authors}"
-description='''The rendering pipeline and API for Custom Glints. Other mods bundle this jar to give their own items animated, color-customizable enchantment glints.'''
+description='''The rendering pipeline and API for Glint & Glamour. Other mods bundle this jar to give their own items animated, color-customizable enchantment glints.'''
 
 [[dependencies.customglint_api]]
     modId="neoforge"

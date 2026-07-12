@@ -1,5 +1,5 @@
 {
-  "advancement.customglint.root.title": "Brillos Personalizados",
+  "advancement.customglint.root.title": "Glint & Glamour",
   "advancement.customglint.root.description": "Consigue un Adorno de Brillo",
   "advancement.customglint.smithing.title": "A Todo Brillo",
   "advancement.customglint.smithing.description": "Forja un Adorno de Brillo en un objeto",
@@ -37,7 +37,7 @@
   "item.customglint.trim_powder": "Polvo de Adorno",
   "block.customglint.glint_table": "Mesa de Brillo",
   "container.customglint.glint_table": "Mesa de Brillo",
-  "itemGroup.customglint.glint_tab": "Brillos Personalizados",
+  "itemGroup.customglint.glint_tab": "Glint & Glamour",
   "screen.customglint.glint_editor.title": "Editor de Brillo",
   "screen.customglint.glint_editor.preview": "Vista Previa",
   "screen.customglint.glint_editor.colors": "Colores:",

@@ -21,10 +21,10 @@ config="custom_glint.mixins.json"
 [[mods]]
 modId="customglint_api"
 version="${mod_version}"
-displayName="Custom Glints API"
+displayName="Glint & Glamour API"
 logoFile="customglint.png"
 authors="${mod_authors}"
-description='''The rendering pipeline and NBT API for Custom Glints. Other mods bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
+description='''The rendering pipeline and NBT API for Glint & Glamour. Other mods bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
 
 [[mods]] #mandatory
 # The modid of the mod
