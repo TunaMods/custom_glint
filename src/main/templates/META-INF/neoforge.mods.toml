@@ -6,6 +6,9 @@ issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
 # --- Mixin configs (loaded for the whole jar) ---
 [[mixins]]
 config="custom_glint.mixins.json"
+# Standalone-only compat mixins (soft compat: @Pseudo targets, no-op when the mod is absent).
+[[mixins]]
+config="custom_glint.sophisticatedbackpacks.mixins.json"
 
 # --- API mod ---
 [[mods]]

@@ -42,6 +42,17 @@ public class ItemModelResolverMixin {
         holder.customglint$setGlowSpeed(state.glowSpeed());
         holder.customglint$setGlowInterp(state.glowInterp());
 
+        // A GUI-baked glinted item that no wrapper claimed for the live flat overlay bakes its glint into
+        // the cached atlas icon as a single STATIC frame. Flat items (CuboidItemModelWrapperMixin) and
+        // shield/trident (SpecialModelWrapperMixin) set the overlay flag and scroll the glint live on top;
+        // a modded special-model item like a Sophisticated Backpack sets neither, so its baked glint never
+        // moved in the inventory. Mark it animated so the atlas re-bakes each frame and the glint scrolls,
+        // matching the in-hand look. Gated on the overlay flag being UNSET so overlay items keep the cheaper
+        // cached path (only these baked special-model icons pay the per-frame re-bake).
+        if (glint != null && displayContext == ItemDisplayContext.GUI && !holder.customglint$isGuiGlintOverlay()) {
+            output.setAnimated();
+        }
+
         // The GUI renders items into an atlas cached by getModelIdentity() (see GuiItemAtlas), the
         // glint is NOT part of vanilla's identity, so two items of the same base type + foil state
         // share one cached slot. Without this, giving a glinted item freezes the editor preview on
