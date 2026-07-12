@@ -66,8 +66,11 @@ public final class GeckoArmorGlint {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                    if (crt != null) list.add(bufferSource.getBuffer(crt));
+                    // Under a pack chromatic is captured for the post-Iris overlay (see flush) — not in-phase.
+                    if (!CustomGlintRenderer.isShaderPackActive()) {
+                        RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                        if (crt != null) list.add(bufferSource.getBuffer(crt));
+                    }
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors().length == 0
@@ -95,8 +98,9 @@ public final class GeckoArmorGlint {
             }
         }
 
-        // Record-only silhouette for the glow ring, replayed at RETURN against the stashed texture.
-        if (glowing) {
+        // Record-only silhouette for the glow ring AND the post-Iris chromatic overlay, replayed at RETURN
+        // against the stashed texture.
+        if (EntityGlintRender.needsArmorCapture(stack)) {
             EntityGlintRender.CapturingModelConsumer cap = new EntityGlintRender.CapturingModelConsumer();
             cap.delegate = null;
             PENDING_GLOW.set(cap);
@@ -113,14 +117,7 @@ public final class GeckoArmorGlint {
     public static void flush() {
         EntityGlintRender.CapturingModelConsumer cap = PENDING_GLOW.get();
         PENDING_GLOW.set(null);
-        if (cap == null || cap.count <= 0) return;
-        ResourceLocation tex = CURRENT_TEX.get();
-        LivingEntity entity = CURRENT_ENTITY.get();
-        ItemStack stack = CURRENT_STACK.get();
-        if (tex == null || entity == null || stack == null) return;
-        GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, tex,
-                CustomGlintRenderer.resolveGlowColor(stack),
-                GlowOutlineRenderer.glowKeyFor(entity, GlowOutlineRenderer.CAT_ARMOR),
-                GlowOutlineRenderer.CAT_ARMOR, 0);
+        EntityGlintRender.flushArmorCapture(cap, CURRENT_ENTITY.get(), CURRENT_STACK.get(),
+                CURRENT_TEX.get(), GlowOutlineRenderer.CAT_ARMOR);
     }
 }

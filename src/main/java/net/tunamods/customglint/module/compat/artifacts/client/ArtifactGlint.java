@@ -75,8 +75,11 @@ public final class ArtifactGlint {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
-                    if (crt != null) list.add(bufferSource.getBuffer(crt));
+                    // Under a pack chromatic is captured for the post-Iris overlay (see flush) — not in-phase.
+                    if (!CustomGlintRenderer.isShaderPackActive()) {
+                        RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                        if (crt != null) list.add(bufferSource.getBuffer(crt));
+                    }
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors().length == 0
@@ -104,7 +107,7 @@ public final class ArtifactGlint {
             }
         }
 
-        if (glowing) {
+        if (EntityGlintRender.needsArmorCapture(stack)) {
             EntityGlintRender.CapturingModelConsumer cap = new EntityGlintRender.CapturingModelConsumer();
             cap.delegate = null;
             PENDING.get().add(new Pending(cap, GlowOutlineRenderer.resolveRenderTypeTexture(rt)));
@@ -127,13 +130,8 @@ public final class ArtifactGlint {
         if (pending.isEmpty()) return;
         try {
             if (entity == null || stack == null) return;
-            int color = CustomGlintRenderer.resolveGlowColor(stack);
-            int key = GlowOutlineRenderer.glowKeyFor(entity, GlowOutlineRenderer.CAT_ARMOR);
             for (Pending p : pending) {
-                if (p.cap.count > 0 && p.tex != null) {
-                    GlowOutlineRenderer.queueModelOutline(p.cap.data, p.cap.count, p.tex, color,
-                            key, GlowOutlineRenderer.CAT_ARMOR, 0);
-                }
+                EntityGlintRender.flushArmorCapture(p.cap, entity, stack, p.tex, GlowOutlineRenderer.CAT_ARMOR);
             }
         } finally {
             pending.clear();

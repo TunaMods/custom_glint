@@ -78,10 +78,13 @@ public final class ImmersiveArmorsGlint {
         list.add(base);
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             if (CustomGlint.isChromatic(layers[layerIdx])) {
-                RenderType crt = noOffset
-                        ? CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx)
-                        : CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                if (crt != null) list.add(bufferSource.getBuffer(crt));
+                // Under a pack chromatic is captured for the post-Iris overlay (see finish) — not in-phase.
+                if (!CustomGlintRenderer.isShaderPackActive()) {
+                    RenderType crt = noOffset
+                            ? CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx)
+                            : CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(bufferSource.getBuffer(crt));
+                }
                 continue;
             }
             int[] colors = layers[layerIdx].colors().length == 0
@@ -113,13 +116,27 @@ public final class ImmersiveArmorsGlint {
         CURRENT_ENTITY.remove();
         CURRENT_PIECE.remove();
         if (stack == null || entity == null || piece == null) return;
-        if (!CustomGlint.hasGlowEffect(stack)) return;
+        if (!EntityGlintRender.needsArmorCapture(stack)) return;
         Model model = MODEL_ACCESS.computeIfAbsent(piece.getClass(), ImmersiveArmorsGlint::buildAccess).get(piece);
         if (model == null) return;
         ResourceLocation tex = resolveTexture(piece, stack);
         if (tex == null) return;
-        EntityGlintRender.captureModelSilhouette(entity, entity, model, tex, pose, light,
-                CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
+        if (CustomGlint.hasGlowEffect(stack)) {
+            EntityGlintRender.captureModelSilhouette(entity, entity, model, tex, pose, light,
+                    CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
+        }
+        // Under a pack the in-phase chromatic is hijacked; re-render the piece into the post-Iris overlay.
+        if (CustomGlintRenderer.isShaderPackActive()) {
+            CustomGlint.Data glint = CustomGlint.read(stack);
+            if (glint != null) {
+                CustomGlint.Layer[] cls = glint.layers();
+                for (int li = 0; li < cls.length; li++) {
+                    if (CustomGlint.isChromatic(cls[li])) {
+                        EntityGlintRender.captureChromaticModel(entity, model, tex, pose, light, glint, li);
+                    }
+                }
+            }
+        }
     }
 
     private static void packColor(float[] buf, int color) {
