@@ -41,12 +41,12 @@ Altered:
 - Sequential multi-color layers now cost a sequential tear, matching how simultaneous layers cost a simultaneous tear
 - Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
 
-Compat:
+[Compat]
 - Fixed Shader Pack Outline duplication with certain shader packs
 - Improved JEI compatibility
 - Sophisticated Backpacks: a glinted or glowing backpack now shows its glint and outline in hand (including first person), dropped, in the inventory, and worn on your back
 - With a shader pack on, entity glints on slimes and sheep no longer flicker off at some angles or bleed through the model
-- Artifacts: an artifact worn in a Curios slot (belts, necklaces, gloves, boots, and the rest) now shows its glint and glow while you wear it
+- Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
 
 [1.6.0]
 
