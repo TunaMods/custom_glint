@@ -36,7 +36,8 @@ in float vSpeed;
 out vec4 fragColor;
 
 const float EDGE = 0.1;
-const float DENSITY = 7.0;
+const float DENSITY = 14.0; // global chromatic fineness knob — keep in sync with
+                            // chromatic/chromatic_overlay/chromatic_block so armor/item/GUI match
 
 float hash(vec2 p) {
     p = fract(p * vec2(127.31, 311.7));
@@ -97,7 +98,9 @@ void main() {
     }
 
     float t = GameTime * 5000.0 * max(0.05, vSpeed); // matches core/chromatic.fsh (× speed)
-    vec2 uv = itemLocal * (DENSITY * max(0.05, vPS));
+    // vPS arrives pre-scaled by the flat-item match factor (~1/16, see GuiRendererMixin), so the low-scale
+    // floor is scaled to match (0.05/16 ≈ 0.003) — keeps sub-1 patternScales from collapsing to one cell.
+    vec2 uv = itemLocal * (DENSITY * max(0.003, vPS));
     vec2 so = vec2(vSeed * 3.1, vSeed * 6.7);
 
     int n = int(vCount + 0.5);

@@ -152,7 +152,10 @@ public class GuiRendererMixin {
                 GpuTextureView palView = palTex != null ? palTex.getTextureView() : null;
                 if (palView == null) continue;
                 TextureSetup ctex = TextureSetup.doubleTexture(slotView.textureView(), slotSampler, palView, designSampler);
-                int psPackedC = Math.min(32767, Math.round(layer.patternScale() * 4096.0f));
+                // × the flat-item match factor so the inventory icon's oil-slick density equals the in-world
+                // held item's (and thus worn armor's) — the world flat-item RT applies the same factor.
+                int psPackedC = Math.min(32767, Math.round(
+                        layer.patternScale() * CustomGlintRenderer.chromaticFlatItemMatch() * 4096.0f));
                 // Pack morph speed into UV2.y's high bits (guiScale stays in the low 7), so the GUI morph
                 // tracks the trim's speed exactly like the world chromatic's TextureMat[2][0].
                 int speedQ = Math.max(1, Math.min(255, Math.round((float) layer.speed() * 16.0f)));

@@ -23,7 +23,8 @@ in float vCount;
 
 out vec4 fragColor;
 
-const float DENSITY = 7.0; // noise cells across one UV unit — tunable look/scale knob
+const float DENSITY = 14.0; // noise cells across one UV unit — global chromatic fineness knob (keep in sync
+                            // with chromatic_overlay/chromatic_block/gui_chromatic so armor/item/GUI match)
 
 float hash(vec2 p) {
     p = fract(p * vec2(127.31, 311.7));
