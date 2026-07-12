@@ -82,22 +82,43 @@ public class ItemRendererMixin {
             // First-person hand items go to a separate queue drained only at the hand point (view-space
             // pose; the world drain would project it against the world matrix and the ring would float
             // off the item, most visible under Iris, which renders the hand inside the level framegraph).
-            boolean heldFp = submit.displayContext() != null && submit.displayContext().firstPerson();
+            // OR in the hand-render window flag: a special-model quad item (a Sophisticated Backpack) submits
+            // its base model with ItemDisplayContext.NONE, so the node's own context can't report first-person;
+            // the flag is live through the deferred hand draw (renderHandsWithItems HEAD..RETURN).
+            boolean heldFp = (submit.displayContext() != null && submit.displayContext().firstPerson())
+                    || EntityGlintRender.inFirstPersonHand();
             EntityGlintRender.queueItemOutline(submit.quads(), submit.pose(), submit.lightCoords(),
                     holder.customglint$getGlint(), glowing, glowColors,
                     holder.customglint$getGlowSpeed(), holder.customglint$getGlowInterp(), heldFp);
         }
-        // Chromatic glint layers can't draw in-phase under a pack (Iris → flat white); queue them for the
-        // post-Iris overlay drain (world drain for 3rd-person/dropped, hand drain for first-person). Non-
-        // chromatic layers still draw through getFoilBuffer/applyGlint, which skips chromatic under a pack.
+        // Under an active shader pack NO glint layer can draw in-phase correctly: Iris replaces our program,
+        // so chromatic goes flat white and normal glint goes SOLID (every gbuffer entity program it can pick
+        // is opaque — it replaces the item surface instead of adding onto it). Queue EVERY layer for the
+        // post-Iris overlay drain (world drain for 3rd-person/dropped, hand drain for first-person); the
+        // in-phase applyGlint below skips all layers under a pack. Off the pack, applyGlint draws normally.
         CustomGlint.Data glint = holder.customglint$getGlint();
         if (!isGui && glint != null && CustomGlintRenderer.isShaderPackActive()) {
-            boolean heldFp = submit.displayContext() != null && submit.displayContext().firstPerson();
+            // Same NONE-context fallback as the glow queue above (SB backpack): route by the hand-window flag.
+            boolean heldFp = (submit.displayContext() != null && submit.displayContext().firstPerson())
+                    || EntityGlintRender.inFirstPersonHand();
             CustomGlint.Layer[] gl = glint.layers();
             for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
-                if (!CustomGlint.isChromatic(gl[layerIdx])) continue;
-                EntityGlintRender.queueChromaticItem(submit.quads(), submit.pose(),
-                        glint, layerIdx, submit.lightCoords(), heldFp);
+                if (CustomGlint.isChromatic(gl[layerIdx])) {
+                    EntityGlintRender.queueChromaticItem(submit.quads(), submit.pose(),
+                            glint, layerIdx, submit.lightCoords(), heldFp);
+                    continue;
+                }
+                int[] colors = gl[layerIdx].colors();
+                if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+                if (gl[layerIdx].simultaneous()) {
+                    for (int i = 0; i < colors.length; i++)
+                        EntityGlintRender.queueGlintOverlayItem(submit.quads(), submit.pose(),
+                                glint, layerIdx, i, colors[i], submit.lightCoords(), heldFp);
+                } else {
+                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                    EntityGlintRender.queueGlintOverlayItem(submit.quads(), submit.pose(),
+                            glint, layerIdx, 0, color, submit.lightCoords(), heldFp);
+                }
             }
         }
     }
@@ -114,7 +135,15 @@ public class ItemRendererMixin {
     )
     private static void cg_onFoilBuffer(MultiBufferSource bufferSource, RenderType renderType,
             PoseStack.Pose foilDecalPose, CallbackInfoReturnable<VertexConsumer> cir) {
-        VertexConsumer consumer = applyGlint(bufferSource, GlintCarrier.DRAW_GLINT.get());
+        CustomGlint.Data glint = GlintCarrier.DRAW_GLINT.get();
+        // Under an active shader pack our glint is drawn by the post-Iris overlay drain (queued in
+        // cg_renderItemHead), never in-phase (an in-phase glint goes SOLID). Return a swallowing consumer so
+        // vanilla's enchant foil is eaten here (our glint EATS it, never stacks) and nothing draws in-phase.
+        if (glint != null && CustomGlintRenderer.isShaderPackActive()) {
+            cir.setReturnValue(CustomGlintRenderer.NO_OP_CONSUMER);
+            return;
+        }
+        VertexConsumer consumer = applyGlint(bufferSource, glint);
         if (consumer != null) cir.setReturnValue(consumer);
     }
 
@@ -131,11 +160,13 @@ public class ItemRendererMixin {
         CustomGlint.Layer[] layers = glint.layers();
 
         List<VertexConsumer> list = new ArrayList<>();
+        // Off the shader path this draws the glint in-phase. Under a pack the foil-buffer hook returns the
+        // swallowing NO_OP consumer before ever reaching here, so this loop is the non-pack path only.
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             int[] colors = layers[layerIdx].colors();
             if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
             // Under a shader pack a chromatic layer is drawn by the post-Iris overlay drain (queued in
-            // cg_renderItemHead), not here, drawing it in-phase would flash flat white. Skip it.
+            // cg_renderItemHead), not here; drawing it in-phase would flash flat white. Skip it.
             if (CustomGlint.isChromatic(layers[layerIdx]) && CustomGlintRenderer.isShaderPackActive()) continue;
             // Chromatic composites every color in ONE draw (palette texture), so never loop per-color.
             if (layers[layerIdx].simultaneous() && !CustomGlint.isChromatic(layers[layerIdx])) {

@@ -10,6 +10,8 @@ import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.GlintCarrier;
 
@@ -53,15 +55,44 @@ public class SubmitNodeCollectionMixin {
         if (!EntityGlintRender.isEntitySurface(renderType)) return;
         EntityGlintRender.Resolution res = ers.getRenderData(EntityGlintRender.RENDER_DATA);
         if (res == null || res.data == null) return;
+        // Off a shader pack, stash the layer glint for the stable-depth draw at AfterWeather (drawn on top,
+        // occluded against the opaque-depth snapshot) when it would otherwise fight a re-sorted / mismatched
+        // depth in-phase:
+        //   - a TRANSLUCENT layer (slime outer shell) lands in 26.1's distance-sorted translucent bucket with
+        //     our glint (also mark the entity so its inner body glint is skipped — the shell is the surface),
+        //   - a CHROMATIC layer draws through the EQUAL-depth chromatic RT, which flickers on the ~1 ULP depth
+        //     mismatch between our program and the layer surface (both sheep wool and slime shell).
+        boolean translucent = cg_isTranslucent(renderType);
+        if (translucent) EntityGlintRender.markTranslucentShell(state);
+        if ((translucent || cg_hasChromatic(res.data)) && !CustomGlintRenderer.isShaderPackActive()) {
+            EntityGlintRender.queueTranslucentLayerGlint((EntityModel<?>) model, state, poseStack.last(),
+                    res.data, lightCoords);
+            return;
+        }
         cg_addingGlint = true;
         try {
             // null cutout texture → the chromatic overlay draws the full layer mesh, matching how the glow
             // path silhouettes these RenderLayer surfaces (white.png full shape, their hull IS the shape).
             EntityGlintRender.submitEntityGlint((OrderedSubmitNodeCollector) (Object) this,
-                    (EntityModel<?>) model, state, poseStack, lightCoords, res.data, null);
+                    (EntityModel<?>) model, state, poseStack, lightCoords, res.data, null, true, translucent);
         } finally {
             cg_addingGlint = false;
         }
+    }
+
+    /** True for a translucent entity-surface RenderType (slime outer shell etc.); its depth is re-sorted
+     *  every frame, so an in-phase glint tied to it flickers. Identity-independent name check. */
+    @Unique
+    private static boolean cg_isTranslucent(RenderType renderType) {
+        return renderType.toString().contains("translucent");
+    }
+
+    /** True if any layer of {@code data} is chromatic (procedural). Chromatic layers draw through the
+     *  EQUAL-depth chromatic RT, which flickers on a layer surface, so they take the stable-depth stash path. */
+    @Unique
+    private static boolean cg_hasChromatic(CustomGlint.Data data) {
+        for (CustomGlint.Layer l : data.layers()) if (CustomGlint.isChromatic(l)) return true;
+        return false;
     }
 
     /** Guards against re-entering this hook while submitting our own glint nodes (which call

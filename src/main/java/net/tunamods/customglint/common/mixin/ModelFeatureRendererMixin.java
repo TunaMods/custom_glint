@@ -7,6 +7,9 @@ import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.model.Model;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.OutlineBufferSource;
+import net.minecraft.client.renderer.SubmitNodeCollection;
 import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
@@ -15,6 +18,8 @@ import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * In-phase entity-body glow-outline capture, the vanilla-parity path (option A).
@@ -38,6 +43,27 @@ import org.spongepowered.asm.mixin.injection.At;
  */
 @Mixin(ModelFeatureRenderer.class)
 public class ModelFeatureRendererMixin {
+
+    /**
+     * Snapshot the STABLE opaque depth at the very START of the translucent entity pass — every opaque
+     * surface (terrain + solid entity bodies) has committed its depth, but no translucent shell has drawn
+     * yet. The stashed translucent-layer glints (slime outer shell) occlude against this snapshot, not the
+     * shell's per-frame re-sorted depth (the slime flicker). Gated so the depth copy only runs when there is
+     * actually a slime-shell glint to draw. Off the shader path only (under a pack the overlay owns it).
+     */
+    @Inject(method = "renderTranslucent", at = @At("HEAD"), require = 0)
+    private void cg_captureSolidDepth(SubmitNodeCollection nodeCollection,
+            MultiBufferSource.BufferSource bufferSource, OutlineBufferSource outlineBufferSource,
+            MultiBufferSource.BufferSource crumblingBufferSource, CallbackInfo ci) {
+        if (EntityGlintRender.hasTranslucentLayerGlints()) {
+            EntityGlintRender.captureSolidDepth();
+        }
+    }
+    // The stashed translucent-layer glints (slime shell) are NOT drawn here: draining at renderTranslucent
+    // RETURN drew them before LATER-order translucent shells (the slime shell submits at order(1)), which then
+    // painted over them and washed them out. They're drained at RenderLevelStageEvent.AfterWeather instead
+    // (CustomGlintClientInit) — after EVERY translucent pass — so they land ON TOP of the shell, while their
+    // in-shader occlusion still reads the stable opaque-depth snapshot captured above.
 
     /**
      * Mute vanilla's glowing-entity outline when OUR glow is on the same entity. Vanilla tees a second

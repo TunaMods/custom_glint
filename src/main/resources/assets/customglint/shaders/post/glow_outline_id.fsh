@@ -55,6 +55,22 @@ void main() {
     int vP = int(texture(MaskSampler, texCoord).a * 255.0 + 0.5);
     int keyP = vP >= 128 ? vP - 128 : vP;   // this pixel's object key (category<<5 | id); 0 = empty
 
+    // This RING pixel's own scene distance, for the ring-occlusion test below. Computed once (depends only on
+    // texCoord, not on the source being scanned).
+    float rNdc = texture(DepthSampler, texCoord).r * 2.0 - 1.0;
+    float ringDist = ProjMat[3][2] / (rNdc + ProjMat[2][2]);
+
+    // NEAREST source wins. When two objects' outline bands overlap (a sheep behind a player's armored arm),
+    // BOTH have a visible silhouette edge within reach of this pixel, so both want to ring it. Returning on
+    // the FIRST edge found made an arbitrary one win — often the farther object (the sheep), whose ring then
+    // painted OVER the nearer object's outline (the "back outline draws through my outline" report). The ring
+    // bands sit in empty space between the two shapes, so the surface-depth occlusion test alone can't resolve
+    // it. Instead scan the whole kernel and keep the source with the SMALLEST eye distance, so the front-most
+    // object's outline always draws on top where two rings meet.
+    float bestDist = 1.0e30;
+    vec3 bestColor = vec3(0.0);
+    bool found = false;
+
     float maxR2 = float(SEARCH * SEARCH);
     for (int dx = -SEARCH; dx <= SEARCH; dx++) {
         for (int dy = -SEARCH; dy <= SEARCH; dy++) {
@@ -80,21 +96,23 @@ void main() {
             // here. Without this guard srcDist → far → scale → MIN_SCALE and EVERY hand item rings as a thin
             // hairline (TRIED: routing held items through the hand-projection drain fixed the float but left
             // them thin — this is why). Held items are always close; keep them at full THICKNESS.
-            float scale = (srcDepthRaw >= 0.999999)
-                    ? 1.0
-                    : clamp(REF_DIST / max(srcDist, 0.001), MIN_SCALE, 1.0);
+            bool nearField = srcDepthRaw >= 0.999999;
+            float scale = nearField ? 1.0 : clamp(REF_DIST / max(srcDist, 0.001), MIN_SCALE, 1.0);
             float r = THICKNESS[keyN >> 5] * scale;             // this source's distance-scaled reach
-            if (d2 <= r * r) {                                  // within THAT category's thickness → ring it
-                // Occlude the ring where this RING pixel has nearer scene geometry than the source edge the
-                // ring comes from, so a farther object's halo never paints over a nearer object (adjacent
-                // players, or a held item over the gripping hand). See RING_OCCLUSION_BIAS.
-                float rNdc = texture(DepthSampler, texCoord).r * 2.0 - 1.0;
-                float ringDist = ProjMat[3][2] / (rNdc + ProjMat[2][2]);
-                if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;  // nearer geometry here → no ring
-                fragColor = vec4(n.rgb, 1.0);
-                return;
-            }
+            if (d2 > r * r) continue;                           // outside THAT category's thickness
+            // Occlude the ring where this RING pixel has nearer scene geometry than the source edge the ring
+            // comes from, so a farther object's halo never paints over a nearer SURFACE (a held item over the
+            // gripping hand, a mob behind a wall). See RING_OCCLUSION_BIAS.
+            if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;  // nearer geometry here → this source can't ring
+            // Keep the FRONT-most eligible source. Near-field sources (cleared depth, e.g. the FP hand item)
+            // are treated as closest so they win over a distant world object.
+            float cmpDist = nearField ? 0.0 : srcDist;
+            if (cmpDist < bestDist) { bestDist = cmpDist; bestColor = n.rgb; found = true; }
         }
+    }
+    if (found) {
+        fragColor = vec4(bestColor, 1.0);
+        return;
     }
     discard;
 }

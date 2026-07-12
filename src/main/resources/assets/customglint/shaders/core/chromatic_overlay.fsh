@@ -31,13 +31,20 @@ in vec4 screenPos;
 
 out vec4 fragColor;
 
-const float DENSITY = 7.0; // noise cells across one UV unit — tunable look/scale knob
+const float DENSITY = 14.0; // noise cells across one UV unit — global chromatic fineness knob (keep in sync
+                            // with chromatic/chromatic_block/gui_chromatic so armor/item/GUI match)
 
-// Occlusion tolerance, in BLOCKS of linear view distance (same rationale as glow_silhouette: a blocks
-// epsilon is distance-independent, unlike a window-depth epsilon). A fragment farther than the scene
-// surface by more than this is occluded (or a back face, since cull is off) and is dropped, so only the
-// model's own visible front faces paint.
-const float OCCLUSION_BIAS = 0.10;
+// Occlusion tolerance, in BLOCKS of linear view distance (distance-independent, unlike a window-depth
+// epsilon). SLOPE-SCALED (see core/glint_overlay.fsh for the full rationale): the bias stays tight on
+// camera-facing surfaces and widens at grazing silhouette edges so the surface's own rim isn't self-culled.
+//
+// Chromatic uses a SMALLER slope than the design glint. Chromatic is a full-coverage ADDITIVE slick, so where
+// the occlusion is too loose a back face passes AND its colour SUMS with the front face's — a limb's front +
+// back faces stack into a bright blown-out rim at the grazing edge ("arm/leg overlaps too bright"). A tighter
+// slope culls the back face much closer to the edge, collapsing that rim, while MIN_BIAS (unchanged) still
+// covers the armor polygon-offset + depth precision so the front surface itself never self-culls.
+const float MIN_BIAS = 0.015;
+const float SLOPE_BIAS = 0.6;
 
 float hash(vec2 p) {
     p = fract(p * vec2(127.31, 311.7));
@@ -98,7 +105,8 @@ void main() {
     float sceneDepth = texture(DepthSampler, uv).r;
     float ndc = sceneDepth * 2.0 - 1.0;
     float sceneDist = ProjMat[3][2] / (ndc + ProjMat[2][2]);
-    if (viewDist > sceneDist + OCCLUSION_BIAS) {
+    float bias = max(MIN_BIAS, SLOPE_BIAS * fwidth(viewDist));
+    if (viewDist > sceneDist + bias) {
         discard;
     }
 
@@ -112,6 +120,11 @@ void main() {
     float n2 = fbm(uvn * 1.7 + so.yx - vec2(t * 0.06, t * 0.04));
 
     vec3 col = cgChroma(n, n1, n2, t);
+    // Identical brightness to the in-phase chromatic (core/chromatic.fsh): the composite now adds this with a
+    // plain ADDITIVE blend (not GLINT), so the overlay squares the colour exactly ONCE (into the isolated
+    // target) just like the in-phase draw — matching brightness/saturation on and off a pack. (An earlier
+    // GLINT composite squared it a SECOND time; boosting bright to counter that then over-cooked the slick
+    // into a vibrant red/black instead of the intended lava mid-tones.)
     float bright = 0.7 + 0.3 * n2;
 
     float fade = (1.0 - total_fog_value(sphericalVertexDistance, cylindricalVertexDistance, FogEnvironmentalStart, FogEnvironmentalEnd, FogRenderDistanceStart, FogRenderDistanceEnd)) * GlintAlpha;

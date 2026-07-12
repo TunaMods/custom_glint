@@ -1,6 +1,7 @@
 package net.tunamods.customglint.common.client;
 
 import com.google.common.reflect.TypeToken;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -104,8 +105,14 @@ public final class CustomGlintClientInit {
         // there the drain is relocated to LevelRendererMixin (renderLevel TAIL, post-Iris). Skip here when
         // a pack is active so the glow isn't drained twice.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterWeather event) -> {
-            if (!CustomGlintRenderer.isShaderPackActive())
+            if (!CustomGlintRenderer.isShaderPackActive()) {
+                // Translucent-shell glints (slime) draw here, after EVERY translucent pass, so they land ON
+                // TOP of the shell instead of being washed out beneath a later-order shell. Their occlusion
+                // still reads the stable opaque-depth snapshot taken at renderTranslucent HEAD. Before the
+                // glow ring so the ring composites on top of the glint, as for opaque entities.
+                EntityGlintRender.drainTranslucentLayerGlints(Minecraft.getInstance().renderBuffers().bufferSource());
                 EntityGlintRender.drainBodyOutlines();
+            }
         });
     }
 

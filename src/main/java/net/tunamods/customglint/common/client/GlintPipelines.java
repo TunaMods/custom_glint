@@ -141,6 +141,18 @@ public final class GlintPipelines {
             .withCull(false)
             .build();
 
+    /** {@link #GLINT_COLOR} with {@link CompareOp#LESS_THAN_OR_EQUAL} depth (still no write) for entity LAYER
+     *  surfaces (sheep wool, slime outer cube, saddles, …). Those layers are drawn by a DIFFERENT pipeline than
+     *  our glint and sit flush on / translucent over the base body, so an EQUAL test flickers per-fragment on
+     *  the ~1 ULP depth difference between the two rasterisations (the same failure {@link #GLINT_BLOCK} hit).
+     *  LEQUAL is deterministic (never flickers); paired with a toward-camera {@code VIEW_OFFSET_Z} nudge at the
+     *  call site it sits the glint just in front of the layer surface. The base body keeps {@link #GLINT_COLOR}
+     *  (EQUAL): it rasterises identically to its own draw, so EQUAL is stable and tighter there. */
+    public static final RenderPipeline GLINT_LEQUAL = GLINT_COLOR.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/glint_lequal"))
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
+            .build();
+
     // ── Procedural chromatic glint ───────────────────────────────────────────────
 
     /** Custom procedural-chromatic shader (vertex + fragment): synthesises an oil-slick from value-noise
@@ -228,20 +240,70 @@ public final class GlintPipelines {
             .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
             .build();
 
+    // ── Normal-glint POST-IRIS overlay ───────────────────────────────────────────
+    //
+    // Under an active shader pack a NORMAL (non-chromatic) glint layer can't draw in-phase either: Iris
+    // substitutes our GLINT_COLOR program for one of its own, and every gbuffer entity program it can pick
+    // is OPAQUE (EMISSIVE_ENTITIES replaces the surface rather than adding onto it — IrisCompat picks it to
+    // keep our per-vertex colour, but the trade is that the design paints SOLID over the item). The glint
+    // program (ARMOR_GLINT) does blend additively but Iris rewrites gl_Color→ColorModulator there, dropping
+    // our multi-colour. So no single Iris program gives colour AND translucency; instead the layer is queued
+    // (EntityGlintRender.queueGlintOverlayXxx) and re-rendered AFTER Iris finishes the frame onto an isolated
+    // target with OUR shader + OUR GLINT blend, then composited back — exactly the chromatic overlay path,
+    // reusing the same drain + composite (CHROMATIC_COMPOSITE_PIPE). Off the shader path this never runs;
+    // normal glint draws in-phase as before.
+
+    /** Custom NORMAL-glint OVERLAY shader (vertex + fragment): the post-Iris counterpart of
+     *  {@link #GLINT_COLOR_SHADER}, sampling the scrolling grayscale design (Sampler0) tinted by the
+     *  per-vertex colour, cut out against a model/atlas texture (Sampler1), with a per-fragment scene-depth
+     *  occlusion test. Files at {@code assets/customglint/shaders/core/glint_overlay.{vsh,fsh}}. */
+    public static final Identifier GLINT_OVERLAY_SHADER = CustomGlint.res("core/glint_overlay");
+
+    /** Post-Iris normal-glint overlay pipeline: {@link #GLINT_COLOR} (GLINT blend, POSITION_TEX_COLOR, no
+     *  cull) with the overlay shader pair, a {@code Sampler1} (the cutout texture), a {@code DepthSampler}
+     *  (scene depth, sampled in-shader for occlusion), and depth test {@code ALWAYS} with no write (the
+     *  geometry re-renders into our OWN target, so the GPU depth test isn't used; occlusion is the shader's). */
+    public static final RenderPipeline GLINT_OVERLAY = GLINT_COLOR.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/glint_overlay"))
+            .withVertexShader(GLINT_OVERLAY_SHADER)
+            .withFragmentShader(GLINT_OVERLAY_SHADER)
+            .withSampler("Sampler1")
+            .withSampler("DepthSampler")
+            .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+            .build();
+
+    /** LOOSE-occlusion fragment shader for the overlay: shares {@link #GLINT_OVERLAY_SHADER}'s vertex stage,
+     *  swaps only the fragment for a flat generous bias (no fwidth slope). File at
+     *  {@code assets/customglint/shaders/core/glint_overlay_loose.fsh}. */
+    public static final Identifier GLINT_OVERLAY_LOOSE_SHADER = CustomGlint.res("core/glint_overlay_loose");
+
+    /** {@link #GLINT_OVERLAY} with the loose fragment shader, for TRANSLUCENT entity-layer shells (slime outer
+     *  cube) whose committed scene depth is re-sorted every frame under Iris. The tight variant's ~mm floor
+     *  self-occludes that wobble and drops the shell out per-face; this flat 0.10-block bias absorbs it while
+     *  still occluding against clearly nearer opaque geometry. Same samplers/blend/depth as {@link
+     *  #GLINT_OVERLAY}; only the fragment program differs. */
+    public static final RenderPipeline GLINT_OVERLAY_LOOSE = GLINT_OVERLAY.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/glint_overlay_loose"))
+            .withFragmentShader(GLINT_OVERLAY_LOOSE_SHADER)
+            .build();
+
     /** Fragment shader for the chromatic overlay composite (passthrough blit; blend is on the pipeline).
      *  File at {@code assets/customglint/shaders/post/chromatic_composite.fsh}. */
     public static final Identifier CHROMATIC_COMPOSITE_SHADER = CustomGlint.res("post/chromatic_composite");
 
-    /** Composites the isolated chromatic-overlay target back onto the main target with the GLINT blend, so
-     *  the post-Iris path reads like the in-world chromatic glint. screenquad vertex + the passthrough
-     *  fragment above; driven via {@code RenderPass.setPipeline}, so it must be registered through
-     *  {@code RegisterRenderPipelinesEvent}, see {@code CustomGlintClientInit}. */
+    /** Composites the isolated overlay target back onto the main target. Blend is ADDITIVE, NOT GLINT: the
+     *  overlay pipeline already applied the GLINT square once when it rendered into the isolated target, so the
+     *  target holds {@code src²}. Compositing that with GLINT would square it AGAIN ({@code src⁴}) — much more
+     *  contrasty/vibrant than the single-square in-phase draw (the "chromatic too vibrant under shaders"
+     *  report). A plain additive blend adds {@code src²} straight onto the scene, exactly matching the in-phase
+     *  {@code src² + dst}. screenquad vertex + the passthrough fragment above; driven via {@code
+     *  RenderPass.setPipeline}, so it must be registered through {@code RegisterRenderPipelinesEvent}. */
     public static final RenderPipeline CHROMATIC_COMPOSITE_PIPE = RenderPipeline.builder()
             .withLocation(CustomGlint.res("pipeline/chromatic_composite"))
             .withVertexShader(CustomGlint.res("core/screenquad"))
             .withFragmentShader(CHROMATIC_COMPOSITE_SHADER)
             .withSampler("InSampler")
-            .withColorTargetState(new ColorTargetState(BlendFunction.GLINT))
+            .withColorTargetState(new ColorTargetState(BlendFunction.ADDITIVE))
             .withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES)
             .build();
 
@@ -281,6 +343,43 @@ public final class GlintPipelines {
         RenderSetup setup = RenderSetup.builder(CHROMATIC_OVERLAY)
                 .withTexture("Sampler0", modelTex)   // model texture: the cutout alpha-test silhouette
                 .withTexture("Sampler1", paletteTex, GlintPipelines::paletteSampler)
+                .withTexture("DepthSampler", sceneDepth,
+                        () -> RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
+                .setLayeringTransform(LayeringTransform.NO_LAYERING)
+                .setTextureTransform(new TextureTransform(name + "|tex", animation))
+                .bufferSize(1536)
+                .createRenderSetup();
+        return RenderType.create(name, setup);
+    }
+
+    /**
+     * Builds a post-Iris NORMAL-glint OVERLAY {@link RenderType} on {@link #GLINT_OVERLAY}: {@code grayDesign}
+     * on Sampler0 (the scrolling grayscale pattern, animated by {@code animation} exactly like the in-phase
+     * RT), {@code cutoutTex} on Sampler1 (its alpha cuts the glint to the real model/sprite silhouette; pass
+     * a white dummy for a full-shape fill), {@code sceneDepth} on DepthSampler (the per-frame holder bound by
+     * {@code CustomGlintRenderer.bindSceneDepth}), and {@link LayeringTransform#NO_LAYERING} (it draws to its
+     * own target). The per-layer glint colour rides the vertices (the drain passes it as tintedColor), so it
+     * is not baked into the RenderType — mirroring the in-phase glint. Counterpart of {@link
+     * #chromaticOverlayType} for non-procedural designs.
+     */
+    public static RenderType glintOverlayType(String name, Identifier grayDesign, Identifier cutoutTex,
+                                              Identifier sceneDepth, Supplier<Matrix4f> animation) {
+        return glintOverlayType(GLINT_OVERLAY, name, grayDesign, cutoutTex, sceneDepth, animation);
+    }
+
+    /** LOOSE-occlusion counterpart of {@link #glintOverlayType} on {@link #GLINT_OVERLAY_LOOSE}, for
+     *  translucent entity-layer shells (slime outer cube). Identical payload; only the fragment shader's bias
+     *  differs. */
+    public static RenderType glintOverlayLooseType(String name, Identifier grayDesign, Identifier cutoutTex,
+                                                   Identifier sceneDepth, Supplier<Matrix4f> animation) {
+        return glintOverlayType(GLINT_OVERLAY_LOOSE, name, grayDesign, cutoutTex, sceneDepth, animation);
+    }
+
+    private static RenderType glintOverlayType(RenderPipeline pipeline, String name, Identifier grayDesign,
+                                               Identifier cutoutTex, Identifier sceneDepth, Supplier<Matrix4f> animation) {
+        RenderSetup setup = RenderSetup.builder(pipeline)
+                .withTexture("Sampler0", grayDesign, GlintPipelines::glintSampler)
+                .withTexture("Sampler1", cutoutTex)   // model/atlas texture: the cutout alpha-test silhouette
                 .withTexture("DepthSampler", sceneDepth,
                         () -> RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
                 .setLayeringTransform(LayeringTransform.NO_LAYERING)

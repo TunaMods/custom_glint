@@ -85,14 +85,27 @@ public class EquipmentLayerRendererMixin {
             for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
                 int[] colors = gl[layerIdx].colors();
                 if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
-                // Under an active shader pack a chromatic layer can't draw in-phase (Iris replaces our
-                // procedural program → flat white, the reported elytra bug); queue it for the post-Iris
-                // overlay drain instead. See EntityGlintRender.queueChromaticModel / drainChromaticOverlays.
-                if (CustomGlint.isChromatic(gl[layerIdx]) && CustomGlintRenderer.isShaderPackActive()) {
+                // Under an active shader pack NOTHING draws in-phase correctly: Iris replaces our program, so
+                // chromatic goes flat white (the reported elytra bug) and normal glint goes SOLID (opaque
+                // gbuffer program). Queue BOTH for the post-Iris overlay drain, cut out against the equipment
+                // texture. See EntityGlintRender.queueGlintOverlayModel / drainChromaticOverlays.
+                boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
+                if (CustomGlintRenderer.isShaderPackActive()) {
                     Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
-                    RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex);
-                    if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false);
-                } else if (gl[layerIdx].simultaneous() && !CustomGlint.isChromatic(gl[layerIdx])) {
+                    if (chroma) {
+                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex);
+                        if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false);
+                    } else if (gl[layerIdx].simultaneous()) {
+                        for (int i = 0; i < colors.length; i++) {
+                            RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, i, tex);
+                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, colors[i], false);
+                        }
+                    } else {
+                        int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, 0, tex);
+                        if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, color, false);
+                    }
+                } else if (gl[layerIdx].simultaneous() && !chroma) {
                     for (int i = 0; i < colors.length; i++) {
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i);
                         if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);

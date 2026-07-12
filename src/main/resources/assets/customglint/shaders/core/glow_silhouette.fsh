@@ -43,9 +43,18 @@ const float FLOOR = 0.05;
 // as distance² and lets the ring leak through solid cutout leaf texels once the entity is far enough away
 // (the leaf surface and the entity collapse into the same window-depth bucket). A bias measured in blocks
 // is distance-independent: it occludes a leaf 0.1+ blocks in front identically near and far, while the
-// entity's own surface (≈0 blocks away from itself) always reads visible. Raise if the entity's own
-// silhouette flickers occluded at grazing angles; lower if glow still leaks through thin foreground cutouts.
-const float OCCLUSION_BIAS = 0.10;
+// entity's own surface (≈0 blocks away from itself) always reads visible.
+//
+// SLOPE-SCALED (like the glint/chromatic overlays): a flat 0.10-block bias is larger than a thin model's
+// own front-to-back gap, so a part tucked BEHIND another (a shield's handle behind its face) reads as
+// visible and its silhouette gets ringed — showing "through" the front, since the composite draws over the
+// scene. The bias only needs to be loose at grazing SILHOUETTE edges (where one pixel spans a big depth
+// range and a tight bias would wrongly occlude the outer rim). fwidth(viewDist) is that per-pixel depth
+// span, so scaling the bias by it stays tight on camera-facing surfaces (hidden inner parts occlude, no
+// show-through) and widens only at grazing edges (outer silhouette stays visible → still rings). MIN_BIAS
+// covers depth quantization + any Iris-vs-vanilla depth mismatch.
+const float MIN_BIAS = 0.015;
+const float SLOPE_BIAS = 1.5;
 
 void main() {
     if (texture(Sampler0, texCoord0).a == 0.0) {
@@ -62,7 +71,8 @@ void main() {
     float ndc = sceneDepth * 2.0 - 1.0;
     float sceneDist = ProjMat[3][2] / (ndc + ProjMat[2][2]);
 
-    bool visible = viewDist <= sceneDist + OCCLUSION_BIAS;
+    float bias = max(MIN_BIAS, SLOPE_BIAS * fwidth(viewDist));
+    bool visible = viewDist <= sceneDist + bias;
     // Pack (visibility, object id) into alpha: occluded = id (1..127), visible = 128 + id. The id rides the
     // forced vertex-colour alpha; the composite (post/glow_outline_id) decodes it to keep rings separate.
     int id = clamp(int(vertexColor.a * 255.0 + 0.5), 1, 127);

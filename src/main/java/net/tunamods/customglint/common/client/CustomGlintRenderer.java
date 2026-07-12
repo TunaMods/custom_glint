@@ -206,6 +206,8 @@ public final class CustomGlintRenderer {
             cg_dropFixed(BY_BLOCK_GLINT.values());
             cg_dropFixed(BY_CHROMATIC.values());
             cg_dropFixed(BY_CHROMATIC_OVERLAY.values());
+            cg_dropFixed(BY_GLINT_OVERLAY.values());
+            cg_dropFixed(BY_ENTITY_LAYER_GLINT.values());
             cg_dropFixed(BY_GLOW_MASK.values());
         }
         BY_GLINT.clear();
@@ -214,6 +216,8 @@ public final class CustomGlintRenderer {
         BY_BLOCK_GLINT.clear();
         BY_CHROMATIC.clear();
         BY_CHROMATIC_OVERLAY.clear();
+        BY_GLINT_OVERLAY.clear();
+        BY_ENTITY_LAYER_GLINT.clear();
         BY_GLOW_MASK.clear();
         // Free the in-phase glow-body native buffers. Their keys are RenderTypes that the cleared
         // BY_GLOW_MASK maps just dropped, so after a reload glowMaskRT mints fresh RenderType instances
@@ -550,6 +554,22 @@ public final class CustomGlintRenderer {
 
     private static SceneDepthTexture sceneDepthTex;
 
+    /** Identifier for the STABLE opaque-depth snapshot (main depth copied at renderTranslucent HEAD, before
+     *  any translucent shell draws). The translucent-layer glint samples this so it occludes against terrain +
+     *  solid bodies instead of the shell's per-frame re-sorted depth. See {@code EntityGlintRender.captureSolidDepth}. */
+    public static final Identifier SOLID_DEPTH_ID = CustomGlint.res("solid_depth");
+    private static SceneDepthTexture solidDepthTex;
+
+    /** Re-points the solid-depth holder at the opaque-depth snapshot view (see {@link #SOLID_DEPTH_ID}).
+     *  Borrowed view; the snapshot target is owned by {@code EntityGlintRender}. */
+    public static void bindSolidDepth(GpuTextureView view) {
+        if (solidDepthTex == null) {
+            solidDepthTex = new SceneDepthTexture();
+            Minecraft.getInstance().getTextureManager().register(SOLID_DEPTH_ID, solidDepthTex);
+        }
+        solidDepthTex.view = view;
+    }
+
     /** Borrowed-view holder so a RenderType (which resolves textures by Identifier through TextureManager)
      *  can sample the main-target depth, which is a raw GpuTextureView with no Identifier of its own. The
      *  view is owned by the main render target, close() must NOT free it. */
@@ -846,9 +866,34 @@ public final class CustomGlintRenderer {
     }
 
     /** Noise UV scale for chromatic on MODEL surfaces (armor, entity bodies, horse armor). These sample their
-     *  own 0..1 texture UV where each body part is a small sub-rect, so the field is scaled up ~8× to give a
-     *  per-part density near the flat-item look. Tunable: higher = smaller/more colour cells per body part. */
-    private static final float CHROMATIC_MODEL_UV_SCALE = 8.0f;
+     *  own 0..1 model UV, which already spans a large area, so the slick wants a SMALL scale to read as an
+     *  oil-slick rather than a tiny tiled grid. 1.21.1 parity (its {@code CHROMATIC_MODEL_UV_SCALE}); the old
+     *  8.0 here tiled the field ~16× too dense on armor. Tunable: higher = smaller/more colour cells. */
+    private static final float CHROMATIC_MODEL_UV_SCALE = 0.5f;
+
+    /** Standardized noise UV scale for chromatic on SPECIAL 3D BEWLR items (shield, trident). 1.21.1 parity:
+     *  a special item is small on screen, so the plain 3D scale (1.0) reads as one coarse blob rather than a
+     *  slick (the reported "hard to see in 3rd person"). 3.0 gives enough colour cells to read as an oil-slick
+     *  at small on-screen sizes, and is applied BOTH in-phase ({@link #forChromaticSpecialGlint}) and in the
+     *  post-Iris overlay ({@link #forSpecialItemGlintOverlay}) so the slick is identical on and off a pack. */
+    private static final float CHROMATIC_SPECIAL_ITEM_UV_SCALE = 3.0f;
+
+    /** Brings the IN-WORLD flat held/dropped item's chromatic slick to the same cell scale as worn ARMOR.
+     *  The flat-item noise scale ({@code atlasW/16}) is calibrated to the block atlas so the world item matches
+     *  the INVENTORY ICON's density. But the item sprite IS the whole visible surface, while armor's 0..1 UV
+     *  wraps a large body (a visible face shows only a slice of it), so for the SAME scale slider the held item
+     *  measured ~16× finer than the armor. This divisor cancels that: the same trim at the same scale now reads
+     *  at the same density on a held item and on worn armor. Tunable: raise the denominator for a coarser item,
+     *  lower it for finer; {@code 1.0} = the old GUI-icon-matched density (~16× finer than armor). NOTE: this
+     *  decouples the in-world item from the inventory icon. */
+    private static final float CHROMATIC_FLAT_ITEM_MATCH = 1.0f / 16.0f;
+
+    /** The flat-item chromatic-density match factor (see {@link #CHROMATIC_FLAT_ITEM_MATCH}), for the GUI
+     *  overlay path to apply to its packed patternScale so the inventory icon reads at the same cell scale as
+     *  the in-world held item (and thus worn armor). Shared so the two flat-item paths never drift. */
+    public static float chromaticFlatItemMatch() {
+        return CHROMATIC_FLAT_ITEM_MATCH;
+    }
 
     /** Single-draw chromatic RenderType for {@code layer}, the palette carries every color, so unlike the
      *  normal glint factories this is never looped per-color. {@code tag} keeps the item / armor / entity
@@ -894,6 +939,15 @@ public final class CustomGlintRenderer {
      * on {@code CustomGlint.isChromatic} and {@link #isShaderPackActive()}.
      */
     private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture) {
+        return chromaticOverlayRT(layer, tag, uvScale, texture, SCENE_DEPTH_ID);
+    }
+
+    /** As {@link #chromaticOverlayRT(Layer, String, float, Identifier)} but samples {@code depthId} for the
+     *  occlusion test. The post-Iris path uses {@link #SCENE_DEPTH_ID}; the in-phase translucent-shell path
+     *  uses {@link #SOLID_DEPTH_ID} (the stable opaque-depth snapshot) so a slime shell's chromatic doesn't
+     *  fight the shell's re-sorted depth. */
+    private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture,
+                                                 Identifier depthId) {
         int[] colors = chromaticColors(layer.colors());
         final double speed = layer.speed();
         final float effScale = layer.patternScale() * uvScale;
@@ -904,16 +958,25 @@ public final class CustomGlintRenderer {
         // dummy (alpha 1 → no discard, full mesh) when the caller has no texture (e.g. an opaque body).
         final Identifier sampler0 = texture != null ? texture : getWhiteTexture();
         Identifier palette = getPaletteTexture(colors);
-        String key = tag + "|" + sampler0 + "|" + colorsKey(colors) + "|" + speed + "|" + effScale + "|" + layer.seed();
+        String key = tag + "|" + depthId + "|" + sampler0 + "|" + colorsKey(colors) + "|" + speed + "|" + effScale + "|" + layer.seed();
         RenderType cached = BY_CHROMATIC_OVERLAY.computeIfAbsent(key, k -> {
             String name = MOD_ID + ":custom_chromatic_overlay|" + k.hashCode();
             Supplier<Matrix4f> anim = () -> GlintPipelines.chromaticMatrix(speed, effScale, cc, seedPacked);
-            RenderType rt = GlintPipelines.chromaticOverlayType(name, sampler0, palette, SCENE_DEPTH_ID, anim);
+            RenderType rt = GlintPipelines.chromaticOverlayType(name, sampler0, palette, depthId, anim);
             registerFixed(rt);
             return rt;
         });
         registerLiveFixedBuffer(cached);
         return cached;
+    }
+
+    /** In-phase (off shader-pack) chromatic RT for an entity LAYER (sheep wool, slime outer shell), drawn on
+     *  top at AfterWeather and occluded against the stable opaque-depth snapshot ({@link #SOLID_DEPTH_ID}) —
+     *  the chromatic counterpart of {@link #forEntityTranslucentLayerGlint}. Replaces routing layer chromatic
+     *  through the EQUAL-depth body RT (which flickered against the layer's re-sorted / different-pipeline depth). */
+    public static RenderType forEntityLayerChromaticSolid(Data glint, int layerIdx) {
+        return chromaticOverlayRT(glint.layers()[layerIdx], "layer_chroma_solid", CHROMATIC_MODEL_UV_SCALE,
+                getWhiteTexture(), SOLID_DEPTH_ID);
     }
 
     /** Post-Iris chromatic overlay RT for worn equipment (humanoid armor, elytra/cape, barding), the
@@ -930,11 +993,22 @@ public final class CustomGlintRenderer {
         return chromaticOverlayRT(glint.layers()[layerIdx], "entity_ov", CHROMATIC_MODEL_UV_SCALE, texture);
     }
 
-    /** Post-Iris chromatic overlay RT for SPECIAL 3D items (shield/trident), scale 1 + the white dummy
-     *  cutout (full model shape, like the glow part path). Flat/quad items use {@link #forItemGlintOverlay}
-     *  instead (per-quad atlas cutout). */
+    /** Post-Iris chromatic overlay RT for SPECIAL 3D items (shield/trident): the standardized special-item
+     *  noise scale ({@link #CHROMATIC_SPECIAL_ITEM_UV_SCALE}, matching the in-phase {@link
+     *  #forChromaticSpecialGlint} so the slick is identical on and off a pack) + the white dummy cutout (full
+     *  model shape, like the glow part path). Flat/quad items use {@link #forItemGlintOverlay} instead. */
     public static RenderType forSpecialItemGlintOverlay(Data glint, int layerIdx) {
-        return chromaticOverlayRT(glint.layers()[layerIdx], "special_ov", 1.0f, getWhiteTexture());
+        return chromaticOverlayRT(glint.layers()[layerIdx], "special_ov", CHROMATIC_SPECIAL_ITEM_UV_SCALE, getWhiteTexture());
+    }
+
+    /** In-phase (off shader-pack) chromatic RT for a SPECIAL 3D item (shield/trident): the standardized
+     *  special-item noise scale ({@link #CHROMATIC_SPECIAL_ITEM_UV_SCALE}), so the slick matches the post-Iris
+     *  overlay ({@link #forSpecialItemGlintOverlay}) exactly. NO_LAYERING like the 3D item. 1.21.1 parity
+     *  ({@code forChromaticSpecialGlint}). Replaces routing special chromatic through {@code forGlint}
+     *  (isItem=false → the plain 1.0 3D scale that read as a coarse blob on a small item). */
+    public static RenderType forChromaticSpecialGlint(Data glint, int layerIdx) {
+        return chromaticRT(glint.layers()[layerIdx], LayeringTransform.NO_LAYERING, "special",
+                CHROMATIC_SPECIAL_ITEM_UV_SCALE);
     }
 
     /** Post-Iris chromatic overlay RT for a flat/quad item, cut out against the quad's OWN sprite atlas.
@@ -944,7 +1018,129 @@ public final class CustomGlintRenderer {
      *  {@code atlasW/16}, matching {@link #forGlint}'s flat-item calibration. */
     public static RenderType forItemGlintOverlay(Data glint, int layerIdx, Identifier atlas) {
         ensureAtlasDims();
-        return chromaticOverlayRT(glint.layers()[layerIdx], "item_ov|" + atlas, cachedAtlasW / 16.0f, atlas);
+        return chromaticOverlayRT(glint.layers()[layerIdx], "item_ov|" + atlas,
+                cachedAtlasW / 16.0f * CHROMATIC_FLAT_ITEM_MATCH, atlas);
+    }
+
+    // ── Post-Iris NORMAL-glint overlay RenderTypes ───────────────────────────────────────────────
+    //
+    // The {@code forXxxGlintOverlayNormal} family is the {@code forXxxGlint} counterpart on {@link
+    // GlintPipelines#GLINT_OVERLAY} (ALWAYS depth + an in-shader scene-depth occlusion test + a cutout
+    // sampler). Same design + animation-matrix payload as the in-phase RT, so the look matches; it just
+    // survives an active shader pack by being re-rendered after the framegraph (see
+    // {@code EntityGlintRender.drainChromaticOverlays}). Colour rides the vertices (drain passes it as
+    // tintedColor), so {@code colorIdx} here only phases the design's per-colour scroll, matching in-phase.
+
+    /** Shared builder for a model-UV overlay RT (armor / entity body): grayscale design on Sampler0,
+     *  {@code cutout} (the model texture, or the white dummy when null) on Sampler1, scene depth on
+     *  DepthSampler, and the armor-style scroll matrix. */
+    private static RenderType modelGlintOverlayRT(Layer layer, String tag, int colorIdx, @Nullable Identifier cutout) {
+        return modelGlintOverlayRT(layer, tag, colorIdx, cutout, false);
+    }
+
+    /** @param loose true routes onto {@link GlintPipelines#GLINT_OVERLAY_LOOSE} (flat generous occlusion) for a
+     *      translucent shell; false is the tight per-part-occluding {@link GlintPipelines#GLINT_OVERLAY}. */
+    private static RenderType modelGlintOverlayRT(Layer layer, String tag, int colorIdx, @Nullable Identifier cutout,
+                                                  boolean loose) {
+        Identifier gray = getTexture(layer.design());
+        if (gray == null) return null;
+        final Identifier cut = cutout != null ? cutout : getWhiteTexture();
+        final int cc = layer.colors().length;
+        final double speed = layer.speed();
+        final float ps = layer.patternScale();
+        final int scrollDir = layer.scrollDir();
+        final float scrollOffset = layer.scrollOffset();
+        String key = tag + "|" + layer.design() + "|" + cut + "|" + speed + "|" + ps + "|" + colorIdx
+                + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
+        RenderType cached = BY_GLINT_OVERLAY.computeIfAbsent(key, k -> {
+            String name = MOD_ID + ":custom_glint_overlay|" + k.hashCode();
+            java.util.function.Supplier<org.joml.Matrix4f> anim =
+                    () -> GlintPipelines.armorAnimationMatrix(speed, ps, colorIdx, cc, scrollDir, scrollOffset);
+            RenderType rt = loose
+                    ? GlintPipelines.glintOverlayLooseType(name, gray, cut, SCENE_DEPTH_ID, anim)
+                    : GlintPipelines.glintOverlayType(name, gray, cut, SCENE_DEPTH_ID, anim);
+            registerFixed(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
+    }
+
+    /** Post-Iris NORMAL-glint overlay RT for worn equipment (humanoid armor, elytra/cape, barding), the
+     *  {@link #forArmorGlint} normal branch re-routed onto {@link GlintPipelines#GLINT_OVERLAY}.
+     *  {@code texture} is the equipment-layer texture whose alpha cuts the glint to the real armor shape. */
+    public static RenderType forArmorGlintOverlayNormal(Data glint, int layerIdx, int colorIdx, @Nullable Identifier texture) {
+        return modelGlintOverlayRT(glint.layers()[layerIdx], "armor_ovn", colorIdx, texture);
+    }
+
+    /** Post-Iris NORMAL-glint overlay RT for entity bodies, the {@link #forEntityGlint} normal branch
+     *  re-routed onto {@link GlintPipelines#GLINT_OVERLAY}. {@code texture} is the body texture (its alpha
+     *  cuts the glint to the entity shape); null draws the whole mesh. */
+    public static RenderType forEntityGlintOverlayNormal(Data glint, int layerIdx, int colorIdx, @Nullable Identifier texture) {
+        return modelGlintOverlayRT(glint.layers()[layerIdx], "entity_ovn", colorIdx, texture);
+    }
+
+    /** LOOSE-occlusion entity-layer overlay RT for a TRANSLUCENT shell (slime outer cube). Same design +
+     *  animation as {@link #forEntityGlintOverlayNormal}, routed onto {@link GlintPipelines#GLINT_OVERLAY_LOOSE}
+     *  so the shell's re-sorted committed depth doesn't self-occlude the glint (per-face dropout under Iris). */
+    public static RenderType forEntityGlintOverlayNormalLoose(Data glint, int layerIdx, int colorIdx, @Nullable Identifier texture) {
+        return modelGlintOverlayRT(glint.layers()[layerIdx], "entity_ovn_loose", colorIdx, texture, true);
+    }
+
+    /** Post-Iris NORMAL-glint overlay RT for SPECIAL 3D items (shield/trident): the 3D scale-1 item scroll
+     *  (matching the in-phase special-item path, {@link #forGlint} isItem=false) + the white dummy cutout
+     *  (full model shape, like the glow part path). Flat/quad items use {@link #forItemGlintOverlayNormal}
+     *  (per-quad atlas cutout). */
+    public static RenderType forSpecialItemGlintOverlayNormal(Data glint, int layerIdx, int colorIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        Identifier gray = getTexture(layer.design());
+        if (gray == null) return null;
+        final int cc = layer.colors().length;
+        final double speed = layer.speed();
+        final float ps = layer.patternScale();
+        final int scrollDir = layer.scrollDir();
+        final float scrollOffset = layer.scrollOffset();
+        String key = "special_ovn|" + layer.design() + "|" + speed + "|" + ps + "|" + colorIdx + "|" + cc
+                + "|" + scrollDir + "|" + scrollOffset;
+        RenderType cached = BY_GLINT_OVERLAY.computeIfAbsent(key, k -> {
+            RenderType rt = GlintPipelines.glintOverlayType(MOD_ID + ":custom_glint_overlay|" + k.hashCode(),
+                    gray, getWhiteTexture(), SCENE_DEPTH_ID,
+                    () -> GlintPipelines.itemAnimationMatrix(speed, 1.0f, 1.0f, ps, colorIdx, cc, scrollDir, scrollOffset));
+            registerFixed(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
+    }
+
+    /** Post-Iris NORMAL-glint overlay RT for a flat/quad item, cut out against the quad's OWN sprite atlas.
+     *  {@code atlas} must be the quad's {@code materialInfo().sprite().atlasLocation()}. The design scroll
+     *  uses the same atlas-calibrated {@code scaleU/scaleV} as {@link #forGlint}'s flat-item path, so the
+     *  overlay density matches the in-phase look. */
+    public static RenderType forItemGlintOverlayNormal(Data glint, int layerIdx, int colorIdx, Identifier atlas) {
+        Layer layer = glint.layers()[layerIdx];
+        Identifier gray = getTexture(layer.design());
+        if (gray == null) return null;
+        ensureAtlasDims();
+        final int atlasW = cachedAtlasW, atlasH = cachedAtlasH;
+        final float scaleU = 8.0f * atlasW / 1024.0f;
+        final float scaleV = 8.0f * atlasH / 512.0f;
+        final int cc = layer.colors().length;
+        final double speed = layer.speed();
+        final float ps = layer.patternScale();
+        final int scrollDir = layer.scrollDir();
+        final float scrollOffset = layer.scrollOffset();
+        String key = "item_ovn|" + atlas + "|" + layer.design() + "|" + speed + "|" + ps + "|" + colorIdx
+                + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
+        RenderType cached = BY_GLINT_OVERLAY.computeIfAbsent(key, k -> {
+            RenderType rt = GlintPipelines.glintOverlayType(MOD_ID + ":custom_glint_overlay|" + k.hashCode(),
+                    gray, atlas, SCENE_DEPTH_ID,
+                    () -> GlintPipelines.itemAnimationMatrix(speed, scaleU, scaleV, ps, colorIdx, cc, scrollDir, scrollOffset));
+            registerFixed(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
     }
 
     /** Composites the isolated chromatic-overlay target ({@code inView}) onto the main target
@@ -972,6 +1168,8 @@ public final class CustomGlintRenderer {
     private static final Map<String, RenderType> BY_BLOCK_GLINT        = newRtCache();
     private static final Map<String, RenderType> BY_CHROMATIC          = newRtCache();
     private static final Map<String, RenderType> BY_CHROMATIC_OVERLAY  = newRtCache();
+    private static final Map<String, RenderType> BY_GLINT_OVERLAY       = newRtCache();
+    private static final Map<String, RenderType> BY_ENTITY_LAYER_GLINT  = newRtCache();
 
     /** Lazily resolves the block-atlas dimensions feeding the item/block glint scale. Atlas size only
      *  changes on resource reload, so this runs once until {@link #clearTextures} resets the cache. */
@@ -1128,6 +1326,71 @@ public final class CustomGlintRenderer {
         return cached;
     }
 
+    /**
+     * Entity LAYER glint (sheep wool, slime outer cube, saddle, stray clothing, any {@code RenderLayer}
+     * surface caught by {@code SubmitNodeCollectionMixin}). Same design + scroll as {@link #forEntityBodyGlint}
+     * but on {@link GlintPipelines#GLINT_LEQUAL} + a toward-camera {@code VIEW_OFFSET_Z} nudge instead of the
+     * body's EQUAL + NO_LAYERING. Layer surfaces are drawn by a different pipeline than our glint and sit
+     * flush on / translucent over the base body, so EQUAL flickers on the ~1 ULP raster mismatch between the
+     * two draws (the reported sheep-wool / slime shimmer); LEQUAL is deterministic and the nudge sits the
+     * glint just in front of the layer. The base body stays on {@link #forEntityBodyGlint} (EQUAL), where it
+     * rasterises identically to its own draw and so is stable already.
+     */
+    public static RenderType forEntityLayerGlint(Data glint, int layerIdx, int colorIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        // Chromatic layers keep the body's chromatic RT (NO_LAYERING); the flicker fix is for the design path.
+        if (CustomGlint.isChromatic(layer)) return forEntityBodyGlint(glint, layerIdx, colorIdx);
+        Identifier gray = getTexture(layer.design());
+        if (gray == null) return null;
+        final int cc = layer.colors().length;
+        final double speed = layer.speed();
+        final float ps = layer.patternScale();
+        final int scrollDir = layer.scrollDir();
+        final float scrollOffset = layer.scrollOffset();
+        String key = "entitylayer|" + layer.design() + "|" + speed + "|" + ps + "|" + colorIdx + "|" + layerIdx
+                + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
+        RenderType cached = BY_ENTITY_LAYER_GLINT.computeIfAbsent(key, k -> {
+            RenderType rt = GlintPipelines.glintType(MOD_ID + ":custom_entity_layer_glint|" + k.hashCode(),
+                    GlintPipelines.GLINT_LEQUAL, gray, LayeringTransform.VIEW_OFFSET_Z_LAYERING,
+                    () -> GlintPipelines.armorAnimationMatrix(speed, ps, colorIdx, cc, scrollDir, scrollOffset));
+            registerFixed(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
+    }
+
+    /**
+     * TRANSLUCENT entity-layer glint (slime outer shell). Reuses the {@link GlintPipelines#GLINT_OVERLAY}
+     * pipeline (ALWAYS depth so it draws ON TOP of the translucent shell, additive GLINT blend) with an
+     * in-shader occlusion test against the STABLE opaque-depth snapshot ({@link #SOLID_DEPTH_ID}) instead of
+     * the shell's re-sorted depth. Drawn in-place at renderTranslucent TAIL by {@code
+     * EntityGlintRender.drainTranslucentLayerGlints}; white dummy cutout (the shell geometry IS the shape).
+     * Chromatic layers fall back to the body chromatic RT (rare combo).
+     */
+    public static RenderType forEntityTranslucentLayerGlint(Data glint, int layerIdx, int colorIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        if (CustomGlint.isChromatic(layer)) return forEntityBodyGlint(glint, layerIdx, colorIdx);
+        Identifier gray = getTexture(layer.design());
+        if (gray == null) return null;
+        final int cc = layer.colors().length;
+        final double speed = layer.speed();
+        final float ps = layer.patternScale();
+        final int scrollDir = layer.scrollDir();
+        final float scrollOffset = layer.scrollOffset();
+        String key = "translayer|" + layer.design() + "|" + speed + "|" + ps + "|" + colorIdx + "|" + layerIdx
+                + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
+        RenderType cached = BY_GLINT_OVERLAY.computeIfAbsent(key, k -> {
+            RenderType rt = GlintPipelines.glintOverlayType(MOD_ID + ":custom_translayer_glint|" + k.hashCode(),
+                    gray, getWhiteTexture(), SOLID_DEPTH_ID,
+                    () -> GlintPipelines.armorAnimationMatrix(speed, ps, colorIdx, cc, scrollDir, scrollOffset));
+            registerFixed(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
+    }
+
     public static RenderType forGlint(Data glint, int layerIdx, boolean isItem, int colorIdx) {
         // isItem=true → flat item model → atlas-calibrated 8× scale (matches vanilla glint()).
         // isItem=false → 3D entity model (trident, etc.) → 1.0 for visible pattern detail.
@@ -1147,9 +1410,10 @@ public final class CustomGlintRenderer {
         final float scaleV = isItem ? (8.0f * atlasH / 512.0f) : 1.0f;
         Layer layer = glint.layers()[layerIdx];
         if (CustomGlint.isChromatic(layer)) {
-            // Flat items sample the block atlas (UV0 spans only spritePx/atlasPx) → scale up to match the GUI
-            // density; 3D items (trident) sample their own 0..1 model UV → scale 1.
-            float uvScale = isItem ? (atlasW / 16.0f) : 1.0f;
+            // Flat items sample the block atlas (UV0 spans only spritePx/atlasPx) → scale up toward the GUI
+            // density, then × CHROMATIC_FLAT_ITEM_MATCH to land on worn-armor's cell scale; 3D items (trident)
+            // sample their own 0..1 model UV → scale 1.
+            float uvScale = isItem ? (atlasW / 16.0f) * CHROMATIC_FLAT_ITEM_MATCH : 1.0f;
             return chromaticRT(layer, LayeringTransform.NO_LAYERING, "item|" + isItem, uvScale);
         }
         Identifier gray = getTexture(layer.design());
@@ -1317,6 +1581,22 @@ public final class CustomGlintRenderer {
         @Override public VertexConsumer setUv2(int u, int v) { return wrapped.setUv2(u, v); }
         @Override public VertexConsumer setNormal(float x, float y, float z) { return wrapped.setNormal(x, y, z); }
     }
+
+    /** A VertexConsumer that discards everything written to it. Returned by {@code ItemRendererMixin}'s
+     *  foil-buffer hook under an active shader pack: the item glint is drawn by the post-Iris overlay, so
+     *  nothing should draw in-phase (an in-phase glint goes SOLID under a pack), and vanilla's enchant foil
+     *  (for an enchanted item) is written here and swallowed, so our glint always EATS the vanilla foil
+     *  instead of the two stacking — the same result the in-phase buffer replacement gives off the pack. */
+    public static final VertexConsumer NO_OP_CONSUMER = new WrappingConsumer() {
+        @Override public VertexConsumer addVertex(float x, float y, float z) { return this; }
+        @Override public VertexConsumer addVertex(Matrix4fc m, float x, float y, float z) { return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { return this; }
+        @Override public VertexConsumer setColor(float r, float g, float b, float a) { return this; }
+        @Override public VertexConsumer setUv(float u, float v) { return this; }
+        @Override public VertexConsumer setUv1(int u, int v) { return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { return this; }
+        @Override public VertexConsumer setNormal(float x, float y, float z) { return this; }
+    };
 
     /** Wraps a VertexConsumer and records each vertex's eye-space position into a shared
      *  {minX,minY,minZ,maxX,maxY,maxZ} accumulator. Feeds {@code glowMaskBox}, the per-object screen-space
