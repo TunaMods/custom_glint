@@ -9,6 +9,8 @@ config="custom_glint.mixins.json"
 # Standalone-only compat mixins (soft compat: @Pseudo targets, no-op when the mod is absent).
 [[mixins]]
 config="custom_glint.sophisticatedbackpacks.mixins.json"
+[[mixins]]
+config="custom_glint.artifacts.mixins.json"
 
 # --- API mod ---
 [[mods]]
