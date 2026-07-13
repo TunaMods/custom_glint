@@ -31,6 +31,9 @@ Fixed:
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
 - Fixed slimes rendering glint
+- Fixed a memory buildup when many nearby entities used lots of differently colored glints
+- Free palette trims taken from the Glint Table now drop at your feet instead of vanishing when your inventory is full
+- Shared server blueprints now sync reliably even when a very large design was saved
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
