@@ -116,7 +116,7 @@ public class GlintTrimLootModifier extends LootModifier {
                 .orElse("plains");
         }
 
-        // Category-based selection bonus
+        // Patterns matching the current biome's category get a 3× weight bump.
         float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
         float endBonus = isEndBiome(biomeName) ? 3.0f : 1.0f;
         float oceanBonus = isOceanBiome(biomeName) ? 3.0f : 1.0f;
@@ -127,9 +127,7 @@ public class GlintTrimLootModifier extends LootModifier {
         float swampBonus = isSwampBiome(biomeName) ? 3.0f : 1.0f;
         float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? 3.0f : 1.0f;
 
-        // Compute each pattern's biome-weighted weight exactly once, then walk the same array to pick. (The
-        // total and the pick used to recompute the whole bonus chain twice per roll — identical logic that had
-        // to be kept byte-for-byte in sync.)
+        // Weight each pattern once into the array, then walk it to pick.
         java.util.List<String> patterns = GlintTrimItem.PATTERNS;
         float[] weights = new float[patterns.size()];
         float totalWeight = 0.0f;
@@ -137,7 +135,6 @@ public class GlintTrimLootModifier extends LootModifier {
             String cleanName = patterns.get(i);
             float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
 
-            // Apply category bonuses
             if (netherBonus > 1.0f && (cleanName.equals("fire") || cleanName.equals("ember") || cleanName.equals("plasma") || cleanName.equals("oil") || cleanName.equals("smoke")))
                 weight *= netherBonus;
             else if (endBonus > 1.0f && (cleanName.equals("glitch") || cleanName.equals("matrix") || cleanName.equals("static") || cleanName.equals("vanilla") || cleanName.equals("arcs") || cleanName.equals("pulse")))
@@ -178,7 +175,7 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private static boolean isOceanBiome(String biome) {
-        return biome.contains("ocean") || biome.contains("deep_ocean") || biome.contains("warm_ocean") || biome.contains("frozen_ocean") || biome.contains("cold_ocean") || biome.contains("lukewarm_ocean");
+        return biome.contains("ocean");
     }
 
     private static boolean isDesertBiome(String biome) {
@@ -186,7 +183,7 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private static boolean isForestBiome(String biome) {
-        return biome.contains("forest") || biome.contains("jungle") || biome.contains("dark_forest") || biome.contains("birch") || biome.contains("bamboo");
+        return biome.contains("forest") || biome.contains("jungle") || biome.contains("birch") || biome.contains("bamboo");
     }
 
     private static boolean isMountainBiome(String biome) {
@@ -214,7 +211,7 @@ public class GlintTrimLootModifier extends LootModifier {
         if (tableId == null || !tableId.getPath().startsWith("chests/")) return generatedLoot;
 
         // Trims: cascading rolls (22% for 1st, 12% for 2nd, 8% for 3rd). Safe to cascade now that loot trims
-        // are always blank — same design/type stacks, so extra rolls don't clutter the inventory.
+        // are always blank - same design/type stacks, so extra rolls don't clutter the inventory.
         int trimCount = 0;
         if (context.getRandom().nextFloat() < 0.22f) trimCount++;
         if (trimCount > 0 && context.getRandom().nextFloat() < 0.12f) trimCount++;
@@ -234,50 +231,28 @@ public class GlintTrimLootModifier extends LootModifier {
             generatedLoot.add(trim);
         }
 
-        // Tears and rainbow dye stack to 64 and get consumed in bulk, so they keep the cascading rolls: 20% for
-        // 1st, 10% for 2nd, 5% for 3rd. Each tear type rolls independently.
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-            }
-        }
+        // Tears and rainbow dye stack to 64 and get consumed in bulk, so they keep the cascading rolls (20% /
+        // 10% / 5%). Each type rolls independently.
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.RAINBOW_DYE.get().getDefaultInstance());
 
         return generatedLoot;
+    }
+
+    /** Up to three cascading rolls (20% → 10% → 5%) that each add one {@code item} to the loot. */
+    private static void rollCascade(LootContext context, ObjectArrayList<ItemStack> loot,
+                                    java.util.function.Supplier<ItemStack> item) {
+        if (context.getRandom().nextFloat() < 0.20f) {
+            loot.add(item.get());
+            if (context.getRandom().nextFloat() < 0.10f) {
+                loot.add(item.get());
+                if (context.getRandom().nextFloat() < 0.05f)
+                    loot.add(item.get());
+            }
+        }
     }
 
     @Override
