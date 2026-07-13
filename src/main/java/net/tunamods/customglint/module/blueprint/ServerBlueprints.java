@@ -25,6 +25,10 @@ public final class ServerBlueprints {
     /** Cap on stored blueprints so an un-gated save can't fill the disk with files. */
     public static final int MAX_BLUEPRINTS = 1024;
 
+    /** Max bytes of a single blueprint's JSON. The save path and the sync codec share this so a blueprint
+     *  large enough to accept on save can't later exceed writeUtf's default 32767 cap and break the sync. */
+    public static final int MAX_JSON = 64 * 1024;
+
     public static Path dir() {
         return Paths.get("config/customglint/trims").toAbsolutePath();
     }

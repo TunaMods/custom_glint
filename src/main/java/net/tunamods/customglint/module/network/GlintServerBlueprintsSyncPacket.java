@@ -5,6 +5,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.blueprint.ServerBlueprints;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,15 +29,17 @@ public record GlintServerBlueprintsSyncPacket(Map<String, String> blueprints) im
                         buf.writeVarInt(pkt.blueprints.size());
                         for (Map.Entry<String, String> e : pkt.blueprints.entrySet()) {
                             buf.writeUtf(e.getKey());
-                            buf.writeUtf(e.getValue());
+                            buf.writeUtf(e.getValue(), ServerBlueprints.MAX_JSON);
                         }
                     },
                     buf -> {
+                        // Read exactly what the writer wrote (bounded by MAX_BLUEPRINTS on save); truncating the
+                        // loop would leave trailing bytes unread and trip NeoForge's "did not read all bytes" check.
                         int count = buf.readVarInt();
                         Map<String, String> map = new LinkedHashMap<>();
-                        for (int i = 0; i < Math.max(0, Math.min(count, 4096)); i++) {
+                        for (int i = 0; i < count; i++) {
                             String name = buf.readUtf();
-                            String json = buf.readUtf();
+                            String json = buf.readUtf(ServerBlueprints.MAX_JSON);
                             map.put(name, json);
                         }
                         return new GlintServerBlueprintsSyncPacket(map);
