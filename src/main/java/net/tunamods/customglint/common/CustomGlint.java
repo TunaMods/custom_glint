@@ -84,10 +84,8 @@ public final class CustomGlint {
 
         public static final Codec<Layer> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Identifier.CODEC.fieldOf("design").forGetter(Layer::design),
-                // Bound the color list to the same 8-color cap every other path enforces (item NBT, the wand
-                // editor, the print/apply/give packets). Without it, a crafted print-packet NBT layer or a
-                // future component decode could carry an arbitrarily large color array straight into a stored
-                // ItemStack/attachment. sizeLimitedListOf rejects an oversized list during decode.
+                // 8-color cap, same as every other input path (item NBT, wand editor, print/apply/give
+                // packets); sizeLimitedListOf rejects an oversized list at decode.
                 Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
                         list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
                         arr -> Arrays.stream(arr).boxed().toList()
@@ -155,9 +153,7 @@ public final class CustomGlint {
         public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Data.CODEC.optionalFieldOf("glint").forGetter(s -> Optional.ofNullable(s.data())),
                 Codec.BOOL.optionalFieldOf("glowing", false).forGetter(GlintState::glowing),
-                // Same 8-color cap as Layer.colors above (every input path, Glow Trim, the print/apply
-                // packets, the wand editor, already enforces it). Without it a crafted component/packet
-                // could round-trip an arbitrarily large glow-color list into a stored item / synced attachment.
+                // Same 8-color cap as Layer.colors above; rejects an oversized glow-color list at decode.
                 Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
                         list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
                         arr -> Arrays.stream(arr).boxed().toList()
@@ -485,11 +481,28 @@ public final class CustomGlint {
     }
 
     // ── Auto-apply registries ─────────────────────────────────────────────────
+    //
+    // CRAFT / FISHING / MOB_DROP share one shape: a per-Item Data map with register/apply helpers. The
+    // public registerX/applyX names are thin wrappers over the shared helpers so the API is unchanged.
+
+    /** The single-layer Data (default east scroll, no offset) that every auto-apply registry stores. */
+    private static Data oneLayer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        return new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) });
+    }
+
+    private static void registerGlint(Map<Item, Data> registry, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        registry.put(item, oneLayer(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    private static void applyGlint(Map<Item, Data> registry, ItemStack stack) {
+        Data data = registry.get(stack.getItem());
+        if (data != null) write(stack, data.layers());
+    }
 
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        registerGlint(CRAFT_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerCraftGlint(Item item, Identifier design, int[] colors) {
@@ -497,15 +510,13 @@ public final class CustomGlint {
     }
 
     public static void applyCraftGlint(ItemStack stack) {
-        Data data = CRAFT_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(CRAFT_GLINTS, stack);
     }
 
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
     public static void registerFishingGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        registerGlint(FISHING_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerFishingGlint(Item item, Identifier design, int[] colors) {
@@ -513,15 +524,13 @@ public final class CustomGlint {
     }
 
     public static void applyFishingGlint(ItemStack stack) {
-        Data data = FISHING_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(FISHING_GLINTS, stack);
     }
 
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        registerGlint(MOB_DROP_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerMobDropGlint(Item item, Identifier design, int[] colors) {
@@ -529,9 +538,7 @@ public final class CustomGlint {
     }
 
     public static void applyMobDropGlint(ItemStack stack) {
-        Data data = MOB_DROP_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(MOB_DROP_GLINTS, stack);
     }
 
     // ── Entity glint API ──────────────────────────────────────────────────────
@@ -570,7 +577,7 @@ public final class CustomGlint {
     }
 
     public static void registerEntityGlint(EntityType<?> type, Identifier design, int[] colors) {
-        registerEntityGlint(type, new Data(new Layer[]{ new Layer(design, colors, 1.0f, true, 1.0f, true, SCROLL_E, 0.0f) }));
+        registerEntityGlint(type, oneLayer(design, colors, 1.0f, true, 1.0f, true));
     }
 
     @Nullable
@@ -691,7 +698,7 @@ public final class CustomGlint {
     public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
 
     public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, oneLayer(design, colors, speed, interpolate, patternScale, simultaneous));
     }
 
     public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors) {
