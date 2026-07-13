@@ -285,38 +285,21 @@ public class GlintEditorScreen extends Screen {
         } catch (NumberFormatException ignored) {}
     }
 
-    private void onRChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editR = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
+    private void onRChanged(String s) { onChannelChanged(s, c -> editR = c, true); }
+    private void onGChanged(String s) { onChannelChanged(s, c -> editG = c, true); }
+    private void onBChanged(String s) { onChannelChanged(s, c -> editB = c, true); }
+    private void onAChanged(String s) { onChannelChanged(s, c -> editA = c, false); } // alpha isn't in the hex, so no hex re-sync
 
-    private void onGChanged(String s) {
+    /** Parse a 0..255 channel box, store it, and refresh. {@code syncHex} re-derives the hex from RGB (skipped
+     *  for the alpha channel, which the hex doesn't carry); an out-of-range value snaps the box back. */
+    private void onChannelChanged(String s, IntConsumer store, boolean syncHex) {
         try {
             int v = Integer.parseInt(s);
             int c = Math.max(0, Math.min(255, v));
-            editG = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
-
-    private void onBChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editB = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
-
-    private void onAChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editA = c; saveEditRGB(); refreshPreview();
+            store.accept(c);
+            saveEditRGB();
+            if (syncHex) syncHexFromRGB();
+            refreshPreview();
             if (c != v) syncChannelBoxes();
         } catch (NumberFormatException ignored) {}
     }
@@ -338,7 +321,7 @@ public class GlintEditorScreen extends Screen {
     /** Save the current build (every layer, its colors, and all modifiers) to the server's shared blueprint
      *  pool. The wand only ever saves server-side (never the client's personal trims): the design is built
      *  into the same JSON the Glint Table reads and sent to the server, which writes it and re-syncs so it
-     *  shows up in Import. Anyone holding the wand may save — the wand is the gate. */
+     *  shows up in Import. Anyone holding the wand may save; the wand is the gate. */
     private void saveDesign() {
         CustomGlint.Layer[] layers = buildLayers();
         if (layers.length == 0) {
@@ -530,21 +513,21 @@ public class GlintEditorScreen extends Screen {
 
         // Speed [−] / [+], 0.10×..8.0× (0.10 steps below 1×, 0.5 above), matching the Glint Table.
         tip(bevel(px + 148, py + 152, 14, 14, () -> "−", () -> {
-            layerSpeeds.set(selectedLayer, stepDown(layerSpeeds.get(selectedLayer)));
+            layerSpeeds.set(selectedLayer, GuiHelpers.stepDown(layerSpeeds.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.speed");
         tip(bevel(px + 196, py + 152, 14, 14, () -> "+", () -> {
-            layerSpeeds.set(selectedLayer, stepUp(layerSpeeds.get(selectedLayer)));
+            layerSpeeds.set(selectedLayer, GuiHelpers.stepUp(layerSpeeds.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.speed");
 
         // Pattern Scale [−] / [+], same 0.10×..8.0× range as speed.
         tip(bevel(px + 148, py + 168, 14, 14, () -> "−", () -> {
-            layerScales.set(selectedLayer, stepDown(layerScales.get(selectedLayer)));
+            layerScales.set(selectedLayer, GuiHelpers.stepDown(layerScales.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.scale");
         tip(bevel(px + 196, py + 168, 14, 14, () -> "+", () -> {
-            layerScales.set(selectedLayer, stepUp(layerScales.get(selectedLayer)));
+            layerScales.set(selectedLayer, GuiHelpers.stepUp(layerScales.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.scale");
 
@@ -772,13 +755,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     private void syncWandState() {
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[layerDesigns.size()];
-        for (int i = 0; i < layers.length; i++) {
-            int[] arr = layerColors.get(i).stream().mapToInt(Integer::intValue).toArray();
-            layers[i] = new CustomGlint.Layer(designRL(layerDesigns.get(i)), arr,
-                    layerSpeeds.get(i), layerInterpolates.get(i), layerScales.get(i), layerSimultaneous.get(i),
-                    layerScrollDirs.get(i), layerScrollOffsets.get(i));
-        }
+        CustomGlint.Layer[] layers = buildLayers();
         int[] gc = glowOverrideColors.stream().mapToInt(Integer::intValue).toArray();
         ClientPacketDistributor.sendToServer(new GlintApplyPacket(wandHand, false, layers, "", glowEnabled, gc, trimName, trimNameColor, true));
     }
@@ -805,11 +782,9 @@ public class GlintEditorScreen extends Screen {
         try {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
 
-            // Parse the (untrusted) trim file into temp lists first, then commit to the live fields only after
-            // a fully successful parse. A malformed file, bad hex in "colors", a missing "design"/"colors"
-            // key, throws mid-loop; doing the work on temps means the catch below leaves the eight live
-            // parallel lists untouched (still equal-length) instead of half-cleared, so the render path's
-            // layerXxx.get(selectedLayer) can't index past a shortened list on the next frame.
+            // Parse the untrusted trim file into temp lists, then commit to the live fields only on a fully
+            // successful parse. A malformed file throws mid-loop; working on temps keeps the eight live
+            // parallel lists equal-length (the render path indexes layerXxx.get(selectedLayer) every frame).
             List<String>        tDesigns    = new ArrayList<>();
             List<List<Integer>> tColors     = new ArrayList<>();
             List<Float>         tSpeeds     = new ArrayList<>();
@@ -1001,24 +976,6 @@ public class GlintEditorScreen extends Screen {
         return b;
     }
 
-    // ── Speed / scale stepping (0.10×..8.0×, matching the Glint Table) ──────────
-
-    /** Step a speed/scale value up: 0.10 increments below 1×, 0.5 above; capped at 8. */
-    private static float stepUp(float v) {
-        float nv = v < 1.0f ? v + 0.10f : v + 0.5f;
-        return Math.min(8.0f, Math.round(nv * 100f) / 100f);
-    }
-
-    /** Step a speed/scale value down: 0.5 decrements above 1×, 0.10 below; floored at 0.10. */
-    private static float stepDown(float v) {
-        float nv = v <= 1.0f ? v - 0.10f : v - 0.5f;
-        return Math.max(0.10f, Math.round(nv * 100f) / 100f);
-    }
-
-    private static String fmtVal(float v) {
-        return v == Math.rint(v) ? String.valueOf((int) v) : String.format("%.2f", v).replaceAll("0+$", "");
-    }
-
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
@@ -1103,8 +1060,8 @@ public class GlintEditorScreen extends Screen {
             }
         }
 
-        centered(g, fmtVal(layerSpeeds.get(selectedLayer)) + "×", px + 175, py + 154, skin.labelHdr);
-        centered(g, fmtVal(layerScales.get(selectedLayer)) + "×", px + 175, py + 170, skin.labelHdr);
+        centered(g, GuiHelpers.fmtVal(layerSpeeds.get(selectedLayer)) + "×", px + 175, py + 154, skin.labelHdr);
+        centered(g, GuiHelpers.fmtVal(layerScales.get(selectedLayer)) + "×", px + 175, py + 170, skin.labelHdr);
         if (layerScrollDirs.get(selectedLayer) == CustomGlint.SCROLL_STATIC) {
             centered(g, String.format("%.2f", layerScrollOffsets.get(selectedLayer)), px + 227, py + 204, skin.labelHdr);
         }
@@ -1173,14 +1130,7 @@ public class GlintEditorScreen extends Screen {
             label(g, d, ox + 4, ry + 3, 0xDDDDDD);
         }
 
-        if (filteredDesigns.size() > DESIGN_ROWS) {
-            int trackH = DESIGN_ROWS * DESIGN_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * DESIGN_ROWS / filteredDesigns.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) designScroll
-                    / (filteredDesigns.size() - DESIGN_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-        }
+        drawListScrollbar(g, sbX, listY, DESIGN_ROWS * DESIGN_ROW_H, DESIGN_ROWS, filteredDesigns.size(), designScroll, 8);
     }
 
     private void renderImportPicker(GuiGraphicsExtractor g, int mx, int my, float dt) {
@@ -1218,18 +1168,11 @@ public class GlintEditorScreen extends Screen {
             // Trash icon on the far right of a hovered row (mirrors the Glint Table's import list).
             if (hovered) {
                 boolean onTrash = mx >= sbX - IMP_TRASH_W && mx < sbX;
-                drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
+                GuiHelpers.drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
             }
         }
 
-        if (availableGlints.size() > IMPORT_ROWS) {
-            int trackH = IMPORT_ROWS * IMPORT_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * IMPORT_ROWS / availableGlints.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) importScroll
-                    / (availableGlints.size() - IMPORT_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-        }
+        drawListScrollbar(g, sbX, listY, IMPORT_ROWS * IMPORT_ROW_H, IMPORT_ROWS, availableGlints.size(), importScroll, 8);
     }
 
     private void filterGlints(String query) {
@@ -1240,7 +1183,7 @@ public class GlintEditorScreen extends Screen {
         importScroll = Math.max(0, Math.min(importScroll, Math.max(0, availableGlints.size() - IMPORT_ROWS)));
     }
 
-    /** Trash a server blueprint from the Import list: ask the server to delete it (no op gate — the wand is
+    /** Trash a server blueprint from the Import list: ask the server to delete it (no op gate; the wand is
      *  the gate), drop it from the local mirror for instant feedback, and rebuild the list. The server's
      *  authoritative re-sync follows. */
     private void deleteImport(String name) {
@@ -1249,14 +1192,13 @@ public class GlintEditorScreen extends Screen {
         rebuildImportList();
     }
 
-    /** Tiny 7×8 trash-can glyph drawn with fills (the font has no trash glyph). Origin = top-left. */
-    private void drawTrashIcon(GuiGraphicsExtractor g, int x, int y, int color) {
-        g.fill(x + 2, y, x + 5, y + 1, color);          // handle nub
-        g.fill(x, y + 1, x + 7, y + 2, color);          // lid
-        g.fill(x + 1, y + 3, x + 6, y + 8, color);      // can body
-        int slot = 0xEE111111;                          // stripes cut back to the panel colour
-        g.fill(x + 2, y + 4, x + 3, y + 7, slot);
-        g.fill(x + 4, y + 4, x + 5, y + 7, slot);
+    /** Vertical list scrollbar: dark track + grey thumb sized to the visible fraction. No-op when it all fits. */
+    private void drawListScrollbar(GuiGraphicsExtractor g, int sbX, int listY, int trackH, int visibleRows, int total, int scroll, int minThumb) {
+        if (total <= visibleRows) return;
+        g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+        int thumbH = Math.max(minThumb, trackH * visibleRows / total);
+        int thumbY = listY + (int)((trackH - thumbH) * (float) scroll / (total - visibleRows));
+        g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────
@@ -1289,14 +1231,7 @@ public class GlintEditorScreen extends Screen {
             label(g, font.plainSubstrByWidth(itemName(item), OW - 30), ox + 20, ry + 5, 0xDDDDDD);
         }
 
-        if (filteredItems.size() > VISIBLE_ROWS) {
-            int trackH = VISIBLE_ROWS * ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(10, trackH * VISIBLE_ROWS / filteredItems.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) pickerScroll
-                    / (filteredItems.size() - VISIBLE_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-        }
+        drawListScrollbar(g, sbX, listY, VISIBLE_ROWS * ROW_H, VISIBLE_ROWS, filteredItems.size(), pickerScroll, 10);
     }
 
     // ── Input ─────────────────────────────────────────────────────────────────
