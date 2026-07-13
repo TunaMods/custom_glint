@@ -63,8 +63,9 @@ public final class ModComponents {
                     .persistent(TrimConfig.CODEC)
                     .networkSynchronized(TrimConfig.STREAM_CODEC));
 
-    /** The Glow Trim's color list (drives the glow-color animation on smithing). Capped at 8 to match
-     *  every input path (GlowTrimItem.addColor / mergeColors) so a crafted component can't store more. */
+    /** The Glow Trim's color list (drives the glow-color animation on smithing). Capped at
+     *  {@link CustomGlint#MAX_COLORS_PER_LAYER} to match every input path (GlowTrimItem.addColor /
+     *  mergeColors) so a crafted component can't store more. */
     public static final Supplier<DataComponentType<List<Integer>>> GLOW_TRIM =
             DATA_COMPONENTS.registerComponentType("glow_trim", b -> b
                     .persistent(Codec.INT.sizeLimitedListOf(CustomGlint.MAX_COLORS_PER_LAYER))

@@ -47,7 +47,7 @@ public class GlintBagItem extends Item {
     public static final int COLS = 9;
     public static final int SIZE = ROWS * COLS;
 
-    /** Auto-collect only scans the inventory this often (ticks) — the pickup hook handles instant collection. */
+    /** Auto-collect only scans the inventory this often (ticks); the pickup hook handles instant collection. */
     private static final int SCAN_INTERVAL = 10;
 
     public GlintBagItem(Properties properties) {
@@ -95,7 +95,7 @@ public class GlintBagItem extends Item {
         return stack;
     }
 
-    /** The mod's own loot items — trims, tears, rainbow dye. Only these are auto-collected (pulled in on pickup
+    /** The mod's own loot items (trims, tears, rainbow dye). Only these are auto-collected (pulled in on pickup
      *  or by the inventory sweep); generic materials are not, so the bag never eats your redstone or dyes. */
     public static boolean isAutoCollectable(ItemStack stack) {
         Item item = stack.getItem();
@@ -159,7 +159,7 @@ public class GlintBagItem extends Item {
 
     /** Auto-move: while carried with auto-collect on, periodically sweep the player inventory and pull any loose
      *  storable Glint items into the bag. The ground-pickup hook catches items before they land; this catches
-     *  the rest — dragged out of a loot chest, shift-clicked in, given, etc. Server-only (inventoryTick passes a
+     *  the rest: dragged out of a loot chest, shift-clicked in, given, etc. Server-only (inventoryTick passes a
      *  {@link ServerLevel}). */
     @Override
     public void inventoryTick(ItemStack stack, ServerLevel level, Entity entity, EquipmentSlot slot) {
@@ -171,7 +171,7 @@ public class GlintBagItem extends Item {
         Inventory inv = player.getInventory();
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack s = inv.getItem(i);
-            if (s.isEmpty() || !isAutoCollectable(s)) continue; // glint loot only — never vacuums generic materials
+            if (s.isEmpty() || !isAutoCollectable(s)) continue; // glint loot only, never vacuums generic materials
             inv.setItem(i, ItemHandlerHelper.insertItemStacked(handler, s, false));
         }
     }
