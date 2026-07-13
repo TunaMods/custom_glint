@@ -31,6 +31,7 @@ import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.minecraft.world.item.crafting.display.RecipeDisplay;
 import net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay;
 import net.minecraft.world.item.crafting.display.SlotDisplay;
+import net.minecraft.world.level.ItemLike;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -375,7 +376,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
         List<SlotDisplay> inputDisplays = List.of(display(glowTrim(new int[0])), new SlotDisplay.Composite(dyeDisplays));
         SlotDisplay resultDisplay = new SlotDisplay.Composite(resultDisplays);
-        List<Ingredient> ingredients = List.of(Ingredient.of(ModItems.GLOW_TRIM.get()), Ingredient.of((net.minecraft.world.level.ItemLike[]) dyes));
+        List<Ingredient> ingredients = List.of(Ingredient.of(ModItems.GLOW_TRIM.get()), Ingredient.of((ItemLike[]) dyes));
         CraftingRecipe recipe = new ShapelessRecipe(
                 new Recipe.CommonInfo(true),
                 new CraftingRecipe.CraftingBookInfo(CraftingBookCategory.MISC, ""),

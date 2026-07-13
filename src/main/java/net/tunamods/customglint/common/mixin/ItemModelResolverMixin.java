@@ -9,6 +9,7 @@ import net.minecraft.world.level.Level;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CgGlintHolder;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -62,7 +63,7 @@ public class ItemModelResolverMixin {
         }
     }
 
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static String cg_identity(CustomGlint.Data glint, boolean glowing, int[] glowColors,
             float glowSpeed, boolean glowInterp) {
         StringBuilder sb = new StringBuilder("customglint:");

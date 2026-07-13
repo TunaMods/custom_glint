@@ -13,6 +13,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.GlintCarrier;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
@@ -122,23 +123,23 @@ public class SubmitNodeStorageMixin {
 
     /** True for vanilla's enchantment-glint RenderTypes (the foil sheets). Identity compare against the
      *  three memoized singletons, our own glint RTs are never these. */
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static boolean cg_isVanillaGlint(RenderType rt) {
         return rt == RenderTypes.entityGlint() || rt == RenderTypes.glint() || rt == RenderTypes.glintTranslucent();
     }
 
     /** Guards against re-entering these hooks while submitting our own glint nodes (which call
      *  {@code submitModel}/{@code submitModelPart} again). Render thread only. */
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static boolean cg_addingGlint = false;
 
     /** Per-item-submit token of the last submit we added glint for. A special renderer can submit several
      *  model/part nodes per item (shield: base + patterns + foil); glinting only the first keeps one glint
      *  pass over the item shape instead of stacking one per node. */
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static final ThreadLocal<Object> cg_glintedToken = new ThreadLocal<>();
 
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static boolean cg_firstGlintForToken() {
         Object tok = GlintCarrier.SUBMIT_TOKEN.get();
         if (tok == null) return true;            // no token (shouldn't happen inside an item submit)
@@ -147,27 +148,27 @@ public class SubmitNodeStorageMixin {
         return true;
     }
 
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static boolean cg_glowingFlag() {
         Boolean g = GlintCarrier.SUBMIT_GLOWING.get();
         return g != null && g;
     }
 
     /** True only inside an {@code ItemStackRenderState.submit} for a glowing item (glow flag or colours). */
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static boolean cg_glowingItem() {
         int[] gc = GlintCarrier.SUBMIT_GLOW_COLORS.get();
         return cg_glowingFlag() || (gc != null && gc.length > 0);
     }
 
     /** The submitting item's stored glow-cycle speed / interpolation (default 1.0 / true when unset). */
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static float cg_glowSpeed() {
         Float s = GlintCarrier.SUBMIT_GLOW_SPEED.get();
         return s != null ? s : 1.0f;
     }
 
-    @org.spongepowered.asm.mixin.Unique
+    @Unique
     private static boolean cg_glowInterp() {
         Boolean i = GlintCarrier.SUBMIT_GLOW_INTERP.get();
         return i == null || i;

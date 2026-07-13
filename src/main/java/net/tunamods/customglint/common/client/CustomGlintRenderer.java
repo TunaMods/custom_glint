@@ -5,6 +5,7 @@ import com.mojang.blaze3d.systems.RenderPass;
 import javax.annotation.Nullable;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -797,7 +798,7 @@ public final class CustomGlintRenderer {
     /** Sampler for the GUI design atlas: CLAMP (tiling is done in-shader via fract + the wrapped gutters,
      *  so the bound sampler must NOT wrap across cell boundaries) + LINEAR (matches the per-design design
      *  sampler's filtering). Cached instance, so every atlas glyph shares one TextureSetup and batches. */
-    public static com.mojang.blaze3d.textures.GpuSampler guiDesignAtlasSampler() {
+    public static GpuSampler guiDesignAtlasSampler() {
         return RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
     }
 
@@ -1054,7 +1055,7 @@ public final class CustomGlintRenderer {
                 + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
         RenderType cached = BY_GLINT_OVERLAY.computeIfAbsent(key, k -> {
             String name = MOD_ID + ":custom_glint_overlay|" + k.hashCode();
-            java.util.function.Supplier<org.joml.Matrix4f> anim =
+            Supplier<Matrix4f> anim =
                     () -> GlintPipelines.armorAnimationMatrix(speed, ps, colorIdx, cc, scrollDir, scrollOffset);
             RenderType rt = loose
                     ? GlintPipelines.glintOverlayLooseType(name, gray, cut, SCENE_DEPTH_ID, anim)
