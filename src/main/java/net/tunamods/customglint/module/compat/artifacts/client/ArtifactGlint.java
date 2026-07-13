@@ -17,7 +17,7 @@ import net.tunamods.customglint.common.client.EntityGlintRender;
  * {@code EquipmentLayerRendererMixin} never sees them. Every worn artifact funnels through the shared
  * primitive {@code ArtifactRenderer.renderModelWithFoil(model, state, pose, collector, texture, light,
  * hasFoil)}, which submits the base model at {@code order(0)} with {@code model.renderType(texture)}
- * (Artifacts' models render at {@code entityTranslucent} — EQUAL depth, no polygon offset) and vanilla's
+ * (Artifacts' models render at {@code entityTranslucent}: EQUAL depth, no polygon offset) and vanilla's
  * foil at {@code order(1)}.
  *
  * <p>{@code ArtifactRenderMixin} arms this glue with the wearer's {@link ItemStack} for the span of one
@@ -25,7 +25,7 @@ import net.tunamods.customglint.common.client.EntityGlintRender;
  * span. {@link #fan} submits our glint render types onto the SAME model/state/pose (so it inherits the
  * artifact's animation and transform-copied pose) and queues the glow silhouette. The glint uses
  * {@link CustomGlintRenderer#forEntityBodyGlint} (EQUAL + {@code NO_LAYERING}) to match the
- * {@code entityTranslucent} depth the base draws with — {@code forArmorGlint}'s {@code VIEW_OFFSET_Z} would
+ * {@code entityTranslucent} depth the base draws with; {@code forArmorGlint}'s {@code VIEW_OFFSET_Z} would
  * test against the wrong offset and vanish. Glow rides {@link EntityGlintRender#queueArmorOutline}, keyed on
  * the wearer render state so it folds into that entity's body ring. All references are vanilla types, so
  * there is no compile-time dependency on Artifacts.

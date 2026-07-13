@@ -60,6 +60,10 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     private static final Identifier UID = CustomGlint.res("jei_plugin");
 
+    /** The 8-color sample palette the merge examples (glint and glow) fan out into, one color per input trim. */
+    private static final int[] MERGE_PALETTE =
+            { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
+
     @Override
     public Identifier getPluginUid() {
         return UID;
@@ -73,7 +77,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // so a chromatic trim's random per-stack seed doesn't split identical designs.
         //
         // Only split for the INGREDIENT context (the ingredient list / bookmarks). For RECIPE lookup return NONE
-        // so every trim shares one subtype — clicking any trim then surfaces all the trim-modifying display
+        // so every trim shares one subtype; clicking any trim then surfaces all the trim-modifying display
         // recipes (tear / dye / merge / duplicate / speed / scale / opacity / glow / smithing), which each use a
         // fixed sample design and would otherwise only match that exact design+colors.
         // getSubtypeData returns null for "no subtype", the sentinel that collapses trims to one entry.
@@ -128,7 +132,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         registration.addIngredientInfo(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
             Component.literal("Craft with any glinted item to strip all glint data from it."));
         registration.addIngredientInfo(ModItems.RAINBOW_DYE.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
-            Component.literal("Use it in the Glint Table to give a color shard any custom hex color — one Rainbow Dye is consumed per custom color."));
+            Component.literal("Use it in the Glint Table to give a color shard any custom hex color. One Rainbow Dye is consumed per custom color."));
         registration.addIngredientInfo(ModItems.GLINT_BAG.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
             Component.literal("Holds Glint Trims, Tears, Rainbow Dye and Glint Table materials. Auto-collects glint loot as you play (shift-right-click to toggle). Shift-right-click a Glint Table to unload trims into its library and materials into its slots."));
         registration.addIngredientInfo(new ItemStack(ModItems.TRIM_POWDER.get()), VanillaTypes.ITEM_STACK,
@@ -162,10 +166,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         addDye(crafting, factory, "jei_dye_5", CustomGlint.SWIRL,   Items.LIME_DYE,   GlintTrimItem.DYE_COLORS[5]);
 
         // Merge: several single-color trims -> one multi-color trim.
-        int[] mergePalette = { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
         for (int n = 2; n <= 8; n++) {
             int[] colors = new int[n];
-            System.arraycopy(mergePalette, 0, colors, 0, n);
+            System.arraycopy(MERGE_PALETTE, 0, colors, 0, n);
             addMerge(crafting, factory, "jei_merge_" + (n - 2), CustomGlint.WAVE, colors);
         }
 
@@ -209,10 +212,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         addGlowDyeCycling(crafting, factory, "jei_glow_dye");
 
         // Glow Trim merge: several single-color Glow Trims -> one multi-color Glow Trim.
-        int[] glowMergePalette = { 0xFFFF0000, 0xFF0000FF, 0xFF00FFFF, 0xFFFFFF00, 0xFF8800CC, 0xFF00FF00, 0xFFFF8000, 0xFFFF80A0 };
         for (int n = 2; n <= 8; n++) {
             int[] colors = new int[n];
-            System.arraycopy(glowMergePalette, 0, colors, 0, n);
+            System.arraycopy(MERGE_PALETTE, 0, colors, 0, n);
             addGlowMerge(crafting, factory, "jei_glow_merge_" + (n - 2), colors);
         }
 
@@ -314,7 +316,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // Mirrors GlintGlowTrimRecipe: a colored trim in the center surrounded by 8 Glowstone Dust (shaped).
         ItemStack result = trim(design, new int[]{color});
         GlintTrimItem.setGlowing(result, true);
-        CustomGlint.setGlowing(result, true); // render-level flag that drives the glow outline (mirrors GlintGlowTrimRecipe)
+        CustomGlint.setGlowing(result, true); // render-level flag that drives the glow outline
         ItemStack t = trim(design, new int[]{color});
         ItemStack g = new ItemStack(Items.GLOWSTONE_DUST);
         craft(out, f, id, result, g, g, g, g, t, g, g, g, g);
@@ -364,7 +366,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
 
     /** Dye: blank Glow Trim + any dye -> Glow Trim with that color (mirrors GlowTrimDyeRecipe). Built as one
      *  shapeless display whose dye slot and result slot are {@link SlotDisplay.Composite}s of all 16 dyes/colors
-     *  in the same order, so JEI cycles them in lockstep — dye N shows the Glow Trim in color N. Mirrors the
+     *  in the same order, so JEI cycles them in lockstep: dye N shows the Glow Trim in color N. Mirrors the
      *  consolidated cycling dye entry on 1.21.1. */
     private void addGlowDyeCycling(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id) {
         Item[] dyes = GlintTableMenu.DYE_ITEMS;

@@ -19,8 +19,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Standalone-only Artifacts compat (26.1). Worn artifacts (belts, necklaces, gloves, boots, …) draw through
  * their own {@code ArtifactRenderer} via Curios, bypassing the vanilla {@code EquipmentLayerRenderer} the
- * core {@code EquipmentLayerRendererMixin} covers. Every worn artifact — base and the glowing variants that
- * add a full-bright overlay — funnels through the shared static
+ * core {@code EquipmentLayerRendererMixin} covers. Every worn artifact (base and the glowing variants that
+ * add a full-bright overlay) funnels through the shared static
  * {@code ArtifactRenderer.renderModelWithFoil(model, state, pose, collector, texture, light, hasFoil)}.
  *
  * <p>We arm {@link ArtifactGlint} with the wearer's {@link ItemStack} for the span of one
@@ -73,7 +73,7 @@ public class ArtifactRenderMixin {
 
     /**
      * Suppresses vanilla's enchantment foil ({@code armorEntityGlint}, submitted at {@code order(1)}) on an
-     * artifact that carries our own glint, so the two don't stack — our glint replaces the look, matching the
+     * artifact that carries our own glint, so the two don't stack: our glint replaces the look, matching the
      * armor and item paths. Off when unarmed (non-artifact callers) or when the stack has no custom glint.
      */
     @ModifyVariable(method = RENDER_MODEL_WITH_FOIL, at = @At("HEAD"), argsOnly = true, ordinal = 0, require = 0, remap = false)

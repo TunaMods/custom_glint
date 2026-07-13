@@ -33,8 +33,8 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 public class BackpackSpecialRendererMixin {
 
     /**
-     * {@code submit(PoseStack, SubmitNodeCollector, int light, int overlay, boolean hasFoil, int tintColor)}
-     * — {@code hasFoil} is the only boolean arg (ordinal 0). Force it on when the submitting item carries a
+     * {@code submit(PoseStack, SubmitNodeCollector, int light, int overlay, boolean hasFoil, int tintColor)}.
+     * {@code hasFoil} is the only boolean arg (ordinal 0). Force it on when the submitting item carries a
      * custom glint so the base model routes through the foil (glint) draw.
      */
     @ModifyVariable(method = "submit", at = @At("HEAD"), argsOnly = true, ordinal = 0, require = 0)
