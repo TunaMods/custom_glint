@@ -35,8 +35,10 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -301,7 +303,7 @@ public final class CustomGlintRenderer {
     //
     // Its fixed-buffer map is private to this source (NOT the shared fixedBufferRegistry), so getBuffer
     // never auto-flushes on a texture switch and the main endBatch can't touch it.
-    private static final java.util.SequencedMap<RenderType, ByteBufferBuilder> GLOW_BODY_FIXED = new java.util.LinkedHashMap<>();
+    private static final SequencedMap<RenderType, ByteBufferBuilder> GLOW_BODY_FIXED = new LinkedHashMap<>();
     private static MultiBufferSource.BufferSource glowBodyBuffer;
     // The shared fallback builder handed to immediateWithBuffers below. It lives inside glowBodyBuffer (not
     // in GLOW_BODY_FIXED), so the GLOW_BODY_FIXED close loop in clearTextures() never reaches it, keep a
@@ -314,11 +316,11 @@ public final class CustomGlintRenderer {
     // composite scissor (EntityGlintRender splits these into disjoint screen rects so the composite pays
     // for each cluster's screen area, not the whole union bbox spanning the gaps between them). The union
     // (bgMin/Max above) is still tracked for the mask clear + the single-rect fallback.
-    private static final java.util.List<float[]> bgBoxes = new java.util.ArrayList<>();
+    private static final List<float[]> bgBoxes = new ArrayList<>();
     // Parallel to bgBoxes but the TIGHT per-body silhouette AABB (filled by an AABBTrackingConsumer in
     // fanBodyGlow as the body draws), so the drain can scissor a single glowing entity's composite to its
     // real silhouette instead of the loose pose-origin box. Cleared per frame in resetBodyGlow.
-    private static final java.util.List<float[]> bgTightBoxes = new java.util.ArrayList<>();
+    private static final List<float[]> bgTightBoxes = new ArrayList<>();
     // Per-frame per-object mask key stamped into the vertex-colour alpha so the id-aware composite
     // (post/glow_outline_id) keeps each silhouette's outline separate AND picks a per-category thickness.
     // key = (category << 5) | id : top 2 bits = category, low 5 = a running 1..31 id. Reset in resetBodyGlow.
@@ -338,7 +340,7 @@ public final class CustomGlintRenderer {
      *  overlapping armor pieces (or body↔armor) compose as ONE ring with no doubled thickness along the
      *  seam, while DISTINCT identities still get distinct ids and stay separated. Identity-keyed (render
      *  states can collide on equals/hashCode); cleared each drain by {@link #resetBodyGlow}. */
-    private static final java.util.Map<Object,Integer> GLOW_ID_BY_IDENTITY = new java.util.IdentityHashMap<>();
+    private static final Map<Object,Integer> GLOW_ID_BY_IDENTITY = new IdentityHashMap<>();
     /** Mask key for a silhouette belonging to {@code identity}: that identity's shared id (allocated on
      *  first use this frame) combined with {@code category} for per-category thickness. */
     public static int glowKeyFor(Object identity, int category) {
@@ -440,7 +442,7 @@ public final class CustomGlintRenderer {
 
     /** Per-body camera-relative AABBs captured this frame, for the per-cluster composite scissor. Live
      *  list, valid only during the drain; cleared by {@link #resetBodyGlow}. */
-    public static java.util.List<float[]> bodyGlowBoxes() { return bgBoxes; }
+    public static List<float[]> bodyGlowBoxes() { return bgBoxes; }
 
     /** Union of this frame's TIGHT per-body silhouette AABBs (real geometry, not the loose pose box), or
      *  null if none were captured, used to scissor a glowing entity's composite to its actual size. */

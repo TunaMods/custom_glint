@@ -61,6 +61,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -533,7 +534,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     // the strip redraws it for every chip every frame. Layers are immutable records added/removed as whole
     // units (never mutated in place), so an instance-keyed cache yields the same icon until the layer set
     // changes, when fresh Layer instances miss and rebuild. Screen-scoped, GC'd with the screen.
-    private final java.util.Map<CustomGlint.Layer, ItemStack> layerIconCache = new java.util.IdentityHashMap<>();
+    private final Map<CustomGlint.Layer, ItemStack> layerIconCache = new IdentityHashMap<>();
 
     /** The single ACTIVE layer being edited: the main slot (shown as-is), else a selection with the modifier
      *  build state applied (speed / scale / opacity). The merge-slot donor is NOT folded in — an uncommitted
