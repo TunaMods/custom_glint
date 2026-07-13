@@ -17,6 +17,11 @@ import java.util.function.Supplier;
  */
 public class GlintServerBlueprintsSyncPacket {
 
+    /** Match the save path's JSON cap ({@code GlintWandSaveBlueprintPacket.MAX_JSON}). The default writeUtf/readUtf
+     *  limit is 32767, so a blueprint larger than that (permitted on save, or dropped in by an admin) would throw
+     *  EncoderException here and break sync for everyone opening a table. */
+    private static final int MAX_JSON = 64 * 1024;
+
     public final Map<String, String> blueprints;
 
     public GlintServerBlueprintsSyncPacket(Map<String, String> blueprints) {
@@ -27,7 +32,7 @@ public class GlintServerBlueprintsSyncPacket {
         buf.writeVarInt(pkt.blueprints.size());
         for (Map.Entry<String, String> e : pkt.blueprints.entrySet()) {
             buf.writeUtf(e.getKey());
-            buf.writeUtf(e.getValue());
+            buf.writeUtf(e.getValue(), MAX_JSON);
         }
     }
 
@@ -37,7 +42,7 @@ public class GlintServerBlueprintsSyncPacket {
         Map<String, String> map = new LinkedHashMap<>();
         for (int i = 0; i < count; i++) {
             String name = buf.readUtf();
-            String json = buf.readUtf();
+            String json = buf.readUtf(MAX_JSON);
             map.put(name, json);
         }
         return new GlintServerBlueprintsSyncPacket(map);
