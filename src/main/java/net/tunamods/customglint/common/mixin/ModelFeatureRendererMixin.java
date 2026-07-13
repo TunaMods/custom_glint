@@ -45,7 +45,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ModelFeatureRendererMixin {
 
     /**
-     * Snapshot the STABLE opaque depth at the very START of the translucent entity pass — every opaque
+     * Snapshot the STABLE opaque depth at the very START of the translucent entity pass. Every opaque
      * surface (terrain + solid entity bodies) has committed its depth, but no translucent shell has drawn
      * yet. The stashed translucent-layer glints (slime outer shell) occlude against this snapshot, not the
      * shell's per-frame re-sorted depth (the slime flicker). Gated so the depth copy only runs when there is
@@ -62,7 +62,7 @@ public class ModelFeatureRendererMixin {
     // The stashed translucent-layer glints (slime shell) are NOT drawn here: draining at renderTranslucent
     // RETURN drew them before LATER-order translucent shells (the slime shell submits at order(1)), which then
     // painted over them and washed them out. They're drained at RenderLevelStageEvent.AfterWeather instead
-    // (CustomGlintClientInit) — after EVERY translucent pass — so they land ON TOP of the shell, while their
+    // (CustomGlintClientInit), after EVERY translucent pass, so they land ON TOP of the shell, while their
     // in-shader occlusion still reads the stable opaque-depth snapshot captured above.
 
     /**

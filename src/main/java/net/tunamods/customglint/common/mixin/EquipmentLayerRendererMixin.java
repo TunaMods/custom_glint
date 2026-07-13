@@ -119,7 +119,7 @@ public class EquipmentLayerRendererMixin {
         }
 
         // Glow outline, independent of the glint (a Glow-Trimmed armor piece with no glint still
-        // outlines). Queued for the AfterOpaqueFeatures drain (the same mask + composite as entities).
+        // outlines). Queued for the AfterWeather drain (the same mask + composite as entities).
         // The first layer's texture drives the silhouette alpha-discard so the ring follows the real
         // armor shape; the model + state are re-posed via setupAnim at drain (matching the armor body
         // draw), so multi-wearer scenes don't share a stale pose. Covers humanoid armor, elytra/capes
@@ -138,9 +138,8 @@ public class EquipmentLayerRendererMixin {
     /** The equipment layer's resolved texture (player-skin override, then the layer's own texture, then the
      *  Forge armor-texture hook for modded armor). Its alpha drives the cutout silhouette for both the glow
      *  outline and the post-Iris chromatic overlay. Returns null when the ordinal-captured {@code layers}
-     *  local doesn't hold {@link EquipmentClientInfo.Layer}s, a mapping shift in a future 26.x point release
-     *  could rebind {@code @Local(ordinal=0)} to a different List; failing soft here degrades the cosmetic
-     *  texture-dependent passes instead of throwing ClassCastException on the render thread. */
+     *  local doesn't hold {@link EquipmentClientInfo.Layer}s, so a rebound {@code @Local(ordinal=0)} degrades
+     *  the cosmetic passes instead of throwing on the render thread. */
     private static Identifier cg_equipTexture(List<?> layers, EquipmentClientInfo.LayerType layerType,
             ItemStack itemStack, Identifier playerTextureOverride) {
         if (layers.isEmpty() || !(layers.get(0) instanceof EquipmentClientInfo.Layer first)) return null;

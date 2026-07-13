@@ -68,14 +68,14 @@ public class ItemRendererMixin {
             OutlineBufferSource outlineBufferSource, SubmitNodeStorage.ItemSubmit submit, CallbackInfo ci) {
         CgGlintHolder holder = (CgGlintHolder) (Object) submit;
         GlintCarrier.DRAW_GLINT.set(holder.customglint$getGlint());
-        // Queue the item's glow outline for the AfterOpaqueFeatures drain (the same isolated
+        // Queue the item's glow outline for the AfterWeather drain (the same isolated
         // silhouette-mask + composite pass that draws entity rings, see EntityGlintRender). The item's
         // base quads have just been (or are about to be) drawn to the main target, so by drain time the
         // scene depth the mask shader samples for occlusion is committed.
         boolean glowing = holder.customglint$isGlowing();
         int[] glowColors = holder.customglint$getGlowColors();
         // GUI icons get their glow from the flat halo blit (GuiRendererMixin), not this 3D silhouette
-        // composite, which drains at AfterOpaqueFeatures (a world phase) and would otherwise just queue
+        // composite, which drains at AfterWeather (a world phase) and would otherwise just queue
         // per-glowing-icon jobs every atlas bake that never draw correctly. Skip them.
         boolean isGui = submit.displayContext() == ItemDisplayContext.GUI;
         if (!isGui && (glowing || (glowColors != null && glowColors.length > 0))) {
@@ -93,7 +93,7 @@ public class ItemRendererMixin {
         }
         // Under an active shader pack NO glint layer can draw in-phase correctly: Iris replaces our program,
         // so chromatic goes flat white and normal glint goes SOLID (every gbuffer entity program it can pick
-        // is opaque — it replaces the item surface instead of adding onto it). Queue EVERY layer for the
+        // is opaque, it replaces the item surface instead of adding onto it). Queue EVERY layer for the
         // post-Iris overlay drain (world drain for 3rd-person/dropped, hand drain for first-person); the
         // in-phase applyGlint below skips all layers under a pack. Off the pack, applyGlint draws normally.
         CustomGlint.Data glint = holder.customglint$getGlint();

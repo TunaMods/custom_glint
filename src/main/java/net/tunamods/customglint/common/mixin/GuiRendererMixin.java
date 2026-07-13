@@ -130,7 +130,6 @@ public class GuiRendererMixin {
         // ride the high bits is gone: forGlint's U:V density ratio is intrinsic, reproduced by a constant
         // 0.5 in the shader, not atlas-derived.)
         int guiScale = CustomGlintRenderer.frameGuiScale();
-        int packedScaleAspect = guiScale;
         GpuSampler slotSampler = RenderSystem.getSamplerCache().getRepeat(FilterMode.NEAREST);
         GpuSampler designSampler = GlintPipelines.glintSampler();
         long millis = Util.getMillis();
@@ -153,13 +152,13 @@ public class GuiRendererMixin {
                 if (palView == null) continue;
                 TextureSetup ctex = TextureSetup.doubleTexture(slotView.textureView(), slotSampler, palView, designSampler);
                 // × the flat-item match factor so the inventory icon's oil-slick density equals the in-world
-                // held item's (and thus worn armor's) — the world flat-item RT applies the same factor.
+                // held item's (and thus worn armor's). The world flat-item RT applies the same factor.
                 int psPackedC = Math.min(32767, Math.round(
                         layer.patternScale() * CustomGlintRenderer.chromaticFlatItemMatch() * 4096.0f));
                 // Pack morph speed into UV2.y's high bits (guiScale stays in the low 7), so the GUI morph
                 // tracks the trim's speed exactly like the world chromatic's TextureMat[2][0].
                 int speedQ = Math.max(1, Math.min(255, Math.round((float) layer.speed() * 16.0f)));
-                int guiSpeedPacked = (packedScaleAspect & 127) | (speedQ << 7);
+                int guiSpeedPacked = (guiScale & 127) | (speedQ << 7);
                 renderState.addGlyphToCurrentLayer(new GuiItemChromaticRenderState(ctex, itemState.pose(),
                         x0, y0, x1, y1, slotView.u0(), slotView.u1(), slotView.v0(), slotView.v1(),
                         layer.seed() & 0xFFFF, chromaCols.length, psPackedC, guiSpeedPacked, scissor, bounds));
@@ -212,7 +211,7 @@ public class GuiRendererMixin {
 
     private void cg_emitGlint(TextureSetup tex, Matrix3x2f pose, int x0, int y0, int x1, int y1,
             GuiItemAtlas.SlotView slotView, int color, double speed, int colorIdx, int cc, int psPacked,
-            int packedScaleAspect, int scrollDir, float scrollOffset, long millis, ScreenRectangle scissor, ScreenRectangle bounds) {
+            int modeAspect, int scrollDir, float scrollOffset, long millis, ScreenRectangle scissor, ScreenRectangle bounds) {
         // Compute the 2D scroll vector exactly like GlintPipelines.itemAnimationMatrix so the GUI overlay
         // drifts the same direction/speed as the in-hand glint (wall-clock millis keeps them in lockstep).
         float scrollX, scrollY;
@@ -237,6 +236,6 @@ public class GuiRendererMixin {
         int scrollYPacked = Math.round(scrollY * 16000.0f);
         renderState.addGlyphToCurrentLayer(new GuiItemGlintRenderState(tex, pose,
                 x0, y0, x1, y1, slotView.u0(), slotView.u1(), slotView.v0(), slotView.v1(),
-                color, scrollXPacked, scrollYPacked, psPacked, packedScaleAspect, scissor, bounds));
+                color, scrollXPacked, scrollYPacked, psPacked, modeAspect, scissor, bounds));
     }
 }

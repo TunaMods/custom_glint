@@ -35,7 +35,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@link GlintCarrier#SUBMIT_GLOW_COLORS} are non-null only inside an item submit, and a special
  * renderer's model/part submissions are the only model nodes produced there, so entity and armor model
  * submits (which happen outside item submit) are never captured. The silhouette uses white.png (full
- * model shape), matching the 1.21.1 BEWLR outline; it's queued for the shared AfterOpaqueFeatures /
+ * model shape), matching the 1.21.1 BEWLR outline; it's queued for the shared AfterWeather /
  * hand-render drain in {@link EntityGlintRender}.
  *
  * <p>The same hooks also draw the item's animated GLINT (not just the glow outline). In 26.1 the foil is
@@ -110,8 +110,8 @@ public class SubmitNodeStorageMixin {
 
     /**
      * Consume vanilla foil on the trident: its foil rides the {@code hasFoil} flag of its single
-     * {@code submitModelPart} (not a separate node), so when our glint is present we force the flag false
-     *, the base part still renders, but {@code ModelPartFeatureRenderer} skips the vanilla glint buffer.
+     * {@code submitModelPart} (not a separate node), so when our glint is present we force the flag false,
+     * the base part still renders but {@code ModelPartFeatureRenderer} skips the vanilla glint buffer.
      * {@code argsOnly} ordinal 1 = {@code hasFoil} (ordinal 0 is {@code sheeted}). Skipped while we submit
      * our own glint parts (those pass {@code hasFoil=false} already).
      */

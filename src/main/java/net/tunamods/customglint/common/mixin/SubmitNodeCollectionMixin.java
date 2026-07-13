@@ -59,7 +59,7 @@ public class SubmitNodeCollectionMixin {
         // occluded against the opaque-depth snapshot) when it would otherwise fight a re-sorted / mismatched
         // depth in-phase:
         //   - a TRANSLUCENT layer (slime outer shell) lands in 26.1's distance-sorted translucent bucket with
-        //     our glint (also mark the entity so its inner body glint is skipped — the shell is the surface),
+        //     our glint (also mark the entity so its inner body glint is skipped, the shell is the surface),
         //   - a CHROMATIC layer draws through the EQUAL-depth chromatic RT, which flickers on the ~1 ULP depth
         //     mismatch between our program and the layer surface (both sheep wool and slime shell).
         boolean translucent = cg_isTranslucent(renderType);
