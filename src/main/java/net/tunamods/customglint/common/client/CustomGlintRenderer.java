@@ -163,10 +163,28 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Per-key mutable float[4] holders; RenderType lambdas close over these references and read them each frame. */
     private static final Map<String, float[]>    GLINT_COLORS          = new HashMap<>();
     private static final Map<String, RenderType> BY_GLINT              = new HashMap<>();
-    private static final Map<String, RenderType> BY_ARMOR_GLINT        = new HashMap<>();
-    private static final Map<String, RenderType> BY_HORSE_ARMOR_GLINT  = new HashMap<>();
-    private static final Map<String, RenderType> BY_MOUNT_ARMOR_GLINT  = new HashMap<>();
+    private static final Map<String, RenderType> BY_ARMOR_GLINT        = boundedGlintCache();
+    private static final Map<String, RenderType> BY_HORSE_ARMOR_GLINT  = boundedGlintCache();
+    private static final Map<String, RenderType> BY_MOUNT_ARMOR_GLINT  = boundedGlintCache();
     private static final Map<ResourceLocation, RenderType> BY_MOUNT_ARMOR_MASK = new HashMap<>();
+
+    /** The model-path glint RT caches (armor / horse / mount / entity) are keyed by the full glint config, so a
+     *  scene throwing many distinct per-instance palettes at them (varied glints across many mobs, {@code /glint
+     *  entity} spam) would otherwise grow one RenderType + native BufferBuilder per config for the whole session -
+     *  the same accumulation {@link #BY_CHROMATIC} is capped for. Access-ordered LRU; eviction recycles the RT's
+     *  builder ({@link #unregisterFixedBuffer}) and drops its colour holder. {@link #BY_GLINT} stays uncapped: its
+     *  entries are pinned by the {@link #GLINT_FAST} memo, and held-item configs are inherently few. */
+    private static final int GLINT_CACHE_CAP = 256;
+    private static Map<String, RenderType> boundedGlintCache() {
+        return new LinkedHashMap<>(16, 0.75f, true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<String, RenderType> eldest) {
+                if (size() <= GLINT_CACHE_CAP) return false;
+                unregisterFixedBuffer(eldest.getValue());
+                GLINT_COLORS.remove(eldest.getKey());
+                return true;
+            }
+        };
+    }
 
     // ── Fixed-buffer registration + builder recycling ───────────────────────────
     // Each custom glint RenderType needs a dedicated BufferBuilder in the fixed-buffer map. In 1.20.1 a
