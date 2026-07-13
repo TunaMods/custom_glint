@@ -66,11 +66,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
         if (!pkt.remove) {
             writeLayers(buf, pkt.layers);
             buf.writeUtf(pkt.itemId);
-            buf.writeBoolean(pkt.glowing);
-            buf.writeVarInt(pkt.glowColors.length);
-            for (int c : pkt.glowColors) buf.writeInt(c);
-            buf.writeUtf(pkt.trimName);
-            buf.writeInt(pkt.trimNameColor);
+            writeGlowAndName(buf, pkt.glowing, pkt.glowColors, pkt.trimName, pkt.trimNameColor);
         }
         buf.writeBoolean(pkt.wandOnly);
     }
@@ -87,12 +83,9 @@ public class GlintApplyPacket implements CustomPacketPayload {
         // sender's bytes so the trailing fields stay aligned. Empty colours stay valid.
         CustomGlint.Layer[] layers = readLayers(buf, 8);
         String itemId = buf.readUtf();
-        boolean glowing = buf.readBoolean();
-        int[] glowColors = readCappedColors(buf);
-        String trimName = buf.readUtf();
-        int trimNameColor = buf.readInt();
+        GlowName gn = readGlowAndName(buf);
         boolean wandOnly = buf.readBoolean();
-        return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
+        return new GlintApplyPacket(hand, false, layers, itemId, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor(), wandOnly);
     }
 
     /** Defensive cap on wire-declared array sizes (colors / layers), shared by the layer helpers below. */
@@ -110,6 +103,26 @@ public class GlintApplyPacket implements CustomPacketPayload {
             if (j < len) colors[j] = c;
         }
         return colors;
+    }
+
+    /** Trailing glow + custom-name wire block shared by GlintApplyPacket, GiveGlintTrimPacket, and
+     *  GlintImportPacket: glowing flag, glow-color array, name string, packed name color. */
+    record GlowName(boolean glowing, int[] glowColors, String name, int nameColor) {}
+
+    static void writeGlowAndName(FriendlyByteBuf buf, boolean glowing, int[] glowColors, String name, int nameColor) {
+        buf.writeBoolean(glowing);
+        buf.writeVarInt(glowColors.length);
+        for (int c : glowColors) buf.writeInt(c);
+        buf.writeUtf(name);
+        buf.writeInt(nameColor);
+    }
+
+    static GlowName readGlowAndName(FriendlyByteBuf buf) {
+        boolean glowing = buf.readBoolean();
+        int[] glowColors = readCappedColors(buf);
+        String name = buf.readUtf();
+        int nameColor = buf.readInt();
+        return new GlowName(glowing, glowColors, name, nameColor);
     }
 
     /** Shared layer-array wire format (used by GiveGlintTrimPacket and GlintPrintPacket). Symmetric with
@@ -176,17 +189,9 @@ public class GlintApplyPacket implements CustomPacketPayload {
             } else if (pkt.itemId.isEmpty()) {
                 if (!pkt.wandOnly) {
                     ItemStack target = player.getItemInHand(otherHand);
-                    if (!target.isEmpty()) {
-                        CustomGlint.write(target, seeded);
-                        applyGlow(pkt, target);
-                        applyName(pkt, target);
-                    }
+                    if (!target.isEmpty()) applyAll(pkt, target, seeded);
                 }
-                if (wandIsWand) {
-                    CustomGlint.write(wand, seeded);
-                    applyGlow(pkt, wand);
-                    applyName(pkt, wand);
-                }
+                if (wandIsWand) applyAll(pkt, wand, seeded);
             } else {
                 // Item-grant path: only honored when the player actually holds the wand that opens
                 // the editor. Without this gate any client could request the server spawn arbitrary
@@ -197,17 +202,18 @@ public class GlintApplyPacket implements CustomPacketPayload {
                 Item item = BuiltInRegistries.ITEM.getOptional(itemRl).orElse(null);
                 if (item == null) return;
                 ItemStack given = new ItemStack(item);
-                CustomGlint.write(given, seeded);
-                applyGlow(pkt, given);
-                applyName(pkt, given);
+                applyAll(pkt, given, seeded);
                 player.addItem(given);
-                if (wandIsWand) {
-                    CustomGlint.write(wand, seeded);
-                    applyGlow(pkt, wand);
-                    applyName(pkt, wand);
-                }
+                if (wandIsWand) applyAll(pkt, wand, seeded);
             }
         });
+    }
+
+    /** Write layers + glow + custom name onto one stack (the wand copy and the target share this). */
+    private static void applyAll(GlintApplyPacket pkt, ItemStack stack, CustomGlint.Layer[] seeded) {
+        CustomGlint.write(stack, seeded);
+        applyGlow(pkt, stack);
+        applyName(pkt, stack);
     }
 
     private static void applyGlow(GlintApplyPacket pkt, ItemStack stack) {

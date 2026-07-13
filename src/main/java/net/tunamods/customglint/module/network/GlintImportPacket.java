@@ -25,20 +25,13 @@ public record GlintImportPacket(CustomGlint.Layer[] layers, boolean glowing, int
 
     private static void encode(FriendlyByteBuf buf, GlintImportPacket pkt) {
         GlintApplyPacket.writeLayers(buf, pkt.layers);
-        buf.writeBoolean(pkt.glowing);
-        buf.writeVarInt(pkt.glowColors.length);
-        for (int c : pkt.glowColors) buf.writeInt(c);
-        buf.writeUtf(pkt.name);
-        buf.writeInt(pkt.nameColor);
+        GlintApplyPacket.writeGlowAndName(buf, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor);
     }
 
     private static GlintImportPacket decode(FriendlyByteBuf buf) {
         CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
-        boolean glowing = buf.readBoolean();
-        int[] glowColors = GlintApplyPacket.readCappedColors(buf);
-        String name = buf.readUtf();
-        int nameColor = buf.readInt();
-        return new GlintImportPacket(layers, glowing, glowColors, name, nameColor);
+        GlintApplyPacket.GlowName gn = GlintApplyPacket.readGlowAndName(buf);
+        return new GlintImportPacket(layers, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor());
     }
 
     @Override

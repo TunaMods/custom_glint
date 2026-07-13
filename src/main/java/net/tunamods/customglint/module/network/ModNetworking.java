@@ -19,12 +19,12 @@ public class ModNetworking {
         registrar.playToServer(GlintApplyPacket.TYPE, GlintApplyPacket.STREAM_CODEC, GlintApplyPacket::handle);
         // GlintDesignSyncPacket  S→C  syncs data-pack design names to clients on join and reload
         registrar.playToClient(GlintDesignSyncPacket.TYPE, GlintDesignSyncPacket.STREAM_CODEC, GlintDesignSyncPacket::handle);
-        // GlintMountArmorSyncPacket  S→C  syncs IaF hippogryph/hippocampus armor ItemStack to clients (compat — only sent by IaF compat code)
+        // GlintMountArmorSyncPacket  S→C  syncs IaF hippogryph/hippocampus armor ItemStack to clients (compat; only sent by IaF compat code)
         registrar.playToClient(GlintMountArmorSyncPacket.TYPE, GlintMountArmorSyncPacket.STREAM_CODEC, GlintMountArmorSyncPacket::handle);
         // GiveGlintTrimPacket  C→S  gives a GlintTrimItem with current editor settings
         registrar.playToServer(GiveGlintTrimPacket.TYPE, GiveGlintTrimPacket.STREAM_CODEC, GiveGlintTrimPacket::handle);
 
-        // ── Glint Table ──────────────────────────────────────────────────────
+        // Glint Table
         // GlintPrintPacket        C→S  the table's Print button builds + outputs a finished trim
         registrar.playToServer(GlintPrintPacket.TYPE, GlintPrintPacket.STREAM_CODEC, GlintPrintPacket::handle);
         // GlintGiveDesignPacket   C→S  shift-click a palette design → free blank trim
@@ -42,7 +42,7 @@ public class ModNetworking {
         // GlintImportPacket       C→S  Import list: add a config trim to the library as a locked build target
         registrar.playToServer(GlintImportPacket.TYPE, GlintImportPacket.STREAM_CODEC, GlintImportPacket::handle);
 
-        // ── Shared blueprints (server-curated + wand Save Design) ─────────────
+        // Shared blueprints (server-curated + wand Save Design)
         // GlintServerBlueprintsSyncPacket S→C  the dedicated server's shared blueprint trims, pushed on open
         registrar.playToClient(GlintServerBlueprintsSyncPacket.TYPE, GlintServerBlueprintsSyncPacket.STREAM_CODEC, GlintServerBlueprintsSyncPacket::handle);
         // GlintDeleteServerBlueprintPacket C→S  op-only: delete one shared blueprint

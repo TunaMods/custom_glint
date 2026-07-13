@@ -43,20 +43,13 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static void encode(FriendlyByteBuf buf, GiveGlintTrimPacket pkt) {
         GlintApplyPacket.writeLayers(buf, pkt.layers);
-        buf.writeBoolean(pkt.glowing);
-        buf.writeVarInt(pkt.glowColors.length);
-        for (int c : pkt.glowColors) buf.writeInt(c);
-        buf.writeUtf(pkt.trimName);
-        buf.writeInt(pkt.trimNameColor);
+        GlintApplyPacket.writeGlowAndName(buf, pkt.glowing, pkt.glowColors, pkt.trimName, pkt.trimNameColor);
     }
 
     public static GiveGlintTrimPacket decode(FriendlyByteBuf buf) {
         CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
-        boolean glowing = buf.readBoolean();
-        int[] glowColors = GlintApplyPacket.readCappedColors(buf);
-        String trimName = buf.readUtf(32767);
-        int trimNameColor = buf.readInt();
-        return new GiveGlintTrimPacket(layers, glowing, glowColors, trimName, trimNameColor);
+        GlintApplyPacket.GlowName gn = GlintApplyPacket.readGlowAndName(buf);
+        return new GiveGlintTrimPacket(layers, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor());
     }
 
     public static void handle(GiveGlintTrimPacket pkt, IPayloadContext ctx) {
