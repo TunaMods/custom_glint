@@ -20,15 +20,13 @@ public class CustomGlintApiMod {
         // Registered here so mods that bundle only the api jar get both with no extra wiring.
         CustomGlintComponents.register(modEventBus);
 
-        // Renderer-touching init (BEWLR outline textures, resource reload listener for the texture
-        // cache) happens only on the client. The client classes are referenced solely inside the
-        // dist guard, so the JVM never resolves CustomGlintRenderer on a dedicated server — the
-        // guarded branch (and therefore the class load) only runs on the matching dist.
+        // Client-only render init (BEWLR outline textures, texture-cache reload listener). Referenced
+        // solely inside this dist guard, so a dedicated server never loads CustomGlintRenderer.
         if (FMLEnvironment.dist == Dist.CLIENT) {
             CustomGlintClientInit.run(modEventBus);
         }
 
-        // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
+        // Server-safe event listeners: only touch NBT/data registries on CustomGlint.
         NeoForge.EVENT_BUS.addListener(this::onCraft);
         NeoForge.EVENT_BUS.addListener(this::onFish);
         NeoForge.EVENT_BUS.addListener(this::onMobDrop);

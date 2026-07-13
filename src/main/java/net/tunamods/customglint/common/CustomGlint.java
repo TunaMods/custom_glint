@@ -32,9 +32,8 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
  * {@link net.tunamods.customglint.common.client.CustomGlintRenderer}, which is client-only and
  * references this class for {@link Layer}/{@link Data} types and NBT.
  *
- * Split was required because the previous unified class extended {@code RenderStateShard} (a
- * client-only base class) and imported {@code Minecraft}/{@code RenderType}/etc., so any
- * server-reachable reference triggered {@code ClassNotFoundException} on dedicated servers.
+ * Kept free of client imports so it stays loadable on a dedicated server; render types live in
+ * {@code CustomGlintRenderer}.
  */
 public final class CustomGlint {
 
@@ -103,7 +102,7 @@ public final class CustomGlint {
         ).apply(i, Layer::new));
 
         // Value equality (the record default compares the int[] by identity, which would break item
-        // stacking / ItemStack.matches / recipe matching — the old NBT was value-equal).
+        // stacking / ItemStack.matches / recipe matching; the old NBT was value-equal).
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof Layer l)) return false;
@@ -137,7 +136,7 @@ public final class CustomGlint {
 
     /**
      * The payload of the {@link CustomGlintComponents#GLINT} item data component: the glint {@link Data}
-     * (nullable — a glow-only stack has none) plus the two independent glow fields. Codec-serialized for
+     * (nullable, a glow-only stack has none) plus the two independent glow fields. Codec-serialized for
      * both persistence and network sync.
      */
     public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
@@ -185,11 +184,9 @@ public final class CustomGlint {
         return Integer.parseUnsignedInt(hex.startsWith("#") ? hex.substring(1) : hex, 16) | 0xFF000000;
     }
 
-    // The 16 named glint colors ARE Minecraft's dye colors, sourced from DyeColor.getTextColor() so they
-    // track vanilla instead of drifting. getTextColor() returns the vivid per-dye colour as RGB with a ZERO
-    // alpha byte (0x00RRGGBB); every glint colour source must be opaque ARGB (the render path multiplies the
-    // colour by its own alpha, so alpha 0 draws nothing), so OR in full alpha here. Consumers that want the
-    // bare RGB (hex boxes, dye-name lookup, swatch fills) already mask with & 0xFFFFFF, so this is safe.
+    // The 16 named glint colors ARE Minecraft's dye colors, from DyeColor.getTextColor() so they track
+    // vanilla. getTextColor() returns 0x00RRGGBB (alpha 0), but the render path multiplies colour by alpha
+    // and would draw nothing, so OR in full alpha. Consumers wanting bare RGB already mask with & 0xFFFFFF.
     private static int dye(DyeColor c) { return 0xFF000000 | c.getTextColor(); }
     public static final int RED        = dye(DyeColor.RED);
     public static final int ORANGE     = dye(DyeColor.ORANGE);
@@ -246,7 +243,7 @@ public final class CustomGlint {
 
     /** Re-uses the seed already stored on {@code existing} for any incoming unseeded chromatic layer at the
      *  same index, so re-writing an item (a trim colour/speed edit, a no-op refresh) keeps its oil-slick
-     *  pattern instead of dropping the seed. Does NOT roll fresh seeds — that happens once at commit
+     *  pattern instead of dropping the seed. Does NOT roll fresh seeds: that happens once at commit
      *  ({@link #ensureChromaticSeeds}) so editor/table PREVIEWS (which re-build their stack every frame from
      *  unseeded layers) stay seed-stable and don't flicker. */
     private static Layer[] carryChromaticSeeds(Layer[] layers, @Nullable GlintState existing) {
@@ -352,12 +349,12 @@ public final class CustomGlint {
             TIDE, TILE, VEIN, WAVE, WEAVE, ZIGZAG
     };
 
-    /** Saturated colors only — used by JEI plugin and trim creative tab for preset display. */
+    /** Saturated colors only, used by JEI plugin and trim creative tab for preset display. */
     public static final int[] VIBRANT_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK
     };
 
-    /** All 16 named colors including neutrals — full palette for downstream mod use. */
+    /** All 16 named colors including neutrals: the full palette for downstream mod use. */
     public static final int[] ALL_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK,
             BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
@@ -383,7 +380,7 @@ public final class CustomGlint {
         return s == null ? GlintState.EMPTY : s;
     }
 
-    /** Sets the glint component, or removes it when the result is empty — so a cleared item carries no
+    /** Sets the glint component, or removes it when the result is empty, so a cleared item carries no
      *  component at all (matching the old "remove the tag" behaviour and keeping stacks value-equal). */
     private static void setState(ItemStack stack, GlintState state) {
         if (state.isEmpty()) stack.remove(CustomGlintComponents.GLINT.get());
@@ -414,7 +411,7 @@ public final class CustomGlint {
         GlintState existing = stack.get(CustomGlintComponents.GLINT.get());
         layers = carryChromaticSeeds(layers, existing);
         // write() overwrites the glint layers but preserves any glow state already on the stack (glint and
-        // glow are independent — applying a new Glint Trim must not nuke a Glow Trim's colors).
+        // glow are independent, so applying a new Glint Trim must not nuke a Glow Trim's colors).
         boolean glowing = existing != null && existing.glowing();
         int[] glowColors = existing != null ? existing.glowColors() : new int[0];
         float glowSpeed = existing != null ? existing.glowSpeed() : 1.0f;
@@ -458,7 +455,7 @@ public final class CustomGlint {
 
     private static final int[] EMPTY_COLORS = new int[0];
 
-    /** Glow Trim colors — drive the outline color animation independently of any glint Data. */
+    /** Glow Trim colors: drive the outline color animation independently of any glint Data. */
     public static int[] getGlowColors(ItemStack stack) {
         if (stack.isEmpty()) return EMPTY_COLORS;
         GlintState state = stack.get(CustomGlintComponents.GLINT.get());
@@ -492,7 +489,7 @@ public final class CustomGlint {
     }
 
     /** Sets the glow outline's animation speed + interpolation (kept alongside {@code glowColors}). Only
-     *  meaningful on a glowing stack — {@link GlintState#isEmpty()} ignores these, so calling it on an
+     *  meaningful on a glowing stack; {@link GlintState#isEmpty()} ignores these, so calling it on an
      *  otherwise-empty stack still stores nothing. */
     public static void setGlowAnim(ItemStack stack, float speed, boolean interpolate) {
         GlintState s = stateOrEmpty(stack);
@@ -523,10 +520,23 @@ public final class CustomGlint {
 
     // ── Auto-apply registries ─────────────────────────────────────────────────
 
+    /** Writes the registered glint for {@code stack}'s item, if the registry has one. */
+    private static void applyFrom(Map<Item, Data> registry, ItemStack stack) {
+        Data data = registry.get(stack.getItem());
+        if (data == null) return;
+        write(stack, data.layers());
+    }
+
+    /** Store a single-layer glint for {@code item} in {@code registry}; shared by the craft / fishing / mob-drop wrappers. */
+    private static void putGlint(Map<Item, Data> registry, Item item, ResourceLocation design, int[] colors,
+                                      float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        registry.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+    }
+
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(CRAFT_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors) {
@@ -534,15 +544,13 @@ public final class CustomGlint {
     }
 
     public static void applyCraftGlint(ItemStack stack) {
-        Data data = CRAFT_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyFrom(CRAFT_GLINTS, stack);
     }
 
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
     public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(FISHING_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors) {
@@ -550,15 +558,13 @@ public final class CustomGlint {
     }
 
     public static void applyFishingGlint(ItemStack stack) {
-        Data data = FISHING_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyFrom(FISHING_GLINTS, stack);
     }
 
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(MOB_DROP_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors) {
@@ -566,15 +572,13 @@ public final class CustomGlint {
     }
 
     public static void applyMobDropGlint(ItemStack stack) {
-        Data data = MOB_DROP_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyFrom(MOB_DROP_GLINTS, stack);
     }
 
     // ── Entity glint API ──────────────────────────────────────────────────────
     //
     // Per-instance state is the synced ENTITY_GLINT attachment (a GlintState). Writing it server-side
-    // auto-syncs to tracking clients and the renderer reads it directly — there is no manual sync packet.
+    // auto-syncs to tracking clients and the renderer reads it directly. There is no manual sync packet.
     //
     // Type-wide: ENTITY_GLINTS is a server-safe registry; the renderer falls back to it when an entity
     // has no per-instance state, so all entities of the type render the same glint with no storage/sync.
@@ -634,7 +638,7 @@ public final class CustomGlint {
         setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
-    /** Per-entity Glow Trim colors — drive the outline color animation independently of any
+    /** Per-entity Glow Trim colors: drive the outline color animation independently of any
      *  glint Data, identical semantics to {@link #getGlowColors(ItemStack)} but on a mob. */
     public static int[] getEntityGlowColors(LivingEntity entity) {
         return entityState(entity).glowColors();
@@ -656,7 +660,7 @@ public final class CustomGlint {
         setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0], cur.glowSpeed(), cur.glowInterp()));
     }
 
-    /** The stack's glint state as a CompoundTag (empty if none) — the bridge format shared with entity
+    /** The stack's glint state as a CompoundTag (empty if none). The bridge format shared with entity
      *  NBT, so a mob's glint can be copied onto an item and vice-versa. */
     public static CompoundTag itemGlintTag(ItemStack stack) {
         return stateToTag(stateOrEmpty(stack));
@@ -672,7 +676,7 @@ public final class CustomGlint {
         setEntityState(entity, stateFromTag(glintTag));
     }
 
-    /** Replaces the per-item glint state in one shot. Symmetric with {@link #writeEntityTag} — useful for
+    /** Replaces the per-item glint state in one shot. Symmetric with {@link #writeEntityTag}, useful for
      *  transferring glint between item and entity (e.g. {@code writeItemTag(stack, entityGlintTag(entity))})
      *  or restoring from a stored tag in bulk. Empty/null tag clears the glint. */
     public static void writeItemTag(ItemStack stack, CompoundTag glintTag) {

@@ -14,7 +14,7 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
  * API-jar item data component for glint state. {@link #GLINT} ({@code customglint:glint}) carries a
- * {@link GlintState} (the glint {@link CustomGlint.Data} plus the two glow fields) — the modern,
+ * {@link GlintState} (the glint {@link CustomGlint.Data} plus the two glow fields): the modern,
  * codec-typed replacement for stuffing a {@code CompoundTag} into vanilla's {@code CUSTOM_DATA}.
  *
  * <p>{@link #ENTITY_GLINT} is the entity counterpart: a synced {@link AttachmentType}. NeoForge persists it

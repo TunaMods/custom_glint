@@ -61,8 +61,8 @@ import net.tunamods.customglint.module.recipe.ModRecipes;
 
 /**
  * Full standalone mod entry. Registry content (items, creative tab, recipes, loot modifiers, blocks, block
- * entities, menus, attachments) lives in the {@code Mod*} holder classes under the matching module packages
- * — see {@link ModItems}, {@link ModCreativeTabs}, {@link ModRecipes}, {@link ModLootModifiers}, etc. This
+ * entities, menus, attachments) lives in the {@code Mod*} holder classes under the matching module packages.
+ * See {@link ModItems}, {@link ModCreativeTabs}, {@link ModRecipes}, {@link ModLootModifiers}, etc. This
  * class only wires their {@code register(bus)} hooks and owns the data-pack design reload/sync.
  */
 @Mod(CustomGlintMod.MOD_ID)
@@ -135,7 +135,7 @@ public class CustomGlintMod {
         }
 
         int inserted = before - remaining.getCount();
-        if (inserted <= 0) return; // no bag / no room — let vanilla handle it
+        if (inserted <= 0) return; // no bag / no room, let vanilla handle it
 
         // Play the pickup pop + fly-to-player animation for the portion the bag absorbed; the vanilla pickup
         // path is denied below, so it wouldn't do it for us.
@@ -148,7 +148,7 @@ public class CustomGlintMod {
         } else {
             itemEntity.setItem(remaining); // vanilla picks up whatever the bags couldn't hold, next tick
         }
-        event.setCanPickup(TriState.FALSE); // we've handled this touch — don't also add to the main inventory
+        event.setCanPickup(TriState.FALSE); // we've handled this touch, don't also add to the main inventory
     }
 
     /** Award the color/layer trim advancements when a crafting-table recipe (dye / merge / layer) yields a
