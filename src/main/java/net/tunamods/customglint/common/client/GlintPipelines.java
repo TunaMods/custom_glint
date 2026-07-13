@@ -244,12 +244,12 @@ public final class GlintPipelines {
     //
     // Under an active shader pack a NORMAL (non-chromatic) glint layer can't draw in-phase either: Iris
     // substitutes our GLINT_COLOR program for one of its own, and every gbuffer entity program it can pick
-    // is OPAQUE (EMISSIVE_ENTITIES replaces the surface rather than adding onto it — IrisCompat picks it to
+    // is OPAQUE (EMISSIVE_ENTITIES replaces the surface rather than adding onto it; IrisCompat picks it to
     // keep our per-vertex colour, but the trade is that the design paints SOLID over the item). The glint
     // program (ARMOR_GLINT) does blend additively but Iris rewrites gl_Color→ColorModulator there, dropping
     // our multi-colour. So no single Iris program gives colour AND translucency; instead the layer is queued
     // (EntityGlintRender.queueGlintOverlayXxx) and re-rendered AFTER Iris finishes the frame onto an isolated
-    // target with OUR shader + OUR GLINT blend, then composited back — exactly the chromatic overlay path,
+    // target with OUR shader + OUR GLINT blend, then composited back, exactly the chromatic overlay path,
     // reusing the same drain + composite (CHROMATIC_COMPOSITE_PIPE). Off the shader path this never runs;
     // normal glint draws in-phase as before.
 
@@ -293,7 +293,7 @@ public final class GlintPipelines {
 
     /** Composites the isolated overlay target back onto the main target. Blend is ADDITIVE, NOT GLINT: the
      *  overlay pipeline already applied the GLINT square once when it rendered into the isolated target, so the
-     *  target holds {@code src²}. Compositing that with GLINT would square it AGAIN ({@code src⁴}) — much more
+     *  target holds {@code src²}. Compositing that with GLINT would square it AGAIN ({@code src⁴}), much more
      *  contrasty/vibrant than the single-square in-phase draw (the "chromatic too vibrant under shaders"
      *  report). A plain additive blend adds {@code src²} straight onto the scene, exactly matching the in-phase
      *  {@code src² + dst}. screenquad vertex + the passthrough fragment above; driven via {@code
@@ -359,7 +359,7 @@ public final class GlintPipelines {
      * a white dummy for a full-shape fill), {@code sceneDepth} on DepthSampler (the per-frame holder bound by
      * {@code CustomGlintRenderer.bindSceneDepth}), and {@link LayeringTransform#NO_LAYERING} (it draws to its
      * own target). The per-layer glint colour rides the vertices (the drain passes it as tintedColor), so it
-     * is not baked into the RenderType — mirroring the in-phase glint. Counterpart of {@link
+     * is not baked into the RenderType, mirroring the in-phase glint. Counterpart of {@link
      * #chromaticOverlayType} for non-procedural designs.
      */
     public static RenderType glintOverlayType(String name, Identifier grayDesign, Identifier cutoutTex,
@@ -505,25 +505,11 @@ public final class GlintPipelines {
      *  a richer "flow" but cannot be separated into an independent drift direction.) */
     public static Matrix4f itemAnimationMatrix(double speed, float scaleU, float scaleV, float patternScale,
                                                int colorIdx, int colorCount, int scrollDir, float scrollOffset) {
-        float scrollX, scrollY;
         float phase = (float) colorIdx / Math.max(1, colorCount);
-        if (scrollDir == CustomGlint.SCROLL_STATIC) {
-            // No animation, so each color of a simultaneous layer would otherwise sample the SAME UV and
-            // stack exactly on top of one another. Spread them by their phase (same per-color offset the
-            // animated path folds into f) so the colors fan out across the pattern instead of overlapping.
-            scrollX = scrollOffset + phase;
-            scrollY = 0.0f;
-        } else {
-            long t = (long) (Util.getMillis() * 8.0 * speed);
-            float f  = (float) (t % 110000L) / 110000.0F + phase;
-            float f1 = (float) (t % 30000L)  /  30000.0F;
-            float[] dir = scrollUnit(scrollDir);
-            scrollX = (f + f1) * dir[0];
-            scrollY = (f + f1) * dir[1];
-        }
+        float[] scroll = scrollVector(speed, phase, scrollDir, scrollOffset);
         // Drift first, then scale about the texture centre (0.5, 0.5). Centre-pivot scaling keeps the pattern
         // from sliding off as patternScale grows (was most visible drifting a shield's glint downward).
-        Matrix4f m = new Matrix4f().translation(scrollX, scrollY, 0.0f);
+        Matrix4f m = new Matrix4f().translation(scroll[0], scroll[1], 0.0f);
         m.translate(0.5f, 0.5f, 0.0f);
         m.scale(scaleU * patternScale, scaleV * patternScale, 1.0f);
         m.translate(-0.5f, -0.5f, 0.0f);
@@ -537,24 +523,30 @@ public final class GlintPipelines {
      *  rotation-only glint matrix, which ignored the scroll direction entirely. */
     public static Matrix4f armorAnimationMatrix(double speed, float patternScale, int colorIdx, int colorCount,
                                                 int scrollDir, float scrollOffset) {
-        float scrollX, scrollY;
         float phase = (float) colorIdx / Math.max(1, colorCount);
-        if (scrollDir == CustomGlint.SCROLL_STATIC) {
-            scrollX = scrollOffset + phase;
-            scrollY = 0.0f;
-        } else {
-            long t = (long) (Util.getMillis() * 8.0 * speed);
-            float f  = (float) (t % 110000L) / 110000.0F + phase;
-            float f1 = (float) (t % 30000L)  /  30000.0F;
-            float[] dir = scrollUnit(scrollDir);
-            scrollX = (f + f1) * dir[0];
-            scrollY = (f + f1) * dir[1];
-        }
-        Matrix4f m = new Matrix4f().translation(scrollX, scrollY, 0.0f);
+        float[] scroll = scrollVector(speed, phase, scrollDir, scrollOffset);
+        Matrix4f m = new Matrix4f().translation(scroll[0], scroll[1], 0.0f);
         m.translate(0.5f, 0.5f, 0.0f);
         m.scale(patternScale);
         m.translate(-0.5f, -0.5f, 0.0f);
         return m;
+    }
+
+    /** The animated UV drift shared by the item and armor scroll matrices, returned as {@code {x, y}}.
+     *  Timing mirrors vanilla's enchantment-glint cadence (GlintTexture): wall-clock scaled 8x by speed, then
+     *  folded through a 110000 ms slow carrier and a 30000 ms fast wobble that sum into the drift. */
+    private static float[] scrollVector(double speed, float phase, int scrollDir, float scrollOffset) {
+        if (scrollDir == CustomGlint.SCROLL_STATIC) {
+            // No animation, so each color of a simultaneous layer would otherwise sample the SAME UV and
+            // stack exactly on top of one another. Spread them by their phase (same per-color offset the
+            // animated path folds into f) so the colors fan out across the pattern instead of overlapping.
+            return new float[]{scrollOffset + phase, 0.0f};
+        }
+        long t = (long) (Util.getMillis() * 8.0 * speed);
+        float f  = (float) (t % 110000L) / 110000.0F + phase;
+        float f1 = (float) (t % 30000L)  /  30000.0F;
+        float[] dir = scrollUnit(scrollDir);
+        return new float[]{(f + f1) * dir[0], (f + f1) * dir[1]};
     }
 
     /** Combined glow-mask RenderType for {@link #GLOW_MASK_PIPE}: Sampler0 = the entity texture (drives

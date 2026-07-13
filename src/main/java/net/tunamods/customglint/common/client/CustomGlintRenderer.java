@@ -123,7 +123,7 @@ public final class CustomGlintRenderer {
     }
 
     /** Removes each RenderType from {@code fixedBufferRegistry} and closes its native {@link ByteBufferBuilder}. */
-    private static void cg_dropFixed(Iterable<RenderType> rts) {
+    private static void dropFixed(Iterable<RenderType> rts) {
         for (RenderType rt : rts) {
             ByteBufferBuilder b = fixedBufferRegistry.remove(rt);
             if (b != null) { try { b.close(); } catch (Throwable ignored) {} }
@@ -142,17 +142,17 @@ public final class CustomGlintRenderer {
         return new LinkedHashMap<>(64, 0.75f, true) {
             @Override protected boolean removeEldestEntry(Map.Entry<K, RenderType> eldest) {
                 if (size() <= RT_CACHE_CAP) return false;
-                cg_evictRenderType(eldest.getValue());
+                evictRenderType(eldest.getValue());
                 return true;
             }
         };
     }
 
     /** Removes {@code rt} from both the captured registry and the live BufferSource's fixedBuffers, closing
-     *  each native {@link ByteBufferBuilder}. Mirrors {@link #cg_dropFixed} but also covers the live map, which
+     *  each native {@link ByteBufferBuilder}. Mirrors {@link #dropFixed} but also covers the live map, which
      *  Iris/Sodium may swap for an immutable one (its {@code remove} throws, swallowed). The RT re-mints
      *  lazily on its next access. */
-    private static void cg_evictRenderType(RenderType rt) {
+    private static void evictRenderType(RenderType rt) {
         if (rt == null) return;
         if (fixedBufferRegistry != null) {
             ByteBufferBuilder b = fixedBufferRegistry.remove(rt);
@@ -202,16 +202,16 @@ public final class CustomGlintRenderer {
             // so remove() alone leaks them every reload (mirrors the GLOW_BODY_FIXED close loop below). They're
             // re-minted lazily on the next draw. (fixedBufferRegistry is the live bufferSource.fixedBuffers in
             // the vanilla path; under an Iris/Sodium-swapped source it can be a different instance, which
-            // cg_evictRenderType / registerLiveFixedBuffer handle separately.)
-            cg_dropFixed(BY_GLINT.values());
-            cg_dropFixed(BY_ARMOR_GLINT.values());
-            cg_dropFixed(BY_ENTITY_BODY_GLINT.values());
-            cg_dropFixed(BY_BLOCK_GLINT.values());
-            cg_dropFixed(BY_CHROMATIC.values());
-            cg_dropFixed(BY_CHROMATIC_OVERLAY.values());
-            cg_dropFixed(BY_GLINT_OVERLAY.values());
-            cg_dropFixed(BY_ENTITY_LAYER_GLINT.values());
-            cg_dropFixed(BY_GLOW_MASK.values());
+            // evictRenderType / registerLiveFixedBuffer handle separately.)
+            dropFixed(BY_GLINT.values());
+            dropFixed(BY_ARMOR_GLINT.values());
+            dropFixed(BY_ENTITY_BODY_GLINT.values());
+            dropFixed(BY_BLOCK_GLINT.values());
+            dropFixed(BY_CHROMATIC.values());
+            dropFixed(BY_CHROMATIC_OVERLAY.values());
+            dropFixed(BY_GLINT_OVERLAY.values());
+            dropFixed(BY_ENTITY_LAYER_GLINT.values());
+            dropFixed(BY_GLOW_MASK.values());
         }
         BY_GLINT.clear();
         BY_ARMOR_GLINT.clear();
@@ -508,7 +508,7 @@ public final class CustomGlintRenderer {
      *  {@link FullColorOverrideConsumer}; the pose is the camera-relative {@code ItemSubmit} pose, the same
      *  space the entity bodies drew in, so the silhouette lands at the right screen position. Each distinct
      *  atlas used is added to {@code texturesOut} so the drain flushes its buffer once. Runs inside the
-     *  AfterOpaqueFeatures drain, sharing the mask + composite with entity outlines (one unioned ring). */
+     *  AfterWeather drain, sharing the mask + composite with entity outlines (one unioned ring). */
     public static void accumulateItemGlowMask(PoseStack.Pose pose, List<BakedQuad> quads, int packedLight,
             int color, Set<Identifier> texturesOut, int category) {
         if (quads == null || quads.isEmpty()) return;
@@ -682,7 +682,7 @@ public final class CustomGlintRenderer {
     // ── GUI design atlas (inventory glint-overlay batching) ──────────────────────────────────────
     // Each glinted inventory icon draws its scrolling glint as a live overlay GLYPH (GuiRendererMixin),
     // one per layer/colour. Those glyphs are NOT sorted by the GUI renderer (only blits are), and the GUI
-    // mesher flushes a new draw on every texture change — so with a per-design Sampler1 each distinct design
+    // mesher flushes a new draw on every texture change, so with a per-design Sampler1 each distinct design
     // forced its own draw call (an inventory full of trims = dozens of draws/frame). Stitching every design
     // into ONE shared atlas makes every glint glyph carry the SAME TextureSetup, so they batch into a single
     // draw regardless of how many distinct designs are on screen. The per-glyph design is selected in-shader
@@ -707,14 +707,14 @@ public final class CustomGlintRenderer {
      *  api-only embedder without the full mod's data-pack list). */
     private static volatile Supplier<List<Identifier>> guiAtlasDesignSource = null;
 
-    /** Installs the design source for the shared GUI atlas — the full mod passes its data-pack-inclusive
+    /** Installs the design source for the shared GUI atlas: the full mod passes its data-pack-inclusive
      *  design list here so those designs batch like the built-ins. Forces a rebuild on the next draw. */
     public static void setGuiAtlasDesignSource(Supplier<List<Identifier>> source) {
         guiAtlasDesignSource = source;
         invalidateGuiDesignAtlas();
     }
 
-    /** Drops the built GUI atlas so the next inventory glint draw re-stitches it — call after the design list
+    /** Drops the built GUI atlas so the next inventory glint draw re-stitches it; call after the design list
      *  changes (data-pack reload / server sync) or a resource reload. Idempotent; no-op if not yet built. */
     public static void invalidateGuiDesignAtlas() {
         if (!guiDesignAtlasBuilt) return;
@@ -732,7 +732,7 @@ public final class CustomGlintRenderer {
         if (guiDesignAtlasBuilt) return;
         guiDesignAtlasBuilt = true;
         // Source list: the full mod's data-pack-inclusive designs when installed, else the built-ins. Guarded
-        // because the source reads a list mutated on other threads (the data-pack reload) — a torn read falls
+        // because the source reads a list mutated on other threads (the data-pack reload), a torn read falls
         // back to the built-ins rather than aborting the build.
         List<Identifier> designs;
         try {
@@ -974,7 +974,7 @@ public final class CustomGlintRenderer {
     }
 
     /** In-phase (off shader-pack) chromatic RT for an entity LAYER (sheep wool, slime outer shell), drawn on
-     *  top at AfterWeather and occluded against the stable opaque-depth snapshot ({@link #SOLID_DEPTH_ID}) —
+     *  top at AfterWeather and occluded against the stable opaque-depth snapshot ({@link #SOLID_DEPTH_ID}),
      *  the chromatic counterpart of {@link #forEntityTranslucentLayerGlint}. Replaces routing layer chromatic
      *  through the EQUAL-depth body RT (which flickered against the layer's re-sorted / different-pipeline depth). */
     public static RenderType forEntityLayerChromaticSolid(Data glint, int layerIdx) {
@@ -1271,8 +1271,8 @@ public final class CustomGlintRenderer {
     // glint depth-test lands exactly on the armor depth. See the project_armor_glint_bleed_fix memory.
     public static RenderType forArmorGlint(Data glint, int layerIdx, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
-        // Armor samples its own 0..1 texture UV and each body part is only a small sub-rect of it, so scale
-        // the noise up (~8×) for a per-part density close to the item look, 1.0 made one part show <1 cell.
+        // Armor samples its own 0..1 texture UV spanning a large area, so use a SMALL noise scale
+        // (CHROMATIC_MODEL_UV_SCALE) to read as an oil-slick rather than a tiny tiled grid.
         if (CustomGlint.isChromatic(layer)) return chromaticRT(layer, LayeringTransform.VIEW_OFFSET_Z_LAYERING, "armor", CHROMATIC_MODEL_UV_SCALE);
         Identifier gray = getTexture(layer.design());
         if (gray == null) return null;
@@ -1308,7 +1308,7 @@ public final class CustomGlintRenderer {
     // unified EquipmentLayerRenderer → forArmorGlint; this method now backs the entity-body path and the layer chromatic fallbacks.)
     public static RenderType forEntityBodyGlint(Data glint, int layerIdx, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
-        // Entity bodies sample their own 0..1 model UV, same per-part density bump as armor.
+        // Entity bodies sample their own 0..1 model UV, same small chromatic scale as armor.
         if (CustomGlint.isChromatic(layer)) return chromaticRT(layer, LayeringTransform.NO_LAYERING, "entitybody", CHROMATIC_MODEL_UV_SCALE);
         Identifier gray = getTexture(layer.design());
         if (gray == null) return null;
@@ -1477,7 +1477,11 @@ public final class CustomGlintRenderer {
         int idx = (int) t % colors.length;
         if (!layer.interpolate()) return colors[idx];
         float frac = t - (int) t;
-        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
+        return lerpArgb(colors[idx], colors[(idx + 1) % colors.length], frac);
+    }
+
+    /** Per-channel linear blend between two ARGB colours. {@code frac} in [0,1] weights {@code c2}. */
+    private static int lerpArgb(int c1, int c2, float frac) {
         int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
         int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
         int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
@@ -1532,12 +1536,7 @@ public final class CustomGlintRenderer {
         int idx = (int) t % colors.length;
         if (!interpolate) return colors[idx];
         float frac = t - (int) t;
-        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
-        int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
-        int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
-        int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
-        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
-        return (a << 24) | (r << 16) | (g << 8) | b;
+        return lerpArgb(colors[idx], colors[(idx + 1) % colors.length], frac);
     }
 
     /** Reload hooks appended by compat modules; invoked by {@link #clearTextures()} so each
@@ -1589,7 +1588,7 @@ public final class CustomGlintRenderer {
      *  foil-buffer hook under an active shader pack: the item glint is drawn by the post-Iris overlay, so
      *  nothing should draw in-phase (an in-phase glint goes SOLID under a pack), and vanilla's enchant foil
      *  (for an enchanted item) is written here and swallowed, so our glint always EATS the vanilla foil
-     *  instead of the two stacking — the same result the in-phase buffer replacement gives off the pack. */
+     *  instead of the two stacking, the same result the in-phase buffer replacement gives off the pack. */
     public static final VertexConsumer NO_OP_CONSUMER = new WrappingConsumer() {
         @Override public VertexConsumer addVertex(float x, float y, float z) { return this; }
         @Override public VertexConsumer addVertex(Matrix4fc m, float x, float y, float z) { return this; }

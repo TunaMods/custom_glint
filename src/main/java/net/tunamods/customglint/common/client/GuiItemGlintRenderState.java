@@ -29,13 +29,13 @@ public final class GuiItemGlintRenderState implements GuiElementRenderState {
     private final int color;                    // animated layer colour, ARGB
     private final int scrollXPacked, scrollYPacked; // scroll vector (design-UV, wrapped to 0..1) * 16000 (short)
     private final int psPacked;                 // patternScale * 4096 (short)
-    private final int packedScaleAspect;        // guiScale (low 7 bits); high bits unused
+    private final int modeAspect;               // guiScale (low 7 bits) | atlas-mode bit 7 | atlas cell (bits 8-15)
     private final @Nullable ScreenRectangle scissorArea;
     private final @Nullable ScreenRectangle bounds;
 
     public GuiItemGlintRenderState(TextureSetup textureSetup, Matrix3x2f pose,
             int x0, int y0, int x1, int y1, float u0, float u1, float v0, float v1,
-            int color, int scrollXPacked, int scrollYPacked, int psPacked, int packedScaleAspect,
+            int color, int scrollXPacked, int scrollYPacked, int psPacked, int modeAspect,
             @Nullable ScreenRectangle scissorArea, @Nullable ScreenRectangle bounds) {
         this.textureSetup = textureSetup;
         this.pose = pose;
@@ -43,7 +43,7 @@ public final class GuiItemGlintRenderState implements GuiElementRenderState {
         this.u0 = u0; this.u1 = u1; this.v0 = v0; this.v1 = v1;
         this.color = color;
         this.scrollXPacked = scrollXPacked; this.scrollYPacked = scrollYPacked;
-        this.psPacked = psPacked; this.packedScaleAspect = packedScaleAspect;
+        this.psPacked = psPacked; this.modeAspect = modeAspect;
         this.scissorArea = scissorArea;
         this.bounds = bounds;
     }
@@ -60,7 +60,7 @@ public final class GuiItemGlintRenderState implements GuiElementRenderState {
         vc.addVertexWith2DPose(this.pose, (float) x, (float) y)
           .setUv(u, v)
           .setUv1(this.scrollXPacked, this.scrollYPacked)
-          .setUv2(this.psPacked, this.packedScaleAspect)
+          .setUv2(this.psPacked, this.modeAspect)
           .setColor(this.color);
     }
 
