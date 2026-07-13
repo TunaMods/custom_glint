@@ -184,8 +184,8 @@ public final class GlintTableModelClient {
         @Override
         public Object createGeometryKey(BlockAndTintGetter level, BlockPos pos, BlockState state, RandomSource random) {
             // Geometry depends on the chosen skin and this model's fixed facing, so the mesher can cache per-skin.
-            // Normalize the skin index the same way pick() does, two raw config values that fold to the same
-            // skin must share a cache key, or an out-of-range config value forces a redundant re-mesh.
+            // Normalize the skin index the same way pick() does, so the cache key matches the skin rendered.
+            // Stride 8 > the 6 Direction ordinals, so (skin, facing) pairs never collide in the key.
             return Math.floorMod(GlintClientConfig.glintTableSkin(), SKINS.length) * 8 + facing.ordinal();
         }
     }

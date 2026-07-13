@@ -6,8 +6,8 @@ import org.lwjgl.glfw.GLFW;
 
 /**
  * Client-only input queries. Kept out of server-reachable item classes so they never hard-reference
- * {@link Minecraft} / {@link InputConstants} in their bytecode, only reached from client-only tooltip
- * rendering, so this class (and its client imports) never loads on a dedicated server.
+ * {@link Minecraft} / {@link InputConstants} in their bytecode. Only reached from client-only screens
+ * and tooltip rendering, so this class (and its client imports) never loads on a dedicated server.
  *
  * <p>26.1.2 removed the static {@code Screen.hasShiftDown()}; query the window directly.
  */

@@ -48,9 +48,8 @@ public final class GlowTintSource implements ItemTintSource {
     }
 
     /** Glow colours for whichever trim this tint is applied to: a Glow Trim's own colours, or a glowing
-     *  Glint Trim's FIRST glint layer (layer 0), only layer 1 drives the white-edge recolour, so editing a
-     *  different layer in the Glint Table doesn't change it. Falls back to the trim's config colours if it
-     *  somehow carries no glint data. */
+     *  Glint Trim's glint-data layer 0 colours. Editing another glint layer in the Glint Table won't change
+     *  the tint. Falls back to the trim's config colours if it somehow carries no glint data. */
     private static int[] resolveGlowColors(ItemStack stack) {
         // The authoritative glow colours (the glowColors component) win: every build path writes them, the
         // Glow Trim print/recipe AND the Glint Table live preview (CustomGlint.setGlowColors), where the
