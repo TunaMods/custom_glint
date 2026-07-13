@@ -104,8 +104,7 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private String selectPattern(LootContext context) {
-        // Get biome category to weight pattern selection. ORIGIN is absent on some data-pack /
-        // modded chest tables, so fall back to a neutral biome rather than throwing.
+        // ORIGIN is absent on some data-pack / modded chest tables, so fall back to a neutral biome.
         var origin = context.getParamOrNull(LootContextParams.ORIGIN);
         String biomeName = "plains";
         if (origin != null) {
@@ -115,72 +114,42 @@ public class GlintTrimLootModifier extends LootModifier {
                 .orElse("plains");
         }
 
-        // Category-based selection bonus
-        float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
-        float endBonus = isEndBiome(biomeName) ? 3.0f : 1.0f;
-        float oceanBonus = isOceanBiome(biomeName) ? 3.0f : 1.0f;
-        float desertBonus = isDesertBiome(biomeName) ? 3.0f : 1.0f;
-        float forestBonus = isForestBiome(biomeName) ? 3.0f : 1.0f;
-        float mountainBonus = isMountainBiome(biomeName) ? 3.0f : 1.0f;
-        float snowBonus = isSnowBiome(biomeName) ? 3.0f : 1.0f;
-        float swampBonus = isSwampBiome(biomeName) ? 3.0f : 1.0f;
-        float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? 3.0f : 1.0f;
-
         float totalWeight = 0.0f;
-        for (String pattern : GlintTrimItem.PATTERNS) {
-            String cleanName = pattern.equals("vanilla") ? "vanilla" : pattern;
-            float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
-
-            // Apply category bonuses
-            if (netherBonus > 1.0f && (cleanName.equals("fire") || cleanName.equals("ember") || cleanName.equals("plasma") || cleanName.equals("oil") || cleanName.equals("smoke")))
-                weight *= netherBonus;
-            else if (endBonus > 1.0f && (cleanName.equals("glitch") || cleanName.equals("matrix") || cleanName.equals("static") || cleanName.equals("vanilla") || cleanName.equals("arcs") || cleanName.equals("pulse")))
-                weight *= endBonus;
-            else if (oceanBonus > 1.0f && (cleanName.equals("tide") || cleanName.equals("wave") || cleanName.equals("ripple") || cleanName.equals("coral") || cleanName.equals("scales") || cleanName.equals("silk") || cleanName.equals("net")))
-                weight *= oceanBonus;
-            else if (desertBonus > 1.0f && (cleanName.equals("dunes") || cleanName.equals("sand") || cleanName.equals("solid") || cleanName.equals("swirl")))
-                weight *= desertBonus;
-            else if (forestBonus > 1.0f && (cleanName.equals("petal") || cleanName.equals("feather") || cleanName.equals("blobs") || cleanName.equals("cascade") || cleanName.equals("debris") || cleanName.equals("mosaic")))
-                weight *= forestBonus;
-            else if (mountainBonus > 1.0f && (cleanName.equals("crystal") || cleanName.equals("diamonds") || cleanName.equals("vein") || cleanName.equals("cracks") || cleanName.equals("plate") || cleanName.equals("mesh") || cleanName.equals("grid") || cleanName.equals("tile")))
-                weight *= mountainBonus;
-            else if (snowBonus > 1.0f && (cleanName.equals("frost") || cleanName.equals("aurora") || cleanName.equals("shimmer")))
-                weight *= snowBonus;
-            else if (swampBonus > 1.0f && cleanName.equals("weave"))
-                weight *= swampBonus;
-            else if (plainsBonus > 1.0f && (cleanName.equals("stars") || cleanName.equals("lightning") || cleanName.equals("halo") || cleanName.equals("prism") || cleanName.equals("glow") || cleanName.equals("sheen") || cleanName.equals("sparkle")))
-                weight *= plainsBonus;
-
-            totalWeight += weight;
-        }
+        for (String pattern : GlintTrimItem.PATTERNS)
+            totalWeight += weightOf(pattern, biomeName);
 
         float pick = context.getRandom().nextFloat() * totalWeight;
         for (String pattern : GlintTrimItem.PATTERNS) {
-            String cleanName = pattern.equals("vanilla") ? "vanilla" : pattern;
-            float weight = PATTERN_WEIGHTS.getOrDefault(cleanName, 1.0f);
-            if (netherBonus > 1.0f && (cleanName.equals("fire") || cleanName.equals("ember") || cleanName.equals("plasma") || cleanName.equals("oil") || cleanName.equals("smoke")))
-                weight *= netherBonus;
-            else if (endBonus > 1.0f && (cleanName.equals("glitch") || cleanName.equals("matrix") || cleanName.equals("static") || cleanName.equals("vanilla") || cleanName.equals("arcs") || cleanName.equals("pulse")))
-                weight *= endBonus;
-            else if (oceanBonus > 1.0f && (cleanName.equals("tide") || cleanName.equals("wave") || cleanName.equals("ripple") || cleanName.equals("coral") || cleanName.equals("scales") || cleanName.equals("silk") || cleanName.equals("net")))
-                weight *= oceanBonus;
-            else if (desertBonus > 1.0f && (cleanName.equals("dunes") || cleanName.equals("sand") || cleanName.equals("solid") || cleanName.equals("swirl")))
-                weight *= desertBonus;
-            else if (forestBonus > 1.0f && (cleanName.equals("petal") || cleanName.equals("feather") || cleanName.equals("blobs") || cleanName.equals("cascade") || cleanName.equals("debris") || cleanName.equals("mosaic")))
-                weight *= forestBonus;
-            else if (mountainBonus > 1.0f && (cleanName.equals("crystal") || cleanName.equals("diamonds") || cleanName.equals("vein") || cleanName.equals("cracks") || cleanName.equals("plate") || cleanName.equals("mesh") || cleanName.equals("grid") || cleanName.equals("tile")))
-                weight *= mountainBonus;
-            else if (snowBonus > 1.0f && (cleanName.equals("frost") || cleanName.equals("aurora") || cleanName.equals("shimmer")))
-                weight *= snowBonus;
-            else if (swampBonus > 1.0f && cleanName.equals("weave"))
-                weight *= swampBonus;
-            else if (plainsBonus > 1.0f && (cleanName.equals("stars") || cleanName.equals("lightning") || cleanName.equals("halo") || cleanName.equals("prism") || cleanName.equals("glow") || cleanName.equals("sheen") || cleanName.equals("sparkle")))
-                weight *= plainsBonus;
-
-            pick -= weight;
+            pick -= weightOf(pattern, biomeName);
             if (pick <= 0) return pattern;
         }
         return GlintTrimItem.PATTERNS.get(context.getRandom().nextInt(GlintTrimItem.PATTERNS.size()));
+    }
+
+    /** Roll weight for one design in the given biome: its base {@link #PATTERN_WEIGHTS} entry, tripled when the
+     *  design's theme matches the chest's biome category. Only the first matching category applies. The 3x
+     *  bonus makes themed designs (fire in the Nether, frost in snow) the common drop there. */
+    private static float weightOf(String pattern, String biomeName) {
+        float weight = PATTERN_WEIGHTS.getOrDefault(pattern, 1.0f);
+        if (isNetherBiome(biomeName) && (pattern.equals("fire") || pattern.equals("ember") || pattern.equals("plasma") || pattern.equals("oil") || pattern.equals("smoke")))
+            weight *= 3.0f;
+        else if (isEndBiome(biomeName) && (pattern.equals("glitch") || pattern.equals("matrix") || pattern.equals("static") || pattern.equals("vanilla") || pattern.equals("arcs") || pattern.equals("pulse")))
+            weight *= 3.0f;
+        else if (isOceanBiome(biomeName) && (pattern.equals("tide") || pattern.equals("wave") || pattern.equals("ripple") || pattern.equals("coral") || pattern.equals("scales") || pattern.equals("silk") || pattern.equals("net")))
+            weight *= 3.0f;
+        else if (isDesertBiome(biomeName) && (pattern.equals("dunes") || pattern.equals("sand") || pattern.equals("solid") || pattern.equals("swirl")))
+            weight *= 3.0f;
+        else if (isForestBiome(biomeName) && (pattern.equals("petal") || pattern.equals("feather") || pattern.equals("blobs") || pattern.equals("cascade") || pattern.equals("debris") || pattern.equals("mosaic")))
+            weight *= 3.0f;
+        else if (isMountainBiome(biomeName) && (pattern.equals("crystal") || pattern.equals("diamonds") || pattern.equals("vein") || pattern.equals("cracks") || pattern.equals("plate") || pattern.equals("mesh") || pattern.equals("grid") || pattern.equals("tile")))
+            weight *= 3.0f;
+        else if (isSnowBiome(biomeName) && (pattern.equals("frost") || pattern.equals("aurora") || pattern.equals("shimmer")))
+            weight *= 3.0f;
+        else if (isSwampBiome(biomeName) && pattern.equals("weave"))
+            weight *= 3.0f;
+        else if (isPlainsOrMushroomBiome(biomeName) && (pattern.equals("stars") || pattern.equals("lightning") || pattern.equals("halo") || pattern.equals("prism") || pattern.equals("glow") || pattern.equals("sheen") || pattern.equals("sparkle")))
+            weight *= 3.0f;
+        return weight;
     }
 
     private static boolean isNetherBiome(String biome) {
@@ -228,7 +197,7 @@ public class GlintTrimLootModifier extends LootModifier {
         if (tableId == null || !tableId.getPath().startsWith("chests/")) return generatedLoot;
 
         // Trims: cascading rolls (22% for 1st, 12% for 2nd, 8% for 3rd). Safe to cascade now that loot trims
-        // are always blank — same design/type stacks, so extra rolls don't clutter the inventory.
+        // are always blank: same design/type stacks, so extra rolls don't clutter the inventory.
         int trimCount = 0;
         if (context.getRandom().nextFloat() < 0.22f) trimCount++;
         if (trimCount > 0 && context.getRandom().nextFloat() < 0.12f) trimCount++;
@@ -243,57 +212,33 @@ public class GlintTrimLootModifier extends LootModifier {
             String pattern = selectPattern(context);
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
             // designFromName resolves the special sentinels (vanilla, chromatic) as well as the textures/glint
-            // designs — the old manual ".png" build turned "chromatic" into a bogus path so rolled chromatic
+            // designs; the old manual ".png" build turned "chromatic" into a bogus path so rolled chromatic
             // trims dropped blank.
             GlintTrimItem.setPattern(trim, CustomGlint.designFromName(pattern));
             generatedLoot.add(trim);
         }
 
         // Tears and rainbow dye stack to 64 and get consumed in bulk, so they keep the cascading rolls: 20% for
-        // 1st, 10% for 2nd, 5% for 3rd. Each tear type rolls independently.
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-            }
-        }
-
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-            }
-        }
+        // 1st, 10% for 2nd, 5% for 3rd. Each type rolls independently.
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
+        rollCascade(context, generatedLoot, () -> ModItems.RAINBOW_DYE.get().getDefaultInstance());
 
         return generatedLoot;
+    }
+
+    /** Cascading independent rolls for one bulk-consumed item: 20% for the 1st copy, then 10% / 5% for a 2nd / 3rd. */
+    private static void rollCascade(LootContext context, ObjectArrayList<ItemStack> loot, Supplier<ItemStack> item) {
+        if (context.getRandom().nextFloat() < 0.20f) {
+            loot.add(item.get());
+            if (context.getRandom().nextFloat() < 0.10f) {
+                loot.add(item.get());
+                if (context.getRandom().nextFloat() < 0.05f)
+                    loot.add(item.get());
+            }
+        }
     }
 
     @Override
