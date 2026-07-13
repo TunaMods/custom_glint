@@ -1,24 +1,23 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.tunamods.customglint.common.CustomGlint;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.IntArrayTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 
 /** Glow Trim + Dye → Glow Trim with one more color appended (cap 8). Mirrors GlintTrimDyeRecipe. */
 public class GlowTrimDyeRecipe extends CustomRecipe {
@@ -88,12 +87,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         list.add(Ingredient.of(new ItemStack(ModItems.GLOW_TRIM.get())));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
+        list.add(Ingredient.of(GlintTableMenu.DYE_ITEMS));
         return list;
     }
 
