@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.blueprint.ServerBlueprints;
+import net.tunamods.customglint.module.item.GlintWandItem;
 
 /**
  * C→S: the wand editor's Import trash icon deletes a shared blueprint from the server's pool
@@ -30,6 +31,10 @@ public record GlintWandDeleteBlueprintPacket(String name) implements CustomPacke
     public static void handle(GlintWandDeleteBlueprintPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
+            // Client-sent: re-verify the sender holds the wand (the stated gate) before removing a shared
+            // file, else a scripted client could wipe every server blueprint. Mirrors the save path.
+            if (!(sp.getMainHandItem().getItem() instanceof GlintWandItem
+                    || sp.getOffhandItem().getItem() instanceof GlintWandItem)) return;
             ServerBlueprints.delete(pkt.name());
             ServerBlueprints.syncTo(sp);
         });
