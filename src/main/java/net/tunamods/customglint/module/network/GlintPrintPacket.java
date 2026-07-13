@@ -65,9 +65,8 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
 
     private static int[][] readShardDyes(FriendlyByteBuf buf) {
         // Consume EVERY shard the sender wrote (the encoder writes shardDyes.length) so the buffer stays
-        // aligned with the fields after it, capping the read count at 8 left a crafted packet's extra shard
-        // arrays unread, desyncing the rest of the decode. Only the first 8 are kept (print() caps colour
-        // layers at 8); per-shard length is capped to block a crafted multi-million-int allocation.
+        // aligned with the fields after it. Only the first 8 are kept (print() caps colour layers at 8);
+        // per-shard length is capped too.
         int sent = buf.readVarInt();
         if (sent < 0 || sent > GlintApplyPacket.MAX_WIRE_COUNT) throw new DecoderException("Bad shard count: " + sent);
         int keep = Math.max(0, Math.min(sent, 8));
@@ -80,9 +79,8 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
     }
 
     /** VarInt-array read that rejects a negative or oversized count as a {@link DecoderException}. Vanilla
-     *  {@link FriendlyByteBuf#readVarIntArray(int)} only checks the UPPER bound, so a crafted negative size
-     *  reaches {@code new int[size]} and throws {@code NegativeArraySizeException} on the netty thread instead
-     *  of the clean decode error the rest of this packet uses. */
+     *  {@link FriendlyByteBuf#readVarIntArray(int)} only checks the upper bound, so a negative size would
+     *  otherwise throw {@code NegativeArraySizeException} rather than the clean decode error used elsewhere. */
     private static int[] readCappedVarIntArray(FriendlyByteBuf buf, int cap) {
         int size = buf.readVarInt();
         if (size < 0 || size > cap) throw new DecoderException("Bad array size: " + size);
@@ -97,13 +95,11 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
     }
 
     public static void handle(GlintPrintPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                if (pkt.glowBase) {
-                    m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
-                } else {
-                    m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name, pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex, pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous, pkt.glowShardDyes);
-                }
+        GlintTableMenu.withOpenMenu(ctx, (sp, m) -> {
+            if (pkt.glowBase) {
+                m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
+            } else {
+                m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name, pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex, pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous, pkt.glowShardDyes);
             }
         });
     }

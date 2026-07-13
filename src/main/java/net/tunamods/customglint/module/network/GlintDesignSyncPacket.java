@@ -18,20 +18,7 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
             new Type<>(CustomGlint.res("glint_design_sync"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintDesignSyncPacket> STREAM_CODEC =
-            StreamCodec.of(
-                    (buf, pkt) -> {
-                        buf.writeVarInt(pkt.designs.size());
-                        for (String design : pkt.designs) buf.writeUtf(design);
-                    },
-                    buf -> {
-                        int count = buf.readVarInt();
-                        // Cap the pre-sized capacity so a bogus count can't pre-allocate a huge array; the
-                        // loop still drains the real count.
-                        List<String> designs = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
-                        for (int i = 0; i < count; i++) designs.add(buf.readUtf());
-                        return new GlintDesignSyncPacket(designs);
-                    }
-            );
+            NetworkCodecs.stringList(1024).map(GlintDesignSyncPacket::new, GlintDesignSyncPacket::designs);
 
     private static final List<String> clientSyncedDesigns = new ArrayList<>();
 
@@ -40,7 +27,7 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
     public static void clearClient() {
         GlintTrimItem.PATTERNS.removeAll(clientSyncedDesigns);
         clientSyncedDesigns.clear();
-        // The GUI glint atlas is stitched from the (now-shrunk) design list — force a re-stitch. Client-only
+        // The GUI glint atlas is stitched from the (now-shrunk) design list, so force a re-stitch. Client-only
         // path (logout), so touching the renderer is safe.
         CustomGlintRenderer.invalidateGuiDesignAtlas();
     }
@@ -60,7 +47,7 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
                     clientSyncedDesigns.add(design);
                 }
             }
-            // Data-pack designs just changed on the client — re-stitch the shared GUI glint atlas so they
+            // Data-pack designs just changed on the client, so re-stitch the shared GUI glint atlas so they
             // batch too. enqueueWork runs on the client render thread, so releasing the texture here is safe.
             CustomGlintRenderer.invalidateGuiDesignAtlas();
         });

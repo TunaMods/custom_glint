@@ -26,10 +26,6 @@ public record GlintGiveDesignPacket(String design) implements CustomPacketPayloa
     }
 
     public static void handle(GlintGiveDesignPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.giveDesignCopy(pkt.design());
-            }
-        });
+        GlintTableMenu.withOpenMenu(ctx, (sp, m) -> m.giveDesignCopy(pkt.design()));
     }
 }

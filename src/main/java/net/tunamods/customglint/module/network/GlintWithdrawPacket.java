@@ -26,10 +26,6 @@ public record GlintWithdrawPacket(int index) implements CustomPacketPayload {
     }
 
     public static void handle(GlintWithdrawPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.withdrawPrinted(pkt.index());
-            }
-        });
+        GlintTableMenu.withOpenMenu(ctx, (sp, m) -> m.withdrawPrinted(pkt.index()));
     }
 }

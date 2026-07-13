@@ -26,10 +26,6 @@ public record GlintDeletePrintedPacket(int index) implements CustomPacketPayload
     }
 
     public static void handle(GlintDeletePrintedPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.deletePrinted(pkt.index());
-            }
-        });
+        GlintTableMenu.withOpenMenu(ctx, (sp, m) -> m.deletePrinted(pkt.index()));
     }
 }

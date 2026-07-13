@@ -15,7 +15,7 @@ import net.tunamods.customglint.module.blueprint.ServerBlueprints;
 /**
  * C→S: the wand editor's "Save Design" saves the current build to the server's shared blueprint pool
  * ({@link ServerBlueprints}), the same store the Glint Table and {@code /glint export} use. Anyone holding
- * the wand may save — the wand itself is the gate, so there is no op check (matching the delete path). The
+ * the wand may save; the wand itself is the gate, so there is no op check (matching the delete path). The
  * server validates the JSON (well-formed object with a non-empty {@code layers} array, within size/count
  * caps), writes it under a unique filename, and re-syncs the pool so the sender's Import list updates.
  */

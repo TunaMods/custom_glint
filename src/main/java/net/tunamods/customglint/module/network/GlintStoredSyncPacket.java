@@ -22,20 +22,7 @@ public record GlintStoredSyncPacket(List<String> designs) implements CustomPacke
             new Type<>(CustomGlint.res("glint_stored_sync"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintStoredSyncPacket> STREAM_CODEC =
-            StreamCodec.of(
-                    (buf, pkt) -> {
-                        buf.writeVarInt(pkt.designs.size());
-                        for (String design : pkt.designs) buf.writeUtf(design);
-                    },
-                    buf -> {
-                        int count = buf.readVarInt();
-                        // Cap the pre-sized capacity so a bogus count can't pre-allocate a huge array; the
-                        // loop still drains the real count.
-                        List<String> designs = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
-                        for (int i = 0; i < count; i++) designs.add(buf.readUtf());
-                        return new GlintStoredSyncPacket(designs);
-                    }
-            );
+            NetworkCodecs.stringList(1024).map(GlintStoredSyncPacket::new, GlintStoredSyncPacket::designs);
 
     /** Client-side mirror of the local player's stored design set. Read by the Glint Table screen. */
     public static final Set<String> CLIENT_STORED = new HashSet<>();

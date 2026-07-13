@@ -22,9 +22,8 @@ public class GlintApplyPacket implements CustomPacketPayload {
     public static final Type<GlintApplyPacket> TYPE =
             new Type<>(CustomGlint.res("glint_apply"));
 
-    /** Hard upper bound on any wire-supplied count we then drain in a read loop (colors, layers, shards).
-     *  Legit values are ≤16; this rejects a crafted packet's absurd count cleanly (DecoderException →
-     *  the sender is disconnected) instead of spinning {@code readInt()} until the buffer underflows. */
+    /** Hard upper bound on any wire-supplied count drained in a read loop (colors, layers, shards). Legit
+     *  values are ≤16; a larger count throws DecoderException at decode instead of underflowing the buffer. */
     static final int MAX_WIRE_COUNT = 256;
 
     public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
@@ -72,8 +71,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
             writeLayers(buf, pkt.layers);
             buf.writeUtf(pkt.itemId);
             buf.writeBoolean(pkt.glowing);
-            buf.writeVarInt(pkt.glowColors.length);
-            for (int c : pkt.glowColors) buf.writeInt(c);
+            writeColors(buf, pkt.glowColors);
             buf.writeUtf(pkt.trimName);
             buf.writeInt(pkt.trimNameColor);
         }
@@ -97,9 +95,14 @@ public class GlintApplyPacket implements CustomPacketPayload {
         return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
     }
 
+    /** Writes a color array as a VarInt length followed by each ARGB int. Symmetric with {@link #readCappedColors}. */
+    static void writeColors(FriendlyByteBuf buf, int[] colors) {
+        buf.writeVarInt(colors.length);
+        for (int c : colors) buf.writeInt(c);
+    }
+
     /** Reads a color array, draining every int the sender wrote (so the buffer stays aligned) while keeping
-     *  at most the first 8. A crafted packet claiming more than 8 colors would otherwise leave stale ints in
-     *  the buffer and desync the rest of the decode. */
+     *  at most the first 8. */
     static int[] readCappedColors(FriendlyByteBuf buf) {
         int sent = buf.readVarInt();
         if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad color count: " + sent);
@@ -117,8 +120,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
         buf.writeVarInt(layers.length);
         for (CustomGlint.Layer layer : layers) {
             buf.writeUtf(layer.design().toString());
-            buf.writeVarInt(layer.colors().length);
-            for (int c : layer.colors()) buf.writeInt(c);
+            writeColors(buf, layer.colors());
             buf.writeFloat(layer.speed());
             buf.writeBoolean(layer.interpolate());
             buf.writeFloat(layer.patternScale());
@@ -131,7 +133,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
 
     /** Reads a layer array, draining every layer the sender wrote (so the buffer stays aligned) while keeping
      *  at most {@code cap}. Malformed design strings fall back to the vanilla glint and a non-positive speed is
-     *  clamped, so a crafted packet can't throw on the network thread or desync the trailing fields. */
+     *  clamped to 1, keeping the trailing fields aligned. */
     static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
         int sent = buf.readVarInt();
         if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad layer count: " + sent);
@@ -188,10 +190,9 @@ public class GlintApplyPacket implements CustomPacketPayload {
             } else {
                 // Server-authoritative gate. This branch spawns an arbitrary registered item into the
                 // player's inventory, reached only through the wand UI. The wand has no recipe (it's
-                // creative/command-only), so possessing one IS the authorization — no game-mode check, so an
+                // creative/command-only), so holding one is the authorization: no game-mode check, so an
                 // admin who hands themselves a wand can use it in survival too. The packet is client-sent, so
-                // still re-verify the player actually holds the wand; without that a modified client could
-                // send the packet with no wand and spawn/dupe items at will.
+                // re-verify the player still holds the wand before spawning the item.
                 if (!wandIsWand) return;
                 Identifier itemRl = Identifier.tryParse(pkt.itemId);
                 if (itemRl == null) return;
@@ -203,11 +204,9 @@ public class GlintApplyPacket implements CustomPacketPayload {
                 applyGlow(pkt, given);
                 applyName(pkt, given);
                 player.addItem(given);
-                if (wandIsWand) {
-                    CustomGlint.write(wand, layers);
-                    applyGlow(pkt, wand);
-                    applyName(pkt, wand);
-                }
+                CustomGlint.write(wand, layers);
+                applyGlow(pkt, wand);
+                applyName(pkt, wand);
             }
         });
     }
@@ -220,6 +219,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
 
     private static void applyName(GlintApplyPacket pkt, ItemStack stack) {
         if (!pkt.trimName.isEmpty()) {
+            // trimNameColor is packed RGBA; drop the low alpha byte to the 0xRRGGBB TextColor expects.
             Component displayName = Component.literal(pkt.trimName)
                 .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
             stack.set(DataComponents.CUSTOM_NAME, displayName);

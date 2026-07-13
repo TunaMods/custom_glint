@@ -26,8 +26,7 @@ public record GlintImportPacket(CustomGlint.Layer[] layers, boolean glowing, int
     private static void encode(FriendlyByteBuf buf, GlintImportPacket pkt) {
         GlintApplyPacket.writeLayers(buf, pkt.layers);
         buf.writeBoolean(pkt.glowing);
-        buf.writeVarInt(pkt.glowColors.length);
-        for (int c : pkt.glowColors) buf.writeInt(c);
+        GlintApplyPacket.writeColors(buf, pkt.glowColors);
         buf.writeUtf(pkt.name);
         buf.writeInt(pkt.nameColor);
     }
@@ -47,10 +46,7 @@ public record GlintImportPacket(CustomGlint.Layer[] layers, boolean glowing, int
     }
 
     public static void handle(GlintImportPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.importTrim(pkt.layers, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor);
-            }
-        });
+        GlintTableMenu.withOpenMenu(ctx, (sp, m) ->
+                m.importTrim(pkt.layers, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor));
     }
 }

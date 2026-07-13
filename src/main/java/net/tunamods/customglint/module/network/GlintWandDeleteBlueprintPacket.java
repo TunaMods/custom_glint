@@ -10,7 +10,7 @@ import net.tunamods.customglint.module.blueprint.ServerBlueprints;
 
 /**
  * C→S: the wand editor's Import trash icon deletes a shared blueprint from the server's pool
- * ({@link ServerBlueprints}). No op check — the wand is the gate (matching the save path). The server
+ * ({@link ServerBlueprints}). No op check: the wand is the gate (matching the save path). The server
  * removes the file and re-syncs so the sender's Import list updates.
  */
 public record GlintWandDeleteBlueprintPacket(String name) implements CustomPacketPayload {

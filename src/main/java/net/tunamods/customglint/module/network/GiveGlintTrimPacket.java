@@ -44,8 +44,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
     public static void encode(FriendlyByteBuf buf, GiveGlintTrimPacket pkt) {
         GlintApplyPacket.writeLayers(buf, pkt.layers);
         buf.writeBoolean(pkt.glowing);
-        buf.writeVarInt(pkt.glowColors.length);
-        for (int c : pkt.glowColors) buf.writeInt(c);
+        GlintApplyPacket.writeColors(buf, pkt.glowColors);
         buf.writeUtf(pkt.trimName);
         buf.writeInt(pkt.trimNameColor);
     }
@@ -64,8 +63,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
             if (!(ctx.player() instanceof ServerPlayer player)) return;
             // Server-authoritative gate. The give-trim button is reached only through the wand editor, and
             // the wand is creative/command-only (no recipe), so holding one is the authorization. The packet
-            // is client-sent, so re-verify the player actually holds the wand before minting a finished trim;
-            // without this a modified client could send the packet with no wand and get free painted trims.
+            // is client-sent, so re-verify the player still holds the wand before minting a finished trim.
             // (Mirrors GlintApplyPacket's gate: hold-the-wand only, no game-mode check, so it works in
             // survival too.)
             boolean holdingWand = player.getMainHandItem().getItem() instanceof GlintWandItem
@@ -98,6 +96,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
             }
 
             if (!pkt.trimName.isEmpty()) {
+                // trimNameColor is packed RGBA; drop the low alpha byte to the 0xRRGGBB TextColor expects.
                 Component displayName = Component.literal(pkt.trimName)
                     .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
                 trim.set(DataComponents.CUSTOM_NAME, displayName);
