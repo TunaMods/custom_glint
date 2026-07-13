@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * any patched entity: it renders its own skinned mesh via {@code PatchedLivingEntityRenderer.render} from
  * {@code RenderLivingEvent.Pre}, then cancels the event so vanilla {@code LivingEntityRenderer.render} never
  * finishes. But that event fires from INSIDE vanilla render, after our core {@code LivingEntityRendererMixin}
- * HEAD has already wrapped the buffer with the QUADS-mode glint fan-out — so Epic Fight draws its mesh
+ * HEAD has already wrapped the buffer with the QUADS-mode glint fan-out, so Epic Fight draws its mesh
  * through that wrapper. Its mesh is a TRIANGLES-mode {@code entity_*} RenderType, and a QUADS glint RT fed a
  * triangle stream reassembles the primitives wrong: the glint shatters into facets.
  *
@@ -24,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@link EpicFightEntityGlow#wrap}; at RETURN {@link EpicFightEntityGlow#flush} queues the captured ring.
  *
  * <p>The handler captures only the leading {@code entity} argument (Mixin permits omitting trailing context
- * parameters), so this class carries zero reference to Epic Fight's own types — same soft-compat spirit as
+ * parameters), so this class carries zero reference to Epic Fight's own types, the same soft-compat spirit as
  * the other {@code @Pseudo} standalone mixins. {@code remap = false}: the target method and its
  * Minecraft-typed descriptor are identical in dev and production (class names are stable; the mod's own
  * method name isn't remapped).

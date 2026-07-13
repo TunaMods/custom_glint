@@ -25,13 +25,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Glue for the Immersive Armors compat. IA cancels the vanilla armor layer and draws each slot as a list
  * of {@code Piece}s; every piece draws its model through {@code Piece.renderParts} (called one-or-more
- * times per piece — {@code LayerPiece} stacks three texture layers), and each {@code renderParts} picks a
- * RenderType off the piece's own {@code isTranslucent()} / {@code isGlowing()} flags.
+ * times per piece, since {@code LayerPiece} stacks three texture layers), and each {@code renderParts}
+ * picks a RenderType off the piece's own {@code isTranslucent()} / {@code isGlowing()} flags.
  *
  * <p>{@code ArmorPieceMixin} brackets one {@code Piece.render} (HEAD {@link #begin}, RETURN {@link #finish})
  * to record the wearer/stack and, on RETURN, queue the glow ring. {@code PieceRenderMixin} redirects the
  * {@code EntityModel.renderToBuffer} call inside {@code renderParts} to {@link #fanGlint}, which fans the
- * glint into that SAME draw via a {@link VertexMultiConsumer} — identical pose and vertices as the armor,
+ * glint into that SAME draw via a {@link VertexMultiConsumer} (identical pose and vertices as the armor),
  * so the EQUAL-depth glint never z-fights. The glint RenderType's polygon offset is chosen to match IA's
  * per-piece pick (NO_LAYERING for translucent / glowing pieces, VIEW_OFFSET for plain armorCutoutNoCull).
  *
@@ -78,7 +78,7 @@ public final class ImmersiveArmorsGlint {
         list.add(base);
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             if (CustomGlint.isChromatic(layers[layerIdx])) {
-                // Under a pack chromatic is captured for the post-Iris overlay (see finish) — not in-phase.
+                // Under a pack chromatic is captured for the post-Iris overlay (see finish), not in-phase.
                 if (!CustomGlintRenderer.isShaderPackActive()) {
                     RenderType crt = noOffset
                             ? CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx)

@@ -28,7 +28,7 @@ import java.util.List;
 
 /**
  * Standalone-only compat: hippocampus armor (vanilla HorseArmorItem variants) is rendered by
- * IaF's LayerHippocampusSaddle, not vanilla HorseArmorLayer — so HorseArmorLayerMixin never
+ * IaF's LayerHippocampusSaddle, not vanilla HorseArmorLayer, so HorseArmorLayerMixin never
  * fires for it. Same shape as {@link LayerHippogryphArmorMixin}: pick one of three solid textures
  * by entity.getArmor() (1/2/3 = iron/gold/diamond), source the actual ItemStack from the
  * client-synced cache.
@@ -39,7 +39,7 @@ import java.util.List;
  * {@link LayerDragonArmorMixin} for the full rationale.
  *
  * Armor ItemStack source: {@link MountArmorCache} (synced by EntityHippocampusArmorSyncMixin +
- * StartTracking listener — IaF's SimpleContainer doesn't sync to clients on its own).
+ * StartTracking listener; IaF's SimpleContainer doesn't sync to clients on its own).
  */
 @Pseudo
 @Mixin(targets = "com.iafenvoy.iceandfire.render.entity.HippocampusEntityRenderer$LayerHippocampusSaddle", remap = false)
@@ -117,7 +117,7 @@ public class LayerHippocampusArmorMixin {
         // Glow outline: re-render the parent model traced against the armor texture (alpha-discard →
         // only the armored texels), keyed CAT_ARMOR + the mount's id so it folds into the mount's body
         // ring when both glow. The IaF mount armor doesn't render through any vanilla layer, so the
-        // generic in-phase tee never captures it — this is the only capture point for it.
+        // generic in-phase tee never captures it; this is the only capture point for it.
         if (glow) {
             EntityGlintRender.captureModelSilhouette(entity, entity, model, tex, pose, light,
                     CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
@@ -125,7 +125,7 @@ public class LayerHippocampusArmorMixin {
         if (glint == null) return;
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
-        // forArmorGlint — the same fix that LayerDragonArmorMixin uses. Hippocampus armor reuses the
+        // forArmorGlint, the same fix that LayerDragonArmorMixin uses. Hippocampus armor reuses the
         // body model at the SAME depth, so the EQUAL-depth body glint drew over the armor (the armor
         // glint then read as covering the whole entity). armorCutoutNoCull's polygon offset nudges
         // the armor in front of the body so the body glint is depth-occluded there, and forArmorGlint

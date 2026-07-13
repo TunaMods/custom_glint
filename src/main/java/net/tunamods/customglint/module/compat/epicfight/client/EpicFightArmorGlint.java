@@ -22,7 +22,7 @@ import java.util.List;
  * Client-only helper for the Epic Fight worn-armor glint + glow. Epic Fight renders the patched player/mob
  * armor through its own {@code WearableItemLayer} (a skinned {@code SkinnedMesh} deformed to the animated
  * skeleton) instead of vanilla {@code HumanoidArmorLayer}, so our core {@code HumanoidArmorLayerMixin} never
- * fires on the animated wearer — the armor glint shows on a (vanilla-rendered) armor stand but vanishes on
+ * fires on the animated wearer; the armor glint shows on a (vanilla-rendered) armor stand but vanishes on
  * the player.
  *
  * <p>The seam is deliberately Epic-Fight-type-free (an earlier attempt to capture the {@code SkinnedMesh} /
@@ -167,8 +167,8 @@ public final class EpicFightArmorGlint {
         @Override
         public VertexConsumer getBuffer(RenderType rt) {
             if (handled) return delegate.getBuffer(rt);
-            // Epic Fight's renderArmor draws only the armor mesh; its RT carries the armor texture. Ignore any
-            // other buffer request (be defensive) and only act on the armor draw.
+            // Epic Fight's renderArmor draws only the armor mesh; its RT carries the armor texture. Only the
+            // armor draw has a texture, so forward every other buffer request untouched.
             if (GlowOutlineRenderer.resolveRenderTypeTexture(rt) == null) return delegate.getBuffer(rt);
             handled = true;
             ctx.drawn = true;

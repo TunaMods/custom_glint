@@ -23,7 +23,10 @@ public final class MountArmorSync {
     /** Last armor stack broadcast per entity id, for tick-based change detection. */
     private static final Map<Integer, ItemStack> LAST_SYNCED = new ConcurrentHashMap<>();
 
-    /** Reflectively reads the armor stack at slot 2 of the entity's inventory field. */
+    /** Armor occupies index 2 of an IaF mount's inventory container. */
+    private static final int ARMOR_SLOT = 2;
+
+    /** Reflectively reads the armor stack from the entity's inventory field. */
     public static ItemStack readArmorStack(Entity entity, String invFieldName) {
         try {
             Field f = INV_FIELD_CACHE.get(entity.getClass());
@@ -33,7 +36,7 @@ public final class MountArmorSync {
                 INV_FIELD_CACHE.put(entity.getClass(), f);
             }
             Container inv = (Container) f.get(entity);
-            return inv == null ? ItemStack.EMPTY : inv.getItem(2);
+            return inv == null ? ItemStack.EMPTY : inv.getItem(ARMOR_SLOT);
         } catch (Throwable t) {
             return ItemStack.EMPTY;
         }

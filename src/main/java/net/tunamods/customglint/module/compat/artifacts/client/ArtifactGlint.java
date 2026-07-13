@@ -27,7 +27,7 @@ import java.util.List;
  * armed, fanning the same mesh across our entity-depth glint render types and (when glowing) a record-only
  * silhouette. {@link #flush} queues the recorded silhouettes as one glow ring keyed on the wearer +
  * {@code CAT_ARMOR}. The glint uses {@code forHorseArmorGlint}/{@code forChromaticEntityGlint} (EQUAL +
- * NO_LAYERING) to match {@code entityCutoutNoCull}'s depth — {@code forArmorGlint} would test against the
+ * NO_LAYERING) to match {@code entityCutoutNoCull}'s depth; {@code forArmorGlint} would test against the
  * wrong offset and vanish. All references are vanilla types, so there is no dep on Artifacts.
  */
 public final class ArtifactGlint {
@@ -75,7 +75,7 @@ public final class ArtifactGlint {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    // Under a pack chromatic is captured for the post-Iris overlay (see flush) — not in-phase.
+                    // Under a pack chromatic is captured for the post-Iris overlay (see flush), not in-phase.
                     if (!CustomGlintRenderer.isShaderPackActive()) {
                         RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
                         if (crt != null) list.add(bufferSource.getBuffer(crt));

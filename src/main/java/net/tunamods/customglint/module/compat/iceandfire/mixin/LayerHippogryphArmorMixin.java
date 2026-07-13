@@ -28,12 +28,12 @@ import java.util.List;
 
 /**
  * Standalone-only compat: LayerHippogriffSaddle renders armor / saddle / bridle / chest in one pass.
- * Only the armor branch (entity.getArmor() != 0) is interesting for glint — it picks one of three
+ * Only the armor branch (entity.getArmor() != 0) is interesting for glint: it picks one of three
  * solid textures (iron/gold/diamond) and draws the parent hippogryph model with that texture.
  *
  * Unlike dragon armor (per-part textures resolved at runtime, captured via @Redirect on
  * entityCutoutNoCull), hippogryph armor uses three pre-built RenderTypes built in the layer's
- * ctor. We resolve the texture directly from getArmor() rather than redirecting — the mapping is
+ * ctor. We resolve the texture directly from getArmor() rather than redirecting; the mapping is
  * stable and the texture paths are part of IaF's published assets.
  *
  * Glint mechanics identical to {@link LayerDragonArmorMixin}: the glint uses
@@ -54,7 +54,7 @@ import java.util.List;
 public class LayerHippogryphArmorMixin {
 
     // CE armor textures live under textures/entity/hippogryph/, NOT textures/models/. A wrong path
-    // resolves to the missing-texture placeholder, which is fully opaque — forArmorGlint's cutout
+    // resolves to the missing-texture placeholder, which is fully opaque, so forArmorGlint's cutout
     // mask then passes over the entire model and the glint covers the whole hippogryph instead of
     // just the armor. Confirmed via unzip -l on iceandfire-2.0-beta.17.jar.
     private static final ResourceLocation CG_TEX_IRON =
@@ -129,7 +129,7 @@ public class LayerHippogryphArmorMixin {
         // Glow outline: re-render the parent model traced against the armor texture (alpha-discard →
         // only the armored texels), keyed CAT_ARMOR + the mount's id so it folds into the mount's body
         // ring when both glow. The IaF mount armor doesn't render through any vanilla layer, so the
-        // generic in-phase tee never captures it — this is the only capture point for it.
+        // generic in-phase tee never captures it; this is the only capture point for it.
         if (glow) {
             EntityGlintRender.captureModelSilhouette(entity, entity, model, tex, pose, light,
                     CustomGlintRenderer.resolveGlowColor(stack), GlowOutlineRenderer.CAT_ARMOR, 0);
@@ -137,7 +137,7 @@ public class LayerHippogryphArmorMixin {
         if (glint == null) return;
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
-        // forArmorGlint — the same fix LayerDragonArmorMixin / LayerHippocampusArmorMixin use.
+        // forArmorGlint, the same fix LayerDragonArmorMixin / LayerHippocampusArmorMixin use.
         // Hippogryph armor reuses the body model at the SAME depth, so EntityGlintRender's wrapper
         // fanned the mount's body glint onto the armor (entity glint over armor glint) and the
         // EQUAL-depth body glint drew over the armor, leaving the bare body silhouette showing

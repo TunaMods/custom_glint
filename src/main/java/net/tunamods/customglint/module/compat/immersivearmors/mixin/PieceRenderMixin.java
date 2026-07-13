@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  * {@code renderParts} several times (stacked texture layers), each its own draw at its own depth.
  *
  * <p>We redirect that {@code renderToBuffer} so the glint fans into the SAME submission as the armor (same
- * pose, same vertices) via a {@code VertexMultiConsumer} — the EQUAL-depth glint therefore matches the
+ * pose, same vertices) via a {@code VertexMultiConsumer}, so the EQUAL-depth glint matches the
  * armor's depth exactly and never z-fights, unlike a separate re-render at {@code render} RETURN. The stack
  * + wearer + offset choice were recorded by {@code ArmorPieceMixin} at {@code render} HEAD, which brackets
  * this call. {@code EntityModel} is passed as its {@link Model} supertype (the redirect only needs

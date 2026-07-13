@@ -29,7 +29,7 @@ import java.util.List;
 /**
  * Standalone-only compat for Ice &amp; Fire Community Edition (and any iafenvoy mod using uranus's
  * armor system). IaF player armor (copper, deathworm, dragonsteel/dragonscale, sea-serpent, troll, …)
- * no longer renders through vanilla HumanoidArmorLayer — uranus's ArmorFeatureRendererMixin injects
+ * no longer renders through vanilla HumanoidArmorLayer: uranus's ArmorFeatureRendererMixin injects
  * at HEAD of {@code renderArmorPiece}, dispatches to
  * {@code com.iafenvoy.uranus.client.render.armor.IArmorRendererBase#render} (a default interface
  * method), then CANCELS the vanilla path. Because uranus cancels at HEAD, {@link HumanoidArmorLayerMixin}'s
@@ -37,7 +37,7 @@ import java.util.List;
  *
  * IaF's concrete renderers (BasicArmorRenderer / ScaleArmorRenderer) only implement
  * {@code getHumanoidArmorModel}; neither overrides {@code render}, so the interface default is the
- * single render path and the right injection target. We @Inject at its RETURN — by then uranus has
+ * single render path and the right injection target. We @Inject at its RETURN; by then uranus has
  * already drawn the base armor through {@code armorCutoutNoCull}, so we just overlay the glint,
  * reproducing HumanoidArmorLayerMixin's glint logic.
  *
@@ -67,7 +67,7 @@ public interface UranusArmorRendererMixin {
 
         // Glow outline: uranus cancels the vanilla HumanoidArmorLayer path, so the generic in-phase tee
         // never captures IaF player armor. Re-render the configured armorModel (per-slot visibility already
-        // applied) traced against the armor texture uranus draws — its getArmorTexture default is the raw
+        // applied) traced against the armor texture uranus draws. Its getArmorTexture default is the raw
         // material layer-0 texture (IaF's concrete renderers only override getHumanoidArmorModel). Keyed
         // CAT_ARMOR + the wearer's id so all pieces + the body compose as one ring.
         if (glow) {

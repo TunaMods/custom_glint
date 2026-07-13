@@ -27,7 +27,7 @@ import java.util.List;
  *
  * <p>GeckoLib armor draws with {@code RenderType.armorCutoutNoCull} (VIEW_OFFSET_Z_LAYERING), so the
  * worn-armor glint factories ({@code forArmorGlint} / {@code forChromaticArmorGlint}) match its depth
- * offset exactly — unlike Mekanism's NO_LAYERING special armor.
+ * offset exactly, unlike Mekanism's NO_LAYERING special armor.
  */
 public final class GeckoArmorGlint {
     private GeckoArmorGlint() {}
@@ -66,7 +66,7 @@ public final class GeckoArmorGlint {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    // Under a pack chromatic is captured for the post-Iris overlay (see flush) — not in-phase.
+                    // Under a pack chromatic is captured for the post-Iris overlay (see flush), not in-phase.
                     if (!CustomGlintRenderer.isShaderPackActive()) {
                         RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
                         if (crt != null) list.add(bufferSource.getBuffer(crt));

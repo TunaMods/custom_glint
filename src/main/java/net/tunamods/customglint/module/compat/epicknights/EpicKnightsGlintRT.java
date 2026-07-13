@@ -34,18 +34,18 @@ import java.util.Map;
  * Compat-local render pipeline for Epic Knights armor decorations.
  *
  * The naive approach (just render parts with a glint render type) fails because:
- * - EQUAL depth test is invisible — EK's decoration depth and our glint depth differ by an FP
+ * - EQUAL depth test is invisible: EK's decoration depth and our glint depth differ by an FP
  *   epsilon despite using the same VIEW_OFFSET_Z_LAYERING. The same EQUAL works fine on
  *   {@link CustomGlint#forArmorGlint} for vanilla armor, so it's something about EK's pipeline.
  * - LEQUAL depth + no mask renders the full cuboid bounding box of each decoration ModelPart,
- *   bleeding through the transparent regions of the decoration texture — looks "huge" because
+ *   bleeding through the transparent regions of the decoration texture; looks "huge" because
  *   the plume's cuboid is much larger than its visible feather shape.
  *
  * Solution: stencil pre-pass for the glint mask.
  * 1. Render parts with an outline-shader RT (alpha-discard, so it skips transparent texels).
  *    Stencil op REPLACE stamps the slot value only where the discard passes. Color/depth masks
  *    off so nothing visible is drawn.
- * 2. Render glint passes with stencil test EQUAL slot — glint only appears on opaque decoration
+ * 2. Render glint passes with stencil test EQUAL slot: glint only appears on opaque decoration
  *    texels. LEQUAL depth handles occlusion (other geometry in front of the decoration).
  *
  * Glow outlines are no longer drawn here; they come from the generic post-process silhouette.
@@ -61,7 +61,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     // Under Oculus's FullyBufferedMultiBufferSource, endBatch(rt) defers the actual draw to a
     // later graph-ordered flush. Any manual glStencilOp/glStencilFunc/glColorMask calls between
     // pass A's endBatch and pass B's endBatch execute immediately on the CPU but DON'T apply to
-    // the deferred draws — by the time the graph flushes A and B, GL state is whatever was set
+    // the deferred draws; by the time the graph flushes A and B, GL state is whatever was set
     // last. Result: stencil disabled, both glint and outline silently invisible.
     //
     // Fix: bake every stencil state change into the RT's layering shard (setupRenderState fires
@@ -76,7 +76,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      *  is baked into each RT's layering closure, so a fixed decoration spawns a distinct entry per slot
      *  it lands on across frames; design/colours/speed/scale are user-controllable on top of that.
      *  Without a cap these maps grow until resource reload, each entry pinning a native ByteBufferBuilder
-     *  in fixedBuffers — exactly what CustomGlintRenderer's RtCache (cap 256) already prevents for the
+     *  in fixedBuffers, exactly what CustomGlintRenderer's RtCache (cap 256) already prevents for the
      *  core caches. The cap sits well above the distinct (slot,config) draws possible in one frame, so
      *  the LRU never evicts an entry still needed in the current frame. */
     private static final int EK_CACHE_CAP = 512;
@@ -242,7 +242,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      *   overlay = textures/.../foo_overlay.png  (un-tinted detail)
      *
      * For most decorations the SHAPE lives in the base (plumes, surcoats); for crowns it's
-     * inverted — base holds only the 16 gem pixels, overlay holds the 96 band pixels. Stencil
+     * inverted: base holds only the 16 gem pixels, overlay holds the 96 band pixels. Stencil
      * write must therefore union both texture's opaque pixels so the glint mask covers the
      * complete decoration silhouette regardless of layout.
      *
@@ -267,31 +267,10 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     }
 
     /**
-     * Entry point. The decoration-glint masking mechanism depends only on whether a shader PACK is active:
-     * <ul>
-     *   <li><b>No active pack</b> (vanilla, or a shader mod installed but no pack loaded): the main target's
-     *       stencil buffer is usable, so the slot-based stencil-mask path runs.</li>
-     *   <li><b>Active pack</b>: FullyBuffered batching + the pack's own pipeline make stencil unreliable, so
-     *       the depth-prewrite self-mask path runs instead.</li>
-     * </ul>
-     * (The old shader-mod-installed-but-no-pack case had its own branch that just delegated to the no-pack
-     * path, so it's folded into the {@code else} here.)
-     *
-     * <p><b>Why this is the one glint branch on shader state.</b> Every other glint surface — items, armor,
-     * entities, mounts — is single-path and shader-agnostic. EK decorations are the exception, and it's
-     * deliberate, not leftover: the decoration mesh needs its glint clipped to its own silhouette, and the
-     * stencil-slot mask that does that cheaply gets torn apart under an active pack (FullyBuffered reorders
-     * the WRITE-then-test, so the EQUAL test reads a half-written stencil and the glint flickers hard).
-     * Verified by forcing the no-pack stencil path under a pack — it flickered severely. The depth-prewrite
-     * self-mask avoids stencil entirely, so it survives the pack. Keep both paths until decoration glint is
-     * reworked onto the single LEQUAL + texture-cutout mask the core armor glint uses (would drop this branch
-     * and the last {@code isShaderPackActive} glint check).
-     */
-    /**
      * Capture the decoration's glow-outline silhouette. EK decorations draw via {@code ModelPart.render} +
      * {@code getArmorFoilBuffer}, so the generic entity/armor outline tees never see them and a glowing
      * decoration got no ring. Trace the parts against the decoration texture (union with the sibling overlay,
-     * since dyeable decorations split their shape across base+overlay — crowns put the band in the overlay),
+     * since dyeable decorations split their shape across base+overlay; crowns put the band in the overlay),
      * keyed by the wearing ENTITY so the decoration ring merges with the body + base-armor ring.
      */
     public static void captureDecorationOutline(LivingEntity entity, PoseStack pose, int light,
@@ -306,6 +285,27 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         }
     }
 
+    /**
+     * Entry point. The decoration-glint masking mechanism depends only on whether a shader PACK is active:
+     * <ul>
+     *   <li><b>No active pack</b> (vanilla, or a shader mod installed but no pack loaded): the main target's
+     *       stencil buffer is usable, so the slot-based stencil-mask path runs.</li>
+     *   <li><b>Active pack</b>: FullyBuffered batching + the pack's own pipeline make stencil unreliable, so
+     *       the depth-prewrite self-mask path runs instead.</li>
+     * </ul>
+     * (The old shader-mod-installed-but-no-pack case had its own branch that just delegated to the no-pack
+     * path, so it's folded into the {@code else} here.)
+     *
+     * <p><b>Why this is the one glint branch on shader state.</b> Every other glint surface (items, armor,
+     * entities, mounts) is single-path and shader-agnostic. EK decorations are the exception, and it's
+     * deliberate, not leftover: the decoration mesh needs its glint clipped to its own silhouette, and the
+     * stencil-slot mask that does that cheaply gets torn apart under an active pack (FullyBuffered reorders
+     * the WRITE-then-test, so the EQUAL test reads a half-written stencil and the glint flickers hard).
+     * Verified by forcing the no-pack stencil path under a pack: it flickered severely. The depth-prewrite
+     * self-mask avoids stencil entirely, so it survives the pack. Keep both paths until decoration glint is
+     * reworked onto the single LEQUAL + texture-cutout mask the core armor glint uses (would drop this branch
+     * and the last {@code isShaderPackActive} glint check).
+     */
     public static void applyDecorationGlint(PoseStack pose, MultiBufferSource buffer, int light,
             int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
             boolean glowing, ItemStack stack) {
@@ -318,11 +318,11 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
 
     /**
      * SHADERS OFF path (Oculus loaded, no pack active). FullyBufferedMultiBufferSource defers
-     * endBatch(rt) draws to a later graph-ordered flush — manual glStencilXxx calls between
+     * endBatch(rt) draws to a later graph-ordered flush; manual glStencilXxx calls between
      * passes don't apply. Solution: bake all stencil state into per-slot RT layering shards.
      *
      * Each call allocates a unique stencil slot V. WRITE stamps V; GLINT tests EQUAL V (this
-     * decoration's own silhouette). Multiple decorations per frame use different slots — no
+     * decoration's own silhouette). Multiple decorations per frame use different slots, no
      * cross-contamination.
      *
      * The dependency graph adds edges based on bs.getBuffer() insertion order: calling WRITE→
@@ -342,7 +342,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         if (bs == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;
 
-        // Full pre-flush — drains EK's pending decoration verts and any other queued state so
+        // Full pre-flush: drains EK's pending decoration verts and any other queued state so
         // our slot-stamped writes don't compete with unflushed earlier work in the graph order.
         // A partial endBatch(rt) only flushes the lastState RT; under FullyBuffered we need a full
         // drain to avoid mid-frame state mixing.
@@ -407,14 +407,14 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             for (RenderType rt : glintRTs) bs.endBatch(rt);
         }
 
-        // The glow outline is no longer drawn here — outlines are the post-process silhouette
+        // The glow outline is no longer drawn here; outlines are the post-process silhouette
         // captured generically by RenderLayerMixin for EK decoration layers.
     }
 
     /**
      * SHADERS ON path. An active shader pack runs FullyBufferedMultiBufferSource with
      * TransparencyType-based RT reordering, so any stencil silhouette we stamp is overwritten /
-     * reordered by pack-injected passes before our glint test fires — the slot-based stencil
+     * reordered by pack-injected passes before our glint test fires; the slot-based stencil
      * path used in {@link #applyDecorationGlint_shadersOff} (which works because Oculus-no-pack
      * still preserves WRITE→TEST insertion edges) goes completely invisible here.
      *
@@ -423,7 +423,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      * projected depth, no polygon offset); {@link #forDecorationGlintShader} then tests EQUAL
      * against that depth so glint draws only at those exact texels. No stencil dependency.
      *
-     * The glow outline is no longer drawn here — outlines are the post-process silhouette
+     * The glow outline is no longer drawn here; outlines are the post-process silhouette
      * captured generically by RenderLayerMixin for EK decoration layers.
      */
     private static void applyDecorationGlint_shadersOn(PoseStack pose, MultiBufferSource buffer, int light,
@@ -431,14 +431,14 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             boolean glowing, ItemStack stack) {
         if (CustomGlintRenderer.isInShadowPass()) return;
 
-        // Sibling overlay union — dyeable decorations have shape split across base+overlay
+        // Sibling overlay union: dyeable decorations have shape split across base+overlay
         // (crowns: shape in overlay, base = gems only; surcoats: opposite). Compute once.
         ResourceLocation sibling = siblingTexture(decorationTexture);
 
         // ── Glint: depth-prewrite self-mask ─────────────────────────────────────────
         // forDecorationDepthPrewrite uses RENDERTYPE_OUTLINE_SHADER which alpha-discards at 0
         // in fragment code (independent of shader pack settings), writing depth ONLY at opaque
-        // texels — no polygon offset, raw projected depth. forDecorationGlintShader then tests
+        // texels, no polygon offset, raw projected depth. forDecorationGlintShader then tests
         // EQUAL against that raw depth (also no offset), so it draws only at the same opaque
         // texels. Self-mask without stencil. Both RTs are late-tagged so they flush after EK's
         // own decoration draw under FullyBuffered. Union over base + sibling so the prewrite
@@ -489,18 +489,18 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             }
         }
 
-        // The glow outline is no longer drawn here — outlines are the post-process silhouette
+        // The glow outline is no longer drawn here; outlines are the post-process silhouette
         // captured generically by RenderLayerMixin for EK decoration layers.
     }
 
     /**
      * Depth pre-pass RT for the shader-pack glint path. RENDERTYPE_OUTLINE_SHADER does its own
-     * alpha-discard (alpha == 0) in fragment code — independent of shader pack settings —
+     * alpha-discard (alpha == 0) in fragment code (independent of shader pack settings),
      * so depth gets written ONLY at opaque decoration texels. No polygon offset (raw projected
      * depth), so the subsequent EQUAL glint pass (also no offset) compares raw depths and
      * matches exactly: no FP epsilon mismatch with EK's polygon-offset depth.
      *
-     * Color write disabled — we only need this to land in the depth buffer. Tagged late so
+     * Color write disabled: we only need this to land in the depth buffer. Tagged late so
      * it flushes after EK's color/depth land (we want OUR depth to be the most recent value
      * at each opaque texel, so the glint EQUAL sees a value we control).
      */
@@ -517,7 +517,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setTextureState(new TextureStateShard(tex, false, false))
                             .setCullState(NO_CULL)
                             .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            // DEPTH_ONLY_WRITE writes only depth (no color).
+                            // DEPTH_WRITE: writes only depth, no color.
                             .setWriteMaskState(DEPTH_WRITE)
                             .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
                             .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
@@ -531,17 +531,17 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
 
     /**
      * Shader-pack-only glint RT: EQUAL depth + VIEW_OFFSET_Z_LAYERING (matches EK's
-     * armorCutoutNoCull polygon offset exactly). Self-masks to opaque decoration texels —
+     * armorCutoutNoCull polygon offset exactly). Self-masks to opaque decoration texels:
      * EK's armorCutoutNoCull discards transparent fragments (alpha &lt; 0.1), so depth is
      * written ONLY where the decoration has visible pixels. EQUAL passes only at those
      * exact texels, transparent regions don't draw → glint follows the decoration shape
      * without needing a stencil mask.
      *
-     * Why we can't just switch {@link #forDecorationGlint} to EQUAL: that RT is used by the
+     * Why we can't just switch {@link #forDecorationGlintSlot} to EQUAL: that RT is used by the
      * no-shaders and shaders-off paths which rely on its LEQUAL behavior with stencil masking
      * for cases where the depth-match approach was historically observed to fail (FP epsilon,
      * documented in this file's javadoc). Under shader packs we don't have a stencil option,
-     * so depth-self-mask is the only path — and empirically it works here.
+     * so depth-self-mask is the only path, and empirically it works here.
      *
      * Tagged for shader-pack late render (LINES bucket) so this flushes AFTER EK's decoration
      * depth lands. Otherwise FullyBuffered ordering could schedule the glint first and EQUAL
@@ -579,7 +579,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setWriteMaskState(COLOR_WRITE)
                             .setCullState(NO_CULL)
                             .setDepthTestState(EQUAL_DEPTH_TEST)
-                            // No layering — match the depth pre-pass which uses no polygon
+                            // No layering: match the depth pre-pass which uses no polygon
                             // offset, so EQUAL compares raw projected depths and matches.
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard("customglint:ek_decoration_glint_sh_texturing", () -> {

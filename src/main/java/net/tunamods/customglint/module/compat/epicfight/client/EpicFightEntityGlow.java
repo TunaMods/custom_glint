@@ -18,8 +18,8 @@ import java.util.Map;
 /**
  * Client-only helper for the Epic Fight entity compat. Epic Fight cancels vanilla
  * {@code LivingEntityRenderer.render} through {@code RenderLivingEvent.Pre} and draws its own skinned mesh
- * in {@code PatchedLivingEntityRenderer.render}, so our core {@code LivingEntityRendererMixin} — the
- * in-phase body tee that feeds the glow silhouette — never fires for patched entities. The outline just
+ * in {@code PatchedLivingEntityRenderer.render}, so our core {@code LivingEntityRendererMixin} (the
+ * in-phase body tee that feeds the glow silhouette) never fires for patched entities. The outline just
  * vanishes.
  *
  * <p>{@link net.tunamods.customglint.module.compat.epicfight.mixin.PatchedLivingEntityRendererMixin} wraps
@@ -28,7 +28,7 @@ import java.util.Map;
  *
  * <p>1. Strip the core QUADS {@code GlintWrappingBufferSource} (installed on vanilla render before Epic
  * Fight cancels it) and re-install a TRIANGLES-mode glint fan-out via
- * {@link EntityGlintRender#rewrapTriangles} — a QUADS glint RT fed a triangle stream shatters into facets.
+ * {@link EntityGlintRender#rewrapTriangles}: a QUADS glint RT fed a triangle stream shatters into facets.
  *
  * <p>2. When the entity glows, tee every triangle-mode {@code entity_*} mesh draw into a record-only buffer
  * ({@link CaptureSource}); at RETURN the accumulated silhouettes are queued via
@@ -93,7 +93,7 @@ public final class EpicFightEntityGlow {
         public VertexConsumer getBuffer(RenderType rt) {
             VertexConsumer base = delegate.getBuffer(rt);
             // The held item routes through entity_* RTs too (ItemInHandLayer). It has its own per-item glint /
-            // glow via ItemRendererMixin — don't fold it into the entity's body ring.
+            // glow via ItemRendererMixin; don't fold it into the entity's body ring.
             if (CustomGlintRenderer.CURRENT_ITEM_STACK.get() != null) return base;
             if (!isTriangleEntityRt(rt)) return base;
             if (GlowOutlineRenderer.resolveRenderTypeTexture(rt) == null) return base;

@@ -15,10 +15,10 @@ import java.lang.invoke.MethodType;
  * still THIRD_PERSON_*, which distorted that outline's shader-pack sprite push. The outline was
  * since rebuilt as the post-process {@link net.tunamods.customglint.common.client.GlowOutlineRenderer},
  * which has no shader-pack sprite branch and skips first-person capture today, so there is nothing
- * to correct — {@link FirstPersonClientCompat#wireRenderer()} is a no-op. The reflective
+ * to correct and {@link FirstPersonClientCompat#wireRenderer()} is a no-op. The reflective
  * {@code isRenderingPlayer} handle is kept for when the deferred first-person hand milestone needs it.
  *
- * Reflective binding (no compileOnly dep on FPM) — silently no-ops when FPM is absent.
+ * Reflective binding (no compileOnly dep on FPM); silently no-ops when FPM is absent.
  */
 public final class FirstPersonCompat {
     private FirstPersonCompat() {}

@@ -17,13 +17,13 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  * Standalone-only compat for Ice &amp; Fire Community Edition's Tide Trident. Its renderer (a uranus
  * {@code DynamicItemRenderer}) draws the GUI / FIXED / GROUND / NONE forms by spawning a FRESH
  * {@code tide_trident_inventory} {@link ItemStack} and re-rendering THAT through
- * {@code ItemRenderer.renderStatic} — it only copies the enchantments across, so the new stack lacks the
+ * {@code ItemRenderer.renderStatic}: it only copies the enchantments across, so the new stack lacks the
  * {@code customglint} tag and the flat icon drew with no glint (while the 3D held form, drawn from the
  * original stack, glinted fine).
  *
  * <p>Fix: {@link Redirect} that {@code renderStatic} call and copy the original stack's glint Data onto the
  * inventory stack first, so {@code ItemRendererMixin}'s getFoilBuffer hook fans the glint onto the flat
- * icon. Glow is unaffected — it's captured from the original stack by the generic special-BEWLR path.
+ * icon. Glow is unaffected; it's captured from the original stack by the generic special-BEWLR path.
  */
 @Pseudo
 @Mixin(targets = "com.iafenvoy.iceandfire.render.item.TideTridentItemRenderer", remap = false)

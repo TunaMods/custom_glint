@@ -43,13 +43,13 @@ import java.util.List;
  * base part unchanged, then run the glint and the outline against THAT part's texture
  * ({@code CG_TEX}, side-channelled from the {@code entityCutoutNoCull} redirect that fires
  * immediately before each part draw). The body shares the dragon model, so an EQUAL-depth glint
- * would cover every face — instead the glint uses {@link CustomGlintRenderer#forArmorGlint},
+ * would cover every face; instead the glint uses {@link CustomGlintRenderer#forArmorGlint},
  * which masks to each part's armor texture cutout via EQUAL depth against the armorCutoutNoCull
  * base draw (no stencil). The glow outline is teed here per part: CE's DragonArmorFeatureRenderer
  * renders outside any vanilla layer, so the generic in-phase tee never reaches it and we capture the
  * silhouette explicitly.
  *
- * <p>Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET — first stack with a custom glint
+ * <p>Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET; first stack with a custom glint
  * wins, resolved once at HEAD and reused for every part (the per-part texture mask is what keeps
  * each part's glint to its own armor).
  */
@@ -117,7 +117,7 @@ public class LayerDragonArmorMixin {
         // Draw the base armor part through the UNWRAPPED buffer, and with armorCutoutNoCull instead
         // of CE's entityCutoutNoCull. Two reasons, both tied to the dragon being glinted:
         //   (1) The wrapper auto-glints entity_* RTs, so the entityCutoutNoCull consumer CE handed us
-        //       already carried the dragon's BODY glint — drawing the armor through it stamped the
+        //       already carried the dragon's BODY glint, so drawing the armor through it stamped the
         //       body glint onto the armor.
         //   (2) The dragon armor reuses the dragon's OWN model/geometry, so armor and body sit at the
         //       SAME depth; the body glint (EQUAL depth) then draws over the armor wherever the body

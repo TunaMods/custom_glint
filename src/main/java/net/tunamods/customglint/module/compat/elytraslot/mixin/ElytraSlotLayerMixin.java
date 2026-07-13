@@ -29,7 +29,7 @@ import java.util.List;
 /**
  * Standalone-only ElytraSlot compat. ElytraSlot adds a dedicated Curios slot (id {@code elytra},
  * or sometimes {@code back} when its compatibility provider routes through Curios' back slot)
- * and renders the equipped elytra via its own {@code ElytraSlotLayer} — vanilla's
+ * and renders the equipped elytra via its own {@code ElytraSlotLayer}. Vanilla's
  * {@code ElytraLayer} (which our {@code ElytraLayerMixin} hooks) only checks the chestplate
  * slot, so the glint never fires for Curios-slot elytras.
  *
@@ -38,8 +38,8 @@ import java.util.List;
  * {@code translate(0, 0, 0.125)} → {@code copyPropertiesTo} → {@code setupAnim} →
  * {@code renderToBuffer} → {@code popPose}. At TAIL the pose is restored, so we re-apply the same
  * (0, 0, 0.125) offset before drawing our glint / outline. The {@code elytraModel} field still
- * holds the setupAnim state from the prior call (model rotations aren't pose state) — no need
- * to re-run setupAnim.
+ * holds the setupAnim state from the prior call (model rotations aren't pose state), so there's no
+ * need to re-run setupAnim.
  *
  * {@code ElytraRenderResult} is referenced only via {@code @Coerce Object} + reflection so this
  * compat class has zero compile/runtime dep on ElytraSlot. Same soft-compat pattern as our other

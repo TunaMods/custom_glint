@@ -23,7 +23,7 @@ import java.util.List;
  * suit (a vanilla {@code ArmorItem}) is the only piece that glints on its own.
  *
  * <p>Every one of those models ultimately obtains its draw buffer from
- * {@code ItemRenderer.getFoilBufferDirect} — the MekaSuit's baked quads call it directly, the Java-model
+ * {@code ItemRenderer.getFoilBufferDirect}: the MekaSuit's baked quads call it directly, the Java-model
  * pieces via {@code MekanismJavaModel.getVertexConsumer} (which always routes through it). {@link
  * net.tunamods.customglint.module.compat.mekanism.mixin.MekanismArmorGlintMixin} arms this glue for the
  * span of one {@code ICustomArmor.render} (so only Mekanism special armor is touched, never vanilla
@@ -77,7 +77,7 @@ public final class MekanismArmorGlint {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    // Under a pack chromatic is captured for the post-Iris overlay (see flush) — not in-phase.
+                    // Under a pack chromatic is captured for the post-Iris overlay (see flush), not in-phase.
                     // NO_LAYERING variant off-pack: Mekanism's armor RenderTypes set no polygon offset.
                     if (!CustomGlintRenderer.isShaderPackActive()) {
                         RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
@@ -124,7 +124,7 @@ public final class MekanismArmorGlint {
     /** Queue every recorded silhouette from this piece as one glow ring (wearer + CAT_ARMOR, so it folds
      *  into the body ring) and disarm. Called at {@code ICustomArmor.render} RETURN. The captured vertices
      *  are camera-relative (the pose is baked in), so the world drain replays them under the world matrices
-     *  exactly like the vanilla armor tee — no model-view matrix is threaded through. */
+     *  exactly like the vanilla armor tee, with no model-view matrix threaded through. */
     public static void flush() {
         List<Pending> pending = PENDING.get();
         LivingEntity entity = CURRENT_ENTITY.get();

@@ -18,8 +18,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Standalone-only compat: Epic Knights renders armor attachments (plumes, surcoats, crowns)
- * via {@code ArmorDecorationLayer} which calls {@code ItemRenderer.getArmorFoilBuffer} directly
- * — so {@code HumanoidArmorLayerMixin} never fires for them. The base armor already has glint
+ * via {@code ArmorDecorationLayer} which calls {@code ItemRenderer.getArmorFoilBuffer} directly,
+ * so {@code HumanoidArmorLayerMixin} never fires for them. The base armor already has glint
  * applied by the core mixin; this fills in each decoration piece.
  *
  * Captures the ItemStack on the slot in {@code renderPiece} via ThreadLocal so the per-decoration
@@ -44,10 +44,10 @@ public class ArmorDecorationLayerMixin {
      * calls per iteration: a colored base (the IIIZ int-color overload) + an overlay (the IIZ
      * no-color overload, which delegates to IIIZ). Both bottom out in the IIIZ draw and fire our
      * RETURN inject. The second call's stencil pre-pass clears the buffer and writes against the
-     * overlay texture, which is mostly transparent — clobbering the glint we just drew on the base.
+     * overlay texture, which is mostly transparent, clobbering the glint we just drew on the base.
      * Skip when the same parts array fires twice back-to-back.
      *
-     * 1.21 note: EK's renderDecoration lost its old (float r, g, b) tint overload — color is now a
+     * 1.21 note: EK's renderDecoration lost its old (float r, g, b) tint overload; color is now a
      * single packed int, matching the vanilla renderToBuffer change. Inject the IIIZ overload (the
      * one that actually draws via getArmorFoilBuffer); the IIZ overload delegates into it. The old
      * FFFZ descriptor matched nothing and silently no-opped, so decorations got no glint/glow.

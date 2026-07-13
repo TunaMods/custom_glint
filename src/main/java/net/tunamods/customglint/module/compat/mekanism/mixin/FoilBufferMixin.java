@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Wraps {@code ItemRenderer.getFoilBufferDirect} at RETURN so a Mekanism special armor's mesh also feeds
- * our glint render types. The wrap only fires while {@link MekanismArmorGlint#isArmed()} — i.e. inside an
- * {@code ICustomArmor.render}, armed by {@code MekanismArmorGlintMixin} — so vanilla and every other
+ * our glint render types. The wrap only fires while {@link MekanismArmorGlint#isArmed()} (inside an
+ * {@code ICustomArmor.render}, armed by {@code MekanismArmorGlintMixin}), so vanilla and every other
  * caller of this method are untouched.
  *
  * <p>Our core {@code ItemRendererMixin} also hooks this method at HEAD for held-item glint; during Mekanism

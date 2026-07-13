@@ -35,7 +35,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>{@code actuallyRender} is spelled out with its full descriptor to bind the real overload (the type
  * bound {@code T extends Item & GeoItem} erases the animatable param to {@link net.minecraft.world.item.Item},
  * GeckoLib's bound) rather than the {@code GeoAnimatable} bridge. GeckoLib 4.9's {@code actuallyRender}
- * takes a packed-int render colour (trailing {@code III}) — the four-float tail from the 4.x line is gone.
+ * takes a packed-int render colour (trailing {@code III}); the four-float tail from the 4.x line is gone.
  * {@code remap = false}: names and Minecraft-typed descriptors match dev + prod.
  */
 @Pseudo
@@ -43,7 +43,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class GeoArmorRendererMixin {
 
     // GeckoLib 4.9's InternalUtil (the vanilla HumanoidArmorLayer hook) drives the 10-arg prepForRender
-    // overload — the bare 4-arg overload the 4.x line called still exists but is never invoked for worn
+    // overload; the bare 4-arg overload the 4.x line called still exists but is never invoked for worn
     // armor now. We bind the 10-arg one and capture only the leading four params (Mixin permits omitting
     // trailing args at HEAD).
     private static final String PREP_FOR_RENDER =

@@ -12,8 +12,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Wraps {@code ItemRenderer.getFoilBuffer} at RETURN so a worn artifact's mesh also feeds our glint
- * render types. The wrap only fires while {@link ArtifactGlint#isArmed()} — i.e. inside an
- * {@code ArtifactRenderer.render}, armed by {@code ArtifactGlintMixin} — so vanilla and every other
+ * render types. The wrap only fires while {@link ArtifactGlint#isArmed()} (inside an
+ * {@code ArtifactRenderer.render}, armed by {@code ArtifactGlintMixin}), so vanilla and every other
  * caller of this method are untouched.
  *
  * <p>Our core {@code ItemRendererMixin} also hooks this method at HEAD for held-item glint; during artifact
