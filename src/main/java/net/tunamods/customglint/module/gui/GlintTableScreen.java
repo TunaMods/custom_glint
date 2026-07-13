@@ -2809,11 +2809,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         pose.popMatrix();
     }
 
-    /** The tear slot matching the toggled mode (its tear is the one previewed / consumed). */
-    private int activeTearSlot() {
-        return tearSimultaneous ? GlintTableMenu.SLOT_TEAR : GlintTableMenu.SLOT_TEAR_SEQ;
-    }
-
     /** Center-x of the shared tear toggle: the midpoint between the two side-by-side tear slots. */
     private int tearToggleCx() {
         return (leftPos + menu.slots.get(GlintTableMenu.SLOT_TEAR).x + 8
