@@ -1,5 +1,6 @@
 package net.tunamods.customglint.module.network;
 
+import io.netty.handler.codec.DecoderException;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.network.NetworkEvent;
@@ -25,15 +26,13 @@ public class GlintDesignSyncPacket {
         }
     }
 
-    /** Generous upper bound on design names on the wire — guards a malformed/hostile server from driving a
-     *  negative-capacity allocation or an unbounded read loop. The real list is the builtin set plus data-pack
-     *  additions, far under this. */
+    /** Sanity cap on the wire count; the real list (builtins + data-pack designs) is far smaller. */
     private static final int MAX_DESIGNS = 65536;
 
     public static GlintDesignSyncPacket decode(FriendlyByteBuf buf) {
         int count = buf.readVarInt();
         if (count < 0 || count > MAX_DESIGNS)
-            throw new io.netty.handler.codec.DecoderException("Bad design count: " + count);
+            throw new DecoderException("Bad design count: " + count);
         List<String> designs = new ArrayList<>(Math.min(count, 256));
         for (int i = 0; i < count; i++) {
             designs.add(buf.readUtf());

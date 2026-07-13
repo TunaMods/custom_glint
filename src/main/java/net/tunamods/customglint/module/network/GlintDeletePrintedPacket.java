@@ -29,10 +29,6 @@ public class GlintDeletePrintedPacket {
     }
 
     public static void handle(GlintDeletePrintedPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) m.deletePrinted(pkt.index);
-        });
-        ctx.get().setPacketHandled(true);
+        NetHandlers.withTableMenu(ctx, (sp, m) -> m.deletePrinted(pkt.index));
     }
 }

@@ -13,7 +13,7 @@ import java.util.function.Supplier;
  * import but only ops can delete; they are distinct from the player's personal client-side blueprints (which
  * live in the client's own config dir and never round-trip through the server). Sent as name → raw JSON so the
  * client reuses the same parser it uses for local files. The integrated (single-player) server never sends
- * this — there the client's local scan already covers the same directory.
+ * this - there the client's local scan already covers the same directory.
  */
 public class GlintServerBlueprintsSyncPacket {
 
@@ -32,9 +32,10 @@ public class GlintServerBlueprintsSyncPacket {
     }
 
     public static GlintServerBlueprintsSyncPacket decode(FriendlyByteBuf buf) {
-        int count = buf.readVarInt();
+        // Cap the wire count; shared pool is bounded at 1024, so 4096 is ample headroom.
+        int count = Math.max(0, Math.min(buf.readVarInt(), 4096));
         Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 0; i < Math.max(0, Math.min(count, 4096)); i++) {
+        for (int i = 0; i < count; i++) {
             String name = buf.readUtf();
             String json = buf.readUtf();
             map.put(name, json);

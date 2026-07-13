@@ -14,7 +14,7 @@ import java.util.function.Supplier;
 /**
  * C→S: the wand editor's "Save Design" saves the current build to the server's shared blueprint pool
  * ({@link ServerBlueprints}), the same store the Glint Table and {@code /glint export} use. Anyone holding
- * the wand may save — the wand itself is the gate, so there is no op check (matching the delete path). The
+ * the wand may save - the wand itself is the gate, so there is no op check (matching the delete path). The
  * server validates the JSON (well-formed object with a non-empty {@code layers} array, within size/count
  * caps), writes it under a unique filename, and re-syncs the pool so the sender's Import list updates.
  */
@@ -41,9 +41,7 @@ public class GlintWandSaveBlueprintPacket {
     }
 
     public static void handle(GlintWandSaveBlueprintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp == null) return;
+        NetHandlers.withSender(ctx, sp -> {
             if (pkt.json == null || pkt.json.length() > MAX_JSON) return;
             if (ServerBlueprints.count() >= ServerBlueprints.MAX_BLUEPRINTS) return;
             // Validate + normalize the (untrusted) JSON: only a well-formed object carrying at least one
@@ -60,6 +58,5 @@ public class GlintWandSaveBlueprintPacket {
             ServerBlueprints.saveUnique(pkt.baseName, clean);
             ServerBlueprints.syncTo(sp);
         });
-        ctx.get().setPacketHandled(true);
     }
 }

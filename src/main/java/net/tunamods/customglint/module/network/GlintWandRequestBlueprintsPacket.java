@@ -21,10 +21,6 @@ public class GlintWandRequestBlueprintsPacket {
     }
 
     public static void handle(GlintWandRequestBlueprintsPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null) ServerBlueprints.syncTo(sp);
-        });
-        ctx.get().setPacketHandled(true);
+        NetHandlers.withSender(ctx, ServerBlueprints::syncTo);
     }
 }

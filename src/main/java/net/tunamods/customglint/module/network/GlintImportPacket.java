@@ -34,28 +34,22 @@ public class GlintImportPacket {
     public static void encode(GlintImportPacket pkt, FriendlyByteBuf buf) {
         GlintApplyPacket.writeLayers(buf, pkt.layers);
         buf.writeBoolean(pkt.glowing);
-        buf.writeVarInt(pkt.glowColors.length);
-        for (int c : pkt.glowColors) buf.writeInt(c);
+        GlintApplyPacket.writeColors(buf, pkt.glowColors);
         buf.writeUtf(pkt.name);
         buf.writeInt(pkt.nameColor);
     }
 
     public static GlintImportPacket decode(FriendlyByteBuf buf) {
-        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
+        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, CustomGlint.MAX_LAYERS);
         boolean glowing = buf.readBoolean();
-        int[] glowColors = GlintApplyPacket.readCappedColors(buf, 8);
+        int[] glowColors = GlintApplyPacket.readCappedColors(buf, CustomGlint.MAX_COLORS_PER_LAYER);
         String name = buf.readUtf();
         int nameColor = buf.readInt();
         return new GlintImportPacket(layers, glowing, glowColors, name, nameColor);
     }
 
     public static void handle(GlintImportPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) {
-                m.importTrim(pkt.layers, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor);
-            }
-        });
-        ctx.get().setPacketHandled(true);
+        NetHandlers.withTableMenu(ctx, (sp, m) ->
+                m.importTrim(pkt.layers, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor));
     }
 }

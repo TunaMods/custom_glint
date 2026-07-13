@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 /**
  * S→C: pushes an IaF mount's current armor ItemStack (slot 2 of its internal SimpleContainer)
  * to clients so they can read its CustomGlint NBT for rendering. IaF doesn't sync the stack
- * itself — only the armor-tier int — so we sync it here. Broadcast on inventory change
+ * itself - only the armor-tier int - so we sync it here. Broadcast on inventory change
  * (refreshInventory mixins) and on player-start-tracking (IceAndFireCompat listener).
  */
 public class GlintMountArmorSyncPacket {

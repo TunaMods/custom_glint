@@ -9,7 +9,7 @@ import java.util.function.Supplier;
 
 /**
  * C→S: the wand editor's Import trash icon deletes a shared blueprint from the server's pool
- * ({@link ServerBlueprints}). No op check — the wand is the gate (matching the save path). The server
+ * ({@link ServerBlueprints}). No op check - the wand is the gate (matching the save path). The server
  * removes the file and re-syncs so the sender's Import list updates.
  */
 public class GlintWandDeleteBlueprintPacket {
@@ -29,12 +29,9 @@ public class GlintWandDeleteBlueprintPacket {
     }
 
     public static void handle(GlintWandDeleteBlueprintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp == null) return;
+        NetHandlers.withSender(ctx, sp -> {
             ServerBlueprints.delete(pkt.name);
             ServerBlueprints.syncTo(sp);
         });
-        ctx.get().setPacketHandled(true);
     }
 }

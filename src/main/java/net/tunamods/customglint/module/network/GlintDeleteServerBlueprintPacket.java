@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 /**
  * C→S: an operator asked to delete one of the server's shared blueprint trims from the Glint Table's Import
  * list. The server verifies op permission, removes the matching {@code config/customglint/trims/<name>.json},
- * and re-syncs the shared list. Personal client blueprints never use this path — the client deletes those
+ * and re-syncs the shared list. Personal client blueprints never use this path - the client deletes those
  * from its own config dir directly.
  */
 public class GlintDeleteServerBlueprintPacket {
@@ -30,10 +30,6 @@ public class GlintDeleteServerBlueprintPacket {
     }
 
     public static void handle(GlintDeleteServerBlueprintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) m.deleteServerBlueprint(sp, pkt.name);
-        });
-        ctx.get().setPacketHandled(true);
+        NetHandlers.withTableMenu(ctx, (sp, m) -> m.deleteServerBlueprint(sp, pkt.name));
     }
 }
