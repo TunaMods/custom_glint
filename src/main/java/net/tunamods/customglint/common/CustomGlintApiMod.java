@@ -20,7 +20,7 @@ public class CustomGlintApiMod {
         // Renderer-touching init (BEWLR outline textures, resource reload listener for the texture
         // cache) happens only on the client. Method-handle target lives in a separate class
         // (CustomGlintClientInit) so the JVM never resolves CustomGlintRenderer on a dedicated
-        // server — DistExecutor.safeRunWhenOn only invokes the supplier on the matching dist.
+        // server - DistExecutor.safeRunWhenOn only invokes the supplier on the matching dist.
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> CustomGlintClientInit::run);
 
         // API-owned network channel + per-instance entity glint sync. Lives here (not in the
@@ -30,7 +30,7 @@ public class CustomGlintApiMod {
         MinecraftForge.EVENT_BUS.register(EntityGlintEvents.class);
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> EntityGlintClientInit::run);
 
-        // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
+        // Server-safe event listeners - only touch NBT/data registries on CustomGlint.
         MinecraftForge.EVENT_BUS.addListener(this::onCraft);
         MinecraftForge.EVENT_BUS.addListener(this::onFish);
         MinecraftForge.EVENT_BUS.addListener(this::onMobDrop);

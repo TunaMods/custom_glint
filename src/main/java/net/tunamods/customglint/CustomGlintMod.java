@@ -39,10 +39,26 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.common.capabilities.ForgeCapabilities;
+import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
+import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.ItemHandlerHelper;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.tunamods.customglint.module.block.ModBlocks;
+import net.tunamods.customglint.module.block.ModBlockEntities;
+import net.tunamods.customglint.module.menu.ModMenuTypes;
+import net.tunamods.customglint.module.item.GlintBagItem;
+import net.tunamods.customglint.module.compat.geckolib.GeckoLibArmorCompat;
+import net.tunamods.customglint.module.compat.immersivearmors.ImmersiveArmorsCompat;
+import net.tunamods.customglint.module.compat.mekanism.MekanismArmorCompat;
+import net.tunamods.customglint.module.compat.artifacts.ArtifactsCompat;
 
 /**
  * Full standalone mod entry. Registry content (items, creative tab, recipes, loot modifiers, blocks, block
- * entities, menus) lives in the {@code Mod*} holder classes under the matching module packages — see
+ * entities, menus) lives in the {@code Mod*} holder classes under the matching module packages - see
  * {@link ModItems}, {@link ModCreativeTabs}, {@link ModRecipes}, {@link ModLootModifiers}, etc. This class
  * only wires their {@code register(bus)} hooks and owns the data-pack design reload/sync.
  */
@@ -62,25 +78,25 @@ public class CustomGlintMod {
         ModCreativeTabs.register(modEventBus);
         ModLootModifiers.register(modEventBus);
         ModRecipes.register(modEventBus);
-        net.tunamods.customglint.module.block.ModBlocks.register(modEventBus);
-        net.tunamods.customglint.module.block.ModBlockEntities.register(modEventBus);
-        net.tunamods.customglint.module.menu.ModMenuTypes.register(modEventBus);
+        ModBlocks.register(modEventBus);
+        ModBlockEntities.register(modEventBus);
+        ModMenuTypes.register(modEventBus);
 
         // Client-only: bind the Glint Table menu to its screen. Class-loaded on the client only.
-        net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
                 () -> () -> net.tunamods.customglint.module.client.GlintTableClientInit.register(modEventBus));
 
         ModNetworking.register();
         IceAndFireCompat.register();
         FirstPersonCompat.register();
         EpicKnightsCompat.register();
-        net.tunamods.customglint.module.compat.geckolib.GeckoLibArmorCompat.register();
-        net.tunamods.customglint.module.compat.immersivearmors.ImmersiveArmorsCompat.register();
-        net.tunamods.customglint.module.compat.mekanism.MekanismArmorCompat.register();
-        net.tunamods.customglint.module.compat.artifacts.ArtifactsCompat.register();
+        GeckoLibArmorCompat.register();
+        ImmersiveArmorsCompat.register();
+        MekanismArmorCompat.register();
+        ArtifactsCompat.register();
 
         // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
-        // registered by CustomGlintApiMod — the api jar ships with the full jar via jarJar, so
+        // registered by CustomGlintApiMod - the api jar ships with the full jar via jarJar, so
         // those registrations always happen exactly once regardless of which jar a player has.
 
         MinecraftForge.EVENT_BUS.register(this);
@@ -94,28 +110,28 @@ public class CustomGlintMod {
     /** Route Glint loot items straight into a Glint Bag the player is carrying, so a looting run doesn't fill
      *  the main inventory. Anything the bags can't hold (full, or a bag is absent) falls through to vanilla
      *  pickup. */
-    private void onItemPickup(net.minecraftforge.event.entity.player.EntityItemPickupEvent event) {
+    private void onItemPickup(EntityItemPickupEvent event) {
         Player player = event.getEntity();
         if (player.level().isClientSide) return;
-        net.minecraft.world.entity.item.ItemEntity itemEntity = event.getItem();
+        ItemEntity itemEntity = event.getItem();
         ItemStack picked = itemEntity.getItem();
-        if (picked.isEmpty() || !net.tunamods.customglint.module.item.GlintBagItem.isAutoCollectable(picked)) return;
+        if (picked.isEmpty() || !GlintBagItem.isAutoCollectable(picked)) return;
 
         int before = picked.getCount();
         ItemStack remaining = picked;
-        net.minecraft.world.entity.player.Inventory inv = player.getInventory();
+        Inventory inv = player.getInventory();
         for (int i = 0; i < inv.getContainerSize() && !remaining.isEmpty(); i++) {
             ItemStack bag = inv.getItem(i);
-            if (!(bag.getItem() instanceof net.tunamods.customglint.module.item.GlintBagItem)) continue;
-            if (!net.tunamods.customglint.module.item.GlintBagItem.isAutoCollect(bag)) continue;
-            net.minecraftforge.items.IItemHandler handler =
-                    bag.getCapability(net.minecraftforge.common.capabilities.ForgeCapabilities.ITEM_HANDLER).orElse(null);
+            if (!(bag.getItem() instanceof GlintBagItem)) continue;
+            if (!GlintBagItem.isAutoCollect(bag)) continue;
+            IItemHandler handler =
+                    bag.getCapability(ForgeCapabilities.ITEM_HANDLER).orElse(null);
             if (handler == null) continue;
-            remaining = net.minecraftforge.items.ItemHandlerHelper.insertItemStacked(handler, remaining, false);
+            remaining = ItemHandlerHelper.insertItemStacked(handler, remaining, false);
         }
 
         int inserted = before - remaining.getCount();
-        if (inserted <= 0) return; // no bag / no room — let vanilla handle it
+        if (inserted <= 0) return; // no bag / no room - let vanilla handle it
 
         player.take(itemEntity, inserted); // pickup animation + sound for the portion the bag took
         if (remaining.isEmpty()) {
@@ -137,8 +153,8 @@ public class CustomGlintMod {
     private void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         // A crafted Glint Bag gets the same Golden glow trim its creative/JEI icon shows.
-        if (event.getCrafting().getItem() instanceof net.tunamods.customglint.module.item.GlintBagItem) {
-            net.tunamods.customglint.module.item.GlintBagItem.applyGoldenGlint(event.getCrafting());
+        if (event.getCrafting().getItem() instanceof GlintBagItem) {
+            GlintBagItem.applyGoldenGlint(event.getCrafting());
             return;
         }
         if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;

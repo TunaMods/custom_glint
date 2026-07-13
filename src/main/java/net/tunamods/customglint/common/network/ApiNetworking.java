@@ -10,7 +10,7 @@ import java.util.Optional;
 
 /**
  * API-owned network channel. Lives in {@code common/} so the channel and its packets ship in the
- * api jar — mods that depend only on {@code customglint_api} (via jarJar) still get
+ * api jar - mods that depend only on {@code customglint_api} (via jarJar) still get
  * per-instance entity glint sync without needing the full standalone jar in the mods folder.
  *
  * Distinct from the full jar's {@code customglint:main} channel so the two protocols version
@@ -29,7 +29,7 @@ public final class ApiNetworking {
     );
 
     public static void register() {
-        // 0 — GlintEntitySyncPacket  S→C  per-instance entity glint NBT for LivingEntities
+        // 0 - GlintEntitySyncPacket  S→C  per-instance entity glint NBT for LivingEntities
         CHANNEL.registerMessage(0, GlintEntitySyncPacket.class,
                 GlintEntitySyncPacket::encode, GlintEntitySyncPacket::decode, GlintEntitySyncPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));

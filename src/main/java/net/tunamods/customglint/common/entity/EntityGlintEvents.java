@@ -19,7 +19,7 @@ import net.tunamods.customglint.common.network.GlintEntitySyncPacket;
  *  - {@link #broadcast(LivingEntity)}: invoked after any server-side mutation; sends to all
  *    players tracking the entity.
  *
- * Server-safe — no client classes referenced.
+ * Server-safe - no client classes referenced.
  */
 public final class EntityGlintEvents {
     private EntityGlintEvents() {}
