@@ -121,9 +121,10 @@ public class CustomGlintMod {
         }
 
         int inserted = before - remaining.getCount();
-        if (inserted <= 0) return; // no bag / no room — let vanilla handle it
+        if (inserted <= 0) return; // no bag / no room; let vanilla handle it
 
         // Play the pickup pop for the portion the bag absorbed; the vanilla pickup path is denied below.
+        // Volume/pitch match vanilla Player.take so a bag pickup sounds identical to a normal one.
         player.take(itemEntity, inserted);
         player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.2f,
@@ -133,7 +134,7 @@ public class CustomGlintMod {
         } else {
             itemEntity.setItem(remaining); // vanilla picks up whatever the bags couldn't hold, next tick
         }
-        event.setCanPickup(TriState.FALSE); // we've handled this touch — don't also add to the main inventory
+        event.setCanPickup(TriState.FALSE); // we've handled this touch, so don't also add to the main inventory
     }
 
     /** Award the 8-color trim advancement when a color-adding craft (dye / merge recipe) yields a full
