@@ -6,6 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
@@ -30,6 +31,9 @@ public class GlintTrimLootModifier extends LootModifier {
     protected GlintTrimLootModifier(LootItemCondition[] conditions, int priority) {
         super(conditions, priority);
     }
+
+    /** Triples a pattern's base weight when the drop happens in its themed biome group. */
+    private static final float BIOME_MATCH_BONUS = 3.0f;
 
     private static final Map<String, Float> PATTERN_WEIGHTS = buildWeights();
 
@@ -105,10 +109,8 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private String selectPattern(LootContext context) {
-        // Weight pattern selection by the biome the chest sits in. ORIGIN is optional in the loot context;
-        // getParameter throws if it's absent, so guard and fall back to a neutral biome weighting. (Chest
-        // tables supply ORIGIN today, but a datapack/mod routing another table through the chests/ path
-        // namespace might not.)
+        // Weight pattern selection by the biome the chest sits in. ORIGIN is optional in the loot context
+        // and getParameter throws if it's absent, so guard and fall back to plains weighting.
         String biomeName = "plains";
         if (context.hasParameter(LootContextParams.ORIGIN)) {
             var origin = context.getParameter(LootContextParams.ORIGIN);
@@ -118,15 +120,15 @@ public class GlintTrimLootModifier extends LootModifier {
                 .orElse("plains");
         }
 
-        float netherBonus = isNetherBiome(biomeName) ? 3.0f : 1.0f;
-        float endBonus = isEndBiome(biomeName) ? 3.0f : 1.0f;
-        float oceanBonus = isOceanBiome(biomeName) ? 3.0f : 1.0f;
-        float desertBonus = isDesertBiome(biomeName) ? 3.0f : 1.0f;
-        float forestBonus = isForestBiome(biomeName) ? 3.0f : 1.0f;
-        float mountainBonus = isMountainBiome(biomeName) ? 3.0f : 1.0f;
-        float snowBonus = isSnowBiome(biomeName) ? 3.0f : 1.0f;
-        float swampBonus = isSwampBiome(biomeName) ? 3.0f : 1.0f;
-        float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? 3.0f : 1.0f;
+        float netherBonus = isNetherBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float endBonus = isEndBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float oceanBonus = isOceanBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float desertBonus = isDesertBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float forestBonus = isForestBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float mountainBonus = isMountainBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float snowBonus = isSnowBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float swampBonus = isSwampBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+        float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
 
         // Pre-compute each pattern's biome-adjusted weight, then do a single weighted pick over them.
         List<String> patterns = GlintTrimItem.PATTERNS;
@@ -175,7 +177,7 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private static boolean isOceanBiome(String biome) {
-        return biome.contains("ocean") || biome.contains("deep_ocean") || biome.contains("warm_ocean") || biome.contains("frozen_ocean") || biome.contains("cold_ocean") || biome.contains("lukewarm_ocean");
+        return biome.contains("ocean");
     }
 
     private static boolean isDesertBiome(String biome) {
@@ -183,7 +185,7 @@ public class GlintTrimLootModifier extends LootModifier {
     }
 
     private static boolean isForestBiome(String biome) {
-        return biome.contains("forest") || biome.contains("jungle") || biome.contains("dark_forest") || biome.contains("birch") || biome.contains("bamboo");
+        return biome.contains("forest") || biome.contains("jungle") || biome.contains("birch") || biome.contains("bamboo");
     }
 
     private static boolean isMountainBiome(String biome) {
@@ -211,7 +213,7 @@ public class GlintTrimLootModifier extends LootModifier {
         if (tableId == null || !tableId.getPath().startsWith("chests/")) return generatedLoot;
 
         // Trims: cascading rolls (22% for 1st, 12% for 2nd, 8% for 3rd). Safe to cascade now that loot trims
-        // are always blank — same design/type stacks, so extra rolls don't clutter the inventory.
+        // are always blank, so same design/type stacks and extra rolls don't clutter the inventory.
         int trimCount = 0;
         if (context.getRandom().nextFloat() < 0.22f) trimCount++;
         if (trimCount > 0 && context.getRandom().nextFloat() < 0.12f) trimCount++;
@@ -232,48 +234,25 @@ public class GlintTrimLootModifier extends LootModifier {
 
         // Tears and rainbow dye stack to 64 and get consumed in bulk, so they keep the cascading rolls: 20% for
         // 1st, 10% for 2nd, 5% for 3rd. Each tear type rolls independently.
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
-            }
-        }
-        if (context.getRandom().nextFloat() < 0.20f) {
-            generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-            if (context.getRandom().nextFloat() < 0.10f) {
-                generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-                if (context.getRandom().nextFloat() < 0.05f)
-                    generatedLoot.add(ModItems.RAINBOW_DYE.get().getDefaultInstance());
-            }
-        }
+        rollTearCascade(context, ModItems.GLINT_TEAR_SIMULTANEOUS.get(), generatedLoot);
+        rollTearCascade(context, ModItems.GLINT_TEAR_SEQUENTIAL.get(), generatedLoot);
+        rollTearCascade(context, ModItems.GLINT_LAYER_TEAR.get(), generatedLoot);
+        rollTearCascade(context, ModItems.GLINT_BLACK_TEAR.get(), generatedLoot);
+        rollTearCascade(context, ModItems.RAINBOW_DYE.get(), generatedLoot);
 
         return generatedLoot;
+    }
+
+    /** One item's cascading drop roll: 20% for the 1st, then 10% for a 2nd, then 5% for a 3rd. */
+    private static void rollTearCascade(LootContext context, Item item, List<ItemStack> loot) {
+        if (context.getRandom().nextFloat() < 0.20f) {
+            loot.add(item.getDefaultInstance());
+            if (context.getRandom().nextFloat() < 0.10f) {
+                loot.add(item.getDefaultInstance());
+                if (context.getRandom().nextFloat() < 0.05f)
+                    loot.add(item.getDefaultInstance());
+            }
+        }
     }
 
     @Override
