@@ -576,11 +576,24 @@ public final class CustomGlint {
     }
 
     // ── Auto-apply registries ─────────────────────────────────────────────────
+    //
+    // Craft / fishing / mob-drop / loot all map an Item to a single-layer Data and apply it on the
+    // matching event. They differ only in which event feeds them, so the storage and apply logic is
+    // shared here; the public registerXGlint / applyXGlint names stay as thin per-source wrappers.
+
+    private static void putGlint(Map<Item, Data> registry, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        registry.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+    }
+
+    private static void applyGlint(Map<Item, Data> registry, ItemStack stack) {
+        Data data = registry.get(stack.getItem());
+        if (data != null) write(stack, data.layers());
+    }
 
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(CRAFT_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerCraftGlint(Item item, ResourceLocation design, int[] colors) {
@@ -588,15 +601,13 @@ public final class CustomGlint {
     }
 
     public static void applyCraftGlint(ItemStack stack) {
-        Data data = CRAFT_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(CRAFT_GLINTS, stack);
     }
 
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
     public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(FISHING_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerFishingGlint(Item item, ResourceLocation design, int[] colors) {
@@ -604,15 +615,13 @@ public final class CustomGlint {
     }
 
     public static void applyFishingGlint(ItemStack stack) {
-        Data data = FISHING_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(FISHING_GLINTS, stack);
     }
 
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(MOB_DROP_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerMobDropGlint(Item item, ResourceLocation design, int[] colors) {
@@ -620,9 +629,7 @@ public final class CustomGlint {
     }
 
     public static void applyMobDropGlint(ItemStack stack) {
-        Data data = MOB_DROP_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(MOB_DROP_GLINTS, stack);
     }
 
     // ── Entity glint API ──────────────────────────────────────────────────────
@@ -782,7 +789,7 @@ public final class CustomGlint {
     public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
 
     public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+        putGlint(LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()), item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
