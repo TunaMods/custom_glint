@@ -32,12 +32,9 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
  * and the auto-apply registries live here. The rendering pipeline lives in
  * {@code net.tunamods.customglint.common.client.CustomGlintRenderer} (referenced by name, not imported:
  * it is client-only, and a real symbol reference from this server-reachable class would
- * {@code ClassNotFoundException} on a dedicated server), which references this class for
- * {@link Layer}/{@link Data} types and state access.
- *
- * Split was required because the previous unified class extended {@code RenderStateShard} (a
- * client-only base class) and imported {@code Minecraft}/{@code RenderType}/etc., so any
- * server-reachable reference triggered {@code ClassNotFoundException} on dedicated servers.
+ * {@code ClassNotFoundException} on a dedicated server). The split exists because the old unified
+ * class extended {@code RenderStateShard} and imported {@code Minecraft}/{@code RenderType}, which
+ * crashed dedicated servers.
  */
 public final class CustomGlint {
 
@@ -54,6 +51,13 @@ public final class CustomGlint {
     /** Max colors a single layer may carry. Enforced at every input boundary (wand editor, packets, NBT
      *  decode via {@link Layer#CODEC}); the renderer cycles through them, so more would never display. */
     public static final int MAX_COLORS_PER_LAYER = 8;
+
+    /** Codec for a color/glow-color array, capped at {@link #MAX_COLORS_PER_LAYER} at every decode. The
+     *  explicit primitive round-trip is required: {@code List<Integer>::toArray} yields {@code Object[]},
+     *  not {@code int[]}. Shared by {@link Layer#CODEC} (colors) and {@link GlintState#MAP_CODEC} (glowColors). */
+    private static final Codec<int[]> COLOR_ARRAY_CODEC = Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
+            list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
+            arr -> Arrays.stream(arr).boxed().toList());
 
     /** Most-translucent glint alpha (at the 8th glass); 0 glass = fully opaque (255). Shared so the Glint
      *  Table's opacity↔alpha↔glass mapping matches on both the client (preview/cost) and the server (print). */
@@ -84,12 +88,7 @@ public final class CustomGlint {
 
         public static final Codec<Layer> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Identifier.CODEC.fieldOf("design").forGetter(Layer::design),
-                // 8-color cap, same as every other input path (item NBT, wand editor, print/apply/give
-                // packets); sizeLimitedListOf rejects an oversized list at decode.
-                Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
-                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
-                        arr -> Arrays.stream(arr).boxed().toList()
-                ).fieldOf("colors").forGetter(Layer::colors),
+                COLOR_ARRAY_CODEC.fieldOf("colors").forGetter(Layer::colors),
                 Codec.FLOAT.optionalFieldOf("speed", 1.0f).forGetter(Layer::speed),
                 Codec.BOOL.optionalFieldOf("interpolate", true).forGetter(Layer::interpolate),
                 Codec.FLOAT.optionalFieldOf("scale", 1.0f).forGetter(Layer::patternScale),
@@ -119,7 +118,7 @@ public final class CustomGlint {
     // ── Data ─────────────────────────────────────────────────────────────────
 
     public record Data(Layer[] layers) {
-        /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous}, … ] }}.
+        /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous, scroll, offset, seed}, … ] }}.
          *  Glow state (glowing / glowColors) is stored as sibling keys in the same tag,
          *  outside this codec. */
         public static final Codec<Data> CODEC = Layer.CODEC.listOf().xmap(
@@ -153,11 +152,7 @@ public final class CustomGlint {
         public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Data.CODEC.optionalFieldOf("glint").forGetter(s -> Optional.ofNullable(s.data())),
                 Codec.BOOL.optionalFieldOf("glowing", false).forGetter(GlintState::glowing),
-                // Same 8-color cap as Layer.colors above; rejects an oversized glow-color list at decode.
-                Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
-                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
-                        arr -> Arrays.stream(arr).boxed().toList()
-                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
+                COLOR_ARRAY_CODEC.optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
                 // Glow-outline animation speed + interpolation, kept alongside the glow colors. Default 1.0 /
                 // true so any pre-existing item decodes to the vanilla cycle (they're absent from its tag).
                 Codec.FLOAT.optionalFieldOf("glowSpeed", 1.0f).forGetter(GlintState::glowSpeed),
@@ -344,12 +339,10 @@ public final class CustomGlint {
     }
 
     // ── Item glint storage ────────────────────────────────────────────────────
-    // All field names ("layers"/"glint"/"glowing"/"glowColors"/…) live in the codecs
-    // (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants any more.
-
-    // Item glint state is a typed GlintState data component (see GLINT), no more CompoundTag in
-    // CUSTOM_DATA. These accessors keep their old signatures so callers (recipes, GUI, packets, the
-    // trim items, the renderer) are unaffected by the storage change.
+    // Item glint state is a typed GlintState data component (see GLINT); field names live in the
+    // codecs (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC), no loose NBT keys. These accessors
+    // keep their old signatures so callers (recipes, GUI, packets, trim items, renderer) are
+    // unaffected by the storage change.
 
     private static GlintState itemState(ItemStack stack) {
         if (stack.isEmpty()) return GlintState.EMPTY;

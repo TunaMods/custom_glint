@@ -24,7 +24,7 @@ public class CustomGlintApiMod {
         // Renderer-touching init (resource reload listener for the texture cache, the CLIENT rendering
         // config + screen, render-state modifiers) happens only on the client. The client classes are
         // referenced solely inside the dist guard, so the JVM never resolves CustomGlintRenderer or the
-        // config screen on a dedicated server, the guarded branch only runs on the matching dist.
+        // config screen on a dedicated server.
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             CustomGlintClientInit.run(modEventBus, modContainer);
         }
