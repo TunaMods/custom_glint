@@ -61,6 +61,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
         CustomGlint.Data d1 = CustomGlint.read(glint1);
         CustomGlint.Data d2 = CustomGlint.read(glint2);
         if (d1 == null || d2 == null) return ItemStack.EMPTY;
+        // Cap at 8 layers (the wand editor's layer strip and the eight-layer advancement both stop here);
+        // this is the layer count, not the per-layer color cap.
         int total = Math.min(d1.layers().length + d2.layers().length, 8);
         CustomGlint.Layer[] combined = new CustomGlint.Layer[total];
         int fromD1 = Math.min(d1.layers().length, total);

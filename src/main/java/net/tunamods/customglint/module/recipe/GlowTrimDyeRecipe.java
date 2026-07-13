@@ -1,5 +1,6 @@
 package net.tunamods.customglint.module.recipe;
 
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.minecraft.core.component.DataComponents;
@@ -14,7 +15,8 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.Level;
 
-/** Glow Trim + Dye → Glow Trim with one more color appended (cap 8). Mirrors GlintTrimDyeRecipe. */
+/** Glow Trim + Dye → Glow Trim with one more color appended (cap 8). Glow counterpart of
+ *  GlintTrimDyeRecipe, which replaces the color instead of appending. */
 public class GlowTrimDyeRecipe extends CustomRecipe {
     private static final GlowTrimDyeRecipe INSTANCE = new GlowTrimDyeRecipe();
     public static final MapCodec<GlowTrimDyeRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
@@ -43,7 +45,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlowTrimItem.getColors(trim).length < 8;
+                && GlowTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override
