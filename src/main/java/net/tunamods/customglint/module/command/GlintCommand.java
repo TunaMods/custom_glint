@@ -300,12 +300,17 @@ public class GlintCommand {
             CustomGlint.setEntityGlowing(le, glowing);
             count++;
         }
+        return reportEntityResult(source, count, "No matching living entities", "Glint applied to");
+    }
+
+    /** Report a per-entity command result: failure text on a zero count, else a success line with the
+     *  pluralized "entit(y|ies)" suffix. Returns count so callers can {@code return} it as the command result. */
+    private static int reportEntityResult(CommandSourceStack source, int count, String failMsg, String successPrefix) {
         if (count == 0) {
-            source.sendFailure(Component.literal("No matching living entities"));
+            source.sendFailure(Component.literal(failMsg));
             return 0;
         }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal("Glint applied to " + n + " entit" + (n == 1 ? "y" : "ies")), false);
+        source.sendSuccess(() -> Component.literal(successPrefix + " " + count + " entit" + (count == 1 ? "y" : "ies")), false);
         return count;
     }
 
@@ -317,13 +322,7 @@ public class GlintCommand {
             CustomGlint.removeEntity(le);
             count++;
         }
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching living entities had a glint"));
-            return 0;
-        }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal("Glint removed from " + n + " entit" + (n == 1 ? "y" : "ies")), false);
-        return count;
+        return reportEntityResult(source, count, "No matching living entities had a glint", "Glint removed from");
     }
 
     private static int glowEntity(CommandSourceStack source, Collection<? extends Entity> targets, boolean enabled) {
@@ -335,13 +334,8 @@ public class GlintCommand {
             CustomGlint.setEntityGlowing(le, enabled);
             count++;
         }
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching living entities"));
-            return 0;
-        }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal((enabled ? "Glowing enabled on " : "Glowing disabled on ") + n + " entit" + (n == 1 ? "y" : "ies")), false);
-        return count;
+        return reportEntityResult(source, count, "No matching living entities",
+                enabled ? "Glowing enabled on" : "Glowing disabled on");
     }
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
@@ -374,18 +368,24 @@ public class GlintCommand {
         return 1;
     }
 
-    private static int glow(CommandSourceStack source, boolean enabled) {
+    /** The source's main-hand stack, or null after sending the failure (not a player, or empty hand). */
+    private static ItemStack requireHeldStack(CommandSourceStack source) {
         ServerPlayer player = source.getPlayer();
         if (player == null) {
             source.sendFailure(Component.literal("Must be a player"));
-            return 0;
+            return null;
         }
-
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty()) {
             source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
+            return null;
         }
+        return stack;
+    }
+
+    private static int glow(CommandSourceStack source, boolean enabled) {
+        ItemStack stack = requireHeldStack(source);
+        if (stack == null) return 0;
 
         // Glow is independent of the glint: an item can carry a glowing outline with no custom glint at all.
         CustomGlint.setGlowing(stack, enabled);
@@ -394,17 +394,8 @@ public class GlintCommand {
     }
 
     private static int remove(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
-
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldStack(source);
+        if (stack == null) return 0;
 
         if (!CustomGlint.has(stack)) {
             source.sendFailure(Component.literal("Item has no custom glint"));
@@ -445,17 +436,9 @@ public class GlintCommand {
     }
 
     private static int extract(CommandSourceStack source) {
+        ItemStack held = requireHeldStack(source);
+        if (held == null) return 0;
         ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
-
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
@@ -492,6 +475,7 @@ public class GlintCommand {
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
+            // +1000 selects the glowing model variant; the model JSON keys glowing designs at index+1000.
             if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(
                     List.of((float) ((glowing ? 1000 : 0) + idx + 1)),
                     List.of(), List.of(), List.of()));
@@ -503,17 +487,8 @@ public class GlintCommand {
     }
 
     private static int export(CommandSourceStack source, String name) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
-
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack held = requireHeldStack(source);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
