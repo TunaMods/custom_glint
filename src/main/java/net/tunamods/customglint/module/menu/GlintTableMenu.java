@@ -415,6 +415,10 @@ public class GlintTableMenu extends AbstractContainerMenu {
         aboveLayers = sanitizeLayers(aboveLayers);
 
         int extraLayers = belowLayers.length + aboveLayers.length;
+        // The active layer counts as one, so the extras can't push the total past MAX_LAYERS. The editor never
+        // sends more, but a crafted GlintPrintPacket could - and CustomGlint.write has no cap, so the surplus
+        // would bloat the trim NBT (broadcast to every tracking client) and burn layer tears for no effect.
+        if (extraLayers > CustomGlint.MAX_LAYERS - 1) return;
         if (extraLayers > 0) {
             if (container.getItem(SLOT_LAYER_TEAR).getCount() < extraLayers) return;
             for (CustomGlint.Layer l : belowLayers) if (!ownsDesign(sp, l.design())) return;
