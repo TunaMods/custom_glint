@@ -79,9 +79,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     private static ResourceLocation designRL(String name) {
-        // Delegate to the canonical resolver so special sentinels (vanilla, chromatic) map correctly. The old
-        // local copy handled "vanilla" but not "chromatic", so it turned the chromatic design into a bogus
-        // textures/glint/chromatic.png — isChromatic() then failed and no glint drew on the preview/applied item.
+        // Canonical resolver so the vanilla/chromatic sentinels map correctly (a local copy would miss them).
         return CustomGlint.designFromName(name);
     }
 
@@ -95,7 +93,7 @@ public class GlintEditorScreen extends Screen {
 
     // Item display names resolve a Component + format a String; the picker draws them every frame for every
     // visible row and the filter walks them on each search. Items are registry singletons, so the resolved
-    // name is stable — cache it. Icon ItemStacks are cached the same way to skip the per-row allocation.
+    // name is stable - cache it. Icon ItemStacks are cached the same way to skip the per-row allocation.
     private static final Map<Item, String> ITEM_NAME_CACHE = new IdentityHashMap<>();
     private static final Map<Item, ItemStack> ITEM_ICON_CACHE = new IdentityHashMap<>();
 
@@ -298,41 +296,24 @@ public class GlintEditorScreen extends Screen {
         } catch (NumberFormatException ignored) {}
     }
 
-    private void onRChanged(String s) {
+    /** Parse and clamp one 0-255 channel box, apply it, and refresh. syncHex re-derives the hex field from
+     *  R/G/B; alpha skips it since it isn't part of the hex. */
+    private void onChannelChanged(String s, IntConsumer setChannel, boolean syncHex) {
         try {
             int v = Integer.parseInt(s);
             int c = Math.max(0, Math.min(255, v));
-            editR = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
+            setChannel.accept(c);
+            saveEditRGB();
+            if (syncHex) syncHexFromRGB();
+            refreshPreview();
             if (c != v) syncChannelBoxes();
         } catch (NumberFormatException ignored) {}
     }
 
-    private void onGChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editG = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
-
-    private void onBChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editB = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
-
-    private void onAChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editA = c; saveEditRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
+    private void onRChanged(String s) { onChannelChanged(s, c -> editR = c, true); }
+    private void onGChanged(String s) { onChannelChanged(s, c -> editG = c, true); }
+    private void onBChanged(String s) { onChannelChanged(s, c -> editB = c, true); }
+    private void onAChanged(String s) { onChannelChanged(s, c -> editA = c, false); }
 
     // ── Preview ──────────────────────────────────────────────────────────────
 
@@ -505,7 +486,7 @@ public class GlintEditorScreen extends Screen {
         // Add color [+]
         tip(bevel(px + 100 + currentColors().size() * 18 + 16, py + 50, 14, 14, () -> "+", () -> {
             List<Integer> colors = currentColors();
-            if (colors.size() < 8) {
+            if (colors.size() < CustomGlint.MAX_COLORS_PER_LAYER) {
                 colors.add(0xFF8844EE);
                 editingColorIdx = colors.size() - 1;
                 loadEditRGB();
@@ -577,7 +558,7 @@ public class GlintEditorScreen extends Screen {
                 () -> { layerSimultaneous.set(selectedLayer, !layerSimultaneous.get(selectedLayer)); refreshPreview(); }),
                 "screen.customglint.glint_editor.tip.type");
 
-        // Scroll direction — cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
+        // Scroll direction - cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
         // stepper appears/disappears with the mode.
         int sd = layerScrollDirs.get(selectedLayer);
         tip(bevel(px + 100, py + 202, 90, 14,
@@ -587,7 +568,7 @@ public class GlintEditorScreen extends Screen {
                 sd == CustomGlint.SCROLL_STATIC ? "screen.customglint.glint_editor.tip.scroll_static"
                                                 : "screen.customglint.glint_editor.tip.scroll");
 
-        // Static UV offset stepper — only shown (and only meaningful) when the layer is STATIC.
+        // Static UV offset stepper - only shown (and only meaningful) when the layer is STATIC.
         if (sd == CustomGlint.SCROLL_STATIC) {
             tip(bevel(px + 196, py + 202, 14, 14, () -> "−", () -> {
                 layerScrollOffsets.set(selectedLayer, Math.max(0.0f, Math.round((layerScrollOffsets.get(selectedLayer) - 0.05f) * 20) / 20.0f));
@@ -748,7 +729,7 @@ public class GlintEditorScreen extends Screen {
 
             // Add glow color [+]
             bevel(px + 100 + glowOverrideColors.size() * 18 + 16, py + 234, 14, 14, () -> "+", () -> {
-                if (glowOverrideColors.size() < 8) {
+                if (glowOverrideColors.size() < CustomGlint.MAX_COLORS_PER_LAYER) {
                     glowOverrideColors.add(0xFFFFFFFF);
                     editingGlowColorIdx = glowOverrideColors.size() - 1;
                     editingGlowColor = true;
@@ -762,7 +743,7 @@ public class GlintEditorScreen extends Screen {
 
         // Item picker search box, managed manually. Same preserve-across-init handling as the design box.
         // Re-seed the value with the responder detached so restoring the query across an init()/rebuild does
-        // NOT fire pickerScroll = 0 — only real typing resets the scroll, so reopening keeps your position.
+        // NOT fire pickerScroll = 0 - only real typing resets the scroll, so reopening keeps your position.
         String prevItemQuery = searchBox != null ? searchBox.getValue() : "";
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
         searchBox.setMaxLength(40);
@@ -793,7 +774,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     /** Open the Import list: scan the player's personal trims off disk, ask the server for the current shared
-     *  blueprint pool (the reply arrives a tick later — {@link #renderImportPicker} rebuilds when it lands),
+     *  blueprint pool (the reply arrives a tick later - {@link #renderImportPicker} rebuilds when it lands),
      *  then build the merged list from whatever is already synced. */
     private void scanGlintConfigs() {
         ModNetworking.CHANNEL.sendToServer(new GlintWandRequestBlueprintsPacket());
@@ -810,12 +791,12 @@ public class GlintEditorScreen extends Screen {
                 }
             }
         } catch (Exception e) {
-            // Silently fail if config dir doesn't exist
+            // No readable config dir (missing, or an IO error listing it): show no local designs.
         }
         rebuildImportList();
     }
 
-    /** Rebuild the Import list from both sources — personal local trims and the synced server pool — then
+    /** Rebuild the Import list from both sources - personal local trims and the synced server pool - then
      *  re-apply the search filter. Case-insensitive sort; personal entries win a name collision (see
      *  {@link #localGlints}). */
     private void rebuildImportList() {
@@ -873,7 +854,7 @@ public class GlintEditorScreen extends Screen {
 
             if (obj.has("layers")) {
                 JsonArray layers = obj.getAsJsonArray("layers");
-                for (int i = 0; i < Math.min(layers.size(), 8); i++) {
+                for (int i = 0; i < Math.min(layers.size(), CustomGlint.MAX_LAYERS); i++) {
                     JsonObject layer = layers.get(i).getAsJsonObject();
                     // Skip a malformed layer rather than NPEing the whole import: design/colors are mandatory.
                     if (!layer.has("design") || !layer.has("colors")) continue;
@@ -882,7 +863,7 @@ public class GlintEditorScreen extends Screen {
 
                     List<Integer> colors = new ArrayList<>();
                     for (JsonElement e : layer.getAsJsonArray("colors")) {
-                        if (colors.size() >= 8) break; // enforce the 8-color-per-layer cap every other path uses
+                        if (colors.size() >= CustomGlint.MAX_COLORS_PER_LAYER) break; // same per-layer color cap as every other path
                         String colorStr = e.getAsString();
                         colors.add((int) Long.parseLong(colorStr.replace("0x", ""), 16));
                     }
@@ -931,7 +912,7 @@ public class GlintEditorScreen extends Screen {
             glowOverrideColors.clear();
             if (obj.has("glowColors")) {
                 for (JsonElement e : obj.getAsJsonArray("glowColors")) {
-                    if (glowOverrideColors.size() >= 8) break; // mirror the 8-color glow cap
+                    if (glowOverrideColors.size() >= CustomGlint.MAX_COLORS_PER_LAYER) break; // mirror the per-layer color cap for glow
                     glowOverrideColors.add((int) Long.parseLong(e.getAsString().replace("0x", ""), 16));
                 }
             }
@@ -963,11 +944,11 @@ public class GlintEditorScreen extends Screen {
             showImportPicker = false;
             syncWandState();
         } catch (Exception e) {
-            // Silently fail
+            // Malformed blueprint JSON: leave the editor state unchanged.
         }
     }
 
-    // ── Text helpers (flat, no drop shadow — crisp on light skins) ─────────────
+    // ── Text helpers (flat, no drop shadow - crisp on light skins) ─────────────
 
     private void label(GuiGraphics g, Component c, int x, int y, int color) {
         g.drawString(this.font, c.getString(), x, y, 0xFF000000 | color, false);
@@ -1057,19 +1038,11 @@ public class GlintEditorScreen extends Screen {
 
     // ── Speed / scale stepping (0.10×..8.0×) ────────────────────────────────────
 
-    private static float stepUp(float v) {
-        float nv = v < 1.0f ? v + 0.10f : v + 0.5f;
-        return Math.min(8.0f, Math.round(nv * 100f) / 100f);
-    }
+    private static float stepUp(float v) { return GlintGuiWidgets.stepUp(v); }
 
-    private static float stepDown(float v) {
-        float nv = v <= 1.0f ? v - 0.10f : v - 0.5f;
-        return Math.max(0.10f, Math.round(nv * 100f) / 100f);
-    }
+    private static float stepDown(float v) { return GlintGuiWidgets.stepDown(v); }
 
-    private static String fmtVal(float v) {
-        return v == Math.rint(v) ? String.valueOf((int) v) : String.format("%.2f", v).replaceAll("0+$", "");
-    }
+    private static String fmtVal(float v) { return GlintGuiWidgets.fmtVal(v); }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1077,7 +1050,7 @@ public class GlintEditorScreen extends Screen {
     public void render(GuiGraphics g, int mx, int my, float dt) {
         renderBackground(g);
 
-        // Skinned panel background — frame, divider and preview recess are baked into the skin PNG.
+        // Skinned panel background - frame, divider and preview recess are baked into the skin PNG.
         skin.windowPanel(g, px, py, PANEL_W, PANEL_H);
 
         // Left labels
@@ -1132,7 +1105,7 @@ public class GlintEditorScreen extends Screen {
             pose.translate(bx + PREVIEW_SZ / 2f, by + PREVIEW_SZ / 2f, 200);
             // Flat items stay at 5x (unchanged). 3D BEWLR items (the troll weapons etc.) shrink to 4.4x so the
             // few px of margin inside the 80px recess lets their glow ring show instead of being clipped at the
-            // box edge — flat items don't need it (their ring already clips to the rect the same as before).
+            // box edge - flat items don't need it (their ring already clips to the rect the same as before).
             boolean preview3d = this.minecraft != null && this.minecraft.getItemRenderer()
                     .getModel(previewStack, this.minecraft.level, this.minecraft.player, 0).isCustomRenderer();
             float previewScale = preview3d ? 4.4f : 5.0f;
@@ -1206,7 +1179,7 @@ public class GlintEditorScreen extends Screen {
                 if (!lines.isEmpty()) { g.renderComponentTooltip(font, lines, mx, my); shown = true; break; }
             }
             // The add-layer "+" tab is hand-drawn, not a widget, so tooltip it here.
-            if (!shown && layerDesigns.size() < 8) {
+            if (!shown && layerDesigns.size() < CustomGlint.MAX_LAYERS) {
                 int plusX = px + 100 + layerDesigns.size() * 22, plusY = py + 6;
                 if (mx >= plusX - 1 && mx < plusX + 21 && my >= plusY - 1 && my < plusY + 15)
                     g.renderTooltip(font, Component.translatable("screen.customglint.glint_editor.tip.add_layer"), mx, my);
@@ -1240,14 +1213,8 @@ public class GlintEditorScreen extends Screen {
             label(g, d, ox + 4, ry + 3, 0xDDDDDD);
         }
 
-        if (filteredDesigns.size() > DESIGN_ROWS) {
-            int trackH = DESIGN_ROWS * DESIGN_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * DESIGN_ROWS / filteredDesigns.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) designScroll
-                    / (filteredDesigns.size() - DESIGN_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-        }
+        if (filteredDesigns.size() > DESIGN_ROWS)
+            drawPickerScrollbar(g, sbX, listY, DESIGN_ROWS, DESIGN_ROW_H, filteredDesigns.size(), designScroll, 8);
     }
 
     private void renderImportPicker(GuiGraphics g, int mx, int my, float dt) {
@@ -1289,24 +1256,12 @@ public class GlintEditorScreen extends Screen {
             }
         }
 
-        if (availableGlints.size() > IMPORT_ROWS) {
-            int trackH = IMPORT_ROWS * IMPORT_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * IMPORT_ROWS / availableGlints.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) importScroll
-                    / (availableGlints.size() - IMPORT_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-        }
+        if (availableGlints.size() > IMPORT_ROWS)
+            drawPickerScrollbar(g, sbX, listY, IMPORT_ROWS, IMPORT_ROW_H, availableGlints.size(), importScroll, 8);
     }
 
-    /** Tiny 7×8 trash-can glyph drawn with fills (the font has no trash glyph). Origin = top-left. */
     private void drawTrashIcon(GuiGraphics g, int x, int y, int color) {
-        g.fill(x + 2, y, x + 5, y + 1, color);          // handle nub
-        g.fill(x, y + 1, x + 7, y + 2, color);          // lid
-        g.fill(x + 1, y + 3, x + 6, y + 8, color);      // can body
-        int slot = 0xEE111111;                          // stripes cut back to the panel colour
-        g.fill(x + 2, y + 4, x + 3, y + 7, slot);
-        g.fill(x + 4, y + 4, x + 5, y + 7, slot);
+        GlintGuiWidgets.drawTrashIcon(g, x, y, color);
     }
 
     private void filterGlints(String query) {
@@ -1347,14 +1302,8 @@ public class GlintEditorScreen extends Screen {
             label(g, font.plainSubstrByWidth(itemName(item), OW - 30), ox + 20, ry + 5, 0xDDDDDD);
         }
 
-        if (filteredItems.size() > VISIBLE_ROWS) {
-            int trackH = VISIBLE_ROWS * ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(10, trackH * VISIBLE_ROWS / filteredItems.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) pickerScroll
-                    / (filteredItems.size() - VISIBLE_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-        }
+        if (filteredItems.size() > VISIBLE_ROWS)
+            drawPickerScrollbar(g, sbX, listY, VISIBLE_ROWS, ROW_H, filteredItems.size(), pickerScroll, 10);
     }
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -1475,7 +1424,7 @@ public class GlintEditorScreen extends Screen {
                     return true;
                 }
             }
-            if (layerDesigns.size() < 8) {
+            if (layerDesigns.size() < CustomGlint.MAX_LAYERS) {
                 int plusX = px + 100 + layerDesigns.size() * 22;
                 if (mx >= plusX && mx < plusX + 20) {
                     addLayerCopy();
@@ -1548,6 +1497,16 @@ public class GlintEditorScreen extends Screen {
         selectedLayer = layerDesigns.size() - 1;
         editingColorIdx = 0;
         loadEditRGB();
+    }
+
+    /** Draws a picker's vertical scrollbar: dark track plus a lighter thumb sized to the visible fraction and
+     *  positioned by {@code scroll}. Shared by the design / import / item lists. */
+    private void drawPickerScrollbar(GuiGraphics g, int sbX, int listY, int rows, int rowH, int count, int scroll, int minThumb) {
+        int trackH = rows * rowH;
+        g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+        int thumbH = Math.max(minThumb, trackH * rows / count);
+        int thumbY = listY + (int) ((trackH - thumbH) * (float) scroll / (count - rows));
+        g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
     }
 
     /** Maps a mouse Y over a picker scrollbar track to a scroll index (thumb-centered on the cursor). */

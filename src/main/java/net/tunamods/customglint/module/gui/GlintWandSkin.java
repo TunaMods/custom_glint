@@ -14,12 +14,8 @@ import java.util.Locale;
  * skin by appending it to {@link #ALL} with its palette and a matching {@code glint_wand_<name>.png}; the
  * in-window button cycles them and the choice persists.
  */
-class GlintWandSkin {
+class GlintWandSkin extends SkinBase {
 
-    final String name;
-
-    // Frame / bevel palette.
-    int guiFace, guiLight, guiShadow, guiBorder;
     int btnHover, btnDisabled;
 
     // Text palette. labelHdr = primary text; accent = section headers; labelDim = secondary captions;
@@ -31,30 +27,8 @@ class GlintWandSkin {
     // Layer-tab faces + the selection ring.
     int tabActive, tabIdle, ring;
 
-    /** Background texture: the window frame, divider and preview recess. */
-    ResourceLocation bgTexture;
-
     GlintWandSkin(String name) {
-        this.name = name;
-    }
-
-    void texture(ResourceLocation t) {
-        this.bgTexture = t;
-    }
-
-    /** Blit the background PNG over the full panel (the PNG is authored at the panel size). */
-    void windowPanel(GuiGraphics g, int x, int y, int w, int h) {
-        g.blit(bgTexture, x, y, 0f, 0f, w, h, w, h);
-    }
-
-    /** A raised button / small panel with the given face colour. */
-    void raised(GuiGraphics g, int x, int y, int w, int h, int face) {
-        g.fill(x, y, x + w, y + h, guiBorder);
-        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, face);
-        g.fill(x + 1, y + 1, x + w - 1, y + 2, guiLight);
-        g.fill(x + 1, y + 1, x + 2, y + h - 1, guiLight);
-        g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, guiShadow);
-        g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, guiShadow);
+        super(name);
     }
 
     // ── Skins ─────────────────────────────────────────────────────────────────
@@ -97,7 +71,7 @@ class GlintWandSkin {
     }
 
     /** Warm every skin's background PNG so cycling skins in-menu doesn't trigger a first-time cold load
-     *  (disk read + PNG decode + GPU upload) mid-interaction. Idempotent — getTexture caches after the
+     *  (disk read + PNG decode + GPU upload) mid-interaction. Idempotent - getTexture caches after the
      *  first load, so this only does work the first time the wand editor is opened in a session. */
     static void preloadTextures() {
         for (GlintWandSkin s : ALL) Minecraft.getInstance().getTextureManager().getTexture(s.bgTexture);
