@@ -6,16 +6,16 @@ import java.lang.reflect.Method;
  * Soft compat with Gnetum (a HUD-caching optimisation mod). Gnetum renders the in-game HUD (hotbar, …)
  * into an offscreen framebuffer and re-renders each element only every N frames, blitting the cached copy
  * on the frames in between. Our per-item content needs the element re-rendered every frame: the animated
- * glint foil freezes at whatever frame gnetum last cached, and the glow-outline ring flickers — its
+ * glint foil freezes at whatever frame gnetum last cached, and the glow-outline ring flickers - its
  * silhouette is captured at {@code ItemRenderer.render}, so on a cached frame nothing is captured and the
  * once-per-frame {@code GlowOutlineRenderer.drainGui} composites no ring, while the refresh frame does.
  *
  * <p>Gnetum exposes {@code Gnetum.disableCachingForCurrentElement(String reason)}: called while gnetum is
  * mid-render of a HUD element, it drops that element from the cache so it renders live every frame. The
  * change is one-way for the session and applies only when the user left that element's caching on AUTO (an
- * explicit user override is respected). That is the correct tradeoff here — an animated glint / glow ring
- * fundamentally can't be served from a stale cache — and it matches how gnetum's own dynamic elements opt
- * out. Idempotent: after the first disable the call is a cheap no-op inside gnetum.
+ * explicit user override is respected). An animated glint or glow ring can't be served from a stale cache,
+ * so this matches how gnetum's own dynamic elements opt out. Idempotent: after the first disable the call is
+ * a cheap no-op inside gnetum.
  *
  * <p>Reflective, no {@code compileOnly} dep; every method no-ops when gnetum is absent or its API moved.
  * Reached only from the client render path ({@code ItemRendererMixin}).

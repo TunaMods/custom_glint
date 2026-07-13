@@ -119,7 +119,7 @@ public class ItemRendererMixin {
 
         // Special / 3D BEWLR items (trident, shield, any isCustomRenderer item, incl. modded) have no
         // baked quads. Re-render the whole item through renderStatic into a record-only buffer (guarded by
-        // IN_OUTLINE), capturing its animated, already-transformed geometry bucketed by texture — generic,
+        // IN_OUTLINE), capturing its animated, already-transformed geometry bucketed by texture - generic,
         // no per-item knowledge. Works in the GUI too (inventory/hotbar trident, shield, modded 3D items).
         if (model.isCustomRenderer()) {
             cg_captureSpecialOutline(stack, ctx, leftHand, pose, color, guiAnchor);
@@ -127,7 +127,7 @@ public class ItemRendererMixin {
         }
 
         // render() pushed the pose, applied the item's display transform (handleCameraTransforms ->
-        // applyTransform) + the (-0.5,-0.5,-0.5) centering, drew the quads, then popped — so pose.last()
+        // applyTransform) + the (-0.5,-0.5,-0.5) centering, drew the quads, then popped - so pose.last()
         // at this RETURN is the OUTER pose, missing both. Reproduce that sequence on a copy so the
         // silhouette matches the item's real on-screen scale and position.
         PoseStack tp = new PoseStack();
@@ -159,7 +159,7 @@ public class ItemRendererMixin {
     /** Capture a special / 3D BEWLR item's silhouette by re-rendering it through renderStatic into a
      *  record-only buffer. {@code pose} is the OUTER pose at render() RETURN; renderStatic re-applies the
      *  display transform, so the recorded positions are camera-relative and already include the item's
-     *  animation (riptide spin, block tilt — it lives in the pose the model draws under). IN_OUTLINE
+     *  animation (riptide spin, block tilt - it lives in the pose the model draws under). IN_OUTLINE
      *  prevents recursion and makes applyGlint route to the bare recording buffer. The capture buckets
      *  vertices by the texture each RenderType draws through, so the silhouette traces the real item shape
      *  via that texture's alpha (a trident traces the trident, not its square model hull). */
@@ -208,6 +208,7 @@ public class ItemRendererMixin {
     private static List<BakedQuad> cg_collectQuads(BakedModel model) {
         List<BakedQuad> out = new ArrayList<>();
         RandomSource random = RandomSource.create();
+        // Fixed seed per bucket: vanilla getQuads seeds the same way, so quad selection stays deterministic.
         try {
             for (Direction dir : Direction.values()) {
                 random.setSeed(42L);
@@ -296,28 +297,20 @@ public class ItemRendererMixin {
             int[] colors = layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, colors[i]);
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
+                CustomGlintRenderer.fillPremul(buf, color);
                 RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, isItem, 0);
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }
         if (list.isEmpty()) return null;
         list.add(buffer.getBuffer(renderType));
-        // Collapse duplicate delegates — Sodium/Embeddium's VertexMultiConsumer throws "Duplicate delegates"
+        // Collapse duplicate delegates - Sodium/Embeddium's VertexMultiConsumer throws "Duplicate delegates"
         // if the same buffer appears twice. In-place, no allocation when there are none (the common case).
         for (int i = list.size() - 1; i > 0; i--)
             if (list.indexOf(list.get(i)) != i) list.remove(i);

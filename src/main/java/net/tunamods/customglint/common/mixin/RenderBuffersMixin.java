@@ -15,7 +15,7 @@ import java.util.SortedMap;
 
 /**
  * Captures the live fixedBuffers map from RenderBuffers so forGlint() can insert per-config RenderTypes into it.
- * Shadow must be SortedMap — vanilla declares it that way; Map causes a runtime field-lookup mismatch.
+ * Shadow must be SortedMap - vanilla declares it that way; Map causes a runtime field-lookup mismatch.
  */
 @Mixin(RenderBuffers.class)
 public class RenderBuffersMixin {

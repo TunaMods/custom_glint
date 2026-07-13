@@ -13,13 +13,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Arms the first-person hand-pass flag and drains the FP held-item glow outline. {@code renderHandsWithItems}
- * is where the hand items are actually drawn — in vanilla it runs inside {@code GameRenderer.renderItemInHand},
+ * is where the hand items are actually drawn - in vanilla it runs inside {@code GameRenderer.renderItemInHand},
  * but under a shader pack (Oculus/Iris) it is called from the gbuffer pass instead, BEFORE
  * {@code renderItemInHand}. So the flag must be armed here (not only at {@code renderItemInHand} HEAD) or the
  * item is captured with the flag unset, misrouted to the world queue, and drawn by the world path (scene-depth
  * occlusion on → ring hides behind the item; world projection/timing → offset on sprint).
  *
- * <p>Priority 1500 (&gt; Punchy/FPM's default 1000) so our HEAD runs before theirs — they inject at this same
+ * <p>Priority 1500 (&gt; Punchy/FPM's default 1000) so our HEAD runs before theirs - they inject at this same
  * HEAD and {@code ci.cancel()} to substitute their own hand render, and a cancel skips every later HEAD
  * callback. Running first guarantees the flag is set for the capture that happens inside their render.
  *

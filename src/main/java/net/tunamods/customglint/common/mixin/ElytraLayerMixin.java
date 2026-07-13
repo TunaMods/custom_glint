@@ -36,7 +36,7 @@ public class ElytraLayerMixin {
 
     @Shadow(aliases = {"f_116935_"}) private ElytraModel<?> elytraModel;
 
-    /** Vanilla elytra texture for the glow-outline trace — hoisted so it isn't reallocated per elytra per frame. */
+    /** Vanilla elytra texture for the glow-outline trace - hoisted so it isn't reallocated per elytra per frame. */
     private static final ResourceLocation CG_ELYTRA_TEX = new ResourceLocation("minecraft", "textures/entity/elytra.png");
 
     /** SRG target: injects at RETURN of render in obfuscated environments. */
@@ -89,21 +89,13 @@ public class ElytraLayerMixin {
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                         if (rt != null) list.add(buffer.getBuffer(rt));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, color);
                     RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }

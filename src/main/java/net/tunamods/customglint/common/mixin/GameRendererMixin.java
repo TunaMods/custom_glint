@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Backstop drain for the first-person held-item glow outline. {@link ItemInHandRendererMixin} drains at
  * the RETURN of {@code ItemInHandRenderer.renderHandsWithItems}, which is the ideal point in vanilla. But
  * FP-replacing mods (First-Person Model, Punchy, …) inject at that method's HEAD and {@code ci.cancel()} to
- * substitute their own hand render — a HEAD cancel skips every RETURN injector, so our drain never fires and
+ * substitute their own hand render - a HEAD cancel skips every RETURN injector, so our drain never fires and
  * the queued silhouette (still captured at {@code ItemRenderer.render}) is never rung.
  *
  * {@code GameRenderer.renderItemInHand} is the caller of {@code renderHandsWithItems} and is never cancelled.
