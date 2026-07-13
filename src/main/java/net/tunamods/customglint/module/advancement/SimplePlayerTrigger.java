@@ -16,17 +16,17 @@ import java.util.Optional;
  * only the optional player predicate. Each subclass is registered under its own id in {@code ModTriggers}, so
  * they fire independently despite sharing this instance type.
  */
-public abstract class SimplePlayerTrigger extends SimpleCriterionTrigger<SimplePlayerTrigger.Instance> {
+public abstract class SimplePlayerTrigger extends SimpleCriterionTrigger<SimplePlayerTrigger.TriggerInstance> {
 
-    public record Instance(Optional<ContextAwarePredicate> player) implements SimpleCriterionTrigger.SimpleInstance {
-        public static final Codec<Instance> CODEC = RecordCodecBuilder.create(i -> i.group(
-                EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(Instance::player)
-        ).apply(i, Instance::new));
+    public record TriggerInstance(Optional<ContextAwarePredicate> player) implements SimpleCriterionTrigger.SimpleInstance {
+        public static final Codec<TriggerInstance> CODEC = RecordCodecBuilder.create(i -> i.group(
+                EntityPredicate.ADVANCEMENT_CODEC.optionalFieldOf("player").forGetter(TriggerInstance::player)
+        ).apply(i, TriggerInstance::new));
     }
 
     @Override
-    public Codec<Instance> codec() {
-        return Instance.CODEC;
+    public Codec<TriggerInstance> codec() {
+        return TriggerInstance.CODEC;
     }
 
     public void trigger(ServerPlayer player) {
