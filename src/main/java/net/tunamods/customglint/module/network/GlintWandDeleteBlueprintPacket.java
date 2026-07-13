@@ -4,6 +4,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import net.tunamods.customglint.module.blueprint.ServerBlueprints;
+import net.tunamods.customglint.module.item.GlintWandItem;
 
 import java.util.function.Supplier;
 
@@ -30,6 +31,8 @@ public class GlintWandDeleteBlueprintPacket {
 
     public static void handle(GlintWandDeleteBlueprintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
         NetHandlers.withSender(ctx, sp -> {
+            // The wand is the gate (it is creative-only); enforce it server-side (matching the save path).
+            if (!GlintWandItem.isHeld(sp)) return;
             ServerBlueprints.delete(pkt.name);
             ServerBlueprints.syncTo(sp);
         });

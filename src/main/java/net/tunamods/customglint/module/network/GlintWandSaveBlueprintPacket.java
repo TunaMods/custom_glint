@@ -8,6 +8,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import net.tunamods.customglint.module.blueprint.ServerBlueprints;
+import net.tunamods.customglint.module.item.GlintWandItem;
 
 import java.util.function.Supplier;
 
@@ -42,6 +43,9 @@ public class GlintWandSaveBlueprintPacket {
 
     public static void handle(GlintWandSaveBlueprintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
         NetHandlers.withSender(ctx, sp -> {
+            // The wand is the gate (it is creative-only). Enforce it server-side so a forged packet can't fill
+            // the shared pool without one.
+            if (!GlintWandItem.isHeld(sp)) return;
             if (pkt.json == null || pkt.json.length() > MAX_JSON) return;
             if (ServerBlueprints.count() >= ServerBlueprints.MAX_BLUEPRINTS) return;
             // Validate + normalize the (untrusted) JSON: only a well-formed object carrying at least one
