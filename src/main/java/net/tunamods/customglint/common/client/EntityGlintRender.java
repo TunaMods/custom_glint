@@ -98,7 +98,7 @@ public final class EntityGlintRender {
     // a record-only buffer (capturing camera-relative [x,y,z,u,v]) and queued, tracing the real shape
     // against its own texture. The re-render is in-phase (the model is still posed from the live draw), so
     // there is no stale-pose problem and no second setupAnim. All silhouettes of ONE figure share that
-    // figure's id (glowKeyFor) — body + surface layers (CAT_ENTITY) + every worn-armor piece (CAT_ARMOR) —
+    // figure's id (glowKeyFor): body + surface layers (CAT_ENTITY) plus every worn-armor piece (CAT_ARMOR),
     // so they compose as ONE ring, distinct from other figures.
 
     /** Re-render a posed {@code model} into the glow mask under {@code identity}'s shared id. Silhouettes
@@ -112,7 +112,7 @@ public final class EntityGlintRender {
                                               int color, int category, int priority) {
         if (model == null || texture == null || entity.isInvisible()) return;
         // Reuse one consumer (and its grown backing array) instead of allocating per glowing model per
-        // frame — body + every armor piece + elytra + surface layer all hit this each frame. queueModelOutline
+        // frame (body + every armor piece + elytra + surface layer all hit this each frame). queueModelOutline
         // copies the data into a right-sized array, so the buffer is free to reuse on the next capture. The
         // capture runs on the render thread and never re-enters (renderToBuffer only records vertices).
         CapturingModelConsumer cap = CAPTURE_POOL.get();
@@ -155,7 +155,7 @@ public final class EntityGlintRender {
                 GlowOutlineRenderer.glowKeyFor(identity, category), category, priority);
     }
 
-    /** Draw the entity body AND, when it glows, capture its silhouette in the SAME model walk — the in-phase
+    /** Draw the entity body AND, when it glows, capture its silhouette in the SAME model walk: the in-phase
      *  tee. Replaces the old "re-render the body model into a record-only buffer after the fact" path (a full
      *  second {@code renderToBuffer} walk per glowing entity every frame), which was the dominant cost with
      *  many glowing entities on screen (matches 26.1.2's measured bottleneck; 26.1.2 fixed it the same way).
@@ -340,7 +340,7 @@ public final class EntityGlintRender {
      * sequence on mount/dragon armor) need the real BufferSource: during entity rendering the layer
      * receives {@link GlintWrappingBufferSource}, which is NOT a BufferSource, so a raw
      * {@code instanceof BufferSource} check silently skips the flush. That only bites when the entity
-     * ALSO carries its own glint (so the wrapper is installed) — e.g. a glinted dragon wearing glinted
+     * ALSO carries its own glint (so the wrapper is installed), e.g. a glinted dragon wearing glinted
      * armor; the body part's glint then bled across the whole dragon.
      */
     public static MultiBufferSource unwrap(MultiBufferSource buffer) {
@@ -368,7 +368,7 @@ public final class EntityGlintRender {
     public static final class GlintWrappingBufferSource implements MultiBufferSource {
         final MultiBufferSource delegate;
         final CustomGlint.Data glint;
-        // Fan the glint through TRIANGLES-mode RTs instead of QUADS — for renderers whose entity draw is a
+        // Fan the glint through TRIANGLES-mode RTs instead of QUADS, for renderers whose entity draw is a
         // triangle list (Epic Fight patched meshes). A QUADS glint RT fed a triangle stream shatters.
         final boolean triangles;
 
@@ -387,7 +387,7 @@ public final class EntityGlintRender {
             if (!shouldApplyGlint(rt)) return delegate.getBuffer(rt);
             // Don't bleed entity glint onto the item the entity is holding. ItemRenderer.render
             // (mixin'd to set CURRENT_ITEM_STACK at HEAD, clear at RETURN) is invoked through
-            // HeldItemLayer / ItemInHandLayer during the entity render — those item draws route
+            // HeldItemLayer / ItemInHandLayer during the entity render; those item draws route
             // through entity_solid / entity_translucent RTs which would otherwise match
             // shouldApplyGlint and fan-out the entity's glint onto the item's vertex stream.
             // The item has its own per-item glint via ItemRendererMixin's getFoilBuffer, which
@@ -399,7 +399,7 @@ public final class EntityGlintRender {
             // registered in fixedBuffers (dedicated builders). If we got `base` first, the first
             // `delegate.getBuffer(grt)` call would see lastState=body_rt (non-fixed) and switch
             // away from it, which in vanilla BufferSource.getBuffer ends the previous non-fixed
-            // builder — i.e. flushes the body builder while it's still empty and leaves it in a
+            // builder, i.e. flushes the body builder while it's still empty and leaves it in a
             // non-building state. Subsequent vertex writes to `base` then drop on the floor and
             // the body renders invisible. Acquiring `base` last leaves it as the current active
             // builder when the model writes.
@@ -407,7 +407,7 @@ public final class EntityGlintRender {
             // for shader-mod late render ONLY under a shader pack: there the translucent geometry is deferred and
             // its depth is re-sorted, so an opaque EQUAL-depth glint tests against the wrong reference and
             // vanishes; the LEQUAL / OPAQUE_DECAL variant fixes that. Off-pack there is no reorder, so LEQUAL
-            // alone would just drop the shell's self-occlusion (back faces show through) — off-pack the shell
+            // alone would just drop the shell's self-occlusion (back faces show through); off-pack the shell
             // writes its own depth and the normal EQUAL path self-occludes correctly, so keep it.
             boolean translucent = isTranslucent(rt) && CustomGlintRenderer.isShaderPackActive();
             CustomGlint.Layer[] layers = glint.layers();
@@ -457,7 +457,7 @@ public final class EntityGlintRender {
         }
 
         // RenderType instances are stable singletons, so cache the (expensive) toString-based verdict
-        // by identity — getBuffer is called for every RT requested during a glinted entity's render,
+        // by identity: getBuffer is called for every RT requested during a glinted entity's render,
         // every frame, and rt.toString() allocated a fresh String each time.
         private static final Map<RenderType, Boolean> GLINT_RT_VERDICT = new IdentityHashMap<>();
 
@@ -489,7 +489,7 @@ public final class EntityGlintRender {
      *  5-tuple on {@code setUv}.
      *
      *  <p>When {@link #delegate} is set it ALSO forwards every call to that real buffer, so a single model
-     *  walk both DRAWS the entity and RECORDS its silhouette — the in-phase tee (no second
+     *  walk both DRAWS the entity and RECORDS its silhouette: the in-phase tee (no second
      *  {@code renderToBuffer} walk). With {@code delegate == null} it is record-only (the re-render path used
      *  by armor / surface layers). The forwarded position is already pose-transformed (the convenience method
      *  transforms before calling {@code addVertex(x,y,z)}), so the entity renders identically. */

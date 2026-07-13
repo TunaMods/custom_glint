@@ -133,7 +133,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static ResourceLocation generateTexture(ResourceLocation design) {
         // The chromatic design is procedural (no PNG). Callers branch to forChromatic* before reaching the
         // texture path; this guard keeps any stragglers (compat stencil paths) from probing the resource
-        // manager — they get null and skip, so chromatic silently no-ops there rather than crashing.
+        // manager; they get null and skip, so chromatic silently no-ops there rather than crashing.
         if (CustomGlint.isChromatic(design)) return null;
         Minecraft mc = Minecraft.getInstance();
         NativeImage source;
@@ -188,25 +188,25 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final ThreadLocal<ItemDisplayContext> CURRENT_CTX = new ThreadLocal<>();
     // True while a special / 3D BEWLR item (shield, trident) is rendering. Those call getFoilBuffer with
     // noEntity=true (so applyGlint sees isItem=true = the flat-item atlas scale), but they're 3D models whose
-    // UV spans a large region, so the atlas scale reads far too dense — and mismatches the shader-pack special
+    // UV spans a large region, so the atlas scale reads far too dense, and mismatches the shader-pack special
     // overlay. Set at render HEAD from the model's isCustomRenderer() so chromatic can pick the special scale.
     public static final ThreadLocal<Boolean> CURRENT_IS_SPECIAL = ThreadLocal.withInitial(() -> Boolean.FALSE);
     public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
     // ── HUD glint batching ──────────────────────────────────────────────────────
     // The HUD hotbar draws each item through GuiGraphics.renderItem, which calls GuiGraphics.flush() after
-    // EVERY icon — so inline glint draws one flush per item and same-design icons never batch. Route the HUD
+    // EVERY icon, so inline glint draws one flush per item and same-design icons never batch. Route the HUD
     // glint into this private source instead: vanilla's per-item flush never touches it, so every same-config
     // glint accumulates into ONE RenderType buffer and draws in a single endBatch ({@link #drainGuiGlint},
     // at Gui.render TAIL while the GUI ortho + the icons' depth are still committed). forGlint's color rides a
-    // per-(design,colors,…) holder, so same-key icons always resolve the same colour in a frame — deferring
+    // per-(design,colors,…) holder, so same-key icons always resolve the same colour in a frame; deferring
     // the draw is colour-safe. Open screens keep the inline path (they need per-item layering vs tooltips).
     private static final SequencedMap<RenderType, ByteBufferBuilder> GUI_GLINT_FIXED = new LinkedHashMap<>();
     private static MultiBufferSource.BufferSource guiGlintSource;
     private static ByteBufferBuilder guiGlintSpare;
 
     /** Set by a screen that draws its own item icons (outside the vanilla slot pass) and wants their glint
-     *  batched — the Glint Table's design/printed palettes. While armed, {@code applyGlint} routes GUI-context
+     *  batched, the Glint Table's design/printed palettes. While armed, {@code applyGlint} routes GUI-context
      *  glint into {@link #guiGlintBuffer} regardless of the open screen; the screen must drain + disarm right
      *  after its icon pass (before it draws anything on top of those icons). */
     public static boolean guiGlintBatchArmed = false;
@@ -269,6 +269,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             out[1] = 0.0f;
         } else {
             long t = (long) (Util.getMillis() * 8.0 * layer.speed());
+            // Two scroll octaves at vanilla's glint periods (slow 110000ms + fast 30000ms) summed for drift.
             float f  = (float) (t % 110000L) / 110000.0F + phase;
             float f1 = (float) (t % 30000L)  /  30000.0F;
             float[] dir = scrollUnit(layer.scrollDir());
@@ -346,7 +347,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // The chromatic design has no PNG: a custom core shader (registered via RegisterShadersEvent)
     // synthesises an oil-slick from value-noise. Per-layer payload (seed / morph-speed / colour count)
     // rides spare TextureMat slots [2][0]/[2][1]/[2][3]; up to 8 colours ride a 1px palette strip on
-    // Sampler1. One RenderType per (colours, speed, scale, seed, surface) — a single draw, no per-colour
+    // Sampler1. One RenderType per (colours, speed, scale, seed, surface): a single draw, no per-colour
     // fan-out. Caches mirror the texture-glint LRU caps + reload eviction.
     private static ShaderInstance chromaticShader;
     private static final RenderStateShard.ShaderStateShard CHROMATIC_SHADER_SHARD =
@@ -424,7 +425,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return sb.length() == 0 ? "rainbow" : sb.toString();
     }
 
-    /** Palette strip for Sampler1: width = max(1, colours), one opaque RGBA texel per colour (RGB only —
+    /** Palette strip for Sampler1: width = max(1, colours), one opaque RGBA texel per colour (RGB only;
      *  the shader applies its own brightness). With no colours a 1px white keeps Sampler1 bound; the shader
      *  reads colour-count 0 and falls back to a full-spectrum rainbow, so the strip's contents go unused. */
     private static ResourceLocation getPaletteTexture(int[] colors) {
@@ -451,12 +452,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return (seed & 0xFFFF) / 256.0f; // 0..256 range; vsh forwards it, fsh derives a 2D offset from it
     }
 
-    /** Render colour for an undyed (empty-palette) non-chromatic layer — white, so a blank trim's design
+    /** Render colour for an undyed (empty-palette) non-chromatic layer: white, so a blank trim's design
      *  stays visible without any dye being stored. Shared by the item/armor/elytra/entity glint loops. */
     public static final int[] WHITE_COLOR = { 0xFFFFFFFF };
 
     /** A colourless chromatic trim (the creative-tab template) renders this neutral white→grey→dark slick
-     *  instead of the full-spectrum rainbow fallback — the recognisable "greyscale" look from 26.1.2. */
+     *  instead of the full-spectrum rainbow fallback, the recognisable "greyscale" look from 26.1.2. */
     private static final int[] CHROMATIC_EMPTY_PALETTE = { 0xFFFFFFFF, 0xFF8A8A8A, 0xFF3A3A3A };
 
     /** Resolve a chromatic layer's palette: its own colours, or the greyscale template when it has none. */
@@ -464,7 +465,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return colors.length == 0 ? CHROMATIC_EMPTY_PALETTE : colors;
     }
 
-    /** Chromatic texture matrix: the 2D part scales the noise UV exactly like the texture glint (no scroll —
+    /** Chromatic texture matrix: the 2D part scales the noise UV exactly like the texture glint (no scroll;
      *  the slick flows in-shader via GameTime); the spare column-2 slots carry the per-layer payload the
      *  immutable RenderType can't pass as a uniform. UV0.z is 0 so column 2 never affects {@code noiseCoord}. */
     private static void setChromaticMatrix(Layer layer, float scaleU, float scaleV, int colorCount) {
@@ -487,14 +488,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     // {@code mode} lets a caller request a TRIANGLES-mode RT for renderers that draw a triangle list (Epic
-    // Fight's skinned meshes) instead of vanilla QUADS — a QUADS RT fed a triangle stream shatters into facets.
+    // Fight's skinned meshes) instead of vanilla QUADS. A QUADS RT fed a triangle stream shatters into facets.
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode) {
         return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false);
     }
 
     // {@code lateForShaders} routes a translucent-surface chromatic glint (slime outer shell) into the
-    // OPAQUE_DECAL shader bucket with LEQUAL depth — see forHorseArmorGlint for the full slime rationale.
+    // OPAQUE_DECAL shader bucket with LEQUAL depth; see forHorseArmorGlint for the full slime rationale.
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
                                           boolean lateForShaders) {
@@ -545,8 +546,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return cached;
     }
 
-    /** Flat item / 3D held-item chromatic glint (EQUAL depth, no polygon offset). isItem mirrors
-     *  {@link #forGlint}'s atlas-calibrated scale so the slick density matches the texture glints. */
     /** Noise UV scale for armor / elytra / horse-armor / entity-body chromatic. Lower = bigger slick cells.
      *  The 26.1.2 value (8.0) made the pattern far too dense on models (a body part spans a large UV region,
      *  unlike a tiny atlas-sprite item), tiny/repeating even at 0.1x patternScale; dropped so the default
@@ -554,11 +553,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  atlas-calibrated scale (atlasW/16), so they're unaffected. */
     private static final float CHROMATIC_MODEL_UV_SCALE = 0.5f;
 
+    /** Flat item / 3D held-item chromatic glint (EQUAL depth, no polygon offset). isItem mirrors
+     *  {@link #forGlint}'s atlas-calibrated scale so the slick density matches the texture glints. */
     public static RenderType forChromaticGlint(Data glint, int layerIdx, boolean isItem) {
         if (chromaticShader == null) return null;
         // Flat item: uvScale = atlasW/16 (per-axis atlasH/16) cancels the block-atlas sprite compression so a
         // 16px sprite spans patternScale UV units → DENSITY(7)·patternScale cells per icon, GUI + world alike
-        // (26.1.2's value). 3D items keep uvScale 1.0. (Special BEWLR items — shield/trident — take the denser
+        // (26.1.2's value). 3D items keep uvScale 1.0. (Special BEWLR items, shield/trident, take the denser
         // special-item scale via forChromaticSpecialGlint instead, so applyGlint routes them there.)
         float scaleU = 1.0f, scaleV = 1.0f;
         if (isItem) {
@@ -571,7 +572,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** In-phase chromatic glint for a special 3D BEWLR item (shield/trident): the special-item noise scale
      *  ({@link #CHROMATIC_SPECIAL_ITEM_UV_SCALE}), so it matches the shader-pack overlay
-     *  ({@link #forChromaticSpecialGlintOverlay}) — same slick on and off a pack. NO_LAYERING like the 3D item. */
+     *  ({@link #forChromaticSpecialGlintOverlay}): same slick on and off a pack. NO_LAYERING like the 3D item. */
     public static RenderType forChromaticSpecialGlint(Data glint, int layerIdx) {
         if (chromaticShader == null) return null;
         return chromaticRT(glint.layers()[layerIdx], "special|L" + layerIdx,
@@ -617,7 +618,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static RenderType forChromaticItemGlintOverlay(Data glint, int layerIdx) {
         ensureAtlasDims();
         return chromaticOverlayRT(glint, layerIdx, "item_ov", cachedAtlasW / 16.0f, cachedAtlasH / 16.0f,
-                net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS, VertexFormat.Mode.QUADS);
+                TextureAtlas.LOCATION_BLOCKS, VertexFormat.Mode.QUADS);
     }
 
     /** Noise scale for special 3D BEWLR items (trident/shield). These are much smaller than an armor surface,
@@ -664,7 +665,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         })
                         // Depth WRITE + LEQUAL against the target's own depth: where two chromatic pieces cover
                         // the same pixel (chestplate skirt over leggings waistband), the NEARER surface wins and
-                        // draws once — without this both wrote and the additive composite doubled them into a
+                        // draws once; without this both wrote and the additive composite doubled them into a
                         // bright seam whose winner flipped with the view angle. (Back faces also fail LEQUAL, a
                         // free second guard alongside the in-shader scene occlusion.) The target depth is cleared
                         // each frame in accumulateChromaticWorld. Scene-vs-world occlusion still rides Sampler2.
@@ -673,7 +674,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         .setDepthTestState(LEQUAL_DEPTH_TEST)
                         .setLayeringState(NO_LAYERING)
                         // Straight write into the cleared isolated target (NOT additive) so it holds exactly the
-                        // slick rgb + alpha=1 where drawn — the composite then adds that to the scene. Additive
+                        // slick rgb + alpha=1 where drawn; the composite then adds that to the scene. Additive
                         // here left the target alpha near 0, so the SRC_ALPHA composite multiplied it to nothing.
                         .setTransparencyState(NO_TRANSPARENCY)
                         .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_overlay_texturing|" + k.hashCode(),
@@ -697,7 +698,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 NO_LAYERING, VertexFormat.Mode.TRIANGLES);
     }
 
-    /** Translucent-surface entity chromatic glint (slime outer shell) — LEQUAL depth + OPAQUE_DECAL shader
+    /** Translucent-surface entity chromatic glint (slime outer shell): LEQUAL depth + OPAQUE_DECAL shader
      *  bucket so it survives the deferred translucent geometry under a pack. See {@link #forEntityGlintTranslucent}. */
     public static RenderType forChromaticEntityGlintTranslucent(Data glint, int layerIdx, boolean triangles) {
         if (chromaticShader == null) return null;
@@ -708,7 +709,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /**
      * Removes {@code rt} from both the captured {@link #fixedBufferRegistry} and the live BufferSource's
      * {@code fixedBuffers}, closing each {@link ByteBufferBuilder} so its off-heap memory is freed.
-     * Called on LRU eviction and resource reload — the old code discarded the {@code remove()} return
+     * Called on LRU eviction and resource reload. The old code discarded the {@code remove()} return
      * value, leaking one native buffer per cached RenderType on every reload. Public so compat modules
      * (e.g. {@code EpicKnightsGlintRT}) can release their own cached RTs the same way.
      */
@@ -726,21 +727,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 if (b2 != null) b2.close();
             }
         } catch (Throwable ignored) {
-            // immutable fixedBuffers (Iris/Sodium) — never received our buffer to begin with
+            // immutable fixedBuffers (Iris/Sodium); never received our buffer to begin with
         }
     }
 
-    /**
-     * Registers {@code rt}'s persistent buffer into the live BufferSource's {@code fixedBuffers}
-     * when absent. Iris and Sodium swap the vanilla BufferSource for one whose {@code fixedBuffers}
-     * is an IMMUTABLE fastutil map — its {@code put} throws {@link UnsupportedOperationException}
-     * (the inline {@code live.put(...)} this replaced crashed armor/entity/item/outline glint the
-     * instant Iris was installed: {@code Object2ObjectFunction.put} → UOE). Swallow that: under an
-     * active shader pack our RTs render through the forward/shader path, which never pulls from this
-     * BufferSource's fixed buffers, so the registration isn't needed there anyway. The vanilla
-     * {@code fixedBufferRegistry} (captured in RenderBuffersMixin) still holds the RT for the
-     * no-shader path.
-     */
     /** Inserts {@code rt}'s persistent buffer into the captured vanilla {@code fixedBufferRegistry}.
      *  That map is the vanilla (mutable) one captured at {@code RenderBuffers.<init>}, so this normally
      *  succeeds; the try/catch mirrors {@link #registerLiveFixedBuffer} purely as belt-and-suspenders, so
@@ -753,10 +743,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
         try {
             fixedBufferRegistry.put(rt, buf);
         } catch (UnsupportedOperationException ignored) {
-            buf.close(); // immutable fixedBuffers (Iris/Sodium) — forward/shader path handles these RTs
+            buf.close(); // immutable fixedBuffers (Iris/Sodium); forward/shader path handles these RTs
         }
     }
 
+    /**
+     * Registers {@code rt}'s persistent buffer into the live BufferSource's {@code fixedBuffers}
+     * when absent. Iris and Sodium swap the vanilla BufferSource for one whose {@code fixedBuffers}
+     * is an IMMUTABLE fastutil map: its {@code put} throws {@link UnsupportedOperationException}
+     * (the inline {@code live.put(...)} this replaced crashed armor/entity/item/outline glint the
+     * instant Iris was installed: {@code Object2ObjectFunction.put} → UOE). Swallow that: under an
+     * active shader pack our RTs render through the forward/shader path, which never pulls from this
+     * BufferSource's fixed buffers, so the registration isn't needed there anyway. The vanilla
+     * {@code fixedBufferRegistry} (captured in RenderBuffersMixin) still holds the RT for the
+     * no-shader path.
+     */
     public static void registerLiveFixedBuffer(RenderType rt) {
         if (rt == null) return;
         SequencedMap<RenderType, ByteBufferBuilder> live =
@@ -765,7 +766,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         try {
             live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
         } catch (UnsupportedOperationException ignored) {
-            // immutable fixedBuffers (Iris/Sodium) — forward/shader path handles these RTs
+            // immutable fixedBuffers (Iris/Sodium); forward/shader path handles these RTs
         }
     }
 
@@ -804,7 +805,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             VertexFormat.Mode mode) {
         Layer layer = glint.layers()[layerIdx];
         if (getTexture(layer.design()) == null) return null;
-        // Key MUST include the primitive mode — a QUADS and a TRIANGLES RT for the same layer/color are
+        // Key MUST include the primitive mode: a QUADS and a TRIANGLES RT for the same layer/color are
         // distinct fixed buffers; collapsing them would trip Mixin's "Duplicate delegates" guard.
         String key = "armor|" + layerKey(layer) + "|" + colorIdx + "|" + mode;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
@@ -836,12 +837,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             // attempt 2: immediate BufferBuilder + bs.endBatch() pre-flush before glint render;
                             // attempt 3: rename type to "~customglint:..." so it sorts after
                             //   "minecraft:armor_cutout_no_cull" in fixedBuffers flush order, theory being
-                            //   armor depth wasn't written yet — all three → glint completely invisible)
+                            //   armor depth wasn't written yet, all three → glint completely invisible)
                             // LEQUAL required for visibility but bleeds through transparent cutout holes.
                             // Root cause of attempt 1-3 failure: armorCutoutNoCull itself uses
                             // VIEW_OFFSET_Z_LAYERING (polygonOffset -1,-10), writing depth as D-ε. All prior
                             // EQUAL attempts also removed VIEW_OFFSET_Z_LAYERING, so the glint tested at raw
-                            // D while the buffer held D-ε — they never matched. Fix: EQUAL + keep
+                            // D while the buffer held D-ε, they never matched. Fix: EQUAL + keep
                             // VIEW_OFFSET_Z_LAYERING so the glint also tests at D-ε, matching exactly.
                             .setDepthTestState(EQUAL_DEPTH_TEST)
                             .setLayeringState(VIEW_OFFSET_Z_LAYERING)
@@ -875,7 +876,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /**
      * Entity glint for a TRANSLUCENT base surface (the slime's outer shell). Under a shader pack (Iris)
      * translucent entity geometry is deferred to a later pass than our fixed glint buffer would otherwise
-     * flush, and the shell's depth is re-sorted per frame — so an EQUAL-depth glint tests against the wrong
+     * flush, and the shell's depth is re-sorted per frame, so an EQUAL-depth glint tests against the wrong
      * reference (flicker / dropout) or the shell paints over it entirely (the glint vanishes). This variant
      * is a DISTINCT RT with LEQUAL depth tagged into the OPAQUE_DECAL bucket, so it flushes right after the
      * opaque pass but BEFORE the translucent shell, testing against stable opaque depth. A no-op without a
@@ -888,7 +889,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     // Horse armor uses entityCutoutNoCull (no polygon offset / no VIEW_OFFSET_Z_LAYERING).
-    // forArmorGlint uses EQUAL + VIEW_OFFSET_Z_LAYERING — wrong offset → invisible on horses.
+    // forArmorGlint uses EQUAL + VIEW_OFFSET_Z_LAYERING; wrong offset → invisible on horses.
     // This variant keeps EQUAL + NO_LAYERING so depth matches, and scale 1.0 matches forArmorGlint visually.
     public static RenderType forHorseArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
         return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx, VertexFormat.Mode.QUADS, false);
@@ -929,7 +930,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                 }
                             })
                             // Translucent slime-shell variant WRITES depth (in the OPAQUE_DECAL pass) so its own
-                            // front faces occlude its back faces (nearest-wins, view-independent) — a stable
+                            // front faces occlude its back faces (nearest-wins, view-independent), a stable
                             // self-occlusion the shell's Iris-re-sorted depth can't give. Opaque glint writes
                             // colour only (its EQUAL test already self-occludes against the body's depth).
                             .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
@@ -939,7 +940,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             // (OPAQUE_DECAL) and then against their own writes, so back faces are occluded.
                             .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
                             // Translucent shell: nudge the glint's written depth toward the camera so the shell's
-                            // own LEQUAL depth test discards the shell fragments AT the glint texels — the glint
+                            // own LEQUAL depth test discards the shell fragments AT the glint texels: the glint
                             // punches through the shell (full brightness) instead of being painted over and dimmed
                             // by the later GENERAL_TRANSPARENT shell pass. Opaque glint keeps NO_LAYERING.
                             .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : NO_LAYERING)
@@ -959,12 +960,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * Stencil-mask write RT for IaF mount armor (dragon / hippogryph / hippocampus). The mount
      * body shares the same EntityModel as the armor layer, so an EQUAL_DEPTH glint RT (the
      * scheme {@link #forHorseArmorGlint} uses for vanilla horse armor) passes depth on every
-     * face of the mount, not just the armor — vanilla horse armor avoids this because its
+     * face of the mount, not just the armor. Vanilla horse armor avoids this because its
      * armor mesh is a separate model, but IaF reuses the parent mount model with an
      * alpha-cutout armor texture.
      *
      * This RT renders the parent model with the armor texture through entity-cutout's
-     * alpha-discard shader and writes only stencil bit {@code 0x80} at opaque texels —
+     * alpha-discard shader and writes only stencil bit {@code 0x80} at opaque texels;
      * the LayeringStateShard does the GL state in setup/clear so timing is deterministic
      * across BufferSource flushes. Bit 0x80 is paired with {@link #forMountArmorGlint}'s
      * stencil EQUAL 0x80 test, constraining the glint draw to the same armor pixels.
@@ -1028,7 +1029,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * Stencil-gated armor glint for IaF mounts. Same render state as
      * {@link #forHorseArmorGlint} (EQUAL depth, no polygon offset, glint transparency,
      * glint shader + scrolling matrix) but its layering shard tests stencil bit 0x80
-     * EQUAL 1 instead of NO_LAYERING — only the texels marked by
+     * EQUAL 1 instead of NO_LAYERING: only the texels marked by
      * {@link #forMountArmorStencilMask} draw.
      */
     public static RenderType forMountArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
@@ -1144,7 +1145,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** As {@link #computeAnimatedColor(Data, int)} but shifted by {@code phaseFraction} of a full colour loop.
      *  The glow OUTLINE ring passes {@link #GLOW_RING_PHASE_OFFSET} so it lands on a different point of the
-     *  cycle than the item's own animated tint — you see two colours at once instead of one. */
+     *  cycle than the item's own animated tint, so you see two colours at once instead of one. */
     public static int computeAnimatedColor(Data glint, int layerIdx, float phaseFraction) {
         if (glint == null || layerIdx < 0 || layerIdx >= glint.layers().length) return 0xFFFFFFFF;
         Layer layer = glint.layers()[layerIdx];
@@ -1182,7 +1183,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /** As above at a chosen {@code speed} (a higher speed cycles faster, mirroring the glint layer speed) and
-     *  either blending between colors ({@code interpolate}) or stepping hard between them. Uses GAME time — the
+     *  either blending between colors ({@code interpolate}) or stepping hard between them. Uses GAME time: the
      *  glow OUTLINE (ring/halo) animates on this so it matches the in-world clock. */
     public static int computeAnimatedGlowColor(int[] colors, float speed, boolean interpolate) {
         return computeAnimatedGlowColor(colors, speed, interpolate, 0.0f);
@@ -1197,7 +1198,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** WALL-CLOCK variant of {@link #computeAnimatedGlowColor}, ticked off {@code Util.getMillis} instead of
      *  game time. The trim texture's tinted edge ("white × rgb") uses this so it runs on a DIFFERENT clock than
-     *  the game-time glow outline — the edge and the ring/halo show different colours at the same moment. */
+     *  the game-time glow outline: the edge and the ring/halo show different colours at the same moment. */
     public static int computeAnimatedGlowColorGui(int[] colors, float speed, boolean interpolate) {
         return computeAnimatedGlowColorAt(colors, Util.getMillis() / 50L, speed, interpolate, 0.0f);
     }
@@ -1232,7 +1233,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Edge/inner-tint colour for a glowing item's trim texture ("white × rgb"). Same resolution as
      *  {@link #resolveGlowColor} but at phase 0, so the tinted edge sits exactly {@link #GLOW_RING_PHASE_OFFSET}
-     *  behind the outline ring — a stable half-step (edge red while the ring is blue, and back). Critically it
+     *  behind the outline ring, a stable half-step (edge red while the ring is blue, and back). Critically it
      *  uses the SAME clock as the ring per branch (game-time for explicit glow colours, wall-clock for the glint
      *  layer-0 fallback), so the half-step never drifts the way a wall-vs-game-clock split would. */
     public static int resolveGlowColorTint(ItemStack stack) {
@@ -1244,7 +1245,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /** Wall-clock (GUI) counterpart of {@link #resolveGlowColor}, for the trim TEXTURE tint. Animates the glow
-     *  colours on wall-clock so the tinted edge ("white × rgb") desyncs from the game-time glow outline — the
+     *  colours on wall-clock so the tinted edge ("white × rgb") desyncs from the game-time glow outline: the
      *  edge and the ring show different colours at once. Auto glow follows glint layer 0 (already wall-clock). */
     public static int resolveGlowColorGui(ItemStack stack) {
         int[] glowColors = CustomGlint.getGlowColors(stack);
@@ -1261,7 +1262,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final ThreadLocal<Boolean> IN_OUTLINE = ThreadLocal.withInitial(() -> false);
 
     /**
-     * Once-per-frame stencil clear gate, still used by the remaining stencil consumers — the IaF
+     * Once-per-frame stencil clear gate, still used by the remaining stencil consumers: the IaF
      * mount-armor glint mask ({@link #forMountArmorStencilMask}) and the Epic Knights decoration
      * glint mask. Set true at frame start by CustomGlintClientInit's RenderFrameEvent.Pre; the first
      * stencil mask setup of the frame sees it true, clears the whole stencil buffer, and unsets it so
@@ -1278,7 +1279,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // ── Per-draw stencil-value isolation (slot pool) ───────────────────────────
     //
     // NOTE: the glow outline no longer uses the stencil buffer (it is a post-process mask +
-    // composite — see GlowOutlineRenderer). This slot pool survives only for the Epic Knights
+    // composite; see GlowOutlineRenderer). This slot pool survives only for the Epic Knights
     // decoration GLINT mask, which still stencil-clips the scrolling glint to the decoration's
     // opaque texels. Each EK decoration reserves a unique slot value (1..255) so overlapping
     // decorations don't share a stencil value: the WRITE shard stamps stencil=V at the
@@ -1296,14 +1297,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Frame-start reset; called from CustomGlintClientInit. */
     public static void resetStencilSlots() { stencilSlotCounter = 0; }
 
-    // Disables both color and depth writes — used by the IaF mount-armor stencil-mask RT.
+    // Disables both color and depth writes; used by the IaF mount-armor stencil-mask RT.
     private static final RenderStateShard.WriteMaskStateShard NO_WRITE =
             new RenderStateShard.WriteMaskStateShard(false, false);
 
     // Force-binds the vanilla main render target (which has a stencil attachment via the shader
     // mod's stencil-enabling mixin) and restores the previously-bound FBO on clear.
     // Why: vanilla's MAIN_TARGET OutputStateShard is a no-op runnable that assumes the main FBO
-    // is already bound. Under the shader mod's HAND_SOLID phase the gbuffer FBO is bound instead —
+    // is already bound. Under the shader mod's HAND_SOLID phase the gbuffer FBO is bound instead;
     // it has no stencil attachment, so stencil ops are silently dropped and our outline draws
     // the dilated mesh inside the silhouette (visible as a filled plane). Capturing the previous
     // FBO and restoring it on clear keeps the shader pipeline state intact.
@@ -1323,7 +1324,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // The old stencil/shader glow-outline draw API (doModelOutline / doItemOutline /
     // doGuiItemOutline / doMultiModelOutline / doModelPartsOutline), the silhouette color helpers,
     // the RenderType texture reader, and FullColorOverrideConsumer were removed when the outline
-    // was rebuilt as a post-process pass — see GlowOutlineRenderer. Glint rendering (forGlint /
+    // was rebuilt as a post-process pass; see GlowOutlineRenderer. Glint rendering (forGlint /
     // forArmorGlint / forHorseArmorGlint / forMountArmorGlint / forEntityGlint) is unaffected.
 
     private CustomGlintRenderer() { super("", () -> {}, () -> {}); }
@@ -1340,7 +1341,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
             synchronized (CustomGlintRenderer.class) {
                 if (!SHADER_LOOKUP_DONE) {
                     try {
-                        // Iris exposes this same API package under NeoForge — do not change it.
+                        // Iris exposes this same API package under NeoForge; do not change it.
                         Class<?> api = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
                         SHADER_GET_INSTANCE = api.getMethod("getInstance");
                         SHADER_IS_IN_USE = api.getMethod("isShaderPackInUse");
@@ -1362,10 +1363,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     // Under a shader pack the first-person hand is not drawn via GameRenderer.renderItemInHand /
-    // ItemInHandRenderer.renderHandsWithItems — Iris relocates it into its own HAND_SOLID / HAND_TRANSLUCENT
+    // ItemInHandRenderer.renderHandsWithItems. Iris relocates it into its own HAND_SOLID / HAND_TRANSLUCENT
     // phase inside the gbuffer pass, with a THIRD_PERSON display context. So our renderItemInHand /
     // renderHandsWithItems flags never arm and the held item misroutes to the world outline queue. Iris exposes
-    // the current phase; when it is a HAND phase the item being drawn IS the FP held item. Reflective — no dep.
+    // the current phase; when it is a HAND phase the item being drawn IS the FP held item. Reflective, no dep.
     private static volatile boolean IRIS_PHASE_LOOKUP_DONE = false;
     private static volatile Method IRIS_GET_PIPELINE_MANAGER = null;
     private static volatile Method IRIS_GET_PIPELINE_NULLABLE = null;
@@ -1421,7 +1422,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // there, the order between item and outline within the same bucket is undefined → outline can
     // flush before item → depth buffer empty when outline draws → polygon-offset/front-face-cull
     // can't reject the interior → outline reads as a filled silhouette. Tagging the outline RT as
-    // LINES (last bucket) forces the shader mod to flush ALL item geometry first, then our outline — depth
+    // LINES (last bucket) forces the shader mod to flush ALL item geometry first, then our outline; depth
     // ordering works in every camera context (1P / 3P / GROUND). Reflective to avoid compileOnly.
     private static volatile boolean SHADER_TT_LOOKUP_DONE = false;
     private static volatile Method SHADER_TT_SET = null;
@@ -1460,7 +1461,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // TransparencyType in enum order (OPAQUE → OPAQUE_DECAL → GENERAL_TRANSPARENT → DECAL → WATER_MASK → LINES).
     // Tagging a glint OPAQUE_DECAL makes it flush right AFTER opaque geometry but BEFORE the GENERAL_TRANSPARENT
     // pass that draws translucent bases (the slime outer shell). So the glint depth-tests against a buffer
-    // holding only stable opaque geometry — never the shell's own Iris-re-sorted translucent depth, which is what
+    // holding only stable opaque geometry, never the shell's own Iris-re-sorted translucent depth, which is what
     // made a LINES-tagged shell glint flicker with camera angle and drop out at distance. Reflective, no compileOnly.
     private static volatile boolean SHADER_TT_OD_LOOKUP_DONE = false;
     private static volatile Method SHADER_TT_OD_SET = null;
@@ -1500,7 +1501,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     //      and getBuffer() returns a buffer with a different vertex format than we expect →
     //      "Not filled all elements of the vertex" crash on endVertex.
     //   2) Even if it didn't crash, outline geometry has no business depth-writing into the
-    //      shadowmap — it would just produce wrong shadows for the outline shell.
+    //      shadowmap; it would just produce wrong shadows for the outline shell.
     // Skip the whole outline path when shadows are being rendered. Reflective lookup so we
     // don't need a compileOnly dep.
     private static volatile boolean SHADOW_LOOKUP_DONE = false;

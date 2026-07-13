@@ -19,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@code GameRenderer.renderItemInHand}), so this is the one point where the captured camera-relative hand
  * poses replay onto exactly the pixels just drawn.
  *
- * <p>Priority 1500 (&gt; Punchy / First-Person Model's default 1000) so our HEAD runs before theirs — they
+ * <p>Priority 1500 (&gt; Punchy / First-Person Model's default 1000) so our HEAD runs before theirs. They
  * inject at this same HEAD and {@code ci.cancel()} to substitute their own hand render, and a HEAD cancel
  * skips every later HEAD callback. Running first guarantees the flag is set for the capture that happens
  * inside their render (they draw the held item with a THIRD_PERSON display context, which without the flag

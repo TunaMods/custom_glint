@@ -15,13 +15,13 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 /**
  * Two hooks on {@code LivingEntityRenderer.render}:
  *
- *  1. {@link ModifyVariable} at HEAD on the MultiBufferSource arg — wraps it with a
+ *  1. {@link ModifyVariable} at HEAD on the MultiBufferSource arg: wraps it with a
  *     GlintWrappingBufferSource so every {@code entity_*} RenderType the renderer or any RenderLayer
  *     (StrayClothingLayer, EyesLayer, VillagerProfessionLayer, …) requests gets a glint pass. No-op
  *     when the entity has no glint data.
- *  2. {@link Redirect} on the body {@code model.renderToBuffer} call — the IN-PHASE TEE. Instead of
+ *  2. {@link Redirect} on the body {@code model.renderToBuffer} call: the IN-PHASE TEE. Instead of
  *     re-rendering the body model a second time to capture its glow silhouette (a full extra model walk
- *     per glowing entity every frame — the dominant cost with many glowing entities), it records the
+ *     per glowing entity every frame, the dominant cost with many glowing entities), it records the
  *     silhouette DURING the single real body draw. No-op capture-wise when the entity doesn't glow (it
  *     just forwards the draw). Worn armor / elytra / surface layers still capture via their own mixins.
  */

@@ -37,12 +37,12 @@ import java.util.List;
 public class HumanoidArmorLayerMixin {
 
     // Per-piece glow capture context, set at renderArmorPiece HEAD and consumed by the renderModel tee
-    // (which fires once per material layer — we tee only the first = the base shape layer 0). Render-thread
+    // (which fires once per material layer, we tee only the first = the base shape layer 0). Render-thread
     // only; renderArmorPiece calls renderModel synchronously so the threadlocal handoff is safe.
     private static final ThreadLocal<EntityGlintRender.OutlineSpec> CG_ARMOR_SPEC = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> CG_ARMOR_RECORDED = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
-    /** HEAD of renderArmorPiece (12-arg overload — the one render() invokes per slot): resolve the glow
+    /** HEAD of renderArmorPiece (12-arg overload, the one render() invokes per slot): resolve the glow
      *  capture spec for this piece (or null when it doesn't glow) so the renderModel tee below knows whether
      *  to record. */
     @Inject(
@@ -86,7 +86,7 @@ public class HumanoidArmorLayerMixin {
     }
 
     /**
-     * RETURN of renderArmorPiece. Targets the 12-arg overload — the one
+     * RETURN of renderArmorPiece. Targets the 12-arg overload, the one
      * HumanoidArmorLayer.render() invokes per slot. The 6-arg overload is a @Deprecated
      * Neo back-compat shim that vanilla never calls; injecting there silently no-ops, which is
      * why armor showed no glint or glow while items rendered fine.
@@ -120,52 +120,51 @@ public class HumanoidArmorLayerMixin {
         // A buggy/non-standard IClientItemExtensions can return null here; fall back to the vanilla
         // model passed in rather than NPE out of the inject into HumanoidArmorLayer.render (hard crash).
         if (rendererModel == null) rendererModel = model;
-        if (glint != null) {
-            CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
-            List<VertexConsumer> list = new ArrayList<>();
-            for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    // Under a shader pack the in-phase chromatic program is hijacked (flat white / nothing), so
-                    // capture the armor model and defer the slick to the post-Iris overlay drain instead.
-                    if (CustomGlintRenderer.isShaderPackActive()) {
-                        ResourceLocation ctex = cg_armorTexture(entity, stack, slot);
-                        if (ctex != null) {
-                            EntityGlintRender.captureChromaticModel(entity, rendererModel, ctex, poseStack, packedLight, glint, layerIdx);
-                        }
-                    } else {
-                        RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                        if (crt != null) list.add(buffer.getBuffer(crt));
-                    }
-                    continue;
-                }
-                int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
-                if (layers[layerIdx].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
+        CustomGlint.Layer[] layers = glint.layers();
+        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+
+        List<VertexConsumer> list = new ArrayList<>();
+        for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+            if (CustomGlint.isChromatic(layers[layerIdx])) {
+                // Under a shader pack the in-phase chromatic program is hijacked (flat white / nothing), so
+                // capture the armor model and defer the slick to the post-Iris overlay drain instead.
+                if (CustomGlintRenderer.isShaderPackActive()) {
+                    ResourceLocation ctex = cg_armorTexture(entity, stack, slot);
+                    if (ctex != null) {
+                        EntityGlintRender.captureChromaticModel(entity, rendererModel, ctex, poseStack, packedLight, glint, layerIdx);
                     }
                 } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(buffer.getBuffer(crt));
+                }
+                continue;
+            }
+            int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
+            if (layers[layerIdx].simultaneous()) {
+                for (int i = 0; i < colors.length; i++) {
+                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
+                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
+                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
+                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
+            } else {
+                int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                float a = ((color >> 24) & 0xFF) / 255.0f;
+                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+                buf[2] = ( color        & 0xFF) / 255.0f * a;
+                buf[3] = 1.0f;
+                RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                if (rt != null) list.add(buffer.getBuffer(rt));
             }
-            if (!list.isEmpty()) {
-                VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-                rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-            }
+        }
+        if (!list.isEmpty()) {
+            VertexConsumer combined = list.size() == 1 ? list.get(0) : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+            rendererModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
 
         // Glow outline is captured by the renderModel tee above (no re-render here). All armor pieces on one

@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
  * Folds the slime's translucent OUTER shell into the glow outline. {@code SlimeOuterLayer} renders the outer
- * model with a direct {@code model.renderToBuffer(...)} — NOT through {@code renderColoredCutoutModel} — so
+ * model with a direct {@code model.renderToBuffer(...)}, NOT through {@code renderColoredCutoutModel}, so
  * {@code RenderLayerMixin}'s surface tee never sees it. The body tee (LivingEntityRendererMixin) does ring the
  * INNER slime model, but that sits inside the larger translucent shell, so the ring hides in the jelly and the
  * slime reads as un-outlined. Tee the OUTER draw too (shared CAT_ENTITY id → merges with the body into one
@@ -40,7 +40,7 @@ public class SlimeOuterLayerMixin {
         EntityGlintRender.teeOutline4((Model) drawModel, pose, vc, light, overlay, spec);
     }
 
-    /** The slime's body texture (same UVs as the outer shell), via the entity renderer — avoids shadowing
+    /** The slime's body texture (same UVs as the outer shell), via the entity renderer, avoids shadowing
      *  {@code RenderLayer.getTextureLocation} (a superclass method, which @Shadow can't resolve here). Null on
      *  any failure → {@code surfaceOutlineSpec} returns null → the outer just draws, no ring. */
     @SuppressWarnings({"unchecked", "rawtypes"})

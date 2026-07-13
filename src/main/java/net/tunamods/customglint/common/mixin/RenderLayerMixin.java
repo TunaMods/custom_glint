@@ -15,14 +15,14 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
  * Folds entity-surface render layers into the body glow outline. {@code renderColoredCutoutModel} is the
- * single chokepoint every cutout-overlay layer draws through — directly (SheepFurLayer wool, SaddleLayer,
+ * single chokepoint every cutout-overlay layer draws through: directly (SheepFurLayer wool, SaddleLayer,
  * MushroomCowMushroomLayer, …) and via {@code coloredCutoutModelCopyLayerRender} (StrayClothingLayer,
  * DrownedOuterLayer, VillagerProfessionLayer, …).
  *
  * <p>The capture is an IN-PHASE TEE: a {@link Redirect} on the surface model's {@code renderToBuffer}
  * routes the single real draw through a recording consumer when the entity glows, tracing each surface
  * against its own texture under the entity's shared CAT_ENTITY id (so wool/saddle/clothing merge into the
- * figure's one ring — the 1.21.1 equivalent of 26.1.2's {@code fanLayerGlow}). No second model render. The
+ * figure's one ring, the 1.21.1 equivalent of 26.1.2's {@code fanLayerGlow}). No second model render. The
  * real surface still draws unchanged; a non-glowing entity pays one extra method call.
  */
 @Mixin(RenderLayer.class)

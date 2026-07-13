@@ -11,8 +11,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Composites the deferred world glow outline at the TAIL of {@code renderLevel}.
  *
  * <p>Off shader pack, the world outline is drained at {@code RenderLevelStageEvent.AFTER_WEATHER}. Under an
- * Iris/Oculus pack the pack's own scene composite runs AFTER that stage, so a ring drawn there is overwritten
- * — that was the "no world outlines under a shader pack" case. The fix splits the drain: the silhouette mask
+ * Iris/Oculus pack the pack's own scene composite runs AFTER that stage, so a ring drawn there is overwritten.
+ * That was the "no world outlines under a shader pack" case. The fix splits the drain: the silhouette mask
  * is accumulated at AFTER_WEATHER (where the world matrices are live), and the matrix-independent composite
  * blit is deferred to here, after the pack has finished compositing to the main target. {@code compositeWorld}
  * is a no-op unless an accumulation was deferred this frame, so this is free off-pack.

@@ -22,9 +22,9 @@ public final class CustomGlintClientInit {
     /** Invoked from the API mod constructor on client only, with the mod event bus. */
     public static void run(IEventBus modEventBus) {
         modEventBus.addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
-        // Glow-outline core shaders (silhouette + composite) — mod-bus event, client only.
+        // Glow-outline core shaders (silhouette + composite): mod-bus event, client only.
         modEventBus.addListener(GlowOutlineRenderer::registerShaders);
-        // Procedural chromatic glint core shader — mod-bus event, client only.
+        // Procedural chromatic glint core shader: mod-bus event, client only.
         modEventBus.addListener(CustomGlintRenderer::registerShaders);
 
         // Release the glow-outline offscreen targets + silhouette RT caches on resource reload, so
@@ -45,7 +45,7 @@ public final class CustomGlintClientInit {
         // JEI (and other overlays) draw their ingredient-list icons in ScreenEvent.Render.Post, AFTER the
         // container screen's own batched-glint drains (AbstractContainerScreenMixin, before its tooltip). Those
         // overlay icons route their glint into the same batched source but nothing drained it there, so it drew
-        // a frame late at the wrong depth — the icons looked blank. Drain once more at LOWEST priority, after
+        // a frame late at the wrong depth, so the icons looked blank. Drain once more at LOWEST priority, after
         // JEI's own Render.Post handler has drawn (and depth-committed) its icons; a no-op when the batch is
         // empty (every non-overlay screen already drained it).
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, (ScreenEvent.Render.Post event) ->

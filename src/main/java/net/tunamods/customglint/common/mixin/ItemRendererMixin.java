@@ -4,6 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -115,10 +117,10 @@ public class ItemRendererMixin {
     private static VertexConsumer applyGlint(MultiBufferSource buffer, RenderType renderType, boolean isItem) {
         // During our record-only glow-outline capture re-render, route all foil requests to the
         // bare base buffer. Otherwise vanilla's getFoilBuffer returns a VertexMultiConsumer of
-        // (glint, base) — and because the capturing buffer source redirects every RenderType to the
+        // (glint, base), and because the capturing buffer source redirects every RenderType to the
         // same underlying builder, the two delegates would share one builder and tear its vertex
         // state (vertex,vertex,color,color,...,endVertex,endVertex). Items that hardcode
-        // isFoil()=true (e.g. Ice & Fire's ItemAlchemySword — dragonbone_sword_fire/ice/lightning)
+        // isFoil()=true (e.g. Ice & Fire's ItemAlchemySword: dragonbone_sword_fire/ice/lightning)
         // tripped this whenever a custom glint+outline was applied: glint worked, outline didn't.
         if (CustomGlintRenderer.IN_OUTLINE.get()) return buffer.getBuffer(renderType);
         ItemStack stack = CustomGlintRenderer.CURRENT_ITEM_STACK.get();
@@ -127,7 +129,7 @@ public class ItemRendererMixin {
         if (glint == null) return null;
 
         // Route the glint into the batched source so every icon's glint accumulates and draws in ONE
-        // endBatch (drained once) instead of one flush per item — the per-item GuiGraphics.flush() is the
+        // endBatch (drained once) instead of one flush per item. The per-item GuiGraphics.flush() is the
         // dominant GUI cost with the creative tab's many distinct-design icons. Scoped to the HUD hotbar
         // (drained at Gui.render TAIL) and the CREATIVE menu (drained before the tooltip, see
         // AbstractContainerScreenMixin), where the icons are the last things drawn so the deferred glint's
@@ -135,18 +137,18 @@ public class ItemRendererMixin {
         // screen that draws its item previews AFTER super.render (the Glint Table's scrollable design +
         // printed palettes) has no drain left that frame, so a batched glint would land a frame late / at the
         // wrong depth. Such a screen instead ARMS the batch itself (guiGlintBatchArmed) around its own icon
-        // pass and drains right after, so its palette glint batches too without landing late — that's how the
+        // pass and drains right after, so its palette glint batches too without landing late. That's how the
         // Glint Table's design + printed palettes route here.
-        net.minecraft.client.gui.screens.Screen cgScreen = Minecraft.getInstance().screen;
+        Screen cgScreen = Minecraft.getInstance().screen;
         boolean guiHud = CustomGlintRenderer.CURRENT_CTX.get() == ItemDisplayContext.GUI
                 && (cgScreen == null
-                    || cgScreen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
+                    || cgScreen instanceof CreativeModeInventoryScreen
                     || CustomGlintRenderer.guiGlintBatchArmed);
 
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
-        // Fast path — the overwhelmingly common single-layer glint that resolves to ONE glint delegate: any
+        // Fast path, the overwhelmingly common single-layer glint that resolves to ONE glint delegate: any
         // non-simultaneous layer (it animates down to a single colour) or a simultaneous layer with ≤1 colour.
         // Returns the (glint, base) pair straight from the 2-arg VertexMultiConsumer, skipping the ArrayList
         // + dedup array the general multi-delegate path below allocates for every item, every frame.
@@ -212,7 +214,7 @@ public class ItemRendererMixin {
                 : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
     }
 
-    /** Packs an ARGB int into the shader-colour buffer as premultiplied RGB (alpha folded in) + alpha 1 —
+    /** Packs an ARGB int into the shader-colour buffer as premultiplied RGB (alpha folded in) + alpha 1:
      *  the form forGlint's colour holder expects. */
     private static void cg_packColor(float[] buf, int color) {
         float a = ((color >> 24) & 0xFF) / 255.0f;
@@ -250,7 +252,7 @@ public class ItemRendererMixin {
         if (model == null) return;
         boolean glow = CustomGlint.hasGlowEffect(stack);
         // Under a shader pack a chromatic item can't draw in-phase (hijacked); capture its quads here for the
-        // post-Iris overlay drain (world items only for now — GUI / first-person / special items deferred).
+        // post-Iris overlay drain (world items only for now; GUI / first-person / special items deferred).
         CustomGlint.Data cgGlint = CustomGlintRenderer.isShaderPackActive() ? CustomGlint.read(stack) : null;
         boolean chromaPack = cgGlint != null && cg_hasChromatic(cgGlint);
         if (!glow && !chromaPack) return;
@@ -263,7 +265,7 @@ public class ItemRendererMixin {
         // Special / 3D BEWLR items (trident, shield, any isCustomRenderer item) have no baked quads.
         // Re-render the whole item through renderStatic into a record-only buffer (IN_OUTLINE guards
         // recursion + suppresses the glint fan-out), capturing its animated, already-transformed
-        // geometry — the proven approach from the pre-purge doItemOutline/doBewlrOutline path.
+        // geometry: the proven approach from the pre-purge doItemOutline/doBewlrOutline path.
         if (model.isCustomRenderer()) {
             // Special / 3D BEWLR items (trident, shield): one re-render capture feeds both the glow ring and,
             // under a pack, the chromatic overlay (per captured texture bucket). GUI special-item chromatic is
@@ -274,7 +276,7 @@ public class ItemRendererMixin {
         }
 
         // render() pushed the pose, applied the item's display transform (handleCameraTransforms ->
-        // applyTransform) + the (-0.5,-0.5,-0.5) centering, drew the quads, then popped — so pose.last()
+        // applyTransform) + the (-0.5,-0.5,-0.5) centering, drew the quads, then popped, so pose.last()
         // at this RETURN is the OUTER pose, missing both. Reproduce that exact sequence on a copy so the
         // silhouette matches the item's real on-screen scale and position.
         PoseStack tp = new PoseStack();
@@ -284,7 +286,7 @@ public class ItemRendererMixin {
         tp.translate(-0.5F, -0.5F, -0.5F);
         if (rendered == null || rendered.isCustomRenderer()) return;
 
-        // Trace the item's full real shape — every face, including the 1/16 extrusion rim — so the
+        // Trace the item's full real shape (every face, including the 1/16 extrusion rim) so the
         // outline wraps the visible 3D item instead of a single offset sprite plane. The isolated Sodium
         // flicker specks that used to leak past the edge are removed in the composite's morphological-
         // opening guard, not by dropping geometry here.
@@ -309,7 +311,7 @@ public class ItemRendererMixin {
 
         // Chromatic overlay capture: expand the baked quads to camera-relative [x,y,z,u,v] under the item's
         // display transform and queue per chromatic layer. World items drain at renderLevel TAIL; first-person
-        // hand items at the hand pass; GUI icons at GuiGraphics.flush — each under the matrices they drew with.
+        // hand items at the hand pass; GUI icons at GuiGraphics.flush, each under the matrices they drew with.
         if (chromaPack) {
             EntityGlintRender.CapturingModelConsumer cap = new EntityGlintRender.CapturingModelConsumer();
             for (BakedQuad q : quads) {

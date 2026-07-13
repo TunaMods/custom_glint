@@ -28,11 +28,11 @@ import java.util.List;
 
 /**
  * Two hooks on {@code ElytraLayer.render}:
- *  1. {@link Redirect} on the vanilla elytra {@code renderToBuffer} — the IN-PHASE glow TEE. The elytra
+ *  1. {@link Redirect} on the vanilla elytra {@code renderToBuffer}: the IN-PHASE glow TEE. The elytra
  *     wings are drawn once by vanilla (inside its {@code translate(0,0,0.125)} push/pop); we route that
  *     single walk through a recording consumer to capture the glow silhouette in place, instead of a second
  *     re-render. Keyed by the elytra STACK so it keeps its own ring. No-op capture when not glowing.
- *  2. {@link Inject} at RETURN — draws the custom GLINT (vanilla doesn't), re-applying the 0.125 offset.
+ *  2. {@link Inject} at RETURN, draws the custom GLINT (vanilla doesn't), re-applying the 0.125 offset.
  * Both honor vanilla's {@code shouldRender} so a Mekanism-style subclass layer doesn't double-draw.
  */
 @Mixin(ElytraLayer.class)
