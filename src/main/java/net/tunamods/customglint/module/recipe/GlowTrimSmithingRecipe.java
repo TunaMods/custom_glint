@@ -22,7 +22,7 @@ import net.tunamods.customglint.module.item.ModItems;
 /**
  * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with
  * glowColors+glowing applied via {@link CustomGlint#setGlowColors}. Does NOT touch any
- * existing glint Data on the base — Glow Trim is strictly a glow-only application.
+ * existing glint Data on the base. Glow Trim is strictly a glow-only application.
  */
 public class GlowTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();

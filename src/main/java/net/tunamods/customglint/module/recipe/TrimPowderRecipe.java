@@ -17,8 +17,8 @@ import net.tunamods.customglint.module.item.ModItems;
 
 /**
  * Recycle recipe: 4 Trim Powder + 2 Glowstone Dust → one fresh, randomly designed Glint Trim. The result is
- * rolled in {@link #assemble} (a random design, sometimes with a few random colors), so the output preview
- * changes each time the grid updates — that's intentional, it signals the trim is random.
+ * rolled in {@link #assemble} (a random design, always blank so identical designs stack), so the output preview
+ * changes each time the grid updates. That's intentional: it signals the trim is random.
  */
 public class TrimPowderRecipe extends CustomRecipe {
 

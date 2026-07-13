@@ -60,7 +60,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
         return pWidth >= 3 && pHeight >= 3;
     }
 
-    /** NBT-transform recipe (like the other Trim recipes): special so it gets no recipe-book toast. */
+    /** Data-component transform (like the other Trim recipes): special so it gets no recipe-book toast. */
     @Override
     public boolean isSpecial() { return true; }
 

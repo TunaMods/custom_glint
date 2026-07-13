@@ -24,6 +24,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ComponentItemHandler;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.block.ModBlocks;
 import net.tunamods.customglint.module.menu.GlintBagMenu;
@@ -44,7 +45,7 @@ public class GlintBagItem extends Item {
     public static final int COLS = 9;
     public static final int SIZE = ROWS * COLS;
 
-    /** Auto-collect only scans the inventory this often (ticks) — the pickup hook handles instant collection. */
+    /** Auto-collect only scans the inventory this often (ticks); the pickup hook handles instant collection. */
     private static final int SCAN_INTERVAL = 10;
 
     public GlintBagItem(Properties properties) {
@@ -75,7 +76,7 @@ public class GlintBagItem extends Item {
         }
     }
 
-    /** The bag's signature look: the "Golden" glow trim — a slow golden solid layer under a faster shimmer,
+    /** The bag's signature look: the "Golden" glow trim, a slow golden solid layer under a faster shimmer,
      *  with the glowing outline on. Mirrors config/customglint/trims/Golden.json. */
     public static void applyGoldenGlint(ItemStack stack) {
         CustomGlint.write(stack, new CustomGlint.Layer[]{
@@ -93,7 +94,7 @@ public class GlintBagItem extends Item {
         return stack;
     }
 
-    /** The mod's own loot items — trims, tears, rainbow dye. Only these are auto-collected (pulled in on pickup
+    /** The mod's own loot items (trims, tears, rainbow dye). Only these are auto-collected (pulled in on pickup
      *  or by the inventory sweep); generic materials are not, so the bag never eats your redstone or dyes. */
     public static boolean isAutoCollectable(ItemStack stack) {
         Item item = stack.getItem();
@@ -117,7 +118,7 @@ public class GlintBagItem extends Item {
 
     /** Shift-right-click on a Glint Table dumps the bag's trims into the player's table libraries (empty trims
      *  teach their design, painted trims join the printed library). A normal click is intercepted by the block
-     *  first — it opens the table — so this only fires while sneaking. */
+     *  first (it opens the table), so this only fires while sneaking. */
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
@@ -155,7 +156,7 @@ public class GlintBagItem extends Item {
 
     /** Auto-move: while carried with auto-collect on, periodically sweep the player inventory and pull any loose
      *  storable Glint items into the bag. The ground-pickup hook catches items before they land; this catches
-     *  the rest — dragged out of a loot chest, shift-clicked in, given, etc. */
+     *  the rest: dragged out of a loot chest, shift-clicked in, given, etc. */
     @Override
     public void inventoryTick(ItemStack stack, Level level, Entity entity, int slotId, boolean isSelected) {
         if (level.isClientSide || !(entity instanceof Player player)) return;
@@ -166,8 +167,8 @@ public class GlintBagItem extends Item {
         Inventory inv = player.getInventory();
         for (int i = 0; i < inv.items.size(); i++) {
             ItemStack s = inv.items.get(i);
-            if (s.isEmpty() || !isAutoCollectable(s)) continue; // glint loot only — never vacuums generic materials
-            inv.items.set(i, net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(handler, s, false));
+            if (s.isEmpty() || !isAutoCollectable(s)) continue; // glint loot only, never vacuums generic materials
+            inv.items.set(i, ItemHandlerHelper.insertItemStacked(handler, s, false));
         }
     }
 

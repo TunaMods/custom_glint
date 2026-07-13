@@ -56,7 +56,7 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
         if (trim.isEmpty()) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        GlintTrimItem.setScale(result, count * 0.5f);
+        GlintTrimItem.setScale(result, count * 0.5f); // 0.5x per slime ball, so 1..8 balls map to 0.5x..4.0x scale
         return result;
     }
 

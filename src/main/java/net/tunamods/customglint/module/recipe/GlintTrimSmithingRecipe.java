@@ -74,8 +74,8 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
                 : new CustomGlint.Layer[]{ new CustomGlint.Layer(pattern, colors, speed, interpolate,
                         GlintTrimItem.getScale(template), simultaneous) };
         // Commit a stable oil-slick seed into any unseeded chromatic layer here (the trim/preview carry seed 0).
-        // Smithing recomputes the result only when the input slots change, so this is a one-shot commit — the
-        // table's print-time equivalent — not a per-frame re-roll that would flicker the pattern.
+        // Smithing recomputes the result only when the input slots change, so this is a one-shot commit (the
+        // table's print-time equivalent), not a per-frame re-roll that would flicker the pattern.
         CustomGlint.write(result, CustomGlint.ensureChromaticSeeds(layers));
         if (GlintTrimItem.isGlowing(template)) CustomGlint.setGlowing(result, true);
         return result;
@@ -111,7 +111,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public static class Serializer implements RecipeSerializer<GlintTrimSmithingRecipe> {
         // Stateless recipe: share ONE instance between both codecs. StreamCodec.unit validates on encode that
         // the value == the captured instance (identity, no equals override), so the map codec must decode that
-        // SAME singleton, not a fresh `new` each load — otherwise recipe sync throws "Can't encode ...".
+        // SAME singleton, not a fresh `new` each load; otherwise recipe sync throws "Can't encode ...".
         private static final GlintTrimSmithingRecipe INSTANCE = new GlintTrimSmithingRecipe();
         private static final MapCodec<GlintTrimSmithingRecipe> CODEC =
                 MapCodec.unit(INSTANCE);

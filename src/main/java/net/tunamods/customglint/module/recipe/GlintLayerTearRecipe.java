@@ -65,7 +65,7 @@ public class GlintLayerTearRecipe extends CustomRecipe {
         CustomGlint.Data d1 = CustomGlint.read(glint1);
         CustomGlint.Data d2 = CustomGlint.read(glint2);
         if (d1 == null || d2 == null) return ItemStack.EMPTY;
-        int total = Math.min(d1.layers().length + d2.layers().length, 8);
+        int total = Math.min(d1.layers().length + d2.layers().length, 8); // cap at 8 layers so repeated layer-tears can't grow the stack unboundedly
         CustomGlint.Layer[] combined = new CustomGlint.Layer[total];
         int fromD1 = Math.min(d1.layers().length, total);
         System.arraycopy(d1.layers(), 0, combined, 0, fromD1);

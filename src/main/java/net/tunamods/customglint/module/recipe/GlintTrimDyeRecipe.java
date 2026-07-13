@@ -45,7 +45,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlintTrimItem.getColors(trim).length < 8;
+                && GlintTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override
@@ -61,7 +61,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
         if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        // Append the dye's color (cap 8), matching GlowTrimDyeRecipe — dyeing a multi-color trim must not
+        // Append the dye's color (cap 8), matching GlowTrimDyeRecipe. Dyeing a multi-color trim must not
         // discard its existing colors.
         int[] current = GlintTrimItem.getColors(result);
         int[] next = new int[current.length + 1];

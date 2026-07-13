@@ -13,6 +13,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
@@ -46,7 +47,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlowTrimItem.getColors(trim).length < 8;
+                && GlowTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override

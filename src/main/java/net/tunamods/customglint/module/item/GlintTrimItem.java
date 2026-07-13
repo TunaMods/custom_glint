@@ -31,6 +31,8 @@ public class GlintTrimItem extends Item {
         0xFFFF0000, 0xFF000000
     };
 
+    /** Cap on a trim's color list; the smithing/dye/merge recipes and the Glint Table share this limit. */
+
     // CopyOnWriteArrayList: the design-sync handler (client thread) mutates this via removeAll/add
     // while loot/creative-tab/GUI code iterates it on the server/render thread. In singleplayer a
     // datapack /reload while a wand editor or Glint Table is open races those, so the list must be
@@ -124,12 +126,13 @@ public class GlintTrimItem extends Item {
         setCfg(stack, new ModComponents.TrimConfig(Optional.of(pattern), c.colors(), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), seed));
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
+        // CustomModelData index: glowing variants live in a +1000 band, and +1 keeps index 0 (the default model) free.
         if (idx >= 0) stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData((isGlowing(stack) ? 1000 : 0) + idx + 1));
         CustomGlint.write(stack, pattern, writeColors(pattern, getColors(stack)), getSpeed(stack), true, getScale(stack), false, getScrollDir(stack), getScrollOffset(stack), seed);
     }
 
     /** Sets the display config (pattern/speed/scale/scroll/offset/glowing) directly, preserving the current
-     *  colors and WITHOUT rewriting the preview glint — for {@code /glint extract} on a multi-layer glint,
+     *  colors and WITHOUT rewriting the preview glint, for {@code /glint extract} on a multi-layer glint,
      *  where the full multi-layer tag is copied separately and must not be clobbered by a single-layer write. */
     public static void setConfig(ItemStack stack, ResourceLocation pattern, float speed, float scale, int scroll, float offset, boolean glowing) {
         ModComponents.TrimConfig c = cfg(stack);
@@ -149,7 +152,7 @@ public class GlintTrimItem extends Item {
 
     public static boolean addColor(ItemStack stack, int color) {
         int[] current = getColors(stack);
-        if (current.length >= 8) return false;
+        if (current.length >= CustomGlint.MAX_COLORS_PER_LAYER) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
         ModComponents.TrimConfig c = cfg(stack);
@@ -163,7 +166,7 @@ public class GlintTrimItem extends Item {
         result.setCount(1);
         int[] a = getColors(first);
         int[] b = getColors(second);
-        int total = Math.min(8, a.length + b.length);
+        int total = Math.min(CustomGlint.MAX_COLORS_PER_LAYER, a.length + b.length);
         int[] merged = new int[total];
         System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
         int bCount = total - a.length;
@@ -287,10 +290,10 @@ public class GlintTrimItem extends Item {
     public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (isGlowing(pStack)) {
-            pTooltipComponents.add(Component.literal("Glowing — wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));
+            pTooltipComponents.add(Component.literal("Glowing: wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));
         }
         if (colors.length == 0) {
-            pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
+            pTooltipComponents.add(Component.literal("No color. Craft with a dye to add one"));
             return;
         }
         CustomGlint.Data data = CustomGlint.read(pStack);
@@ -322,7 +325,7 @@ public class GlintTrimItem extends Item {
                 }
             }
         } else {
-            pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + " — apply with Glowstone Dust at a smithing table"));
+            pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + ", apply with Glowstone Dust at a smithing table"));
             float speed = getSpeed(pStack);
             float scale = getScale(pStack);
             if (speed != 1.0f) pTooltipComponents.add(Component.literal("Speed: " + (int) speed + "×").withStyle(ChatFormatting.AQUA));
@@ -349,7 +352,7 @@ public class GlintTrimItem extends Item {
         int slash = path.lastIndexOf('/');
         int dot   = path.lastIndexOf('.');
         // A ResourceLocation path may legally contain both '.' and '/'. If the last dot precedes the
-        // last slash (e.g. "tex.png/x"), substring(slash+1, dot) would underflow — clamp to the end.
+        // last slash (e.g. "tex.png/x"), substring(slash+1, dot) would underflow, so clamp to the end.
         if (dot <= slash) dot = path.length();
         return path.substring(slash + 1, dot);
     }

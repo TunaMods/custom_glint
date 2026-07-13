@@ -17,7 +17,7 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
 /**
- * GlintTrimItem (with a pattern + ≥1 color) + 1–8 Glass → the same trim with every color's alpha (the A /
+ * GlintTrimItem (with a pattern + ≥1 color) + 1-8 Glass → the same trim with every color's alpha (the A /
  * transparency channel) set by the glass count: 8 glass = fully opaque (A=255), fewer = more see-through.
  * Mirrors {@link GlintTrimSpeedRecipe} / {@link GlintTrimScaleRecipe}.
  */
