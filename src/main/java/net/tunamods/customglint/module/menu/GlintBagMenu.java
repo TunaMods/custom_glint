@@ -24,7 +24,7 @@ public class GlintBagMenu extends AbstractContainerMenu {
     private final ItemStack bag;
     private final IItemHandler handler;
 
-    /** Client constructor — the hand is sent as a boolean in the open packet. */
+    /** Client constructor; the hand is sent as a boolean in the open packet. */
     public GlintBagMenu(int containerId, Inventory inventory, RegistryFriendlyByteBuf extraData) {
         this(containerId, inventory, extraData.readBoolean() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND);
     }

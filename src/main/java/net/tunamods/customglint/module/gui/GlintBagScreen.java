@@ -24,7 +24,7 @@ public class GlintBagScreen extends AbstractContainerScreen<GlintBagMenu> {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // AbstractContainerScreen.render draws the dim background + slots + labels but NOT the hovered-slot
-        // tooltip in 1.21.1 — each screen must call renderTooltip itself (see GlintTableScreen).
+        // tooltip in 1.21.1, so each screen must call renderTooltip itself (see GlintTableScreen).
         super.render(graphics, mouseX, mouseY, partialTick);
         this.renderTooltip(graphics, mouseX, mouseY);
     }

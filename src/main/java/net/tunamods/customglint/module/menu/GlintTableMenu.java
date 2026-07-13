@@ -140,15 +140,15 @@ public class GlintTableMenu extends AbstractContainerMenu {
         // Main / merge trim slots reject physical placement (mayPlace=false): the screen turns a placed trim
         // into a library deposit + ghost preview, so these slots never hold a real item and it can't get stuck
         // where it couldn't be pulled back out. They still exist for layout (the ghost draws over them).
-        addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  s -> false,                      SLOT_MAX)); // 8 main (left of center, aligned to the grids' top row)
-        // Speed/scale take loose slime balls / redstone only, capped at a 64 stack — the max cost the table charges.
-        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL), SLOT_MAX)); // 12 scale
-        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE),   SLOT_MAX)); // 10 speed
-        addSlot(new FilteredSlot(container, SLOT_GLASS,     54,  154, s -> s.is(Items.GLASS),           SLOT_MAX)); // 11 opacity
-        addSlot(new FilteredSlot(container, SLOT_GLOWSTONE, 233, 154, s -> s.is(Items.GLOWSTONE_DUST),  SLOT_MAX)); // 13
-        addSlot(new FilteredSlot(container, SLOT_NAMETAG,   267, 154, s -> s.is(Items.NAME_TAG),         1)); // 14 (boolean gate, one only)
-        addSlot(new FilteredSlot(container, SLOT_TRIM_B,    188, 19,  s -> false,                      SLOT_MAX)); // 9 layered (right of center, aligned to the grids' top row) — placement rejected, see SLOT_TRIM note
-        addSlot(new FilteredSlot(container, SLOT_TEAR,      292, 154, GlintTableMenu::isSimTear,        SLOT_MAX)); // 15 simultaneous tear (left of the shared toggle)
+        addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  s -> false,                      SLOT_MAX)); // main (left of center, aligned to the grids' top row)
+        // Speed/scale take loose slime balls / redstone only, capped at a 64 stack, the max cost the table charges.
+        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL), SLOT_MAX)); // scale
+        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE),   SLOT_MAX)); // speed
+        addSlot(new FilteredSlot(container, SLOT_GLASS,     54,  154, s -> s.is(Items.GLASS),           SLOT_MAX)); // opacity
+        addSlot(new FilteredSlot(container, SLOT_GLOWSTONE, 233, 154, s -> s.is(Items.GLOWSTONE_DUST),  SLOT_MAX)); // glow
+        addSlot(new FilteredSlot(container, SLOT_NAMETAG,   267, 154, s -> s.is(Items.NAME_TAG),         1)); // name (boolean gate, one only)
+        addSlot(new FilteredSlot(container, SLOT_TRIM_B,    188, 19,  s -> false,                      SLOT_MAX)); // layered (right of center, aligned to the grids' top row); placement rejected, see SLOT_TRIM note
+        addSlot(new FilteredSlot(container, SLOT_TEAR,      292, 154, GlintTableMenu::isSimTear,        SLOT_MAX)); // simultaneous tear (left of the shared toggle)
 
         // 16 dye slots + the rainbow dye (17 cells total), full-width bar, recentered: 17*18 = 306 → x0 = 18.
         for (int i = 0; i < 16; i++) {
@@ -316,7 +316,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
                 // A single-colour layer renders identically whether "simultaneous" or not, and the two build
                 // paths set that flag differently for such layers (import normalizes every layer, print only
                 // the active one). Canonicalize it to false so the same trim, imported vs printed, hashes the
-                // same — otherwise it shows up as a duplicate the print-unlock never consolidates.
+                // same, otherwise it shows up as a duplicate the print-unlock never consolidates.
                 boolean sim = l.simultaneous() && l.colors().length >= 2;
                 sb.append(';').append(l.speed()).append(';').append(l.interpolate())
                   .append(';').append(l.patternScale()).append(';').append(sim)
@@ -433,7 +433,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         int[] baseColors = fromBase ? GlintTrimItem.getColors(base) : new int[0];
         int colorBudget = Math.max(0, 8 - baseColors.length);
         List<Integer> newColors = new ArrayList<>();
-        // Cumulative dye cost: every colour shard on every layer charges its own dye — a shade reused across
+        // Cumulative dye cost: every colour shard on every layer charges its own dye; a shade reused across
         // shards / layers costs one of that dye each time, no de-duplication. dyeUsed tracks the running
         // per-shade count so each colour validates against what the slot still holds after earlier claims.
         int[] dyeUsed = new int[16];
@@ -466,7 +466,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
         // The committed layers (below/above the active one) also cost dyes, cumulatively: every colour of every
         // committed layer wants its own dye, stacking on top of the active layer's claims (no de-dup). The
-        // synthetic white fill an empty layer carries is skipped — it isn't a chosen colour. A non-dye colour
+        // synthetic white fill an empty layer carries is skipped, it isn't a chosen colour. A non-dye colour
         // takes a rainbow dye instead.
         int committedRainbow = 0;
         for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
@@ -561,7 +561,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         GlintTrimItem.setScrollDir(trim, scrollDir);
         GlintTrimItem.setScrollOffset(trim, scrollOffset);
         GlintTrimItem.setPattern(trim, design);
-        // Mode tears: every multi-colour layer costs one tear matching how its colours animate — a simultaneous
+        // Mode tears: every multi-colour layer costs one tear matching how its colours animate: a simultaneous
         // tear for a simultaneous layer, a sequential tear for a sequential one. A single-colour layer renders
         // the same either way, so it costs no tear. The active layer keeps its chosen mode, so the print BLOCKS
         // on a missing tear instead of quietly printing the other mode.
@@ -626,7 +626,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
         // A trim printed with the full 8 colors earns "Ratatouille"; a layered trim earns "Like Ogres", the
         // full 8 layers earns "How many cheeses?", and 8 layers each with all 8 colors earns "In this Economy?".
-        if (GlintTrimItem.getColors(trim).length >= 8) ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
+        if (GlintTrimItem.getColors(trim).length >= CustomGlint.MAX_COLORS_PER_LAYER) ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
         CustomGlint.Data printed = CustomGlint.read(trim);
         int layers = printed != null ? printed.layers().length : 0;
         if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
@@ -635,7 +635,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
     }
 
     /**
-     * Print a Glow Trim: a glow-only trim carries no glint design, layers, speed/scale or opacity — just its
+     * Print a Glow Trim: a glow-only trim carries no glint design, layers, speed/scale or opacity, just its
      * glow colours. The colours come from the selected dye shards (one dye per shade, one rainbow dye per
      * custom colour, exactly like the glint print, cumulative with no de-dup), the dyes are consumed, and the
      * finished Glow Trim is given to the player + stored in the printed library. No-op on validation fail.
@@ -646,7 +646,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         int redCost = CustomGlint.stepCost(safeSpeed); // glow-cycle speed off 1× costs redstone, like a glint layer
         if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return;
 
-        // Resolve the glow colours from the selected shards (opaque — glow has no opacity dimension), tracking
+        // Resolve the glow colours from the selected shards (opaque, glow has no opacity dimension), tracking
         // which dyes to consume. A shard whose dye isn't present (or short) is skipped; a custom-hex shard
         // costs a rainbow dye. Cumulative: each shard charges its own dye, no de-duplication.
         List<Integer> colors = new ArrayList<>();
@@ -770,14 +770,14 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return true;
     }
 
-    /** Mod-palette RGB (no alpha) for a dye, or -1 for none. DyeColor is a non-extensible vanilla enum with
-     *  exactly 16 constants and {@link GlintTrimItem#DYE_COLORS} has 16 entries, so the index is safe today;
-     *  the explicit bound just keeps a future palette/enum drift from throwing on a client-supplied dye. */
     /** The {@link DyeColor} an item dyes with (vanilla {@link DyeItem}), or null. */
     private static DyeColor dyeOf(ItemStack stack) {
         return stack.getItem() instanceof DyeItem di ? di.getDyeColor() : null;
     }
 
+    /** Mod-palette RGB (no alpha) for a dye, or -1 for none. DyeColor is a non-extensible vanilla enum with
+     *  exactly 16 constants and {@link GlintTrimItem#DYE_COLORS} has 16 entries, so the index is safe today;
+     *  the explicit bound just keeps a future palette/enum drift from throwing on a client-supplied dye. */
     private static int dyeColor(DyeColor dye) {
         if (dye == null) return -1;
         int idx = dye.ordinal();
@@ -889,7 +889,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
     /**
      * Bulk-deposit a Glint Bag's contents into the player's libraries (shift-right-click the table with a bag).
      * Empty trims register their design into the stored-design palette; painted trims go into the printed
-     * library. Only the first of each new design/config is consumed from the bag — once it's registered, the
+     * library. Only the first of each new design/config is consumed from the bag; once it's registered, the
      * remaining duplicates stay in the bag (there's nothing left to learn from them).
      */
     public static void depositBagContents(ServerPlayer sp, ItemStack bag) {

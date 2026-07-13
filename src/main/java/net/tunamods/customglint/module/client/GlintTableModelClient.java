@@ -34,12 +34,12 @@ import net.tunamods.customglint.module.block.ModBlocks;
 
 /**
  * Makes the placed Glint Table re-skin to match the player's chosen GUI skin (Default / Dark / Forge), a
- * purely client-side cosmetic tied to {@link GlintGuiConfig#tableSkin()} — the same setting the table window
+ * purely client-side cosmetic tied to {@link GlintGuiConfig#tableSkin()}, the same setting the table window
  * uses. The block is horizontally facing, and each (skin, facing) pair has its own variant model. The block's
  * baked model for every facing is replaced (in {@link ModelEvent.ModifyBakingResult}) by a delegate that
  * forwards to the variant for the current skin at mesh time. Cycling the skin calls {@link #refresh()} so the
  * sections holding a table re-mesh and pick up the new look. The held / inventory ITEM keeps the base
- * (Forge) model — only the placed block follows the GUI skin. Robust: any baking-API hiccup falls back to the
+ * (Forge) model; only the placed block follows the GUI skin. Any baking-API hiccup falls back to the
  * static model rather than crashing.
  */
 public final class GlintTableModelClient {
@@ -86,7 +86,7 @@ public final class GlintTableModelClient {
             try {
                 models.put(loc, new SkinSwitchModel(d, fallback, variants.get(d)));
             } catch (UnsupportedOperationException ignored) {
-                // Immutable baking result on some setup — leave the static model in place.
+                // Immutable baking result on some setup: leave the static model in place.
             }
         }
     }

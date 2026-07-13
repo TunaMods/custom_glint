@@ -80,7 +80,7 @@ public class GlintEditorScreen extends Screen {
     private static ResourceLocation designRL(String name) {
         // Delegate to the canonical resolver so special sentinels (vanilla, chromatic) map correctly. The old
         // local copy handled "vanilla" but not "chromatic", so it turned the chromatic design into a bogus
-        // textures/glint/chromatic.png — isChromatic() then failed and no glint drew on the preview/applied item.
+        // textures/glint/chromatic.png, so isChromatic() failed and no glint drew on the preview/applied item.
         return CustomGlint.designFromName(name);
     }
 
@@ -94,7 +94,7 @@ public class GlintEditorScreen extends Screen {
 
     // Item display names resolve a Component + format a String; the picker draws them every frame for every
     // visible row and the filter walks them on each search. Items are registry singletons, so the resolved
-    // name is stable — cache it. Icon ItemStacks are cached the same way to skip the per-row allocation.
+    // name is stable, so cache it. Icon ItemStacks are cached the same way to skip the per-row allocation.
     private static final Map<Item, String> ITEM_NAME_CACHE = new IdentityHashMap<>();
     private static final Map<Item, ItemStack> ITEM_ICON_CACHE = new IdentityHashMap<>();
 
@@ -297,41 +297,32 @@ public class GlintEditorScreen extends Screen {
         } catch (NumberFormatException ignored) {}
     }
 
-    private void onRChanged(String s) {
+    private void onRChanged(String s) { onChannelChanged(s, c -> editR = c, true); }
+    private void onGChanged(String s) { onChannelChanged(s, c -> editG = c, true); }
+    private void onBChanged(String s) { onChannelChanged(s, c -> editB = c, true); }
+
+    /** Clamp a typed 0-255 channel into its field, then sync preview; RGB channels also re-sync the hex box. */
+    private void onChannelChanged(String s, IntConsumer setChannel, boolean syncHex) {
         try {
             int v = Integer.parseInt(s);
             int c = Math.max(0, Math.min(255, v));
-            editR = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
+            setChannel.accept(c);
+            saveEditRGB();
+            if (syncHex) syncHexFromRGB();
+            refreshPreview();
             if (c != v) syncChannelBoxes();
         } catch (NumberFormatException ignored) {}
     }
 
-    private void onGChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editG = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
+    /** Dark track + grey thumb for a picker scrollbar, thumb sized/positioned for scroll over count rows. */
+    private void drawScrollbar(GuiGraphics g, int sbX, int listY, int trackH, int minThumb, int rows, int count, int scroll) {
+        g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+        int thumbH = Math.max(minThumb, trackH * rows / count);
+        int thumbY = listY + (int)((trackH - thumbH) * (float) scroll / (count - rows));
+        g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
     }
 
-    private void onBChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editB = c; saveEditRGB(); syncHexFromRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
-
-    private void onAChanged(String s) {
-        try {
-            int v = Integer.parseInt(s);
-            int c = Math.max(0, Math.min(255, v));
-            editA = c; saveEditRGB(); refreshPreview();
-            if (c != v) syncChannelBoxes();
-        } catch (NumberFormatException ignored) {}
-    }
+    private void onAChanged(String s) { onChannelChanged(s, c -> editA = c, false); }
 
     // ── Preview ──────────────────────────────────────────────────────────────
 
@@ -576,7 +567,7 @@ public class GlintEditorScreen extends Screen {
                 () -> { layerSimultaneous.set(selectedLayer, !layerSimultaneous.get(selectedLayer)); refreshPreview(); }),
                 "screen.customglint.glint_editor.tip.type");
 
-        // Scroll direction — cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
+        // Scroll direction: cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
         // stepper appears/disappears with the mode.
         int sd = layerScrollDirs.get(selectedLayer);
         tip(bevel(px + 100, py + 202, 90, 14,
@@ -586,7 +577,7 @@ public class GlintEditorScreen extends Screen {
                 sd == CustomGlint.SCROLL_STATIC ? "screen.customglint.glint_editor.tip.scroll_static"
                                                 : "screen.customglint.glint_editor.tip.scroll");
 
-        // Static UV offset stepper — only shown (and only meaningful) when the layer is STATIC.
+        // Static UV offset stepper: only shown (and only meaningful) when the layer is STATIC.
         if (sd == CustomGlint.SCROLL_STATIC) {
             tip(bevel(px + 196, py + 202, 14, 14, () -> "−", () -> {
                 layerScrollOffsets.set(selectedLayer, Math.max(0.0f, Math.round((layerScrollOffsets.get(selectedLayer) - 0.05f) * 20) / 20.0f));
@@ -758,7 +749,7 @@ public class GlintEditorScreen extends Screen {
 
         // Item picker search box, managed manually. Same preserve-across-init handling as the design box.
         // Re-seed the value with the responder detached so restoring the query across an init()/rebuild does
-        // NOT fire pickerScroll = 0 — only real typing resets the scroll, so reopening keeps your position.
+        // NOT fire pickerScroll = 0; only real typing resets the scroll, so reopening keeps your position.
         String prevItemQuery = searchBox != null ? searchBox.getValue() : "";
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
         searchBox.setMaxLength(40);
@@ -789,7 +780,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     /** Open the Import list: scan the player's personal trims off disk, ask the server for the current shared
-     *  blueprint pool (the reply arrives a tick later — {@link #renderImportPicker} rebuilds when it lands),
+     *  blueprint pool (the reply arrives a tick later, and {@link #renderImportPicker} rebuilds when it lands),
      *  then build the merged list from whatever is already synced. */
     private void scanGlintConfigs() {
         PacketDistributor.sendToServer(new GlintWandRequestBlueprintsPacket());
@@ -797,7 +788,7 @@ public class GlintEditorScreen extends Screen {
         // then refresh the local names below. The server reply lands asynchronously and rebuilds again.
         rebuildImportList();
         // Read the personal-trims directory off the render thread. The first listing after a fresh launch
-        // hits a cold OS file cache and stalls the frame if done inline — a visible spike on the first Import
+        // hits a cold OS file cache and stalls the frame if done inline: a visible spike on the first Import
         // click, gone on later clicks once the cache is warm. The io pool absorbs that; the result is applied
         // back on the client thread, slotting into the same "rebuild when the data shows up" flow the async
         // server sync already uses.
@@ -815,8 +806,8 @@ public class GlintEditorScreen extends Screen {
                             .forEach(found::add);
                     }
                 }
-            } catch (Exception e) {
-                // Silently fail if config dir doesn't exist
+            } catch (Exception ignored) {
+                // config dir missing or unreadable
             }
             mc.execute(() -> {
                 localGlints.clear();
@@ -826,7 +817,7 @@ public class GlintEditorScreen extends Screen {
         });
     }
 
-    /** Rebuild the Import list from both sources — personal local trims and the synced server pool — then
+    /** Rebuild the Import list from both sources (personal local trims and the synced server pool), then
      *  re-apply the search filter. Case-insensitive sort; personal entries win a name collision (see
      *  {@link #localGlints}). */
     private void rebuildImportList() {
@@ -974,7 +965,7 @@ public class GlintEditorScreen extends Screen {
         }
     }
 
-    // ── Text helpers (flat, no drop shadow — crisp on light skins) ─────────────
+    // ── Text helpers (flat, no drop shadow, crisp on light skins) ──────────────
 
     private void label(GuiGraphics g, Component c, int x, int y, int color) {
         g.drawString(this.font, c.getString(), x, y, 0xFF000000 | color, false);
@@ -1084,7 +1075,7 @@ public class GlintEditorScreen extends Screen {
     public void render(GuiGraphics g, int mx, int my, float dt) {
         renderBackground(g, mx, my, dt);
 
-        // Skinned panel background — frame, divider and preview recess are baked into the skin PNG.
+        // Skinned panel background: frame, divider and preview recess are baked into the skin PNG.
         skin.windowPanel(g, px, py, PANEL_W, PANEL_H);
 
         // Left labels
@@ -1139,13 +1130,13 @@ public class GlintEditorScreen extends Screen {
             pose.translate(bx + PREVIEW_SZ / 2f, by + PREVIEW_SZ / 2f, 200);
             // Flat items stay at 5x (unchanged). 3D BEWLR items (the troll weapons etc.) shrink to 4.4x so the
             // few px of margin inside the 80px recess lets their glow ring show instead of being clipped at the
-            // box edge — flat items don't need it (their ring already clips to the rect the same as before).
+            // box edge. Flat items don't need it (their ring already clips to the rect the same as before).
             boolean preview3d = this.minecraft != null && this.minecraft.getItemRenderer()
                     .getModel(previewStack, this.minecraft.level, this.minecraft.player, 0).isCustomRenderer();
             float previewScale = preview3d ? 4.4f : 5.0f;
             pose.scale(previewScale, previewScale, 1.0f);
             // GuiGraphics.renderItem self-flushes after drawing the item, so the glow-outline drain
-            // (GuiGraphics.flush RETURN → drainGui) fires here WHILE the preview scissor is still enabled —
+            // (GuiGraphics.flush RETURN → drainGui) fires here WHILE the preview scissor is still enabled:
             // the recess box is the live GL scissor and clips the ring to the preview. The drain sizes the
             // ring off the item's on-screen scale (the 5x/4.4x pose), so the preview ring wraps the whole item.
             g.renderItem(previewStack, -8, -8);
@@ -1249,11 +1240,7 @@ public class GlintEditorScreen extends Screen {
 
         if (filteredDesigns.size() > DESIGN_ROWS) {
             int trackH = DESIGN_ROWS * DESIGN_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * DESIGN_ROWS / filteredDesigns.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) designScroll
-                    / (filteredDesigns.size() - DESIGN_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+            drawScrollbar(g, sbX, listY, trackH, 8, DESIGN_ROWS, filteredDesigns.size(), designScroll);
         }
     }
 
@@ -1298,11 +1285,7 @@ public class GlintEditorScreen extends Screen {
 
         if (availableGlints.size() > IMPORT_ROWS) {
             int trackH = IMPORT_ROWS * IMPORT_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * IMPORT_ROWS / availableGlints.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) importScroll
-                    / (availableGlints.size() - IMPORT_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+            drawScrollbar(g, sbX, listY, trackH, 8, IMPORT_ROWS, availableGlints.size(), importScroll);
         }
     }
 
@@ -1356,11 +1339,7 @@ public class GlintEditorScreen extends Screen {
 
         if (filteredItems.size() > VISIBLE_ROWS) {
             int trackH = VISIBLE_ROWS * ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(10, trackH * VISIBLE_ROWS / filteredItems.size());
-            int thumbY = listY + (int)((trackH - thumbH) * (float) pickerScroll
-                    / (filteredItems.size() - VISIBLE_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+            drawScrollbar(g, sbX, listY, trackH, 10, VISIBLE_ROWS, filteredItems.size(), pickerScroll);
         }
     }
 
