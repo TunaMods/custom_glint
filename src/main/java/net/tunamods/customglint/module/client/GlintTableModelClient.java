@@ -37,7 +37,7 @@ import net.tunamods.customglint.module.block.ModBlocks;
  * purely client-side cosmetic tied to {@link GlintGuiConfig#tableSkin()}. Each (skin, facing) pair has its
  * own variant model; the block's baked model for every facing is replaced by a delegate that forwards to the
  * variant for the current skin. Cycling the skin calls {@link #refresh()} so the sections holding a table
- * re-mesh. Robust: any baking-API hiccup falls back to the static (Forge) model rather than crashing.
+ * re-mesh. Any baking-API failure falls back to the static (Forge) model rather than crashing.
  */
 public final class GlintTableModelClient {
     private GlintTableModelClient() {}
@@ -82,7 +82,7 @@ public final class GlintTableModelClient {
             try {
                 models.put(loc, new SkinSwitchModel(fallback, variants.get(d)));
             } catch (UnsupportedOperationException ignored) {
-                // Immutable baking result on some setup — leave the static model in place.
+                // Immutable baking result on some setup - leave the static model in place.
             }
         }
     }

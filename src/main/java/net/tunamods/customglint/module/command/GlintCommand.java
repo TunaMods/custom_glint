@@ -38,6 +38,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -207,22 +208,23 @@ public class GlintCommand {
                                 BoolArgumentType.getBool(ctx, "enabled"))))))));
     }
 
-    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
-                                   String designName, String colorsArg,
-                                   float speed, boolean smooth, float scale, boolean simultaneous,
-                                   boolean glowing) {
+    /** Resolves a design name to its ResourceLocation, or reports the valid names and returns null. */
+    private static ResourceLocation resolveDesign(CommandSourceStack source, String designName) {
         String key = designName.toLowerCase();
         if (!GlintTrimItem.PATTERNS.contains(key)) {
             source.sendFailure(Component.literal(
                 "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
+            return null;
         }
-        ResourceLocation design = CustomGlint.designFromName(key);
+        return CustomGlint.designFromName(key);
+    }
 
+    /** Parses a comma-separated color-name list to ARGB (capped at MAX_COLORS_PER_LAYER, since the renderer
+     *  fans out one draw per color), or reports the offending name and returns null. */
+    private static int[] parseColors(CommandSourceStack source, String colorsArg) {
         String[] parts = colorsArg.split(",");
-        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
         if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
-            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
+            parts = Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
         int[] colors = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             String name = parts[i].trim().toLowerCase();
@@ -230,10 +232,21 @@ public class GlintCommand {
             if (c == null) {
                 source.sendFailure(Component.literal(
                     "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
+                return null;
             }
             colors[i] = c;
         }
+        return colors;
+    }
+
+    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
+                                   String designName, String colorsArg,
+                                   float speed, boolean smooth, float scale, boolean simultaneous,
+                                   boolean glowing) {
+        ResourceLocation design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
         CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
@@ -290,43 +303,35 @@ public class GlintCommand {
         return count;
     }
 
-    private static int apply(CommandSourceStack source, String designName, String colorsArg,
-                              float speed, boolean smooth, float scale, boolean simultaneous) {
+    /** The command sender as a player, or null (after sending "Must be a player") when the source isn't one. */
+    private static ServerPlayer requirePlayer(CommandSourceStack source) {
         ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        if (player == null) source.sendFailure(Component.literal("Must be a player"));
+        return player;
+    }
 
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
-        }
-        ResourceLocation design = CustomGlint.designFromName(key);
-
-        String[] parts = colorsArg.split(",");
-        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
-        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
-            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
-            }
-            colors[i] = c;
-        }
-
+    /** The player's main-hand item, or null (after sending "Hold an item...") when the hand is empty. */
+    private static ItemStack requireHeldItem(CommandSourceStack source, ServerPlayer player) {
         ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
         if (stack.isEmpty()) {
             source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
+            return null;
         }
+        return stack;
+    }
+
+    private static int apply(CommandSourceStack source, String designName, String colorsArg,
+                              float speed, boolean smooth, float scale, boolean simultaneous) {
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
+
+        ResourceLocation design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
+
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
         CustomGlint.write(stack, CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer }));
@@ -335,17 +340,11 @@ public class GlintCommand {
     }
 
     private static int glow(CommandSourceStack source, boolean enabled) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         CustomGlint.setGlowing(stack, enabled);
         source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
@@ -353,17 +352,11 @@ public class GlintCommand {
     }
 
     private static int remove(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         if (!CustomGlint.has(stack)) {
             source.sendFailure(Component.literal("Item has no custom glint"));
@@ -379,11 +372,8 @@ public class GlintCommand {
      *  player's design library so the whole left palette is usable, instead of depositing each trim one by
      *  one from creative. */
     private static int cheat(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
         List<String> stored = new ArrayList<>(GlintTablePlayerData.storedDesigns(player));
         int before = stored.size();
@@ -404,17 +394,11 @@ public class GlintCommand {
     }
 
     private static int extract(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack held = requireHeldItem(source, player);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
@@ -456,17 +440,11 @@ public class GlintCommand {
     }
 
     private static int export(CommandSourceStack source, String name) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack held = requireHeldItem(source, player);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {

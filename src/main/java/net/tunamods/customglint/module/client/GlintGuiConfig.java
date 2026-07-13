@@ -11,7 +11,7 @@ import java.util.Properties;
 /**
  * Tiny client-side persistence for the Glint GUI preferences (wand / table skin index and the button-click
  * sound toggle). Backed by {@code config/customglint/gui.properties} so the choice survives restarts; loaded
- * lazily on first read and written on menu close ({@link #flush()}). Standalone-only — not in the api jar.
+ * lazily on first read and written on menu close ({@link #flush()}). Standalone-only - not in the api jar.
  *
  * <p>Kept as a plain properties file rather than a {@code ModConfigSpec} so it needs no mod-container
  * registration wiring; these are cosmetic, client-local toggles that never sync.
@@ -29,7 +29,7 @@ public final class GlintGuiConfig {
             try (InputStream in = Files.newInputStream(FILE)) {
                 props.load(in);
             } catch (IOException ignored) {
-                // First run / file absent — defaults apply.
+                // First run / file absent - defaults apply.
             }
         }
         return props;

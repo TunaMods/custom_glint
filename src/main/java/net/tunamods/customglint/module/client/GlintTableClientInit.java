@@ -5,6 +5,7 @@ import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+import net.tunamods.customglint.module.gui.GlintBagScreen;
 import net.tunamods.customglint.module.gui.GlintTableScreen;
 import net.tunamods.customglint.module.menu.ModMenuTypes;
 import net.tunamods.customglint.module.network.GlintPrintedSyncPacket;
@@ -31,7 +32,7 @@ public final class GlintTableClientInit {
     private static void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
             MenuScreens.register(ModMenuTypes.GLINT_TABLE_MENU.get(), GlintTableScreen::new);
-            MenuScreens.register(ModMenuTypes.GLINT_BAG_MENU.get(), net.tunamods.customglint.module.gui.GlintBagScreen::new);
+            MenuScreens.register(ModMenuTypes.GLINT_BAG_MENU.get(), GlintBagScreen::new);
         });
     }
 }
