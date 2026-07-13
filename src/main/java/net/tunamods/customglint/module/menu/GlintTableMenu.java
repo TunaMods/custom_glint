@@ -1027,7 +1027,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
             stack = new ItemStack(ModItems.GLINT_TRIM.get());
             GlintTrimItem.setPattern(stack, CustomGlint.designFromName(name));
         }
-        sp.addItem(stack);
+        if (!sp.addItem(stack)) sp.drop(stack, false); // don't void the trim on a full inventory (matches print())
     }
 
     @Override
