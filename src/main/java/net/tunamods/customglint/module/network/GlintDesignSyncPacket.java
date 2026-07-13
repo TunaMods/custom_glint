@@ -25,9 +25,8 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
                     },
                     buf -> {
                         int count = buf.readVarInt();
-                        // Clamp the pre-sized capacity: a crafted server sending count≈MAX_VALUE would
-                        // otherwise allocate a multi-GB backing array before any string is read. The loop
-                        // still drains the real count and throws cleanly on buffer underflow if it's fake.
+                        // Cap the pre-sized capacity so a bogus count can't pre-allocate a huge array; the
+                        // loop still drains the real count.
                         List<String> designs = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
                         for (int i = 0; i < count; i++) designs.add(buf.readUtf());
                         return new GlintDesignSyncPacket(designs);

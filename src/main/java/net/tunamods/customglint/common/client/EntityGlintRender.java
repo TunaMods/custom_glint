@@ -43,7 +43,7 @@ import java.util.Set;
  * vantage of armor/layer renderers).
  *
  * Resolution order: per-instance via the registered {@link InstanceResolver} (default reads the synced
- * {@link CustomGlint#ENTITY_GLINT} attachment), then the {@link CustomGlint#ENTITY_GLINTS} type registry.
+ * {@link CustomGlintComponents#ENTITY_GLINT} attachment), then the {@link CustomGlint#ENTITY_GLINTS} type registry.
  */
 public final class EntityGlintRender {
     private EntityGlintRender() {}
@@ -295,9 +295,6 @@ public final class EntityGlintRender {
             }
         }
     }
-
-    // Glint colour rides the node's tintedColor verbatim, alpha honoured (A=0 → invisible). Colour sources
-    // OR in 0xFF by default, so a 0 alpha byte is only ever a deliberate editor A value.
 
     /** Animated glow-outline colour for an entity: glowColors first, then glint layer 0, else white. */
     public static int outlineColorFor(Resolution r) {

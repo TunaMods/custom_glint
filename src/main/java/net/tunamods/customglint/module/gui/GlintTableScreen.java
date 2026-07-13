@@ -244,7 +244,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     // Name / glow color sections below the Print button (center column)
     private static final int NAME_BOX_X = 129, NAME_BOX_Y = 186, NAME_BOX_W = 62;
-    // Centered in the 129..211 span the button + (now removed) glow dye slot used to share: 129 + (82-62)/2.
+    // Centered in the 129..211 span: 129 + (82-62)/2.
     private static final int GLOW_MODE_X = 139, GLOW_MODE_Y = 204, GLOW_MODE_W = 62, GLOW_MODE_H = 12;
 
     public GlintTableScreen(GlintTableMenu menu, Inventory inventory, Component title) {
@@ -1936,11 +1936,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return result;
     }
 
-    /** The layer strip is always visible so layer 1 (and the [+] add chip) is a constant, like the color-shard
-     *  strip below the preview — it no longer waits for a design to be previewed before appearing. Layer chips
-     *  render only for layers that exist (the active layer once a design is chosen, plus any committed ones);
-     *  on a bare table only the [+] shows. The [+] add chip shows regardless of whether a layer tear is in the
-     *  slot — adding a layer is free to preview; the layer tears are only required (and consumed) at print. */
+    /** The layer strip is always shown; chips render only for layers that exist (active layer plus committed
+     *  ones), and the [+] add chip is always present. Layer tears are required only at print, not to preview. */
     private boolean layerStripVisible() {
         return true;
     }
@@ -1981,9 +1978,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     // ── Color-shard strip (active layer's colors, mirrors the layer strip but below the preview) ──────
 
 
-    /** The color shards (one per entry in {@link #colorShards}) plus a trailing "+" box, mirroring the layer
-     *  strip. Each shard shows its blended colour; the selected shard ({@link #selectedColorIdx}) is ringed;
-     *  an empty (unset) shard shows a neutral placeholder. */
     /** The colour shards belong to the active layer, so the strip only shows them while a design is being
      *  previewed — with no preview it collapses to just the "+" box, mirroring the layer strip hiding its
      *  layer-1 chip until there's a design. */

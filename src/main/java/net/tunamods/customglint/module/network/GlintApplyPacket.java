@@ -112,8 +112,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
         return colors;
     }
 
-    /** Shared layer-array wire format (used by GlintApplyPacket, GiveGlintTrimPacket and GlintPrintPacket).
-     *  Symmetric with {@link #readLayers}. */
+    /** Shared layer-array wire format. Symmetric with {@link #readLayers}. */
     static void writeLayers(FriendlyByteBuf buf, CustomGlint.Layer[] layers) {
         buf.writeVarInt(layers.length);
         for (CustomGlint.Layer layer : layers) {

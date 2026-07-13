@@ -1305,7 +1305,7 @@ public final class CustomGlintRenderer {
     // forArmorGlint uses EQUAL + VIEW_OFFSET_Z_LAYERING, wrong offset → invisible on a body draw.
     // This variant keeps EQUAL + NO_LAYERING so depth matches, and scale 1.0 matches forArmorGlint visually.
     // (Named for horse armor in 1.20.1/1.21.1, where it backed barding; in 26.1 barding routes through the
-    // unified EquipmentLayerRenderer → forArmorGlint, and this method's sole caller is the entity-body path.)
+    // unified EquipmentLayerRenderer → forArmorGlint; this method now backs the entity-body path and the layer chromatic fallbacks.)
     public static RenderType forEntityBodyGlint(Data glint, int layerIdx, int colorIdx) {
         Layer layer = glint.layers()[layerIdx];
         // Entity bodies sample their own 0..1 model UV, same per-part density bump as armor.

@@ -97,7 +97,6 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
                 GlintTrimItem.setSeed(trim, layer0.seed());
             }
 
-            // Apply custom name and color if provided
             if (!pkt.trimName.isEmpty()) {
                 Component displayName = Component.literal(pkt.trimName)
                     .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
