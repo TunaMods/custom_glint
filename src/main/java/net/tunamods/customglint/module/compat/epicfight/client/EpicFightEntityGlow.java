@@ -23,7 +23,7 @@ import java.util.Map;
  * {@code LivingEntityRenderer.render} through {@code RenderLivingEvent.Pre} and draws its own
  * skinned mesh in {@code PatchedLivingEntityRenderer.render}, so our core
  * {@code LivingEntityRendererMixin} (the in-phase body tee that feeds the glow silhouette) never
- * fires for patched entities — the outline just vanishes.
+ * fires for patched entities - the outline just vanishes.
  *
  * This re-establishes the glow capture on Epic Fight's own render path. {@link PatchedLivingEntityRendererMixin}
  * wraps the {@code MultiBufferSource} arg at HEAD with a {@link CaptureSource}; every triangle-mode
@@ -31,8 +31,8 @@ import java.util.Map;
  * buffer, and at RETURN the accumulated silhouettes are queued into {@link GlowOutlineRenderer} keyed
  * so the whole figure composes as ONE ring.
  *
- * <p>Epic Fight meshes are drawn through {@code EpicFightRenderTypes.getTriangulated(...)} — a
- * TRIANGLES-mode RenderType — so the capture is queued via {@link GlowOutlineRenderer#queueModelOutlineTriangles}
+ * <p>Epic Fight meshes are drawn through {@code EpicFightRenderTypes.getTriangulated(...)} - a
+ * TRIANGLES-mode RenderType - so the capture is queued via {@link GlowOutlineRenderer#queueModelOutlineTriangles}
  * (the default queue replays in QUADS order and would scramble a triangle-list stream).
  *
  * <p>Known limitation: Epic Fight's optional GPU-skinning path ("activate compute shader") transforms
@@ -43,7 +43,7 @@ public final class EpicFightEntityGlow {
     private EpicFightEntityGlow() {}
 
     // One entry per active PatchedLivingEntityRenderer.render frame (a Deque, not a single slot, so a
-    // nested patched render — should one ever occur — stays balanced). Pushed at HEAD, popped at RETURN.
+    // nested patched render - should one ever occur - stays balanced). Pushed at HEAD, popped at RETURN.
     // ArrayDeque forbids null elements, so a non-glowing frame pushes NONE rather than null.
     private static final ThreadLocal<Deque<CaptureSource>> STACK = ThreadLocal.withInitial(ArrayDeque::new);
     private static final CaptureSource NONE = new CaptureSource(null, 0, 0);
@@ -52,7 +52,7 @@ public final class EpicFightEntityGlow {
      *
      *  <p>1. Strip the core {@code GlintWrappingBufferSource} the vanilla {@code LivingEntityRendererMixin}
      *  installed (its {@code RenderLivingEvent.Pre} fires from vanilla {@code render} before Epic Fight
-     *  cancels it). That wrapper fans the glint through QUADS RTs — fed Epic Fight's triangle stream it
+     *  cancels it). That wrapper fans the glint through QUADS RTs - fed Epic Fight's triangle stream it
      *  shatters into giant facets. We re-install the same fan-out through TRIANGLES-mode glint RTs instead.
      *
      *  <p>2. When the entity glows, tee every mesh draw into the glow silhouette (a {@link CaptureSource}).
@@ -104,7 +104,7 @@ public final class EpicFightEntityGlow {
         public VertexConsumer getBuffer(RenderType rt) {
             VertexConsumer base = delegate.getBuffer(rt);
             // The held item routes through entity_* RTs too (ItemInHandLayer). It has its own per-item
-            // glint / glow via ItemRendererMixin — don't fold it into the entity's body ring.
+            // glint / glow via ItemRendererMixin - don't fold it into the entity's body ring.
             if (CustomGlintRenderer.CURRENT_ITEM_STACK.get() != null) return base;
             if (!isTriangleEntityRt(rt)) return base;
             if (GlowOutlineRenderer.resolveRenderTypeTexture(rt) == null) return base;

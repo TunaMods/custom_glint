@@ -1,7 +1,6 @@
 package net.tunamods.customglint.module.compat.immersivearmors;
 
-import net.minecraftforge.fml.ModList;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.compat.CompatGate;
 
 /**
  * Standalone-only Immersive Armors compat (init side). The work is done by the {@code @Pseudo}
@@ -19,7 +18,6 @@ public final class ImmersiveArmorsCompat {
     static final String MOD_ID = "immersive_armors";
 
     public static void register() {
-        if (!ModList.get().isLoaded(MOD_ID)) return;
-        CustomGlintMod.LOGGER.info("[customglint] Immersive Armors compat enabled");
+        CompatGate.enable(MOD_ID, "Immersive Armors compat enabled");
     }
 }

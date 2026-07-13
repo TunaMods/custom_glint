@@ -29,7 +29,7 @@ import java.util.List;
  * armed, fanning the same mesh across our entity-depth glint render types and (when glowing) a record-only
  * silhouette. {@link #flush} queues the recorded silhouettes as one glow ring keyed on the wearer +
  * {@code CAT_ARMOR}. The glint uses {@code forHorseArmorGlint}/{@code forChromaticEntityGlint} (EQUAL +
- * NO_LAYERING) to match {@code entityCutoutNoCull}'s depth — {@code forArmorGlint} would test against the
+ * NO_LAYERING) to match {@code entityCutoutNoCull}'s depth - {@code forArmorGlint} would test against the
  * wrong offset and vanish. All references are vanilla types, so there is no dep on Artifacts.
  */
 public final class ArtifactGlint {
@@ -88,21 +88,13 @@ public final class ArtifactGlint {
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
                         RenderType rt2 = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, i);
                         if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, color);
                     RenderType rt2 = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, 0);
                     if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
                 }

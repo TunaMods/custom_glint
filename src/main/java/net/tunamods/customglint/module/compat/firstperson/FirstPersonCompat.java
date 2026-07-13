@@ -2,8 +2,7 @@ package net.tunamods.customglint.module.compat.firstperson;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.ModList;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.compat.CompatGate;
 
 /**
  * Standalone-only First Person Mod compat. When FPM ({@code firstperson} by tr7zw) renders the
@@ -21,8 +20,7 @@ public final class FirstPersonCompat {
     private static final String MOD_ID = "firstperson";
 
     public static void register() {
-        if (!ModList.get().isLoaded(MOD_ID)) return;
-        CustomGlintMod.LOGGER.info("[customglint] First Person Model compat enabled");
+        if (!CompatGate.enable(MOD_ID, "First Person Model compat enabled")) return;
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> FirstPersonClientCompat::wireRenderer);
     }
 }

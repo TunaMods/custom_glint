@@ -29,7 +29,7 @@ import java.util.List;
 
 /**
  * Standalone-only compat: LayerDragonArmor is the single convergence point for fire/ice/lightning
- * dragon armor — it composes a per-(dragonType + 4 ordinals) layered texture and renders the dragon
+ * dragon armor - it composes a per-(dragonType + 4 ordinals) layered texture and renders the dragon
  * model once via RenderType.entityTranslucent(layeredTex). We capture the layered ResourceLocation
  * via @Redirect on entityTranslucent (rewriting that RT to armorCutoutNoCull) and unwrap IaF's
  * base-armor getBuffer, then at RETURN re-render MODEL with the glint RTs and draw an outline.
@@ -41,10 +41,10 @@ import java.util.List;
  * armor. Both are fixed by drawing the base through {@code armorCutoutNoCull} (polygon offset nudges
  * the armor in front, depth-occluding the body glint) on the UNWRAPPED buffer (no fan), then
  * glinting with {@link CustomGlintRenderer#forArmorGlint} (EQUAL + the matching offset) which lands
- * only where the cutout base wrote depth — the armor texture's own alpha cutout is the mask, no
+ * only where the cutout base wrote depth - the armor texture's own alpha cutout is the mask, no
  * stencil pass needed. Mirrors the 1.21.1 CE dragon fix.
  *
- * Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET — first stack with a custom glint wins
+ * Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET - first stack with a custom glint wins
  * and supplies both the animated glint and (if also glowing) the outline color. Mixed-glint
  * configurations across slots fall back to the highest-priority slot's glint.
  *
@@ -84,7 +84,7 @@ public class LayerDragonArmorMixin {
     }
 
     // Clear any texture left over from a previous render that threw between the capture redirect and the
-    // RETURN inject — otherwise the next armorless dragon (whose render never hits the redirect) would read a
+    // RETURN inject - otherwise the next armorless dragon (whose render never hits the redirect) would read a
     // stale CG_TEX and draw a spurious glint/outline. HEAD always runs before the redirect.
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityDragonBase;FFFFFF)V",
             at = @At("HEAD"), require = 0)
@@ -153,7 +153,7 @@ public class LayerDragonArmorMixin {
         // No tex captured ⇒ IaF early-exited (no armor / dragon type unsupported) ⇒ nothing to glint.
         if (tex == null) return;
 
-        // HEAD > CHEST > LEGS > FEET — first slot with a glint OR a glow trim wins and supplies both
+        // HEAD > CHEST > LEGS > FEET - first slot with a glint OR a glow trim wins and supplies both
         // the animated glint and (if glowing) the outline colour.
         ItemStack active = null;
         CustomGlint.Data glint = null;
@@ -175,7 +175,7 @@ public class LayerDragonArmorMixin {
 
         if (glint != null) {
             // forArmorGlint (EQUAL + armorCutoutNoCull's polygon offset) lands only where IaF's base
-            // armor draw — also routed through armorCutoutNoCull — wrote depth, i.e. the layered
+            // armor draw - also routed through armorCutoutNoCull - wrote depth, i.e. the layered
             // armor texture's opaque texels. The offset sits the armor (and this glint) in front of
             // the dragon body, so the body glint is depth-occluded there. No stencil mask needed:
             // the armor texture's own alpha cutout IS the mask.

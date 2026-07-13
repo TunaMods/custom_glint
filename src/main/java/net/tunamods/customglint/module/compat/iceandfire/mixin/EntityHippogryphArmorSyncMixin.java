@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Server-side sync trigger. IaF stores hippogryph armor in a SimpleContainer that doesn't sync
- * to clients — refreshInventory() is the convergence point called from the entity's
+ * to clients - refreshInventory() is the convergence point called from the entity's
  * containerChanged listener (and inventory load), so it's where we broadcast the current armor
  * stack via our own packet. refreshInventory itself early-returns on client, so we filter by
  * side here too.

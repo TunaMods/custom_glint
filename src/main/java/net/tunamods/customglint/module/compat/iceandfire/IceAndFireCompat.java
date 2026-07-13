@@ -8,8 +8,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.ModList;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.compat.CompatGate;
 
 /**
  * Standalone-only Ice & Fire compat. Renderer-touching configuration (BEWLR outline offsets /
@@ -25,16 +24,18 @@ import net.tunamods.customglint.CustomGlintMod;
 public final class IceAndFireCompat {
     private IceAndFireCompat() {}
 
+    static final String MOD_ID = "iceandfire";
     static final String HIPPOGRYPH_CLASS  = "com.github.alexthe666.iceandfire.entity.EntityHippogryph";
     static final String HIPPOCAMPUS_CLASS = "com.github.alexthe666.iceandfire.entity.EntityHippocampus";
 
     public static void register() {
-        if (ModList.get().isLoaded("iceandfire")) CustomGlintMod.LOGGER.info("[customglint] Ice and Fire compat enabled");
+        // Log only - the listeners below register unconditionally (the server initiates the mount-armor sync).
+        CompatGate.enable(MOD_ID, "Ice and Fire compat enabled");
 
-        // Renderer overrides — client-only.
+        // Renderer overrides - client-only.
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> IceAndFireClientCompat::run);
 
-        // Mount armor sync (hippogryph / hippocampus) — needed on the server to push armor stacks
+        // Mount armor sync (hippogryph / hippocampus) - needed on the server to push armor stacks
         // to tracking clients via MountArmorSync. onEntityLeave's `isClientSide` guard makes it a
         // no-op on the server, so a single addListener works for both sides.
         MinecraftForge.EVENT_BUS.addListener(IceAndFireCompat::onStartTracking);

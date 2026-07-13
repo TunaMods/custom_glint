@@ -2,8 +2,7 @@ package net.tunamods.customglint.module.compat.epicknights;
 
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.ModList;
-import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.module.compat.CompatGate;
 
 /**
  * Standalone-only Epic Knights compat (init side). Soft-dep gated on {@code magistuarmory}; routes
@@ -18,8 +17,7 @@ public final class EpicKnightsCompat {
     static final String MOD_ID = "magistuarmory";
 
     public static void register() {
-        if (!ModList.get().isLoaded(MOD_ID)) return;
-        CustomGlintMod.LOGGER.info("[customglint] Epic Knights compat enabled");
+        if (!CompatGate.enable(MOD_ID, "Epic Knights compat enabled")) return;
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> EpicKnightsClientCompat::wire);
     }
 }

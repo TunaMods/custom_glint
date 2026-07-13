@@ -3,6 +3,7 @@ package net.tunamods.customglint.module.compat.geckolib.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
@@ -62,7 +63,7 @@ public final class GeckoArmorGlint {
         boolean glowing = CustomGlint.isGlowing(stack);
         if (glint == null && !glowing) return base;
 
-        MultiBufferSource bufferSource = net.minecraft.client.Minecraft.getInstance().renderBuffers().bufferSource();
+        MultiBufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
         List<VertexConsumer> list = new ArrayList<>();
         list.add(base);
 
@@ -78,21 +79,13 @@ public final class GeckoArmorGlint {
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                         if (rt != null) list.add(bufferSource.getBuffer(rt));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, color);
                     RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                     if (rt != null) list.add(bufferSource.getBuffer(rt));
                 }

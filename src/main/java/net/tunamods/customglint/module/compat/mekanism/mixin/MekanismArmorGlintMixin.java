@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Jetpack, Free Runners and their armored variants, Scuba tank/mask) draws its geometry through
  * {@code ItemRenderer.getFoilBufferDirect}. We arm {@link MekanismArmorGlint} for the span of one
  * {@code ICustomArmor.render} so {@code FoilBufferMixin} fans the glint onto that method's return only
- * for Mekanism special armor — the plain Hazmat suit stays on the vanilla armor path our core mixin
+ * for Mekanism special armor - the plain Hazmat suit stays on the vanilla armor path our core mixin
  * already handles. RETURN flushes the recorded glow silhouette.
  *
  * All five share the {@code ICustomArmor.render} descriptor (vanilla types only), so one mixin covers

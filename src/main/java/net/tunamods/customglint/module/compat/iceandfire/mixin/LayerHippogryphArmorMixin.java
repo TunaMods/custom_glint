@@ -28,15 +28,15 @@ import java.util.List;
 
 /**
  * Standalone-only compat: LayerHippogriffSaddle renders armor / saddle / bridle / chest in one pass.
- * Only the armor branch (entity.getArmor() != 0) is interesting for glint — it picks one of three
+ * Only the armor branch (entity.getArmor() != 0) is interesting for glint - it picks one of three
  * solid textures (iron/gold/diamond) and draws the parent hippogryph model with that texture.
  *
  * Unlike dragon armor (one layered texture composed at runtime, captured via @Redirect on
  * entityTranslucent), hippogryph armor uses three pre-built RenderTypes built in the layer's
- * ctor. We resolve the texture directly from getArmor() rather than redirecting — the mapping is
+ * ctor. We resolve the texture directly from getArmor() rather than redirecting - the mapping is
  * stable and the texture paths are part of IaF's published assets.
  *
- * Glint + outline mechanics identical to {@link LayerDragonArmorMixin}: no stencil mask — the base
+ * Glint + outline mechanics identical to {@link LayerDragonArmorMixin}: no stencil mask - the base
  * armor draws through the unwrapped buffer at an armorCutoutNoCull depth offset so the EQUAL-depth
  * glint lines up with the armor mesh and the body glint is depth-occluded. See that mixin for the
  * full rationale (the parent body model shares depth with the armor mesh, so the offset separates them).
@@ -119,7 +119,7 @@ public class LayerHippogryphArmorMixin {
         if (model == null) return;
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
-        // forArmorGlint — the same fix LayerDragonArmorMixin uses. Hippogryph armor reuses the body
+        // forArmorGlint - the same fix LayerDragonArmorMixin uses. Hippogryph armor reuses the body
         // model at the SAME depth, so EntityGlintRender's wrapper fanned the mount's body glint onto
         // the armor (entity glint over armor) and the EQUAL-depth body glint drew over it, leaving the
         // bare silhouette showing through. armorCutoutNoCull's polygon offset nudges the armor in front

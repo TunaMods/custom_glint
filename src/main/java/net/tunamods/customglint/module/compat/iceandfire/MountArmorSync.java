@@ -21,7 +21,7 @@ public final class MountArmorSync {
 
     private static final Map<Class<?>, Field> INV_FIELD_CACHE = new ConcurrentHashMap<>();
 
-    /** Reflectively reads the armor stack at slot 2 of the entity's inventory field. */
+    /** Reflectively reads the armor stack from the entity's inventory field (slot 2 is IaF's mount-armor slot). */
     public static ItemStack readArmorStack(Entity entity, String invFieldName) {
         try {
             Field f = INV_FIELD_CACHE.get(entity.getClass());
@@ -31,7 +31,7 @@ public final class MountArmorSync {
                 INV_FIELD_CACHE.put(entity.getClass(), f);
             }
             Container inv = (Container) f.get(entity);
-            return inv == null ? ItemStack.EMPTY : inv.getItem(2);
+            return inv == null ? ItemStack.EMPTY : inv.getItem(2); // slot 2 = IaF mount-armor slot
         } catch (Throwable t) {
             return ItemStack.EMPTY;
         }

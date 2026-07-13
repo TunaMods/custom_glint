@@ -441,7 +441,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     }
 
     // Custom crafting layout for the recycle recipe: 4 powder + 2 glowstone in, and the output slot cycles a
-    // blank trim of every design — since the real result is random, showing one design would be misleading.
+    // blank trim of every design - since the real result is random, showing one design would be misleading.
     private static class TrimPowderExtension implements ICraftingCategoryExtension {
         private final ResourceLocation id;
         private final List<List<ItemStack>> inputs = new ArrayList<>();
@@ -547,7 +547,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     }
 
     // Several single-color Glow Trims → one multi-color Glow Trim (mirrors GlowTrimMergeRecipe / the glint
-    // MergeDisplay). Shapeless, so no category extension — JEI packs the inputs itself.
+    // MergeDisplay). Shapeless, so no category extension - JEI packs the inputs itself.
     private static class GlowMergeDisplay extends GlowTrimMergeRecipe {
         private final int[] colors; // one color per input trim
 
@@ -631,7 +631,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // the whole tag so a chromatic trim's random per-stack seed doesn't split identical designs.
         //
         // Only split for the INGREDIENT context (the ingredient list / bookmarks). For RECIPE lookup return
-        // NONE so every trim shares one subtype — clicking any trim then surfaces all the trim-modifying
+        // NONE so every trim shares one subtype - clicking any trim then surfaces all the trim-modifying
         // display recipes (speed / scale / dye / duplicate / merge / smithing), which each use a fixed sample
         // design and would otherwise only match that exact design+colors.
         registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), (stack, ctx) -> {
@@ -645,7 +645,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         });
         registration.registerSubtypeInterpreter(ModItems.GLOW_TRIM.get(), (stack, ctx) -> {
             if (ctx == UidContext.Recipe) return IIngredientSubtypeInterpreter.NONE;
-            int[] colors = net.tunamods.customglint.module.item.GlowTrimItem.getColors(stack);
+            int[] colors = GlowTrimItem.getColors(stack);
             if (colors.length == 0) return IIngredientSubtypeInterpreter.NONE;
             StringBuilder key = new StringBuilder();
             for (int color : colors) key.append(color).append(',');
@@ -675,15 +675,15 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         registration.addIngredientInfo(trimVariants, VanillaTypes.ITEM_STACK,
             Component.literal("Smithing template carrying a glint design. Craft with dyes to add colors, then apply to any item with Glowstone Dust at a smithing table."));
         registration.addIngredientInfo(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
-            Component.literal("Craft with any glinted item to set all layers to Simultaneous mode — all colors render at once."));
+            Component.literal("Craft with any glinted item to set all layers to Simultaneous mode. All colors render at once."));
         registration.addIngredientInfo(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
-            Component.literal("Craft with any glinted item to set all layers to Sequential mode — colors cycle one at a time."));
+            Component.literal("Craft with any glinted item to set all layers to Sequential mode. Colors cycle one at a time."));
         registration.addIngredientInfo(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
             Component.literal("Craft with two Glint Trims to merge their layer arrays into a single multi-layer trim (up to 8 layers)."));
         registration.addIngredientInfo(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
             Component.literal("Craft with any glinted item to strip all glint data from it."));
         registration.addIngredientInfo(ModItems.RAINBOW_DYE.get().getDefaultInstance(), VanillaTypes.ITEM_STACK,
-            Component.literal("Use it in the Glint Table to give a color shard any custom hex color — one Rainbow Dye is consumed per custom color."));
+            Component.literal("Use it in the Glint Table to give a color shard any custom hex color. One Rainbow Dye is consumed per custom color."));
 
         ResourceLocation wave    = CustomGlint.WAVE;
         ResourceLocation stripes = CustomGlint.STRIPES;

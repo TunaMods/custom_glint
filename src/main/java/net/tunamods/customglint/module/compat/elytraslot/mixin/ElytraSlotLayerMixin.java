@@ -30,7 +30,7 @@ import java.util.List;
 /**
  * Standalone-only ElytraSlot compat. ElytraSlot adds a dedicated Curios slot (id {@code elytra},
  * or sometimes {@code back} when its compatibility provider routes through Curios' back slot)
- * and renders the equipped elytra via its own {@code ElytraSlotLayer} — vanilla's
+ * and renders the equipped elytra via its own {@code ElytraSlotLayer} - vanilla's
  * {@code ElytraLayer} (which our {@code ElytraLayerMixin} hooks) only checks the chestplate
  * slot, so the glint never fires for Curios-slot elytras.
  *
@@ -39,7 +39,7 @@ import java.util.List;
  * {@code translate(0, 0, 0.125)} → {@code copyPropertiesTo} → {@code setupAnim} →
  * {@code renderToBuffer} → {@code popPose}. At TAIL the pose is restored, so we re-apply the same
  * (0, 0, 0.125) offset before drawing our glint / outline. The {@code elytraModel} field still
- * holds the setupAnim state from the prior call (model rotations aren't pose state) — no need
+ * holds the setupAnim state from the prior call (model rotations aren't pose state) - no need
  * to re-run setupAnim.
  *
  * {@code ElytraRenderResult} is referenced only via {@code @Coerce Object} + reflection so this
@@ -89,21 +89,13 @@ public class ElytraSlotLayerMixin {
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                         if (rt != null) list.add(buffer.getBuffer(rt));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, color);
                     RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
@@ -123,7 +115,7 @@ public class ElytraSlotLayerMixin {
             if (combined != null) {
                 elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
             }
-            // Glow outline: mirror ElytraLayerMixin — re-render the elytra model into the glow mask under
+            // Glow outline: mirror ElytraLayerMixin - re-render the elytra model into the glow mask under
             // the offset pose, traced against the ElytraSlot-resolved texture (Curios-slot elytras may be
             // custom-textured, so use the result's texture rather than the hardcoded vanilla one). Keyed on
             // the elytra ItemStack (NOT the wearer), so it gets its OWN ring, matching the chestplate path.

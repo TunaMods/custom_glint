@@ -75,7 +75,7 @@ public final class ImmersiveArmorsGlint {
         if (glint != null) drawGlint(glint, model, pose, buffer, light);
 
         // Glow ring: re-record the piece silhouette against its real texture, keyed on the wearer +
-        // CAT_ARMOR so every piece (and the body) fold into one ring — same path as vanilla armor.
+        // CAT_ARMOR so every piece (and the body) fold into one ring - same path as vanilla armor.
         if (glowing && entity != null) {
             ResourceLocation tex = resolveTexture(piece, stack);
             if (tex != null) {
@@ -99,21 +99,13 @@ public final class ImmersiveArmorsGlint {
             int[] colors = layers[layerIdx].colors();
             if (layers[layerIdx].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, colors[i]);
                     RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
+                CustomGlintRenderer.fillPremul(buf, color);
                 RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }

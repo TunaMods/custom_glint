@@ -28,7 +28,7 @@ import java.util.List;
 
 /**
  * Standalone-only compat: hippocampus armor (vanilla HorseArmorItem variants) is rendered by
- * IaF's LayerHippocampusSaddle, not vanilla HorseArmorLayer — so HorseArmorLayerMixin never
+ * IaF's LayerHippocampusSaddle, not vanilla HorseArmorLayer - so HorseArmorLayerMixin never
  * fires for it. Same shape as {@link LayerHippogryphArmorMixin}: pick one of three solid textures
  * by entity.getArmor() (1/2/3 = iron/gold/diamond), source the actual ItemStack from the
  * client-synced cache.
@@ -37,7 +37,7 @@ import java.util.List;
  * armorCutoutNoCull, no stencil mask). See {@link LayerDragonArmorMixin} for the rationale.
  *
  * Armor ItemStack source: {@link MountArmorCache} (synced by EntityHippocampusArmorSyncMixin +
- * StartTracking listener — IaF's SimpleContainer doesn't sync to clients on its own).
+ * StartTracking listener - IaF's SimpleContainer doesn't sync to clients on its own).
  */
 @Pseudo
 @Mixin(targets = "com.github.alexthe666.iceandfire.client.render.entity.RenderHippocampus$LayerHippocampusSaddle", remap = false)
@@ -112,7 +112,7 @@ public class LayerHippocampusArmorMixin {
         if (model == null) return;
 
         // Draw the base armor through the UNWRAPPED buffer with armorCutoutNoCull, then glint via
-        // forArmorGlint — the same fix LayerDragonArmorMixin uses. Hippocampus armor reuses the body
+        // forArmorGlint - the same fix LayerDragonArmorMixin uses. Hippocampus armor reuses the body
         // model at the SAME depth, so EntityGlintRender's wrapper fanned the mount's body glint onto
         // the armor (entity glint over armor) and the EQUAL-depth body glint drew over it, leaving the
         // bare silhouette showing through. armorCutoutNoCull's polygon offset nudges the armor in front

@@ -89,21 +89,13 @@ public final class MekanismArmorGlint {
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
                         RenderType rt2 = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                         if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, color);
                     RenderType rt2 = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                     if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
                 }

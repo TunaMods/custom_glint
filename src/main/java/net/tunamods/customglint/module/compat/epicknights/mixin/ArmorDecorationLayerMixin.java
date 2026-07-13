@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Standalone-only compat: Epic Knights renders armor attachments (plumes, surcoats, crowns)
  * via {@code ArmorDecorationLayer} which calls {@code ItemRenderer.getArmorFoilBuffer} directly
- * — so {@code HumanoidArmorLayerMixin} never fires for them. The base armor already has glint
+ * - so {@code HumanoidArmorLayerMixin} never fires for them. The base armor already has glint
  * applied by the core mixin; this fills in each decoration piece.
  *
  * Captures the ItemStack on the slot in {@code renderPiece} via ThreadLocal so the per-decoration
@@ -45,7 +45,7 @@ public class ArmorDecorationLayerMixin {
      * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
      * calls per iteration: base texture (FFFZ) + overlay texture (IIZ → delegates to FFFZ). Both
      * fire our RETURN inject. The second call's stencil pre-pass clears the buffer and writes
-     * against the overlay texture, which is mostly transparent — clobbering the glint we just
+     * against the overlay texture, which is mostly transparent - clobbering the glint we just
      * drew on the base. Skip when the same parts array fires twice back-to-back.
      */
     private static final ThreadLocal<ModelPart[]> CG_LAST_PARTS = new ThreadLocal<>();
