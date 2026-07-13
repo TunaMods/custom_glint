@@ -4,73 +4,80 @@ import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
-import net.minecraft.world.item.DyeItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.ModItems;
-import net.tunamods.customglint.module.menu.GlintTableMenu;
 
-public class GlintTrimDyeRecipe extends CustomRecipe {
-    public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
-            new SimpleCraftingRecipeSerializer<>(GlintTrimDyeRecipe::new);
-
-    public GlintTrimDyeRecipe(ResourceLocation id, CraftingBookCategory category) {
+/**
+ * Shared shape for the single-property trim modifier recipes: one glint trim plus 1–8 of a modifier item
+ * ({@link #modifier()}) → the same trim with one property changed by the count. Scale (slime), speed
+ * (redstone), and alpha (glass) each supply only the item and the {@link #apply} step.
+ */
+public abstract class AbstractTrimModifierRecipe extends CustomRecipe {
+    protected AbstractTrimModifierRecipe(ResourceLocation id, CraftingBookCategory category) {
         super(id, category);
     }
+
+    /** The loose item counted from the grid (slime ball / redstone / glass). */
+    protected abstract Item modifier();
+
+    /** Write the property derived from {@code count} (1–8) onto the result trim. */
+    protected abstract void apply(ItemStack result, int count);
+
+    /** Alpha needs an existing color to tint; scale/speed don't. */
+    protected boolean requiresColors() { return false; }
+
+    /** Extra decoration for the JEI preview result (e.g. a sample scale or speed). */
+    protected void decorateResult(ItemStack result) { }
 
     @Override
     public boolean matches(CraftingContainer pInv, Level pLevel) {
         ItemStack trim = ItemStack.EMPTY;
-        ItemStack dye  = ItemStack.EMPTY;
-        int filled = 0;
+        int count = 0;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
-            filled++;
             if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null) {
                 if (!trim.isEmpty()) return false;
                 trim = s;
-            } else if (s.getItem() instanceof DyeItem) {
-                if (!dye.isEmpty()) return false;
-                dye = s;
+            } else if (s.is(modifier())) {
+                count++;
             } else {
                 return false;
             }
         }
-        return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlintTrimItem.getColors(trim).length < 8;
+        if (trim.isEmpty() || count < 1 || count > 8) return false;
+        return !requiresColors() || GlintTrimItem.getColors(trim).length > 0;
     }
 
     @Override
     public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
         ItemStack trim = ItemStack.EMPTY;
-        DyeItem dye = null;
+        int count = 0;
         for (int i = 0; i < pInv.getContainerSize(); i++) {
             ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             if (s.getItem() instanceof GlintTrimItem) trim = s;
-            else if (s.getItem() instanceof DyeItem d) dye = d;
+            else if (s.is(modifier())) count++;
         }
-        if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
+        if (trim.isEmpty()) return ItemStack.EMPTY;
+        if (requiresColors() && GlintTrimItem.getColors(trim).length == 0) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
-        // Append the dye color (cap 8), mirroring GlowTrimDyeRecipe. addColor's rewritePreview is a
-        // no-op for multi-layer trims, so extra layers / speeds / scroll settings are preserved instead
-        // of being collapsed into a single default layer.
-        GlintTrimItem.addColor(result, GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()]);
+        apply(result, count);
         return result;
     }
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        return GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000);
+        ItemStack result = GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000);
+        decorateResult(result);
+        return result;
     }
 
     @Override
@@ -80,17 +87,12 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000)));
-        list.add(Ingredient.of(GlintTableMenu.DYE_ITEMS));
+        list.add(Ingredient.of(modifier()));
         return list;
     }
 
     @Override
     public boolean canCraftInDimensions(int pWidth, int pHeight) {
         return pWidth * pHeight >= 2;
-    }
-
-    @Override
-    public RecipeSerializer<?> getSerializer() {
-        return SERIALIZER;
     }
 }

@@ -62,14 +62,10 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
             else if (s.getItem() instanceof DyeItem d) dye = d;
         }
         if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
+        // matches() guarantees < 8 colors, so addColor always appends (and writes glowColors for the preview).
         ItemStack result = trim.copy();
         result.setCount(1);
-        int[] current = GlowTrimItem.getColors(result);
-        int[] next = new int[current.length + 1];
-        System.arraycopy(current, 0, next, 0, current.length);
-        next[current.length] = GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()];
-        result.getOrCreateTag().put(GlowTrimItem.COLORS_TAG, new IntArrayTag(next));
-        CustomGlint.setGlowColors(result, next);
+        GlowTrimItem.addColor(result, GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()]);
         return result;
     }
 

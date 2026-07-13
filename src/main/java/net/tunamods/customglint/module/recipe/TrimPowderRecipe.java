@@ -19,9 +19,8 @@ import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
 /**
- * Recycle recipe: 4 Trim Powder + 2 Glowstone Dust → one fresh, randomly designed Glint Trim. The result is
- * rolled in {@link #assemble} (a random design, sometimes with a few random colors), so the output preview
- * changes each time the grid updates — that's intentional, it signals the trim is random.
+ * Recycle recipe: 4 Trim Powder + 2 Glowstone Dust → one fresh Glint Trim with a random design and no colors
+ * (blank and stackable, like loot-dropped trims). The design is rolled in {@link #assemble}.
  */
 public class TrimPowderRecipe extends CustomRecipe {
 
@@ -53,7 +52,7 @@ public class TrimPowderRecipe extends CustomRecipe {
     public ItemStack assemble(CraftingContainer inv, RegistryAccess registryAccess) {
         RandomSource random = RandomSource.create();
         ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
-        // Random design only — always blank (no colors), matching how loot trims drop, so recycled trims stay
+        // Random design only - always blank (no colors), matching how loot trims drop, so recycled trims stay
         // stackable. designFromName handles the vanilla/chromatic sentinels the same way the loot modifier does.
         String name = GlintTrimItem.PATTERNS.get(random.nextInt(GlintTrimItem.PATTERNS.size()));
         GlintTrimItem.setPattern(trim, CustomGlint.designFromName(name));

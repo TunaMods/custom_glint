@@ -80,9 +80,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
-        GlintTrimItem.addColor(result, 0xFFFF0000);
+        // Overwrite the preview Data with two layers so the sample shows the layer-tear's effect.
+        ItemStack result = GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000);
         CustomGlint.Layer layer1 = new CustomGlint.Layer(CustomGlint.WAVE, new int[]{0xFFFF0000}, 1.0f, true, 1.0f, false);
         CustomGlint.Layer layer2 = new CustomGlint.Layer(CustomGlint.SPARKLE, new int[]{0xFF00AAFF}, 1.0f, true, 1.0f, false);
         CustomGlint.write(result, new CustomGlint.Layer[]{layer1, layer2});
@@ -96,14 +95,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         list.add(Ingredient.of(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance()));
-        ItemStack trim1 = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim1, CustomGlint.WAVE);
-        GlintTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim2, CustomGlint.SPARKLE);
-        GlintTrimItem.addColor(trim2, 0xFF00AAFF);
-        list.add(Ingredient.of(trim1));
-        list.add(Ingredient.of(trim2));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000)));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.SPARKLE, 0xFF00AAFF)));
         return list;
     }
 

@@ -51,11 +51,7 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        GlintTrimItem.addColor(result, 0xFF00AAFF);
-        return result;
+        return GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000, 0xFF00AAFF);
     }
 
     @Override
@@ -64,14 +60,8 @@ public class GlintTrimMergeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trim1 = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim1, CustomGlint.WAVE);
-        GlintTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim2, CustomGlint.SPARKLE);
-        GlintTrimItem.addColor(trim2, 0xFF00AAFF);
-        list.add(Ingredient.of(trim1));
-        list.add(Ingredient.of(trim2));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000)));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.SPARKLE, 0xFF00AAFF)));
         return list;
     }
 
