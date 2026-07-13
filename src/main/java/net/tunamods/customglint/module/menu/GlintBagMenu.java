@@ -22,7 +22,7 @@ public class GlintBagMenu extends AbstractContainerMenu {
     private final ItemStack bag;
     private final IItemHandler handler;
 
-    /** Client constructor — the hand is sent as a boolean in the open packet. */
+    /** Client constructor; the hand is sent as a boolean in the open packet. */
     public GlintBagMenu(int containerId, Inventory inventory, RegistryFriendlyByteBuf extraData) {
         this(containerId, inventory, extraData.readBoolean() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND);
     }
@@ -43,7 +43,7 @@ public class GlintBagMenu extends AbstractContainerMenu {
                 addSlot(new SlotItemHandler(handler, col + row * GlintBagItem.COLS, 8 + col * 18, 18 + row * 18));
 
         // Player inventory, positioned to match minecraft's generic_54 background.
-        int invY = 18 + GlintBagItem.ROWS * 18 + 13; // 139
+        int invY = 18 + GlintBagItem.ROWS * 18 + 13; // +13: gap between the bag grid and player inventory
         for (int row = 0; row < 3; row++)
             for (int col = 0; col < 9; col++) {
                 int idx = col + row * 9 + 9;
