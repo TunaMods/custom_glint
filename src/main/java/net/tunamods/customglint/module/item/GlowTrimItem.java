@@ -18,7 +18,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Glow Trim — applies a colored outline glow only (no glint design).
+ * Glow Trim - applies a colored outline glow only (no glint design).
  * Stores its own colors in the standard COLORS_TAG. When applied via smithing, writes
  * {@code glowColors} + {@code glowing=true} to the target item via CustomGlint.setGlowColors.
  * Mirrors GlintTrimItem's color handling (dye to add, merge to combine, max 8 colors).
@@ -26,7 +26,7 @@ import java.util.List;
 public class GlowTrimItem extends Item {
     public static final String COLORS_TAG = "colors";
 
-    /** Library key for the Glint Table's design palette — a Glow Trim has no glint pattern, so it stores
+    /** Library key for the Glint Table's design palette - a Glow Trim has no glint pattern, so it stores
      *  under this sentinel name instead of a design name. */
     public static final String STORAGE_KEY = "glow_trim";
 
@@ -74,25 +74,11 @@ public class GlowTrimItem extends Item {
     public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (colors.length == 0) {
-            pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
+            pTooltipComponents.add(Component.literal("No color. Craft with a dye to add one"));
             return;
         }
-        pTooltipComponents.add(Component.literal("Applies a colored outline glow — apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
-        MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
-        for (int i = 0; i < colors.length; i++) {
-            int rgb = colors[i] & 0xFFFFFF;
-            String name = "#" + String.format("%06X", rgb);
-            for (int j = 0; j < GlintTrimItem.DYE_COLORS.length; j++) {
-                if ((GlintTrimItem.DYE_COLORS[j] & 0xFFFFFF) == rgb) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
-            }
-            if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-            line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-        }
-        pTooltipComponents.add(line);
+        pTooltipComponents.add(Component.literal("Applies a colored outline glow. Apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
+        pTooltipComponents.add(GlintTrimItem.colorLine("Colors: ", colors));
     }
 
-    private static String capitalize(String s) {
-        if (s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
 }

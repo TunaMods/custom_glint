@@ -39,7 +39,7 @@ public class GlintTrimItem extends Item {
     };
 
     // CopyOnWriteArrayList: the datapack reload listener (CustomGlintMod) mutates this on the server
-    // thread while the client thread iterates it (creative-tab build) in single-player/LAN — a plain
+    // thread while the client thread iterates it (creative-tab build) in single-player/LAN - a plain
     // ArrayList would throw ConcurrentModificationException on the timing overlap.
     public static final List<String> PATTERNS = new CopyOnWriteArrayList<>(List.of(
         "arcs", "aurora", "blobs", "cascade", "checker", "chevron", "coral", "cracks",
@@ -87,6 +87,7 @@ public class GlintTrimItem extends Item {
             stack.getOrCreateTag().putInt(SEED_TAG, CustomGlint.randomChromaticSeed());
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
+        // CustomModelData: glowing variants sit in the +1000 band; +1 keeps 0 meaning "no override".
         if (idx >= 0) stack.getOrCreateTag().putInt("CustomModelData", (isGlowing(stack) ? 1000 : 0) + idx + 1);
         CustomGlint.write(stack, pattern, writeColors(pattern, getColors(stack)), getSpeed(stack), true,
                 getScale(stack), false, getScrollDir(stack), getScrollOffset(stack), getSeed(stack));
@@ -94,11 +95,19 @@ public class GlintTrimItem extends Item {
 
     /** Replaces the whole color set (Glint Table build / dye recipe), re-emitting the preview glint. */
     public static void setColors(ItemStack stack, int[] colors) {
-        // Enforce the 8-color cap on the one raw write path too (addColor/mergeColors already cap), so no
-        // caller can silently store more than the design supports.
-        if (colors.length > 8) colors = java.util.Arrays.copyOf(colors, 8);
+        // Cap at 8 colors (design limit); addColor/mergeColors already cap on their paths.
+        if (colors.length > 8) colors = Arrays.copyOf(colors, 8);
         stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(colors));
         rewritePreview(stack);
+    }
+
+    /** A preview/display trim with the given pattern and colors - for recipe {@code getResultItem}/{@code
+     *  getIngredients} and JEI sample stacks. Not a gameplay item. */
+    public static ItemStack example(ResourceLocation pattern, int... colors) {
+        ItemStack stack = new ItemStack(ModItems.GLINT_TRIM.get());
+        setPattern(stack, pattern);
+        for (int c : colors) addColor(stack, c);
+        return stack;
     }
 
     /** Procedural-chromatic seed (0 = not chromatic / not yet rolled). */
@@ -161,7 +170,7 @@ public class GlintTrimItem extends Item {
 
     /** Colours of the first glint layer (layer 1 in the editor's 1-indexed terms), read from the
      *  authoritative multi-layer preview Data. The flat {@link #getColors} array tracks whichever layer is
-     *  focused in the editor, so the auto-glow tint must not use it — the glow always follows layer 1.
+     *  focused in the editor, so the auto-glow tint must not use it - the glow always follows layer 1.
      *  Falls back to the flat colours for a bare trim that has no preview Data yet. */
     public static int[] getBaseLayerColors(ItemStack stack) {
         CustomGlint.Data data = CustomGlint.read(stack);
@@ -249,10 +258,10 @@ public class GlintTrimItem extends Item {
     public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
         int[] colors = getColors(pStack);
         if (isGlowing(pStack)) {
-            pTooltipComponents.add(Component.literal("Glowing — wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));
+            pTooltipComponents.add(Component.literal("Glowing. Wear full set for player outline; held items glow").withStyle(ChatFormatting.YELLOW));
         }
         if (colors.length == 0) {
-            pTooltipComponents.add(Component.literal("No color — craft with a dye to add one"));
+            pTooltipComponents.add(Component.literal("No color. Craft with a dye to add one"));
             return;
         }
         CustomGlint.Data data = CustomGlint.read(pStack);
@@ -268,23 +277,12 @@ public class GlintTrimItem extends Item {
                     String dname = layer.design().equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(layer.design()));
                     pTooltipComponents.add(Component.literal("Layer " + (i + 1)).withStyle(ChatFormatting.WHITE));
                     pTooltipComponents.add(Component.literal("  " + dname).withStyle(ChatFormatting.GRAY));
-                    if (layer.colors().length > 0) {
-                        MutableComponent lc = Component.literal("  Colors: ").withStyle(ChatFormatting.GRAY);
-                        for (int k = 0; k < layer.colors().length; k++) {
-                            int rgb = layer.colors()[k] & 0xFFFFFF;
-                            String cname = "#" + String.format("%06X", rgb);
-                            for (int j = 0; j < DYE_COLORS.length; j++) {
-                                if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) { cname = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
-                            }
-                            if (k > 0) lc = lc.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                            lc = lc.append(Component.literal(cname).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-                        }
-                        pTooltipComponents.add(lc);
-                    }
+                    if (layer.colors().length > 0)
+                        pTooltipComponents.add(colorLine("  Colors: ", layer.colors()));
                 }
             }
         } else {
-            pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + " — apply with Glowstone Dust at a smithing table"));
+            pTooltipComponents.add(Component.literal(colors.length + " color" + (colors.length > 1 ? "s" : "") + ", apply with Glowstone Dust at a smithing table"));
             float speed = getSpeed(pStack);
             float scale = getScale(pStack);
             if (speed != 1.0f) pTooltipComponents.add(Component.literal("Speed: " + (int) speed + "×").withStyle(ChatFormatting.AQUA));
@@ -292,17 +290,7 @@ public class GlintTrimItem extends Item {
             int scroll = getScrollDir(pStack);
             if (scroll != CustomGlint.SCROLL_E)
                 pTooltipComponents.add(Component.literal("Scroll: ").append(scrollLabel(scroll)).withStyle(ChatFormatting.AQUA));
-            MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
-            for (int i = 0; i < colors.length; i++) {
-                int rgb = colors[i] & 0xFFFFFF;
-                String name = "#" + String.format("%06X", rgb);
-                for (int j = 0; j < DYE_COLORS.length; j++) {
-                    if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
-                }
-                if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-            }
-            pTooltipComponents.add(line);
+            pTooltipComponents.add(colorLine("Colors: ", colors));
         }
     }
 
@@ -317,5 +305,32 @@ public class GlintTrimItem extends Item {
     private static String capitalize(String s) {
         if (s.isEmpty()) return s;
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /** A named trim's hover name tinted to {@code rgb}, for wand / Glint Table prints and imports.
+     *  Callers derive rgb themselves (the wire packs it as {@code (rgb << 8) | alpha}). */
+    public static Component coloredName(String name, int rgb) {
+        return Component.literal(name).withStyle(s -> s.withColor(TextColor.fromRgb(rgb)));
+    }
+
+    /** Tooltip line "prefix c1, c2, ..." with each color name tinted to its own RGB.
+     *  Shared by the single-layer, per-layer, and Glow Trim tooltips. */
+    public static MutableComponent colorLine(String prefix, int[] colors) {
+        MutableComponent line = Component.literal(prefix).withStyle(ChatFormatting.GRAY);
+        for (int i = 0; i < colors.length; i++) {
+            int rgb = colors[i] & 0xFFFFFF;
+            if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
+            line = line.append(Component.literal(dyeName(rgb)).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
+        }
+        return line;
+    }
+
+    /** Display name for a color: the matching vanilla dye name (capitalized), else "#RRGGBB". */
+    public static String dyeName(int argb) {
+        int rgb = argb & 0xFFFFFF;
+        for (int j = 0; j < DYE_COLORS.length; j++) {
+            if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) return capitalize(DyeColor.values()[j].getName().replace("_", " "));
+        }
+        return "#" + String.format("%06X", rgb);
     }
 }

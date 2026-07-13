@@ -31,12 +31,11 @@ public class GlintTearItem extends Item {
 
     @Override
     public void appendHoverText(ItemStack pStack, @Nullable Level pLevel, List<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
+        pTooltipComponents.add(Component.literal("Craft with any glinted item to set all layers to").withStyle(ChatFormatting.GRAY));
         if (simultaneous) {
-            pTooltipComponents.add(Component.literal("Craft with any glinted item to set all layers to").withStyle(ChatFormatting.GRAY));
-            pTooltipComponents.add(Component.literal("Simultaneous").withStyle(ChatFormatting.AQUA).append(Component.literal(" mode — all colors shown at once").withStyle(ChatFormatting.GRAY)));
+            pTooltipComponents.add(Component.literal("Simultaneous").withStyle(ChatFormatting.AQUA).append(Component.literal(" mode, all colors shown at once").withStyle(ChatFormatting.GRAY)));
         } else {
-            pTooltipComponents.add(Component.literal("Craft with any glinted item to set all layers to").withStyle(ChatFormatting.GRAY));
-            pTooltipComponents.add(Component.literal("Sequential").withStyle(ChatFormatting.AQUA).append(Component.literal(" mode — colors cycle one at a time").withStyle(ChatFormatting.GRAY)));
+            pTooltipComponents.add(Component.literal("Sequential").withStyle(ChatFormatting.AQUA).append(Component.literal(" mode, colors cycle one at a time").withStyle(ChatFormatting.GRAY)));
         }
     }
 }

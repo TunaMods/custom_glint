@@ -55,7 +55,7 @@ public class GlintBagItem extends Item {
     private static final String INVENTORY_TAG = "Inventory";
     /** NBT flag: whether the bag pulls loose Glint items into itself. Absent = on. */
     private static final String AUTO_COLLECT_TAG = "AutoCollect";
-    /** Auto-collect only scans the inventory this often (ticks) — the pickup hook handles instant collection. */
+    /** Auto-collect only scans the inventory this often (ticks) - the pickup hook handles instant collection. */
     private static final int SCAN_INTERVAL = 10;
 
     public GlintBagItem(Properties properties) {
@@ -81,7 +81,7 @@ public class GlintBagItem extends Item {
         }
     }
 
-    /** The bag's signature look: the "Golden" glow trim — a slow golden solid layer under a faster shimmer,
+    /** The bag's signature look: the "Golden" glow trim - a slow golden solid layer under a faster shimmer,
      *  with the glowing outline on. Mirrors config/customglint/trims/Golden.json. */
     public static void applyGoldenGlint(ItemStack stack) {
         CustomGlint.write(stack, new CustomGlint.Layer[]{
@@ -99,8 +99,8 @@ public class GlintBagItem extends Item {
         return stack;
     }
 
-    /** The mod's own loot items — trims, tears, rainbow dye. Only these are auto-collected (pulled in on pickup
-     *  or by the inventory sweep); generic materials are not, so the bag never eats your redstone or dyes. */
+    /** The mod's own loot items - trims, tears, rainbow dye. Only these are auto-collected (pulled in on pickup
+     *  or by the inventory sweep); generic materials are excluded. */
     public static boolean isAutoCollectable(ItemStack stack) {
         Item item = stack.getItem();
         return item instanceof GlintTrimItem
@@ -123,13 +123,13 @@ public class GlintBagItem extends Item {
 
     /** Shift-right-click on a Glint Table dumps the bag's trims into the player's table libraries (empty trims
      *  teach their design, painted trims join the printed library). A normal click is intercepted by the block
-     *  first — it opens the table — so this only fires while sneaking. */
+     *  first - it opens the table - so this only fires while sneaking. */
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
         BlockState state = level.getBlockState(context.getClickedPos());
         if (!state.is(ModBlocks.GLINT_TABLE_BLOCK.get())) return InteractionResult.PASS;
-        if (!level.isClientSide && context.getPlayer() instanceof net.minecraft.server.level.ServerPlayer sp) {
+        if (!level.isClientSide && context.getPlayer() instanceof ServerPlayer sp) {
             GlintTableMenu.depositBagContents(sp, context.getItemInHand());
             level.playSound(null, context.getClickedPos(), SoundEvents.BUNDLE_INSERT, SoundSource.PLAYERS, 0.8f, 1.0f);
         }
@@ -161,7 +161,7 @@ public class GlintBagItem extends Item {
 
     /** Auto-move: while carried with auto-collect on, periodically sweep the player inventory and pull any loose
      *  storable Glint items into the bag. The ground-pickup hook catches items before they land; this catches
-     *  the rest — dragged out of a loot chest, shift-clicked in, given, etc. */
+     *  the rest - dragged out of a loot chest, shift-clicked in, given, etc. */
     @Override
     public void inventoryTick(ItemStack stack, Level level, Entity entity, int slotId, boolean isSelected) {
         if (level.isClientSide || !(entity instanceof Player player)) return;
@@ -173,7 +173,7 @@ public class GlintBagItem extends Item {
         Inventory inv = player.getInventory();
         for (int i = 0; i < inv.items.size(); i++) {
             ItemStack s = inv.items.get(i);
-            if (s.isEmpty() || !isAutoCollectable(s)) continue; // glint loot only — never vacuums generic materials
+            if (s.isEmpty() || !isAutoCollectable(s)) continue;
             inv.items.set(i, ItemHandlerHelper.insertItemStacked(handler, s, false));
         }
     }
