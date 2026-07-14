@@ -11,6 +11,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.blueprint.ServerBlueprints;
+import net.tunamods.customglint.module.item.GlintWandItem;
 
 /**
  * C→S: the wand editor's "Save Design" saves the current build to the server's shared blueprint pool
@@ -39,6 +40,7 @@ public record GlintWandSaveBlueprintPacket(String baseName, String json) impleme
     public static void handle(GlintWandSaveBlueprintPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
+            if (!GlintWandItem.isHeldBy(sp)) return; // the wand is the gate; reject a wandless crafted packet
             if (pkt.json == null || pkt.json.length() > MAX_JSON) return;
             if (ServerBlueprints.count() >= ServerBlueprints.MAX_BLUEPRINTS) return;
             // Validate + normalize the (untrusted) JSON: only a well-formed object carrying at least one
