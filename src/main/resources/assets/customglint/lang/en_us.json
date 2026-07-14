@@ -1,5 +1,5 @@
 {
-  "advancement.customglint.root.title": "Custom Glints",
+  "advancement.customglint.root.title": "Glint & Glamour",
   "advancement.customglint.root.description": "Get your hands on a Glint Trim",
   "advancement.customglint.smithing.title": "Blinged Out",
   "advancement.customglint.smithing.description": "Smith a Glint Trim onto an item",
@@ -132,7 +132,7 @@
   "item.customglint.trim_powder": "Trim Powder",
   "block.customglint.glint_table": "Glint Table",
   "container.customglint.glint_table": "Glint Table",
-  "itemGroup.customglint.glint_tab": "Custom Glints",
+  "itemGroup.customglint.glint_tab": "Glint & Glamour",
   "screen.customglint.glint_editor.title": "Glint Editor",
   "screen.customglint.glint_editor.preview": "Preview",
   "screen.customglint.glint_editor.colors": "Colors:",
