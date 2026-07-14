@@ -79,6 +79,15 @@ public final class CustomGlint {
 
     public record Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
                         boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        /** Truncate to {@link #MAX_COLORS_PER_LAYER} at construction so every path — embedder API, direct
+         *  record build, codec decode — honors the cap the {@code sizeLimitedListOf(8)} codec enforces on
+         *  encode. Without this a >8-color layer round-trips fine in memory but throws {@code EncoderException}
+         *  the moment it hits a component sync or a disk save. */
+        public Layer {
+            if (colors != null && colors.length > MAX_COLORS_PER_LAYER)
+                colors = Arrays.copyOf(colors, MAX_COLORS_PER_LAYER);
+        }
+
         /** Back-compat constructor for the eight-field call sites (recipes, packets, tear apply): the
          *  procedural-chromatic {@link #seed} defaults to 0 (only {@link #CHROMATIC} layers use it). */
         public Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
@@ -141,6 +150,14 @@ public final class CustomGlint {
      * auto-syncs on write, so there is no manual sync packet.
      */
     public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
+        /** Same cap as {@link Layer}: {@code setGlowColors} / {@code setEntityGlowColors} feed the raw array
+         *  straight in, and the glowColors codec is {@code sizeLimitedListOf(8)} on encode, so truncate here to
+         *  keep a >8-color glow from throwing {@code EncoderException} on the auto-syncing attachment / save. */
+        public GlintState {
+            if (glowColors != null && glowColors.length > MAX_COLORS_PER_LAYER)
+                glowColors = Arrays.copyOf(glowColors, MAX_COLORS_PER_LAYER);
+        }
+
         public static final GlintState EMPTY = new GlintState(null, false, new int[0], 1.0f, true);
 
         public boolean isEmpty() {
