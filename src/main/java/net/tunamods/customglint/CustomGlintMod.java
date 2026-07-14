@@ -115,7 +115,7 @@ public class CustomGlintMod {
         if (player.level().isClientSide) return;
         ItemEntity itemEntity = event.getItem();
         ItemStack picked = itemEntity.getItem();
-        if (picked.isEmpty() || !GlintBagItem.isAutoCollectable(picked)) return;
+        if (picked.isEmpty() || !GlintBagItem.canStore(picked)) return;
 
         int before = picked.getCount();
         ItemStack remaining = picked;

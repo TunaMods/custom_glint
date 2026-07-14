@@ -99,9 +99,9 @@ public class GlintBagItem extends Item {
         return stack;
     }
 
-    /** The mod's own loot items - trims, tears, rainbow dye. Only these are auto-collected (pulled in on pickup
-     *  or by the inventory sweep); generic materials are excluded. */
-    public static boolean isAutoCollectable(ItemStack stack) {
+    /** The mod's own loot items - trims, tears, rainbow dye. The base set of {@link #canStore}; auto-collect
+     *  pulls in everything {@code canStore} accepts (this plus every Glint Table material). */
+    public static boolean isGlintLoot(ItemStack stack) {
         Item item = stack.getItem();
         return item instanceof GlintTrimItem
                 || item instanceof GlowTrimItem
@@ -115,7 +115,7 @@ public class GlintBagItem extends Item {
      *  glass, glowstone, name tag), so shift-right-clicking the table can stock its slots straight from the bag.
      *  A bag never stores itself. */
     public static boolean canStore(ItemStack stack) {
-        if (isAutoCollectable(stack)) return true;
+        if (isGlintLoot(stack)) return true;
         if (stack.getItem() instanceof DyeItem) return true;
         return stack.is(Items.REDSTONE) || stack.is(Items.SLIME_BALL) || stack.is(Items.GLASS)
                 || stack.is(Items.GLOWSTONE_DUST) || stack.is(Items.NAME_TAG);
@@ -173,7 +173,7 @@ public class GlintBagItem extends Item {
         Inventory inv = player.getInventory();
         for (int i = 0; i < inv.items.size(); i++) {
             ItemStack s = inv.items.get(i);
-            if (s.isEmpty() || !isAutoCollectable(s)) continue;
+            if (s.isEmpty() || !canStore(s)) continue;
             inv.items.set(i, ItemHandlerHelper.insertItemStacked(handler, s, false));
         }
     }
