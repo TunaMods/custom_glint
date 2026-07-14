@@ -86,6 +86,11 @@ public class HorseArmorLayerMixin {
             List<VertexConsumer> list = new ArrayList<>();
             List<RenderType> glintTypes = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    RenderType crt = CustomGlintRenderer.forChromaticMountArmorGlint(glint, layerIdx);
+                    if (crt != null) { list.add(buffer.getBuffer(crt)); glintTypes.add(crt); }
+                    continue;
+                }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {

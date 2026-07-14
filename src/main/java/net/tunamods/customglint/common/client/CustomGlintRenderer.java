@@ -517,6 +517,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 NO_LAYERING);
     }
 
+    /** Stencil-gated chromatic mount-armor glint (vanilla horse barding / IaF mounts). Chromatic has no PNG,
+     *  so {@link #forMountArmorGlint} returns null for it - this is the chromatic counterpart, sharing the same
+     *  stencil bit 0x80 EQUAL test so it only draws on the armor texels {@link #forMountArmorStencilMask} marked. */
+    public static RenderType forChromaticMountArmorGlint(Data glint, int layerIdx) {
+        if (chromaticShader == null) return null;
+        return chromaticRT(glint.layers()[layerIdx], "mount|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
+                mountArmorGlintTestLayering());
+    }
+
     /** TRIANGLES-mode entity-body chromatic glint, for renderers that draw through a triangle-list
      *  RenderType (Epic Fight patched entity meshes). */
     public static RenderType forChromaticEntityGlintTriangles(Data glint, int layerIdx) {
