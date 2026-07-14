@@ -25,6 +25,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.client.GlintGuiConfig;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.network.GiveGlintTrimPacket;
@@ -37,7 +38,6 @@ import net.tunamods.customglint.module.network.ModNetworking;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -151,7 +151,7 @@ public class GlintEditorScreen extends Screen {
     private static final int DESIGN_ROWS = 10, DESIGN_ROW_H = 13;
 
     // ── Glint import overlay ──────────────────────────────────────────────────
-    // The list merges two sources: the player's personal trims (local config/customglint/trims/*.json,
+    // The list merges two sources: the player's personal trims (local config/glint-and-glamour/trims/*.json,
     // tracked in localGlints) and the server's shared blueprint pool (GlintServerBlueprintsSyncPacket.
     // CLIENT_SERVER_BLUEPRINTS). localGlints doubles as the "is this entry a local file?" test used when
     // loading/deleting a row (personal → disk, shared → packet).
@@ -780,7 +780,7 @@ public class GlintEditorScreen extends Screen {
         ModNetworking.CHANNEL.sendToServer(new GlintWandRequestBlueprintsPacket());
         localGlints.clear();
         try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path configDir = ModConfigPaths.TRIMS_DIR;
             if (Files.exists(configDir)) {
                 // try-with-resources: Files.list holds an open directory handle that must be closed, else
                 // each open of the Import picker leaks one OS file descriptor.
@@ -814,7 +814,7 @@ public class GlintEditorScreen extends Screen {
     private void deleteImport(String name) {
         if (localGlints.contains(name)) {
             try {
-                Files.deleteIfExists(Paths.get("config/customglint/trims", name + ".json").toAbsolutePath());
+                Files.deleteIfExists(ModConfigPaths.trimFile(name));
             } catch (Exception ignored) {}
             localGlints.remove(name);
         } else {
@@ -829,7 +829,7 @@ public class GlintEditorScreen extends Screen {
         String json;
         if (localGlints.contains(name)) {
             try {
-                Path file = Paths.get("config/customglint/trims", name + ".json").toAbsolutePath();
+                Path file = ModConfigPaths.trimFile(name);
                 json = new String(Files.readAllBytes(file));
             } catch (Exception e) {
                 return;

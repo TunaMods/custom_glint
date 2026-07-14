@@ -145,7 +145,12 @@ public class CustomGlintMod {
     private void commonSetup(final FMLCommonSetupEvent event) {
         // Custom advancement triggers register straight into the vanilla registry (no DeferredRegister on
         // 1.20.1). enqueueWork keeps it on the main thread, off the parallel mod-loading threads.
-        event.enqueueWork(ModTriggers::register);
+        event.enqueueWork(() -> {
+            ModTriggers.register();
+            // Rename the pre-1.7.0 config/customglint/ folder to config/glint-and-glamour/ before anything
+            // reads it (blueprint scans, gui.properties). No-op after the first migrated launch.
+            net.tunamods.customglint.module.ModConfigPaths.migrateLegacy();
+        });
     }
 
     /** Award the color/layer trim advancements when a crafting-table recipe (dye / merge / layer) yields a

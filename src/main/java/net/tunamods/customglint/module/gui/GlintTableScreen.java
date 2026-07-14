@@ -30,6 +30,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.module.client.GlintGuiConfig;
 import net.tunamods.customglint.module.client.GlintTableModelClient;
@@ -51,7 +52,6 @@ import net.tunamods.customglint.module.network.ModNetworking;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -123,7 +123,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private boolean draggingImport = false;
 
     // ── Import picker overlay ─────────────────────────────────────────────────
-    // Lists two blueprint sources: this client's PERSONAL trims (config/customglint/trims/*.json, cross-world,
+    // Lists two blueprint sources: this client's PERSONAL trims (config/glint-and-glamour/trims/*.json, cross-world,
     // freely deletable) and, on a dedicated server, the SHARED server blueprints (op-managed). Picking one
     // sends it to the server, which files it into the printed library as a LOCKED (dimmed) build target.
     private boolean showImportPicker = false;
@@ -1883,14 +1883,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-    /** Rebuild the import list: this client's personal blueprints ({@code config/customglint/trims/*.json})
+    /** Rebuild the import list: this client's personal blueprints ({@code config/glint-and-glamour/trims/*.json})
      *  plus, on a dedicated server, the shared server blueprints synced from the server. Single-player skips
      *  the server source (the integrated server reads the very directory this scan does - listing both would
      *  double every entry). */
     private void scanImportConfigs() {
         importAll.clear();
         try {
-            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path dir = ModConfigPaths.TRIMS_DIR;
             if (Files.exists(dir)) {
                 try (var stream = Files.list(dir)) {
                     stream.filter(p -> p.toString().endsWith(".json"))
@@ -1931,7 +1931,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 json = GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.get(entry.name());
                 if (json == null) return;
             } else {
-                json = new String(Files.readAllBytes(Paths.get("config/customglint/trims", entry.name() + ".json").toAbsolutePath()));
+                json = new String(Files.readAllBytes(ModConfigPaths.trimFile(entry.name())));
             }
         } catch (Exception ignored) {
             return;
@@ -1988,7 +1988,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-    /** Right-click Import: save the current preview build to {@code config/customglint/trims/<name>.json}, the
+    /** Right-click Import: save the current preview build to {@code config/glint-and-glamour/trims/<name>.json}, the
      *  same format the Import list and wand editor read. */
     private void saveCurrentAsImport() {
         ItemStack src = previewSource();
@@ -1998,7 +1998,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             return;
         }
         try {
-            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path dir = ModConfigPaths.TRIMS_DIR;
             Files.createDirectories(dir);
 
             JsonObject root = new JsonObject();
@@ -2083,7 +2083,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     /** Delete a personal client blueprint: remove its local file, then rescan. */
     private void deleteImport(String name) {
         try {
-            Files.deleteIfExists(Paths.get("config/customglint/trims", name + ".json").toAbsolutePath());
+            Files.deleteIfExists(ModConfigPaths.trimFile(name));
         } catch (Exception ignored) {
             // Locked/unremovable file: leave it; the rescan keeps showing it.
         }

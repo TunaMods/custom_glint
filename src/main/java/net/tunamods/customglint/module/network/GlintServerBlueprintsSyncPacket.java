@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * S→C: the dedicated server's shared blueprint trims (the server's own {@code config/customglint/trims/*.json}),
+ * S→C: the dedicated server's shared blueprint trims (the server's own {@code config/glint-and-glamour/trims/*.json}),
  * pushed to the client when a Glint Table opens. These are the admin-curated build targets every player can
  * import but only ops can delete; they are distinct from the player's personal client-side blueprints (which
  * live in the client's own config dir and never round-trip through the server). Sent as name → raw JSON so the
