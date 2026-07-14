@@ -431,7 +431,7 @@ public class GlintEditorScreen extends Screen {
         tip(skinBtn, "screen.customglint.glint_editor.tip.skin");
         tip(soundBtn, "screen.customglint.glint_editor.tip.sound");
 
-        // Save the current build to config/customglint/trims so it can be pulled back later through Import
+        // Save the current build to config/glint-and-glamour/trims so it can be pulled back later through Import
         // (or the Glint Table). Sits directly under the Skin button.
         tip(bevel(px + 8, py + 248, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.save_design").getString(), this::saveDesign),

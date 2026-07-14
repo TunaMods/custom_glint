@@ -2,18 +2,18 @@ package net.tunamods.customglint.module.blueprint;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.network.GlintServerBlueprintsSyncPacket;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
 /**
  * Server-side store for the shared blueprint trims that live in the server machine's
- * {@code config/customglint/trims/*.json}. On a dedicated server these are the admin-curated build targets
+ * {@code config/glint-and-glamour/trims/*.json}. On a dedicated server these are the admin-curated build targets
  * synced to clients; in single-player the integrated server reads the very same directory the client would.
  * The Glint Table and the wand editor both read/write through here, and {@link #syncTo} pushes the current
  * set back to a player over the existing {@link GlintServerBlueprintsSyncPacket}. All I/O is best-effort:
@@ -26,7 +26,7 @@ public final class ServerBlueprints {
     public static final int MAX_BLUEPRINTS = 1024;
 
     public static Path dir() {
-        return Paths.get("config/customglint/trims").toAbsolutePath();
+        return ModConfigPaths.TRIMS_DIR;
     }
 
     /** All blueprints as name → raw JSON, sorted by name. Never null. */

@@ -25,6 +25,7 @@ import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
 import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlocks;
@@ -39,7 +40,6 @@ import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -1020,10 +1020,10 @@ public class GlintTableMenu extends AbstractContainerMenu {
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
     }
 
-    /** The dedicated server's shared blueprint directory ({@code config/customglint/trims}). Same path a
+    /** The dedicated server's shared blueprint directory ({@code config/glint-and-glamour/trims}). Same path a
      *  client uses for its personal store, but this reads it on the server machine. */
     private static Path serverBlueprintDir() {
-        return Paths.get("config/customglint/trims").toAbsolutePath();
+        return ModConfigPaths.TRIMS_DIR;
     }
 
     /** Read the server's shared blueprint trims as name → raw JSON, for syncing to a client. Never null. */

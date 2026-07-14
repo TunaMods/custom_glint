@@ -11,6 +11,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
@@ -34,7 +35,6 @@ import net.minecraft.world.item.component.CustomModelData;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -497,7 +497,7 @@ public class GlintCommand {
         }
 
         try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path configDir = ModConfigPaths.TRIMS_DIR;
             Files.createDirectories(configDir);
 
             JsonObject root = new JsonObject();

@@ -37,6 +37,7 @@ import net.minecraft.world.item.Items;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.client.ClientInput;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.common.client.GlintClientConfig;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
@@ -58,7 +59,6 @@ import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -220,7 +220,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private static final int IMP_BTN_W = 12; // square Import toggle just left of the sound button
 
     // ── Import picker overlay ─────────────────────────────────────────────────
-    // Lists two blueprint sources: the player's PERSONAL client trims (config/customglint/trims/*.json on this
+    // Lists two blueprint sources: the player's PERSONAL client trims (config/glint-and-glamour/trims/*.json on this
     // client, cross-world, freely deletable) and, on a dedicated server, the SHARED server blueprints synced
     // from the server (op-managed, only ops can delete). Picking one sends it to the server, which drops it
     // into the printed library as a LOCKED (dimmed) build target.
@@ -1491,14 +1491,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-    /** Rebuild the import list: this client's personal blueprints ({@code config/customglint/trims/*.json},
+    /** Rebuild the import list: this client's personal blueprints ({@code config/glint-and-glamour/trims/*.json},
      *  cross-world) plus, on a dedicated server, the shared server blueprints synced from the server. In
      *  single-player the server source is skipped; the integrated server reads the very same directory this
      *  local scan does, so listing both would double every entry. */
     private void scanImportConfigs() {
         importAll.clear();
         try {
-            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path dir = ModConfigPaths.TRIMS_DIR;
             if (Files.exists(dir)) {
                 // try-with-resources: Files.list holds an open directory handle that must be closed.
                 try (var stream = Files.list(dir)) {
@@ -1542,7 +1542,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 json = GlintServerBlueprintsSyncPacket.CLIENT_SERVER_BLUEPRINTS.get(entry.name());
                 if (json == null) return;
             } else {
-                json = new String(Files.readAllBytes(Paths.get("config/customglint/trims", entry.name() + ".json").toAbsolutePath()));
+                json = new String(Files.readAllBytes(ModConfigPaths.trimFile(entry.name())));
             }
         } catch (Exception ignored) {
             return; // unreadable file
@@ -1603,7 +1603,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     /** Right-click Import: save the current preview build (every layer, its colors, and all modifiers) to
-     *  {@code config/customglint/trims/<name>.json}, the same format the Import list and wand editor read.
+     *  {@code config/glint-and-glamour/trims/<name>.json}, the same format the Import list and wand editor read.
      *  This is the "design a trim you don't own and come back to it later" half of the feature: you can
      *  build and save anything freely; it just can't be printed until you own + pay for it. */
     private void saveCurrentAsImport() {
@@ -1614,7 +1614,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             return;
         }
         try {
-            Path dir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path dir = ModConfigPaths.TRIMS_DIR;
             Files.createDirectories(dir);
 
             JsonObject root = new JsonObject();
@@ -1753,10 +1753,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         g.fill(x, y + 3, x + 5, y + 7, color);         // body
     }
 
-    /** Delete a personal client blueprint: remove its {@code config/customglint/trims/<name>.json}, then rescan. */
+    /** Delete a personal client blueprint: remove its {@code config/glint-and-glamour/trims/<name>.json}, then rescan. */
     private void deleteImport(String name) {
         try {
-            Files.deleteIfExists(Paths.get("config/customglint/trims", name + ".json").toAbsolutePath());
+            Files.deleteIfExists(ModConfigPaths.trimFile(name));
         } catch (Exception ignored) {
             // Locked/unremovable file: leave it; the rescan below simply keeps showing it.
         }

@@ -2,6 +2,7 @@ package net.tunamods.customglint;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
 import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.command.GlintCommand;
@@ -158,6 +159,9 @@ public class CustomGlintMod {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+        // Rename the pre-1.7.0 config/customglint/ folder to config/glint-and-glamour/ before anything
+        // reads it (blueprint scans). No-op after the first migrated launch.
+        event.enqueueWork(ModConfigPaths::migrateLegacy);
     }
 
     private void onAddReloadListeners(AddServerReloadListenersEvent event) {
