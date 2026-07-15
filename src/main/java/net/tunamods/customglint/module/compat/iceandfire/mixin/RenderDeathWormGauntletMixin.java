@@ -79,6 +79,14 @@ public class RenderDeathWormGauntletMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            // See RenderTrollWeaponMixin: CHROMATIC is procedural, so forGlint returns null and the layer
+            // would draw nothing. isItem=false (3D BEWLR model); chromaticWorldBuffer defers the draw past
+            // the scene composite under a shaderpack.
+            if (CustomGlint.isChromatic(layers[li])) {
+                RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, li, false);
+                if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
