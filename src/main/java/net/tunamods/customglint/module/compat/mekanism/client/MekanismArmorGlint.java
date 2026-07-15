@@ -32,6 +32,12 @@ import java.util.List;
  * value while armed, fanning the same geometry across our glint render types and (when glowing) a
  * record-only silhouette. {@link #flush} queues the recorded silhouettes as one glow ring keyed on the
  * wearer + {@code CAT_ARMOR}. All references are vanilla types, so there is no dep on Mekanism.
+ *
+ * The glint uses {@code forHorseArmorGlint}/{@code forChromaticEntityGlint} (EQUAL + NO_LAYERING), not the
+ * armor variants, for the same reason {@code ArtifactGlint} does: Mekanism draws through its own
+ * {@code MekanismRenderType} rather than vanilla {@code armorCutoutNoCull}, and that type sets no layering
+ * shard, so it writes depth at raw projected depth. {@code forArmorGlint}'s VIEW_OFFSET_Z_LAYERING tests at
+ * D-epsilon and never matches, which made every layer - texture and chromatic - vanish on worn Mekanism armor.
  */
 public final class MekanismArmorGlint {
     private MekanismArmorGlint() {}
@@ -81,22 +87,24 @@ public final class MekanismArmorGlint {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                // Mirrors HumanoidArmorLayerMixin's chromatic branch: procedural RT handed to chromaticWorldBuffer
+                // so it defers to the post-composite replay under a shaderpack.
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                    if (crt != null) list.add(bufferSource.getBuffer(crt));
+                    RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(bufferSource, crt));
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         CustomGlintRenderer.fillPremul(buf, colors[i]);
-                        RenderType rt2 = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
+                        RenderType rt2 = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, i);
                         if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
                     CustomGlintRenderer.fillPremul(buf, color);
-                    RenderType rt2 = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
+                    RenderType rt2 = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, 0);
                     if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
                 }
             }
