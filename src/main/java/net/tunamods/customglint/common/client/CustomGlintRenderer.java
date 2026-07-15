@@ -517,13 +517,26 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
                                           boolean lateForShaders, RenderStateShard.LayeringStateShard postLayering,
                                           ResourceLocation alphaGate) {
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, lateForShaders, postLayering, alphaGate, false);
+    }
+
+    // {@code lateBucketTag} tags the in-pass RT into the shader-pack LINES bucket (tagAsLateRenderForShaders), for a
+    // surface that must flush AFTER the mod's own draw lands its depth. Epic Knights decorations are the only user:
+    // their glint EQUAL-tests against a depth pre-pass, and without the tag FullyBuffered can schedule the glint
+    // first, leaving EQUAL to compare against clear-depth. Distinct from lateForShaders, which is the slime shell's
+    // OPAQUE_DECAL flag and also flips depth/write-mask/layering.
+    private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
+                                          RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
+                                          boolean lateForShaders, RenderStateShard.LayeringStateShard postLayering,
+                                          ResourceLocation alphaGate, boolean lateBucketTag) {
         int[] colors = chromaticColors(layer.colors());
         final int colorCount = Math.min(colors.length, 8);
         final ResourceLocation white = getWhiteTexture();
         final ResourceLocation palette = getPaletteTexture(colors);
         String key = tag + "|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
                 + "|" + layer.seed() + "|" + scaleU + "|" + scaleV + "|" + mode + "|" + (lateForShaders ? "late" : "")
-                + "|" + alphaGate; // two bardings share a design but not a mask, so the gate is part of the identity
+                + "|" + alphaGate // two bardings share a design but not a mask, so the gate is part of the identity
+                + "|" + (lateBucketTag ? "lb" : "");
         RenderType cached = BY_CHROMATIC.computeIfAbsent(key, k -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":custom_chromatic|" + k.hashCode(),
@@ -575,6 +588,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         });
         registerFixedBuffer(cached);
         if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
+        if (lateBucketTag) tagAsLateRenderForShaders(cached);
         CHROMATIC_POST.computeIfAbsent(cached,
                 r -> buildChromaticPostComposite(layer, white, palette, scaleU, scaleV, colorCount, mode, key, postLayering,
                         lateForShaders, alphaGate));
@@ -838,6 +852,78 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // the barding are the same mesh at the same depth, so EQUAL passes on both.
         return chromaticRT(glint.layers()[layerIdx], "mount|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
                 mountArmorGlintTestLayering(), VertexFormat.Mode.QUADS, false, NO_LAYERING, armorTex);
+    }
+
+    /** Chromatic armor-decoration glint for the SHADER-PACK path (Epic Knights). Chromatic has no PNG, so
+     *  {@code EpicKnightsGlintRT.forDecorationGlintShader} returns null for it - this is the counterpart, and it
+     *  mirrors that RT exactly: EQUAL depth against the decoration depth pre-pass, no layering (the pre-pass writes
+     *  raw projected depth, so both compare raw depths and match), and the LINES-bucket late tag so it flushes after
+     *  the decoration's own depth lands under FullyBuffered.
+     *
+     *  <p>Its post-composite sibling takes the default EQUAL-against-composited-depth setup with no alpha gate,
+     *  unlike {@link #forChromaticMountArmorGlint}: a decoration's parts are its own mesh drawn with alpha-discard,
+     *  so the composited depth at those pixels is the decoration's alone and EQUAL already cuts the slick to its
+     *  silhouette. The barding needs a gate only because it shares the horse mesh with the saddle. */
+    public static RenderType forChromaticDecorationGlint(Data glint, int layerIdx) {
+        if (chromaticShader == null) return null;
+        return chromaticRT(glint.layers()[layerIdx], "ek-deco-sh|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE,
+                CHROMATIC_MODEL_UV_SCALE, NO_LAYERING, VertexFormat.Mode.QUADS, false, NO_LAYERING, null, true);
+    }
+
+    /** Chromatic armor-decoration glint for the STENCIL paths (Epic Knights, shaders off / no shader mod).
+     *  {@code layering} carries the decoration's stencil-slot EQUAL test; the caller caches the result and registers
+     *  the fixed buffer, matching the texture-glint factories beside it in EK.
+     *
+     *  <p>Uncached and sibling-less, unlike every other chromatic RT. EK bakes a fresh {@link #nextStencilSlot()}
+     *  into {@code layering} every frame, so the key moves with slot allocation order: through {@link #BY_CHROMATIC},
+     *  an LRU capped at {@link #CHROMATIC_CACHE_CAP} whose eviction recycles the RT's builder, that rebuilds
+     *  RenderTypes every frame on the hot path. And the stencil paths only run with no pack active, so
+     *  {@link ChromaticShaderReplay} never sees this RT - {@link #forChromaticDecorationGlint} covers the pack case
+     *  and does register a sibling.
+     *
+     *  <p>LEQUAL rather than the EQUAL the built-in chromatic RTs use: EK's decoration depth misses EQUAL by an FP
+     *  epsilon, which is why the stencil exists at all (see EpicKnightsGlintRT's header). The stencil does the
+     *  trimming here, not the depth func. */
+    public static RenderType buildChromaticStencilGlint(Layer layer, String key,
+                                                        RenderStateShard.LayeringStateShard layering) {
+        if (chromaticShader == null) return null;
+        int[] colors = chromaticColors(layer.colors());
+        final int colorCount = Math.min(colors.length, 8);
+        final ResourceLocation white = getWhiteTexture();
+        final ResourceLocation palette = getPaletteTexture(colors);
+        return RenderType.create(
+                MOD_ID + ":custom_chromatic_stencil|" + key.hashCode(),
+                DefaultVertexFormat.POSITION_TEX,
+                VertexFormat.Mode.QUADS,
+                256,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(CHROMATIC_SHADER_SHARD)
+                        .setTextureState(new TextureStateShard(white, false, false) {
+                            @Override public void setupRenderState() {
+                                RenderSystem.setShaderTexture(0, white);
+                                RenderSystem.setShaderTexture(1, palette);
+                                // Gate held open: the stencil slot does the trimming on this path.
+                                RenderSystem.setShaderTexture(3, white);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                            @Override public void clearRenderState() {
+                                super.clearRenderState();
+                                RenderSystem.setShaderTexture(1, 0);
+                                RenderSystem.setShaderTexture(3, 0);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                        })
+                        .setWriteMaskState(COLOR_WRITE)
+                        .setCullState(NO_CULL)
+                        .setDepthTestState(LEQUAL_DEPTH_TEST)
+                        .setLayeringState(layering)
+                        .setTransparencyState(GLINT_TRANSPARENCY)
+                        .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_stencil_texturing|" + key.hashCode(),
+                                () -> setChromaticMatrix(layer, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE, colorCount),
+                                RenderSystem::resetTextureMatrix))
+                        .createCompositeState(false));
     }
 
     /** TRIANGLES-mode entity-body chromatic glint, for renderers that draw through a triangle-list
