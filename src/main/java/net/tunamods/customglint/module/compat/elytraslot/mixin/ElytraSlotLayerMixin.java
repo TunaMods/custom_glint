@@ -86,6 +86,14 @@ public class ElytraSlotLayerMixin {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                // Chromatic has no design PNG, so forArmorGlint returns null and the layer would draw nothing.
+                // Mirrors ElytraLayerMixin's chromatic branch: procedural RT handed to chromaticWorldBuffer so
+                // it defers to the post-composite replay under a shaderpack.
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
+                    continue;
+                }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
