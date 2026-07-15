@@ -82,6 +82,15 @@ public final class ChromaticShaderReplay {
             depthSnapshot = new TextureTarget(main.width, main.height, true, Minecraft.ON_OSX);
             depthSnapshot.setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         }
+        // LOAD-BEARING: match main's depth FORMAT, not just its size. glBlitFramebuffer(GL_DEPTH_BUFFER_BIT)
+        // requires identical depth formats on the read and draw targets; mismatched it raises
+        // GL_INVALID_OPERATION and copies nothing, with no error surfaced. Forge's RenderTarget.enableStencil()
+        // re-creates the depth texture as DEPTH32F_STENCIL8 rather than DEPTH_COMPONENT32F, and this mod calls it
+        // on main (the mount-armor stencil mask, the EK decoration mask, the outline slot pool). An un-stencilled
+        // snapshot therefore stops copying the moment one of those draws first appears, and holds its cleared
+        // depth of 1.0 - the far plane - so cgOccluded() occludes nothing and the shell glint draws through
+        // terrain. enableStencil() is idempotent and one-way, and main never reverts, so track it one-way too.
+        if (main.isStencilEnabled() && !depthSnapshot.isStencilEnabled()) depthSnapshot.enableStencil();
         GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, main.frameBufferId);
         GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, depthSnapshot.frameBufferId);
         GL30.glBlitFramebuffer(0, 0, main.width, main.height, 0, 0, depthSnapshot.width, depthSnapshot.height,
