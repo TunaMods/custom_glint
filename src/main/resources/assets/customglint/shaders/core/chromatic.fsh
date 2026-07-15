@@ -13,6 +13,9 @@ uniform sampler2D Sampler1; // palette strip: 1px tall, one texel per colour
 // Scene depth for the translucent-shell (slime) glint's world occlusion; texture 0 (=> depth 0) everywhere
 // else, which reads as "nothing occludes" - see cgOccluded below.
 uniform sampler2D Sampler2;
+// Alpha gate: the surface's OWN texture, for paths whose geometry covers more than the surface they glint.
+// White (alpha 1, gate open) everywhere else - see cgAlphaGated below.
+uniform sampler2D Sampler3;
 
 uniform vec4 ColorModulator;
 uniform mat4 ProjMat;
@@ -23,6 +26,7 @@ uniform float FogEnd;
 
 in float vertexDistance;
 in vec2 noiseCoord;
+in vec2 texCoord0;
 in float vSeed;
 in float vMorph;
 in float vCount;
@@ -82,6 +86,19 @@ bool cgOccluded() {
     return fragDist > sceneDist + OCCLUSION_BIAS;
 }
 
+// Matches entity_cutout's alpha test, so the gate keeps exactly the texels that shader keeps.
+const float ALPHA_CUTOFF = 0.1;
+
+// True where the surface's own texture is transparent, i.e. the geometry is here but the surface is not. Horse
+// barding needs this: HorseArmorLayer renders the whole horse model with the barding texture, so the armor mesh
+// is also the saddle and body mesh, and only the barding's alpha separates them. In-pass a stencil mask does
+// that job (forMountArmorStencilMask); its bit does not survive the composite, so the post-composite replay
+// tests the texture directly. Sampler3 is white (alpha 1) on every other path, so this is a no-op for items,
+// armor and entity bodies.
+bool cgAlphaGated() {
+    return texture(Sampler3, texCoord0).a < ALPHA_CUTOFF;
+}
+
 // h in 0..1 -> rainbow rgb (no white desaturation)
 vec3 hue(float h) {
     vec3 p = abs(fract(vec3(h) + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
@@ -105,6 +122,7 @@ vec3 cgChroma(int n, float n1, float n2, float t) {
 
 void main() {
     if (cgOccluded()) discard;
+    if (cgAlphaGated()) discard;
 
     float t = GameTime * 5000.0 * max(0.05, vMorph); // GameTime wraps 0..1 over a MC day; scale to a flow rate (× speed)
     vec2 uv = noiseCoord * DENSITY;

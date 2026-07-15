@@ -483,12 +483,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  exactly mirroring the texture-glint depth setup so the EQUAL_DEPTH_TEST pass lines up. */
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering) {
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS, false, layering);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS, false, layering, null);
     }
 
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode) {
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false, layering);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false, layering, null);
     }
 
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
@@ -498,7 +498,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // texture glint needs, but chromatic in-phase under a pack is attenuated by Iris (see
         // forChromaticEntityGlintTranslucent) - so the shell's chromatic defers like every other chromatic
         // surface and the in-pass setup below simply never draws under a pack.
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, lateForShaders, layering);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, lateForShaders, layering, null);
     }
 
     // Every chromatic RT is deferrable: under an active pack our custom-shader draw into Iris's gbuffer is
@@ -506,20 +506,24 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // {@link #CHROMATIC_POST} that the replay flushes over the finished frame at full strength (see
     // ChromaticShaderReplay).
     //
-    // {@code postLayering} is the layering that SIBLING uses, normally the same shard as the in-pass draw. Only
-    // the stencil-gated mount-armor RT differs: its in-pass layering tests stencil bit 0x80, which is written into
-    // the pack's gbuffer and is gone by the post-composite phase, so a sibling carrying it rejects every fragment.
-    // It passes NO_LAYERING and lets the sibling's EQUAL depth test against the composited depth cut the glint to
-    // the armor's visible texels instead.
+    // Both trailing params exist for the mount-armor RT alone, the one surface whose in-pass draw is gated by a
+    // stencil bit the replay can't read (see forChromaticMountArmorGlint for why it needs one at all).
+    // {@code postLayering}: the layering the sibling uses, normally the same shard as the in-pass draw. Mount armor
+    // passes NO_LAYERING, since a sibling still testing bit 0x80 rejects every fragment after the composite.
+    // {@code alphaGate}: the surface's own texture, bound on Sampler3 for the sibling to alpha-test against, which
+    // is what replaces that stencil bit (cgAlphaGated in chromatic.fsh). Null, the common case, binds white at
+    // alpha 1 so the gate stays open and every other surface is untouched.
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
-                                          boolean lateForShaders, RenderStateShard.LayeringStateShard postLayering) {
+                                          boolean lateForShaders, RenderStateShard.LayeringStateShard postLayering,
+                                          ResourceLocation alphaGate) {
         int[] colors = chromaticColors(layer.colors());
         final int colorCount = Math.min(colors.length, 8);
         final ResourceLocation white = getWhiteTexture();
         final ResourceLocation palette = getPaletteTexture(colors);
         String key = tag + "|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
-                + "|" + layer.seed() + "|" + scaleU + "|" + scaleV + "|" + mode + "|" + (lateForShaders ? "late" : "");
+                + "|" + layer.seed() + "|" + scaleU + "|" + scaleV + "|" + mode + "|" + (lateForShaders ? "late" : "")
+                + "|" + alphaGate; // two bardings share a design but not a mask, so the gate is part of the identity
         RenderType cached = BY_CHROMATIC.computeIfAbsent(key, k -> {
             RenderType rt = RenderType.create(
                     MOD_ID + ":custom_chromatic|" + k.hashCode(),
@@ -534,6 +538,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, white);
                                     RenderSystem.setShaderTexture(1, palette);
+                                    // Gate held open (white = alpha 1) on every in-pass draw: where the geometry
+                                    // over-covers, the stencil mask is what trims it here. Only the sibling, which
+                                    // has no stencil to read, alpha-tests.
+                                    RenderSystem.setShaderTexture(3, white);
                                     // ColorModulator.rgb is a brightness multiplier the chromatic shader honours.
                                     // The slime translucent shell overdraws (dims) this additive glint under shaders,
                                     // so boost it on that path (SHELL_GLINT_SHADER_BOOST). .a stays 1 (it drives the
@@ -545,6 +553,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
                                     RenderSystem.setShaderTexture(1, 0);
+                                    RenderSystem.setShaderTexture(3, 0);
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
@@ -568,7 +577,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
         CHROMATIC_POST.computeIfAbsent(cached,
                 r -> buildChromaticPostComposite(layer, white, palette, scaleU, scaleV, colorCount, mode, key, postLayering,
-                        lateForShaders));
+                        lateForShaders, alphaGate));
         return cached;
     }
 
@@ -688,7 +697,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                                           float scaleU, float scaleV, int colorCount,
                                                           VertexFormat.Mode mode, String key,
                                                           RenderStateShard.LayeringStateShard layering,
-                                                          boolean translucentSurface) {
+                                                          boolean translucentSurface, ResourceLocation alphaGate) {
         return RenderType.create(
                 MOD_ID + ":custom_chromatic_pc|" + key.hashCode(),
                 DefaultVertexFormat.POSITION_TEX,
@@ -707,12 +716,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                 // surface binds 0 -> the shader reads depth 0 and occludes nothing.
                                 RenderSystem.setShaderTexture(2,
                                         translucentSurface ? ChromaticShaderReplay.sceneDepthTextureId() : 0);
+                                // The surface's own texture where the geometry over-covers it (horse barding),
+                                // else white to hold the gate open. See cgAlphaGated in chromatic.fsh.
+                                RenderSystem.setShaderTexture(3, alphaGate != null ? alphaGate : white);
                                 RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                             }
                             @Override public void clearRenderState() {
                                 super.clearRenderState();
                                 RenderSystem.setShaderTexture(1, 0);
                                 RenderSystem.setShaderTexture(2, 0);
+                                RenderSystem.setShaderTexture(3, 0);
                                 RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                             }
                         })
@@ -810,13 +823,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Stencil-gated chromatic mount-armor glint (vanilla horse barding / IaF mounts). Chromatic has no PNG,
      *  so {@link #forMountArmorGlint} returns null for it - this is the chromatic counterpart, sharing the same
      *  stencil bit 0x80 EQUAL test so the in-pass draw only lands on the armor texels
-     *  {@link #forMountArmorStencilMask} marked. Its post-composite sibling gates on depth instead (see below). */
-    public static RenderType forChromaticMountArmorGlint(Data glint, int layerIdx) {
+     *  {@link #forMountArmorStencilMask} marked. The mask is needed because this geometry is not this surface:
+     *  HorseArmorLayer renders the whole horse model with the barding texture, so the armor mesh is also the saddle
+     *  and body mesh, and only the barding texture's alpha tells them apart.
+     *
+     *  @param armorTex the armor texture, alpha-tested by the post-composite sibling in place of the stencil bit
+     *                  (which the replay can't read). Pass the same texture handed to
+     *                  {@link #forMountArmorStencilMask}. Null skips the gate and the glint spreads onto the
+     *                  saddle. */
+    public static RenderType forChromaticMountArmorGlint(Data glint, int layerIdx, ResourceLocation armorTex) {
         if (chromaticShader == null) return null;
         // NO_LAYERING on the sibling: stencil bit 0x80 does not reach the post-composite phase, so a sibling
-        // testing it draws nothing. Its EQUAL depth test does the gating there instead.
+        // testing it draws nothing. armorTex's alpha does that gating there instead. Depth can't: the saddle and
+        // the barding are the same mesh at the same depth, so EQUAL passes on both.
         return chromaticRT(glint.layers()[layerIdx], "mount|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
-                mountArmorGlintTestLayering(), VertexFormat.Mode.QUADS, false, NO_LAYERING);
+                mountArmorGlintTestLayering(), VertexFormat.Mode.QUADS, false, NO_LAYERING, armorTex);
     }
 
     /** TRIANGLES-mode entity-body chromatic glint, for renderers that draw through a triangle-list

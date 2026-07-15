@@ -21,6 +21,7 @@ uniform int FogShape;
 
 out float vertexDistance;
 out vec2 noiseCoord;
+out vec2 texCoord0;
 out float vSeed;
 out float vMorph;
 out float vCount;
@@ -33,6 +34,9 @@ void main() {
     // the 2D part; for flat items uvScale = atlasW/16 cancels the block-atlas sprite compression so the sprite
     // spans patternScale UV units (× DENSITY in the fsh → a constant ~7 cells/icon, matching 26.1.2).
     noiseCoord = (TextureMat * vec4(UV0, 0.0, 1.0)).xy;
+    // Raw, untransformed UV0 for the fsh's alpha gate. noiseCoord can't serve: TextureMat has already baked
+    // patternScale/uvScale into it, so it no longer indexes the surface's own texture.
+    texCoord0 = UV0;
     vSeed  = TextureMat[2][3];
     vMorph = TextureMat[2][0];
     vCount = TextureMat[2][1];
