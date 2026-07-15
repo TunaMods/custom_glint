@@ -33,6 +33,7 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +92,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         BY_MOUNT_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_MASK.clear();
         BY_CHROMATIC.clear();
+        CHROMATIC_POST.clear();
+        GLINT_POST.clear();
         GLINT_COLORS.clear();
         for (ResourceLocation loc : paletteCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
@@ -98,6 +101,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // Drop tagged-RT references too, else each reload orphans the previous generation of compat
         // (EK decoration) RenderTypes here even after their own caches are evicted - they'd never GC.
         SHADER_TT_TAGGED.clear();
+        ChromaticShaderReplay.releaseSceneDepth(); // re-created on the next drain at the live screen size
         if (whiteTex != null) { mc.getTextureManager().release(whiteTex); whiteTex = null; }
     }
 
@@ -479,17 +483,32 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  exactly mirroring the texture-glint depth setup so the EQUAL_DEPTH_TEST pass lines up. */
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering) {
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS, false);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS, false, true);
     }
 
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode) {
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false, true);
     }
 
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
                                           boolean lateForShaders) {
+        // The translucent-shell path IS deferrable, and must be. Its in-pass OPAQUE_DECAL setup is what the
+        // texture glint needs, but chromatic in-phase under a pack is attenuated by Iris (see
+        // forChromaticEntityGlintTranslucent) - so the shell's chromatic defers like every other chromatic
+        // surface and the in-pass setup below simply never draws under a pack.
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, lateForShaders, true);
+    }
+
+    // {@code deferrable}: this layer's chromatic glint can be captured and re-drawn AFTER a shaderpack composites
+    // (see ChromaticShaderReplay). Under an active pack our custom-shader draw into Iris's gbuffer is attenuated by
+    // the pack's lighting, so deferrable RTs also register a "post-composite" sibling in {@link #CHROMATIC_POST}
+    // that the replay flushes over the finished frame at full strength. Only the stencil-gated mount-armor RT is
+    // NOT deferrable - a replay can't reproduce its stencil mask, so it stays on its in-pass path.
+    private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
+                                          RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
+                                          boolean lateForShaders, boolean deferrable) {
         int[] colors = chromaticColors(layer.colors());
         final int colorCount = Math.min(colors.length, 8);
         final ResourceLocation white = getWhiteTexture();
@@ -510,7 +529,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, white);
                                     RenderSystem.setShaderTexture(1, palette);
-                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                    // ColorModulator.rgb is a brightness multiplier the chromatic shader honours.
+                                    // The slime translucent shell overdraws (dims) this additive glint under shaders,
+                                    // so boost it on that path (SHELL_GLINT_SHADER_BOOST). .a stays 1 (it drives the
+                                    // fade chain). Non-shell path keeps rgb = 1 (no change). General shader support for
+                                    // the opaque chromatic glint is the post-composite replay, not this colour.
+                                    float b = lateForShaders ? SHELL_GLINT_SHADER_BOOST : 1.0f;
+                                    RenderSystem.setShaderColor(b, b, b, 1.0f);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -536,11 +561,219 @@ public final class CustomGlintRenderer extends RenderStateShard {
         });
         registerFixedBuffer(cached);
         if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
+        if (deferrable) {
+            CHROMATIC_POST.computeIfAbsent(cached,
+                    r -> buildChromaticPostComposite(layer, white, palette, scaleU, scaleV, colorCount, mode, key, layering,
+                            lateForShaders));
+        }
         return cached;
     }
 
+    // LOAD-BEARING: every glint RenderType here pairs GLINT_TRANSPARENCY with a shader whose JSON declares
+    // that SAME blend - customglint:glint for the texture glints, customglint:chromatic for these. Neither may
+    // bind vanilla's rendertype_glint, and neither may drop its "blend" section. Why:
+    //
+    // ShaderInstance.apply() calls blend.apply() from INSIDE the draw (BufferUploader.drawWithShader), i.e.
+    // AFTER setupRenderState ran the transparency shard - so the shader's declared blend OVERRIDES the
+    // RenderType's. BlendMode.apply() then compares against a STATIC lastApplied and no-ops when it equals()
+    // it, so the effective blend depends on which shader drew last, globally. Two ways that bites:
+    //   - No "blend" section parses to BlendMode() with opaque=true, whose apply() calls disableBlend(). A
+    //     glint drawn with blend OFF replaces the item surface instead of adding to it - the item reads as a
+    //     solid glint-coloured silhouette with its texture gone. That was the "chromatic fills, but only if a
+    //     texture glint drew first this frame" bug: the glint pinned lastApplied non-opaque, so chromatic's
+    //     opaque mode flipped it back and disabled blend.
+    //   - Vanilla's rendertype_glint declares srcalpha/1-srcalpha, so binding it overrides our additive with
+    //     an alpha blend on some draws but not others, purely by draw order.
+    // Declaring the shard's exact blend (blendFuncSeparate(SRC_COLOR, ONE, ZERO, ONE) -> srccolor/one +
+    // srcalpha zero/one) on both shaders makes apply() either a no-op, leaving the shard's state, or a
+    // re-apply of that identical state: same GL either way, in any draw order.
+    //
+    // Note lastApplied is static and NOT GL state, so a GL probe in a RenderType shard reads perfectly correct
+    // blend right up to the broken draw. Do not go looking for this class of bug there.
     /** Noise UV scale for armor / elytra / horse-armor / entity-body chromatic. */
     private static final float CHROMATIC_MODEL_UV_SCALE = 8.0f;
+
+    // Brightness compensation for the TRANSLUCENT-shell TEXTURE glint (slime outer shell) under an active
+    // shaderpack. That glint flushes in the OPAQUE_DECAL bucket (before the shell) for a stable, flicker-free
+    // depth reference; the shell then alpha-blends OVER it in the later GENERAL_TRANSPARENT pass and attenuates
+    // the additive glint by the shell's opacity, so it reads dim. The VIEW_OFFSET_Z_LAYERING "punch-through"
+    // that would occlude the shell at the glint texels is a no-op under Iris (it rewrites the gbuffer
+    // projection, so the projection-matrix offset is ignored), and every depth-based way to occlude the shell
+    // reintroduces flicker. So instead pre-boost the glint colour to counter the shell's overdraw and land near
+    // the shaders-off brightness. Additive GLINT_TRANSPARENCY uses an SRC_COLOR src factor, so the on-screen
+    // contribution scales ~colour^2; this factor is the multiply on the colour, not on the final contribution.
+    // Applied only on the translucent shader path (lateForShaders); shaders-off uses the opaque EQUAL path and
+    // never sees this. Tunable - verify in the shader test env.
+    //
+    // TRIED (do NOT retry): replacing this whole scheme with a stencil two-pass - mask the shell's visible
+    // pixels in OPAQUE_DECAL, then draw the glint in the LINES bucket with NO_DEPTH_TEST + stencil EQUAL, so it
+    // lands on top of the shell undimmed. Dropping the depth write cost the view-independent self-occlusion this
+    // RT's COLOR_DEPTH_WRITE provides, and produced exactly what the note above predicts: every face visible
+    // from every side, plus angle-dependent dropout. The stencil mark is not a substitute for the depth write.
+    //
+    // It only meaningfully lifts DARK colours: both call sites clamp (Math.min(1, holder*BOOST)), so any bright
+    // colour saturates and is effectively unboosted. The CHROMATIC shell no longer depends on it at all - that
+    // path defers, and its post-composite sibling draws at ColorModulator 1.0 over the finished frame where
+    // nothing overdraws it (see buildChromaticPostComposite). The in-pass chromatic RT still reads this, but
+    // only Iris's shadow pass still draws that RT (chromaticWorldBuffer captures every other case).
+    private static final float SHELL_GLINT_SHADER_BOOST = 2.6f;
+
+    // Post-composite sibling of each deferrable chromatic RT (see ChromaticShaderReplay). Under an active
+    // shaderpack our custom-shader draw into Iris's gbuffer is discarded (verified: a constant full-bright output
+    // still showed nothing in-world under a pack while GUI drew it), so the glint is re-drawn AFTER Iris's
+    // finalizeLevelRendering. That replay flushes THIS sibling: same shader / palette / noise matrix, its own
+    // depth setup for the surface it replays (see buildChromaticPostComposite), and no fixed-buffer registration
+    // (the replay flushes it through its own immediate BufferSource). Keyed by identity on the in-pass RT;
+    // cleared with the rest on resource reload.
+    private static final Map<RenderType, RenderType> CHROMATIC_POST = new IdentityHashMap<>();
+
+    // Post-composite sibling of each deferrable TEXTURE-glint RT (the normal, non-chromatic layers built by
+    // {@link #forGlint}), mirroring CHROMATIC_POST for the item path's deferral: the layer's geometry is captured
+    // and re-drawn AFTER Iris's finalize through this sibling (same glint shader, design texture, scroll matrix
+    // and additive blend, but flushed by the replay's own immediate source). The sibling reads the SAME per-RT
+    // colour holder as the in-pass RT (the animated colour is frame-stable per RT), so the replay lands the
+    // frame's colour. Keyed by identity on the in-pass RT; cleared on resource reload.
+    //
+    // Texture glints do NOT need this the way chromatic does: Iris swaps GameRenderer.getRendertypeGlintShader()
+    // for the pack's own GLINT program, so they stay bright drawing in-phase (see resolveGlintShader). This map
+    // backs the item-path deferral only, which is pending a revert - the fill it was built to chase turned out to
+    // be BlendMode.lastApplied and is fixed by the matching blend declarations instead.
+    private static final Map<RenderType, RenderType> GLINT_POST = new IdentityHashMap<>();
+
+    /** The post-composite sibling registered for {@code inPass} (chromatic or texture glint), or null if that RT
+     *  is not deferrable. The replay drain resolves either kind through here. */
+    public static RenderType postCompositeVariant(RenderType inPass) {
+        RenderType pc = CHROMATIC_POST.get(inPass);
+        return pc != null ? pc : GLINT_POST.get(inPass);
+    }
+
+    /** Returns the buffer a deferrable chromatic layer's geometry should be fed into. Under an active shaderpack,
+     *  during world rendering (not GUI, not the Iris shadow pass), the in-pass gbuffer draw is attenuated by the
+     *  pack's lighting (and colour-masked outright where Iris owns the phase), so hand the geometry to
+     *  {@link ChromaticShaderReplay}, which re-draws it over the composited frame at full strength. Everywhere else
+     *  (shaders off, GUI, non-deferrable RTs) this is a straight {@code src.getBuffer(crt)} - off-pack behaviour is
+     *  unchanged.
+     *
+     *  <p>The FIRST-PERSON HAND deferring here is load-bearing, and the reason it works is an ordering detail worth
+     *  keeping: Oculus's {@code MixinLevelRenderer.iris$endLevelRender} draws the hand
+     *  ({@code HandRenderer.renderTranslucent}) and only THEN calls {@code finalizeLevelRendering()} - both inside
+     *  {@code LevelRenderer.renderLevel}'s RETURN. So the hand lands in the gbuffer and the pack's lighting dims it,
+     *  which is why 1P chromatic read "very dim" while dropped/hotbar chromatic looked right. Our own RETURN drain
+     *  sits at priority 1500 (&gt; Iris's 1000) so it runs after that finalize, and {@link #isRenderingWorld()} is
+     *  still true while Iris renders the hand - so a hand-pass capture here is drained post-composite in the very
+     *  same RETURN. Each {@code Recorder} snapshots its own model-view AND projection, so the hand's distinct FOV
+     *  projection replays correctly (that was the original reason this pass was excluded). */
+    public static VertexConsumer chromaticWorldBuffer(MultiBufferSource src, RenderType crt) {
+        if (crt != null && isShaderPackActive() && isRenderingWorld() && !isInShadowPass()
+                && CHROMATIC_POST.containsKey(crt)) {
+            return ChromaticShaderReplay.capture(crt);
+        }
+        return src.getBuffer(crt);
+    }
+
+    /** Builds the post-composite sibling of a chromatic RT: same shader / palette / noise matrix / additive GLINT
+     *  blend as the in-pass RT, but depth-tested against the COMPOSITED main-target depth rather than the
+     *  (discarded) gbuffer depth, and not registered as a fixed buffer (the replay flushes it through its own
+     *  immediate source).
+     *
+     *  <p>The depth test is what cuts the slick to the surface's silhouette, and it depends on the surface:
+     *  {@code translucentSurface} false (the opaque default - items, armor, entity bodies) keeps EQUAL against that
+     *  surface's own depth, which a flat item writes only on its cutout-opaque texels. True (the slime's outer
+     *  shell) takes LEQUAL + a nudge instead, because a translucent surface is not the only depth-writer at its
+     *  pixels and EQUAL rejects it outright - see the comment on the depth shard below. */
+    private static RenderType buildChromaticPostComposite(Layer layer, ResourceLocation white, ResourceLocation palette,
+                                                          float scaleU, float scaleV, int colorCount,
+                                                          VertexFormat.Mode mode, String key,
+                                                          RenderStateShard.LayeringStateShard layering,
+                                                          boolean translucentSurface) {
+        return RenderType.create(
+                MOD_ID + ":custom_chromatic_pc|" + key.hashCode(),
+                DefaultVertexFormat.POSITION_TEX,
+                mode,
+                256,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(CHROMATIC_SHADER_SHARD)
+                        .setTextureState(new TextureStateShard(white, false, false) {
+                            @Override public void setupRenderState() {
+                                RenderSystem.setShaderTexture(0, white);
+                                RenderSystem.setShaderTexture(1, palette);
+                                // Scene depth for the shell glint's in-shader world occlusion (it draws with
+                                // NO_DEPTH_TEST, so this is what stops it drawing through the world). Every other
+                                // surface binds 0 -> the shader reads depth 0 and occludes nothing.
+                                RenderSystem.setShaderTexture(2,
+                                        translucentSurface ? ChromaticShaderReplay.sceneDepthTextureId() : 0);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                            @Override public void clearRenderState() {
+                                super.clearRenderState();
+                                RenderSystem.setShaderTexture(1, 0);
+                                RenderSystem.setShaderTexture(2, 0);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                        })
+                        .setWriteMaskState(COLOR_WRITE)
+                        // A TRANSLUCENT surface (the slime's outer shell) cannot depth-test against the composited
+                        // buffer AT ALL, and that is why its chromatic was invisible under a pack. An OPAQUE surface
+                        // can: it is the sole depth-writer at its pixels, so the replay reproduces its depth and
+                        // EQUAL cuts the slick to its silhouette (the dragon's body, items, armor - all correct).
+                        // The shell is not: measured in-game, EQUAL rejects every fragment, LEQUAL + a
+                        // VIEW_OFFSET_Z nudge rejects every fragment, and only NO_DEPTH_TEST draws - so the depth
+                        // sitting at the shell's pixels is NEARER than the shell's own geometry by more than the
+                        // nudge, and no depth func against that buffer can work. (Same conclusion 26.1.2 reached for
+                        // this surface: never test the shell's glint against the shell.)
+                        //
+                        // So the shell takes its occlusion from CULL instead: the outer shell is a single convex
+                        // cube, so dropping back faces IS its self-occlusion, exactly and view-independently, with
+                        // no depth test and no depth write. That sidesteps what the stencil two-pass got wrong (it
+                        // dropped COLOR_DEPTH_WRITE and lost self-occlusion, so every face showed from every side).
+                        // World occlusion is NOT covered here - see the in-shader scene-depth test that follows.
+                        .setCullState(translucentSurface ? CULL : NO_CULL)
+                        .setDepthTestState(translucentSurface ? NO_DEPTH_TEST : EQUAL_DEPTH_TEST)
+                        .setLayeringState(layering)
+                        .setTransparencyState(GLINT_TRANSPARENCY)
+                        .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_pc_texturing|" + key.hashCode(),
+                                () -> setChromaticMatrix(layer, scaleU, scaleV, colorCount), RenderSystem::resetTextureMatrix))
+                        .createCompositeState(false));
+    }
+
+    /** Builds the post-composite sibling of a texture-glint RT (see {@link #GLINT_POST}). Mirrors the in-pass
+     *  {@link #forGlint} RT exactly - same glint shader, design texture, EQUAL depth test, additive GLINT blend and
+     *  scroll matrix - so the replay masks to the same item silhouette and animates identically. It shares the
+     *  in-pass RT's {@code holder} colour array (the animated colour is frame-stable per RT, so at drain time the
+     *  holder still carries this frame's colour) and is NOT registered as a fixed buffer (the replay flushes it
+     *  through its own immediate source). {@code tex}, {@code scaleU/scaleV}, {@code colorIdx} and {@code key} are
+     *  the same values {@link #forGlint} used to build the in-pass RT. */
+    private static RenderType buildGlintPostComposite(Layer layer, ResourceLocation tex, float[] holder,
+                                                      float scaleU, float scaleV, int colorIdx, String key) {
+        return RenderType.create(
+                MOD_ID + ":custom_glint_pc|" + key.hashCode(),
+                DefaultVertexFormat.POSITION_TEX,
+                VertexFormat.Mode.QUADS,
+                256,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(GLINT_SHADER_SHARD)
+                        .setTextureState(new TextureStateShard(tex, false, false) {
+                            @Override public void setupRenderState() {
+                                RenderSystem.setShaderTexture(0, getTexture(tex));
+                                RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                            }
+                            @Override public void clearRenderState() {
+                                super.clearRenderState();
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                        })
+                        .setWriteMaskState(COLOR_WRITE)
+                        .setCullState(NO_CULL)
+                        .setDepthTestState(EQUAL_DEPTH_TEST)
+                        .setTransparencyState(GLINT_TRANSPARENCY)
+                        .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_pc_texturing|" + key.hashCode(),
+                                () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV), RenderSystem::resetTextureMatrix))
+                        .createCompositeState(false));
+    }
 
     /** Flat item / 3D held-item chromatic glint (EQUAL depth, no polygon offset). isItem mirrors
      *  {@link #forGlint}'s atlas-calibrated scale so the slick density matches the texture glints. */
@@ -576,8 +809,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  stencil bit 0x80 EQUAL test so it only draws on the armor texels {@link #forMountArmorStencilMask} marked. */
     public static RenderType forChromaticMountArmorGlint(Data glint, int layerIdx) {
         if (chromaticShader == null) return null;
+        // Not deferrable: the stencil-bit 0x80 gate lives only in the in-pass depth/stencil state, which a
+        // post-composite replay can't reproduce - so this stays on its in-pass path.
         return chromaticRT(glint.layers()[layerIdx], "mount|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
-                mountArmorGlintTestLayering());
+                mountArmorGlintTestLayering(), VertexFormat.Mode.QUADS, false, false);
     }
 
     /** TRIANGLES-mode entity-body chromatic glint, for renderers that draw through a triangle-list
@@ -588,8 +823,20 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 NO_LAYERING, VertexFormat.Mode.TRIANGLES);
     }
 
-    /** Translucent-surface entity chromatic glint (slime outer shell) - shader-mod late-render tagged so it
-     *  flushes after the deferred translucent geometry. See {@link #forEntityGlintTranslucent}. */
+    /** Translucent-surface entity chromatic glint (slime outer shell).
+     *
+     *  <p>Unlike its texture-glint twin {@link #forEntityGlintTranslucent}, this one DEFERS under a pack. The
+     *  texture glint is fine drawing in-phase because Iris swaps it for the pack's own GLINT program; our
+     *  chromatic program gets no such treatment - drawn in-phase it lands in Iris's gbuffer and the pack's
+     *  lighting dims it. The replay draws it over the composited frame instead, where nothing attenuates it and
+     *  nothing overdraws it, so it needs no {@link #SHELL_GLINT_SHADER_BOOST} either. Its in-pass OPAQUE_DECAL
+     *  setup below therefore never draws under a pack (bar Iris's shadow pass); off-pack this RT isn't used at
+     *  all (EntityGlintRender only picks the translucent variants while a pack is active).
+     *
+     *  <p>Deferring is necessary but was NOT sufficient: this is the only surface whose sibling cannot depth-test
+     *  against the composited buffer, so it also carries the CULL + in-shader occlusion setup in
+     *  {@link #buildChromaticPostComposite}. That {@code lateForShaders} flag is what selects it, and this is its
+     *  only caller. */
     public static RenderType forChromaticEntityGlintTranslucent(Data glint, int layerIdx, boolean triangles) {
         if (chromaticShader == null) return null;
         return chromaticRT(glint.layers()[layerIdx], "entity|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
@@ -612,7 +859,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     false,
                     false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, getTexture(tex));
@@ -701,7 +948,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    if (lateForShaders) {
+                                        // Translucent shell path: the shell overpaints and dims this additive glint
+                                        // under shaders, so pre-boost the colour (see SHELL_GLINT_SHADER_BOOST).
+                                        RenderSystem.setShaderColor(
+                                                Math.min(1.0f, holder[0] * SHELL_GLINT_SHADER_BOOST),
+                                                Math.min(1.0f, holder[1] * SHELL_GLINT_SHADER_BOOST),
+                                                Math.min(1.0f, holder[2] * SHELL_GLINT_SHADER_BOOST),
+                                                holder[3]);
+                                    } else {
+                                        RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    }
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -933,8 +1190,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setDepthTestState(EQUAL_DEPTH_TEST)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_texturing",
-                                    () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV), RenderSystem::resetTextureMatrix))
+                                    () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV),
+                                    RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
+            // Register the post-composite sibling once, on RT creation (tex / scaleU / scaleV are in scope here).
+            // Shares this RT's colour holder; only the item path under a shaderpack flushes it - the glint is
+            // captured from baked quads (ItemRendererMixin.cg_captureGlintForShaderReplay) and replayed through
+            // this sibling by ChromaticShaderReplay. In-phase callers (off-pack, GUI, compat) never touch it.
+            GLINT_POST.put(rt, buildGlintPostComposite(layer, tex, holder, scaleU, scaleV, colorIdx, k));
             return rt;
         });
         registerFixedBuffer(cached);

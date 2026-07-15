@@ -44,6 +44,7 @@ public final class CustomGlintClientInit {
                 CustomGlintRenderer.resetStencilSlots();
                 CustomGlintRenderer.setRenderingWorld(false);
                 GlowOutlineRenderer.beginFrame();
+                ChromaticShaderReplay.beginFrame();
             }
         });
 

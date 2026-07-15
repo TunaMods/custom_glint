@@ -76,7 +76,7 @@ public class HumanoidArmorLayerMixin {
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
                     RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                    if (crt != null) list.add(buffer.getBuffer(crt));
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors();

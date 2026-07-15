@@ -327,11 +327,14 @@ public final class EntityGlintRender {
             // stencil-write pass re-renders the model into its own dedicated fixed builder).
             // Acquiring `base` last leaves it as the current active builder when the model writes.
             // A translucent base surface (e.g. the slime's outer shell) needs its glint tagged for shader-mod
-            // late render: under Oculus/Iris the translucent geometry is deferred past the point our glint
-            // would otherwise flush, so the shell paints over the glint and it vanishes (shaders off is fine).
-            // The translucent glint variants are distinct RT instances tagged into the late bucket; opaque
-            // entity glint keeps its own untagged instance so its working order is unchanged.
-            boolean translucent = isTranslucent(rt);
+            // late render: under an ACTIVE shaderpack the translucent geometry is deferred past the point our
+            // glint would otherwise flush, so the shell paints over the glint and it vanishes. The translucent
+            // variants are distinct RT instances that depth-prewrite into the OPAQUE_DECAL bucket; that only
+            // makes sense inside Iris's FullyBuffered pipeline. Gate on an active pack: with shaders off (even
+            // with Oculus/Embeddium installed) there is no deferred flush, and the variant's depth-prewrite
+            // would instead occlude the shell entirely - use the plain opaque EQUAL-depth glint there so the
+            // shell renders normally with the glint on top.
+            boolean translucent = isTranslucent(rt) && CustomGlintRenderer.isShaderPackActive();
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
@@ -342,7 +345,12 @@ public final class EntityGlintRender {
                             : triangles
                                 ? CustomGlintRenderer.forChromaticEntityGlintTriangles(glint, layerIdx)
                                 : CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
-                    if (crt != null) list.add(delegate.getBuffer(crt));
+                    // ALL chromatic defers to the post-composite replay under a shaderpack - the translucent
+                    // shell included. Its in-pass gbuffer draw is attenuated by the pack's lighting (texture
+                    // designs escape that by being swapped for the pack's own GLINT program; our chromatic
+                    // isn't). The shell's texture glint below still takes its in-phase OPAQUE_DECAL path - that
+                    // one works, and its depth write is what self-occludes the shell's far faces.
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(delegate, crt));
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors();

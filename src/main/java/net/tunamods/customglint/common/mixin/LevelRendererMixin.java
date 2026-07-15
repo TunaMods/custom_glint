@@ -5,6 +5,7 @@ import net.minecraft.client.Camera;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
+import net.tunamods.customglint.common.client.ChromaticShaderReplay;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.joml.Matrix4f;
@@ -48,7 +49,10 @@ public class LevelRendererMixin {
             boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, LightTexture light,
             Matrix4f projection, CallbackInfo ci) {
         CustomGlintRenderer.setRenderingWorld(false);
-        if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.drainWorldShaderPack();
+        if (CustomGlintRenderer.isShaderPackActive()) {
+            GlowOutlineRenderer.drainWorldShaderPack();
+            ChromaticShaderReplay.drainWorldShaderPack();
+        }
     }
 
     @Inject(
@@ -67,6 +71,9 @@ public class LevelRendererMixin {
             boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer, LightTexture light,
             Matrix4f projection, CallbackInfo ci) {
         CustomGlintRenderer.setRenderingWorld(false);
-        if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.drainWorldShaderPack();
+        if (CustomGlintRenderer.isShaderPackActive()) {
+            GlowOutlineRenderer.drainWorldShaderPack();
+            ChromaticShaderReplay.drainWorldShaderPack();
+        }
     }
 }
