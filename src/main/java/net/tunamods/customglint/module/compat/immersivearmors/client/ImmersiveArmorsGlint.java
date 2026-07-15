@@ -91,9 +91,12 @@ public final class ImmersiveArmorsGlint {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+            // chromaticWorldBuffer rather than buffer.getBuffer, mirroring HumanoidArmorLayerMixin: under a
+            // shaderpack an in-phase chromatic draw lands in the gbuffer and the scene composite discards it,
+            // so the layer defers to the post-composite replay. Off-pack this is a straight getBuffer.
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                if (crt != null) list.add(buffer.getBuffer(crt));
+                if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
                 continue;
             }
             int[] colors = layers[layerIdx].colors();
