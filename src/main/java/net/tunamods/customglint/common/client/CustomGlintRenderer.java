@@ -483,12 +483,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  exactly mirroring the texture-glint depth setup so the EQUAL_DEPTH_TEST pass lines up. */
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering) {
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS, false, true);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS, false, layering);
     }
 
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode) {
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false, true);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false, layering);
     }
 
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
@@ -498,17 +498,22 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // texture glint needs, but chromatic in-phase under a pack is attenuated by Iris (see
         // forChromaticEntityGlintTranslucent) - so the shell's chromatic defers like every other chromatic
         // surface and the in-pass setup below simply never draws under a pack.
-        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, lateForShaders, true);
+        return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, lateForShaders, layering);
     }
 
-    // {@code deferrable}: this layer's chromatic glint can be captured and re-drawn AFTER a shaderpack composites
-    // (see ChromaticShaderReplay). Under an active pack our custom-shader draw into Iris's gbuffer is attenuated by
-    // the pack's lighting, so deferrable RTs also register a "post-composite" sibling in {@link #CHROMATIC_POST}
-    // that the replay flushes over the finished frame at full strength. Only the stencil-gated mount-armor RT is
-    // NOT deferrable - a replay can't reproduce its stencil mask, so it stays on its in-pass path.
+    // Every chromatic RT is deferrable: under an active pack our custom-shader draw into Iris's gbuffer is
+    // attenuated by the pack's lighting, so each one registers a "post-composite" sibling in
+    // {@link #CHROMATIC_POST} that the replay flushes over the finished frame at full strength (see
+    // ChromaticShaderReplay).
+    //
+    // {@code postLayering} is the layering that SIBLING uses, normally the same shard as the in-pass draw. Only
+    // the stencil-gated mount-armor RT differs: its in-pass layering tests stencil bit 0x80, which is written into
+    // the pack's gbuffer and is gone by the post-composite phase, so a sibling carrying it rejects every fragment.
+    // It passes NO_LAYERING and lets the sibling's EQUAL depth test against the composited depth cut the glint to
+    // the armor's visible texels instead.
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
                                           RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
-                                          boolean lateForShaders, boolean deferrable) {
+                                          boolean lateForShaders, RenderStateShard.LayeringStateShard postLayering) {
         int[] colors = chromaticColors(layer.colors());
         final int colorCount = Math.min(colors.length, 8);
         final ResourceLocation white = getWhiteTexture();
@@ -561,11 +566,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         });
         registerFixedBuffer(cached);
         if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
-        if (deferrable) {
-            CHROMATIC_POST.computeIfAbsent(cached,
-                    r -> buildChromaticPostComposite(layer, white, palette, scaleU, scaleV, colorCount, mode, key, layering,
-                            lateForShaders));
-        }
+        CHROMATIC_POST.computeIfAbsent(cached,
+                r -> buildChromaticPostComposite(layer, white, palette, scaleU, scaleV, colorCount, mode, key, postLayering,
+                        lateForShaders));
         return cached;
     }
 
@@ -618,7 +621,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // only Iris's shadow pass still draws that RT (chromaticWorldBuffer captures every other case).
     private static final float SHELL_GLINT_SHADER_BOOST = 2.6f;
 
-    // Post-composite sibling of each deferrable chromatic RT (see ChromaticShaderReplay). Under an active
+    // Post-composite sibling of every chromatic RT (see ChromaticShaderReplay). Under an active
     // shaderpack our custom-shader draw into Iris's gbuffer is discarded (verified: a constant full-bright output
     // still showed nothing in-world under a pack while GUI drew it), so the glint is re-drawn AFTER Iris's
     // finalizeLevelRendering. That replay flushes THIS sibling: same shader / palette / noise matrix, its own
@@ -647,11 +650,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return pc != null ? pc : GLINT_POST.get(inPass);
     }
 
-    /** Returns the buffer a deferrable chromatic layer's geometry should be fed into. Under an active shaderpack,
+    /** Returns the buffer a chromatic layer's geometry should be fed into. Under an active shaderpack,
      *  during world rendering (not GUI, not the Iris shadow pass), the in-pass gbuffer draw is attenuated by the
      *  pack's lighting (and colour-masked outright where Iris owns the phase), so hand the geometry to
      *  {@link ChromaticShaderReplay}, which re-draws it over the composited frame at full strength. Everywhere else
-     *  (shaders off, GUI, non-deferrable RTs) this is a straight {@code src.getBuffer(crt)} - off-pack behaviour is
+     *  (shaders off, GUI, the shadow pass) this is a straight {@code src.getBuffer(crt)} - off-pack behaviour is
      *  unchanged.
      *
      *  <p>The FIRST-PERSON HAND deferring here is load-bearing, and the reason it works is an ordering detail worth
@@ -806,13 +809,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Stencil-gated chromatic mount-armor glint (vanilla horse barding / IaF mounts). Chromatic has no PNG,
      *  so {@link #forMountArmorGlint} returns null for it - this is the chromatic counterpart, sharing the same
-     *  stencil bit 0x80 EQUAL test so it only draws on the armor texels {@link #forMountArmorStencilMask} marked. */
+     *  stencil bit 0x80 EQUAL test so the in-pass draw only lands on the armor texels
+     *  {@link #forMountArmorStencilMask} marked. Its post-composite sibling gates on depth instead (see below). */
     public static RenderType forChromaticMountArmorGlint(Data glint, int layerIdx) {
         if (chromaticShader == null) return null;
-        // Not deferrable: the stencil-bit 0x80 gate lives only in the in-pass depth/stencil state, which a
-        // post-composite replay can't reproduce - so this stays on its in-pass path.
+        // NO_LAYERING on the sibling: stencil bit 0x80 does not reach the post-composite phase, so a sibling
+        // testing it draws nothing. Its EQUAL depth test does the gating there instead.
         return chromaticRT(glint.layers()[layerIdx], "mount|L" + layerIdx, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
-                mountArmorGlintTestLayering(), VertexFormat.Mode.QUADS, false, false);
+                mountArmorGlintTestLayering(), VertexFormat.Mode.QUADS, false, NO_LAYERING);
     }
 
     /** TRIANGLES-mode entity-body chromatic glint, for renderers that draw through a triangle-list

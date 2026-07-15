@@ -88,7 +88,10 @@ public class HorseArmorLayerMixin {
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
                     RenderType crt = CustomGlintRenderer.forChromaticMountArmorGlint(glint, layerIdx);
-                    if (crt != null) { list.add(buffer.getBuffer(crt)); glintTypes.add(crt); }
+                    // chromaticWorldBuffer, not buffer.getBuffer: under a pack this hands the layer to
+                    // ChromaticShaderReplay for redraw after Iris composites, since an in-phase draw is
+                    // discarded. Off-pack it is a straight getBuffer and the in-pass RT draws as before.
+                    if (crt != null) { list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt)); glintTypes.add(crt); }
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors();
