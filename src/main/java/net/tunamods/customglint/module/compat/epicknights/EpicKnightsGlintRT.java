@@ -208,7 +208,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                     VertexFormat.Mode.QUADS,
                     256, false, false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setShaderState(CustomGlintRenderer.GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
@@ -546,7 +546,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                     VertexFormat.Mode.QUADS,
                     256, false, false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setShaderState(CustomGlintRenderer.GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));

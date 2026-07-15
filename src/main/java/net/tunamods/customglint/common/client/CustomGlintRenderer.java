@@ -4,10 +4,13 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
@@ -310,6 +313,47 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderSystem.setTextureMatrix(m);
     }
 
+    // ── Glint core shader ───────────────────────────────────────────────────────
+    // The texture glints draw through OUR OWN copy of vanilla's rendertype_glint program instead of binding
+    // vanilla's. The GLSL is identical (assets/customglint/shaders/core/glint.{vsh,fsh} are verbatim copies);
+    // only the JSON's declared blend differs, and that difference is the entire reason this exists - see the
+    // LOAD-BEARING note above CHROMATIC_MODEL_UV_SCALE.
+    private static ShaderInstance glintShader;
+
+    /** Shader shard for every texture-glint RenderType (items, armor, entities, horse/mount armor, and the
+     *  compat builders). Resolved per draw by {@link #resolveGlintShader()}. */
+    public static final RenderStateShard.ShaderStateShard GLINT_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(CustomGlintRenderer::resolveGlintShader);
+
+    /**
+     * LOAD-BEARING: which glint program to bind, decided per draw against Iris's own gate.
+     *
+     * <p>Iris/Oculus hangs BOTH of these on {@code ShaderRenderingPipeline.shouldOverrideShaders()}
+     * (verified in oculus-mc1.20.1-1.8.0):
+     * <ul>
+     *   <li>{@code MixinGameRenderer.iris$overrideGlintShader} - while true, vanilla's
+     *       {@code getRendertypeGlintShader()} returns the PACK's GLINT program (an {@code ExtendedShader}).</li>
+     *   <li>{@code MixinShaderInstance.iris$lockDepthColorState} - while true, {@code ShaderInstance.apply()} on
+     *       any shader that is NOT an {@code ExtendedShader}/{@code FallbackShader} calls
+     *       {@code DepthColorStorage.disableDepthColor()}, i.e. {@code colorMask(false,false,false,false)}.</li>
+     * </ul>
+     *
+     * <p>So the two are exactly complementary. While it is TRUE, our own program would be colour-masked to
+     * nothing (this is the same mechanism that makes chromatic invisible in-world and forced
+     * {@link ChromaticShaderReplay} to exist), and vanilla's accessor is the only way to get a program Iris will
+     * actually draw - so use that. While it is FALSE (GUI/HUD, off-pack, and the post-composite drain, which
+     * runs after {@code finalizeLevelRendering}) nothing is overridden or masked, so use ours and its declared
+     * blend is what keeps the glint from filling the item.
+     *
+     * <p>Do NOT swap the gate for our own {@link #isRenderingWorld()} flag: that one is still true during the
+     * post-composite drain, where Iris's is already false, so the drain would silently bind vanilla's
+     * mismatched-blend program. Ask Iris the same question it asks itself.
+     */
+    private static ShaderInstance resolveGlintShader() {
+        if (glintShader == null || irisShouldOverrideShaders()) return GameRenderer.getRendertypeGlintShader();
+        return glintShader;
+    }
+
     // ── Procedural chromatic glint ──────────────────────────────────────────────
     // The chromatic design has no PNG: a custom core shader (registered via RegisterShadersEvent)
     // synthesises an oil-slick from value-noise. Per-layer payload (seed / morph-speed / colour count)
@@ -338,9 +382,19 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final Map<String, ResourceLocation> paletteCache = new HashMap<>();
     private static ResourceLocation whiteTex; // 1×1 opaque-white dummy for Sampler0 (the shader never reads it)
 
-    /** Mod-bus listener (hooked from {@link CustomGlintClientInit}): registers the procedural chromatic
-     *  core shader. POSITION_TEX so it slots into the same fixed-buffer paths as the texture glints. */
+    /** Mod-bus listener (hooked from {@link CustomGlintClientInit}): registers both core shaders - the texture
+     *  glint (our copy of vanilla's program, differing only in its declared blend) and the procedural
+     *  chromatic. Both are POSITION_TEX so they slot into the same fixed-buffer paths. */
     public static void registerShaders(RegisterShadersEvent event) {
+        try {
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            MOD_ID + ":glint",
+                            DefaultVertexFormat.POSITION_TEX),
+                    shader -> glintShader = shader);
+        } catch (Exception e) {
+            LOGGER.error("[{}/CustomGlint] failed to register glint shader", MOD_ID, e);
+        }
         try {
             event.registerShader(
                     new ShaderInstance(event.getResourceProvider(),
@@ -643,7 +697,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     false,
                     false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, getTexture(tex));
@@ -778,7 +832,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     false,
                     false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, getTexture(tex));
@@ -863,7 +917,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     false,
                     false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
+                            .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
                                     RenderSystem.setShaderTexture(0, getTexture(tex));
@@ -1281,4 +1335,48 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static boolean isRenderingWorld() { return renderingWorld; }
 
     public static void setRenderingWorld(boolean value) { renderingWorld = value; }
+
+    // Iris's own "am I overriding/masking shaders right now" gate, mirrored exactly - see resolveGlintShader
+    // for why this and not our renderingWorld flag. Iris's MixinGameRenderer asks it as
+    //   pipeline instanceof ShaderRenderingPipeline && ((ShaderRenderingPipeline) pipeline).shouldOverrideShaders()
+    // so the instanceof matters: a non-shader pipeline must read false, not throw. Reflective (no compileOnly
+    // dep on Oculus); false whenever Iris is absent or no pack is active.
+    private static volatile boolean IRIS_OVERRIDE_LOOKUP_DONE = false;
+    private static volatile Method IRIS_OVR_PIPELINE_MANAGER = null;
+    private static volatile Method IRIS_OVR_PIPELINE_NULLABLE = null;
+    private static volatile Method IRIS_OVR_SHOULD_OVERRIDE = null;
+    private static volatile Class<?> IRIS_OVR_SHADER_PIPELINE = null;
+
+    public static boolean irisShouldOverrideShaders() {
+        if (!IRIS_OVERRIDE_LOOKUP_DONE) {
+            synchronized (CustomGlintRenderer.class) {
+                if (!IRIS_OVERRIDE_LOOKUP_DONE) {
+                    try {
+                        IRIS_OVR_PIPELINE_MANAGER = Class.forName("net.irisshaders.iris.Iris")
+                                .getMethod("getPipelineManager");
+                        IRIS_OVR_PIPELINE_NULLABLE = Class.forName("net.irisshaders.iris.pipeline.PipelineManager")
+                                .getMethod("getPipelineNullable");
+                        IRIS_OVR_SHADER_PIPELINE = Class.forName("net.irisshaders.iris.pipeline.ShaderRenderingPipeline");
+                        IRIS_OVR_SHOULD_OVERRIDE = IRIS_OVR_SHADER_PIPELINE.getMethod("shouldOverrideShaders");
+                    } catch (Throwable ignored) {
+                        IRIS_OVR_PIPELINE_MANAGER = null;
+                        IRIS_OVR_PIPELINE_NULLABLE = null;
+                        IRIS_OVR_SHADER_PIPELINE = null;
+                        IRIS_OVR_SHOULD_OVERRIDE = null;
+                    }
+                    IRIS_OVERRIDE_LOOKUP_DONE = true;
+                }
+            }
+        }
+        if (IRIS_OVR_SHOULD_OVERRIDE == null) return false;
+        try {
+            Object pm = IRIS_OVR_PIPELINE_MANAGER.invoke(null);
+            if (pm == null) return false;
+            Object pipe = IRIS_OVR_PIPELINE_NULLABLE.invoke(pm);
+            if (!IRIS_OVR_SHADER_PIPELINE.isInstance(pipe)) return false;
+            return (Boolean) IRIS_OVR_SHOULD_OVERRIDE.invoke(pipe);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 }
