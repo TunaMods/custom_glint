@@ -78,6 +78,14 @@ public class BackpackItemStackRendererMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            // CHROMATIC has no design PNG, so forGlint returns null and the layer would silently vanish.
+            // chromaticWorldBuffer rather than buffer.getBuffer - under a shaderpack an in-phase chromatic
+            // draw lands in the gbuffer and the scene composite discards it, so it defers to the replay.
+            if (CustomGlint.isChromatic(layers[li])) {
+                RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, li, false);
+                if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
