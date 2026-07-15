@@ -35,6 +35,7 @@ Fixed:
 - Free palette trims taken from the Glint Table now drop at your feet instead of vanishing when your inventory is full
 - Shared server blueprints now sync reliably even when a very large design was saved
 - Chromatic glints now show on see-through surfaces like a slime's outer shell while shaders are on
+- Horse armor now renders chromatic glint under shaders
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
