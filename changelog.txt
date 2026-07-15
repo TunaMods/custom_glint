@@ -62,6 +62,9 @@ Altered:
 - Ice and Fire: troll weapons and the deathworm gauntlet now show the Chromatic design instead of no glint at all
 - Ice and Fire: a hippogryph or hippocampus with a glint no longer paints its saddle, bridle and harness as solid glinted shapes
 - Elytra Slot: an elytra worn in the mod's elytra slot now shows the Chromatic design instead of no glint at all
+- Sophisticated Backpacks: backpacks now show the Chromatic design instead of no glint at all
+- Epic Knights: plumes, surcoats, crowns and the other armor decorations now show the Chromatic design instead of no glint at all
+- Immersive Armors, Mekanism, GeckoLib armor and Artifacts: the Chromatic design now shows with shaders on instead of disappearing
 
 
 [1.6.0]
