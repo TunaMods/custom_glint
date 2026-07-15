@@ -20,6 +20,7 @@ import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Method;
@@ -85,6 +86,15 @@ public class LayerHippocampusArmorMixin {
         } catch (Throwable t) {
             return 0;
         }
+    }
+
+    /** Same accessory-hull problem as the hippogryph: this layer redraws the parent model once per accessory
+     *  with a mostly-transparent texture, and the wrapper fanned the body glint onto each pass, filling the
+     *  straps in as solid shapes. See {@link LayerHippogryphArmorMixin#cg_unwrapAccessories} for the why. */
+    @ModifyVariable(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityHippocampus;FFFFFF)V",
+            at = @At("HEAD"), argsOnly = true, require = 0)
+    private MultiBufferSource cg_unwrapAccessories(MultiBufferSource buffer) {
+        return EntityGlintRender.unwrap(buffer);
     }
 
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityHippocampus;FFFFFF)V",

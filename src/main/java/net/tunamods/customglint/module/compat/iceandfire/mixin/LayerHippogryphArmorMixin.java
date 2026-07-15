@@ -20,6 +20,7 @@ import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Method;
@@ -92,6 +93,26 @@ public class LayerHippogryphArmorMixin {
         } catch (Throwable t) {
             return 0;
         }
+    }
+
+    /**
+     * Strip the entity-glint wrapper off this layer's buffer for the whole render.
+     *
+     * The layer draws the parent hippogryph model - same geometry, same depth as the body - once per
+     * accessory (armor / saddle / bridle / chest), each with a mostly-transparent texture that
+     * entityCutoutNoCull discards down to just the straps. Those draws request entity_* render types, so
+     * EntityGlintRender's wrapper fanned the body glint onto each one. The glint RT samples only the design
+     * texture, never saddle.png's alpha, so it has nothing to cut against and the EQUAL test passes across
+     * the whole model: every accessory pass stamped a full-body glint hull, and the straps read as solid
+     * filled shapes.
+     *
+     * Unwrapping leaves the body's own glint (drawn by the renderer, not this layer) alone. Armor carrying
+     * its own glint still gets it from cg_apply below, masked by the armor texture's alpha.
+     */
+    @ModifyVariable(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityHippogryph;FFFFFF)V",
+            at = @At("HEAD"), argsOnly = true, require = 0)
+    private MultiBufferSource cg_unwrapAccessories(MultiBufferSource buffer) {
+        return EntityGlintRender.unwrap(buffer);
     }
 
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityHippogryph;FFFFFF)V",
