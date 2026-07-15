@@ -64,7 +64,10 @@ Altered:
 - Elytra Slot: an elytra worn in the mod's elytra slot now shows the Chromatic design instead of no glint at all
 - Sophisticated Backpacks: backpacks now show the Chromatic design instead of no glint at all
 - Epic Knights: plumes, surcoats, crowns and the other armor decorations now show the Chromatic design instead of no glint at all
-- Immersive Armors, Mekanism, GeckoLib armor and Artifacts: the Chromatic design now shows with shaders on instead of disappearing
+- Immersive Armors: worn armor now shows the Chromatic design with shaders on instead of disappearing
+- Iron's Spells 'n Spellbooks and other GeckoLib armor: worn armor now shows the Chromatic design with shaders on instead of disappearing
+- Mekanism: worn armor now shows the Chromatic design with shaders on instead of disappearing
+- Artifacts: belts, necklaces, gloves, boots and other worn artifacts now show the Chromatic design with shaders on instead of disappearing
 
 
 [1.6.0]
