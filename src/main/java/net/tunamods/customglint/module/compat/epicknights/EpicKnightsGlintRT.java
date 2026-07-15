@@ -63,6 +63,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     public static void clearCaches() {
         evictAll(SLOT_WRITE_CACHE.values());     SLOT_WRITE_CACHE.clear();
         evictAll(SLOT_GLINT_CACHE.values());     SLOT_GLINT_CACHE.clear();   SLOT_GLINT_COLORS.clear();
+        evictAll(SLOT_CHROMATIC_CACHE.values()); SLOT_CHROMATIC_CACHE.clear();
         evictAll(DEPTH_PREWRITE_CACHE.values()); DEPTH_PREWRITE_CACHE.clear();
         evictAll(SHADER_GLINT_CACHE.values());   SHADER_GLINT_CACHE.clear(); SHADER_GLINT_COLORS.clear();
     }
@@ -233,6 +234,29 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         return cached;
     }
 
+    /** Per-slot CHROMATIC RT cache, keyed like {@link #SLOT_GLINT_CACHE} but on the layer's colours/speed/scale/seed
+     *  (chromatic has no design texture). Lives here rather than in the core's BY_CHROMATIC because the key carries
+     *  our per-frame stencil slot, which would thrash that LRU - see
+     *  {@link CustomGlintRenderer#buildChromaticStencilGlint}. Released by {@link #clearCaches()}. */
+    private static final Map<String, RenderType> SLOT_CHROMATIC_CACHE = new HashMap<>();
+
+    /** Chromatic counterpart of {@link #forDecorationGlintSlot} for the stencil paths. Shares the decoration's
+     *  stencil slot: the mask trims the glint to the decoration silhouette and is independent of which design the
+     *  layer draws, so chromatic gates on exactly the same stamp the texture layers do. */
+    public static RenderType forDecorationChromaticSlot(int slot, CustomGlint.Data glint, int layerIdx) {
+        CustomGlint.Layer layer = glint.layers()[layerIdx];
+        String key = "ek-deco-chroma-slot|" + slot + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed()
+                + "|" + layer.patternScale() + "|" + layer.seed() + "|" + layerIdx;
+        RenderType cached = SLOT_CHROMATIC_CACHE.get(key);
+        if (cached == null) {
+            cached = CustomGlintRenderer.buildChromaticStencilGlint(layer, key, ekGlintStencilTestLayeringSlot(slot));
+            if (cached == null) return null; // chromatic shader not loaded yet
+            SLOT_CHROMATIC_CACHE.put(key, cached);
+        }
+        CustomGlintRenderer.registerFixedBuffer(cached);
+        return cached;
+    }
+
     /**
      * Derive the sibling texture for an EK decoration: base ↔ overlay.
      *
@@ -376,6 +400,14 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         List<VertexConsumer> glintVCs = new ArrayList<>();
         List<RenderType> glintRTs = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            // Chromatic has no design PNG, so forDecorationGlintSlot returns null for it and the layer would
+            // silently vanish. Its own RT gates on the same slot the texture layers use. No replay wiring: this
+            // path only runs with no pack active.
+            if (CustomGlint.isChromatic(layers[li])) {
+                RenderType rt = forDecorationChromaticSlot(slot, glint, li);
+                if (rt != null) { glintRTs.add(rt); glintVCs.add(bs.getBuffer(rt)); }
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
@@ -453,6 +485,15 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> glintVCs = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            // Chromatic has no design PNG, so forDecorationGlintShader returns null for it and the layer would
+            // silently vanish. chromaticWorldBuffer rather than buffer.getBuffer: our chromatic program is private
+            // to us, so an in-phase draw lands in the pack's gbuffer and the scene composite discards it - the
+            // geometry defers to the post-composite replay instead. The depth prewrite above still masks it.
+            if (CustomGlint.isChromatic(layers[li])) {
+                RenderType rt = CustomGlintRenderer.forChromaticDecorationGlint(glint, li);
+                if (rt != null) glintVCs.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, rt));
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
