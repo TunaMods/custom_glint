@@ -21,7 +21,6 @@ import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.client.ChromaticShaderReplay;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.common.client.GnetumHudCompat;
@@ -163,13 +162,18 @@ public class ItemRendererMixin {
     // ── Shader-pack glint draw (item path) ───────────────────────────────────
     // Under an active shaderpack the glint is NEVER combined with the base in-phase (see applyGlint: the base
     // draws alone so Embeddium's bulk encoder can't drop it when a chromatic draw flips it on for the frame -
-    // the "everything glinted fills solid" bug, hotbar included). The glint is instead drawn HERE, separately
-    // from the base, so the two never share a VertexMultiConsumer:
-    //   - World items (inside Iris's gbuffer): captured from baked quads and replayed AFTER Iris composites the
-    //     frame (ChromaticShaderReplay world drain) - an in-phase world glint would be turned opaque by Iris.
-    //   - GUI / other outside-gbuffer contexts: drawn immediately into their own glint buffers on the SAME
-    //     MultiBufferSource the base used, which flushes them together (Iris does not swap the 2D GUI pass, so
-    //     the additive glint draws correctly; being a lone buffer, not a multi, the base is never dropped).
+    // the "everything glinted fills solid" bug, hotbar included). The glint is drawn HERE instead, into its own
+    // buffer on the same MultiBufferSource the base used. Being a LONE buffer rather than a multi with the base
+    // is what keeps the base's writes safe.
+    //
+    // LOAD-BEARING: draw in-phase, do NOT defer to a post-composite replay. A replay runs after Iris finalizes,
+    // where Iris's override gate is false, so it binds OUR program, which applies no TAA jitter. Packs that
+    // jitter gbuffer vertices (BSL: TAAJitter(gl_Position.xy, gl_Position.w) in gbuffers_hand/gbuffers_entities;
+    // Bliss: offsets[framemod8] * gl_Position.w * texelSize) leave JITTERED depth in the buffer, and these RTs
+    // test EQUAL against it. The un-jittered replay then misses nearly every fragment and reads as static under
+    // the item. Complementary's gbuffers_* are plain ftransform() (its TAA is reprojection-only, in composite),
+    // so the replay only ever looked right there. In-phase the draw takes the pack's own GLINT program and the
+    // same jitter as the base, so EQUAL matches. That is why chromatic was never affected.
     // Flat items only - the first-person hand (own projection) and special / 3D BEWLR items are follow-ups.
     private static void cg_drawGlintUnderPack(ItemStack stack, ItemDisplayContext ctx, boolean leftHand,
             PoseStack pose, MultiBufferSource buffer, int light, BakedModel model) {
@@ -180,14 +184,14 @@ public class ItemRendererMixin {
         // base already drew alone, so just skip it.
         if (CustomGlintRenderer.isInShadowPass()) return;
         // First-person hand is drawn under its own projection (a follow-up); applyGlint keeps it on the in-phase
-        // multi path, so drawing/queuing it here too would double it. Skip.
+        // multi path, so drawing it here too would double it. Skip.
         if (ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
                 || GlowOutlineRenderer.isFpHand()) return;
         CustomGlint.Data glint = CustomGlint.readCached(stack);
         if (glint == null) return;
 
-        // Reconstruct the item's display pose exactly as render() applied it (then popped), so the captured/
-        // drawn quads land in the same camera-pose space the foil vertex stream used. Mirrors cg_captureGlowOutline.
+        // Reconstruct the item's display pose exactly as render() applied it (then popped), so the drawn quads
+        // land in the same camera-pose space the foil vertex stream used. Mirrors cg_captureGlowOutline.
         PoseStack tp = new PoseStack();
         tp.last().pose().set(pose.last().pose());
         tp.last().normal().set(pose.last().normal());
@@ -202,10 +206,6 @@ public class ItemRendererMixin {
         List<BakedQuad> quads = cg_collectQuads(rendered);
         if (quads.isEmpty()) return;
 
-        // World items sit inside Iris's gbuffer → defer to the post-composite replay. GUI (and any other
-        // outside-gbuffer context) draws immediately, separate from the base.
-        boolean defer = CustomGlintRenderer.isRenderingWorld() && ctx != ItemDisplayContext.GUI;
-
         // isItem=true: these are flat sprite items (8x atlas-calibrated scale), the same value the in-phase
         // foil path uses (ItemRenderer.render calls getFoilBuffer* with isItem=true).
         CustomGlint.Layer[] layers = glint.layers();
@@ -213,12 +213,9 @@ public class ItemRendererMixin {
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, true);
-                // Never defers, unlike the texture layers below. Chromatic's slick is a baked texture now, so this
-                // RT binds the pack's own GLINT program and draws in-gbuffer, where the pack TAA-resolves it. The
-                // post-composite replay would land it after that resolve - the one thing in the frame TAA never
-                // filters, which is exactly what made chromatic flicker under BSL/Bliss. The immediate draw is a
-                // lone buffer (see cg_emitGlint), so it keeps the Embeddium property the deferral was built for.
-                if (crt != null) cg_emitGlint(crt, quads, tp.last(), light, buffer, false);
+                // Chromatic's slick is a baked texture, so this RT binds the pack's own GLINT program and draws
+                // in-gbuffer where the pack TAA-resolves it. The texture layers below now draw the same way.
+                if (crt != null) cg_emitGlint(crt, quads, tp.last(), light, buffer);
                 continue;
             }
             int[] colors = layers[layerIdx].colors();
@@ -226,29 +223,24 @@ public class ItemRendererMixin {
                 for (int i = 0; i < colors.length; i++) {
                     CustomGlintRenderer.fillPremul(buf, colors[i]);
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, true, i);
-                    if (rt != null) cg_emitGlint(rt, quads, tp.last(), light, buffer, defer);
+                    if (rt != null) cg_emitGlint(rt, quads, tp.last(), light, buffer);
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
                 CustomGlintRenderer.fillPremul(buf, color);
                 RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, buf, true, 0);
-                if (rt != null) cg_emitGlint(rt, quads, tp.last(), light, buffer, defer);
+                if (rt != null) cg_emitGlint(rt, quads, tp.last(), light, buffer);
             }
         }
     }
 
-    /** One glint layer: either queue it for the post-composite world replay ({@code defer}) or draw its quads
-     *  immediately into its own buffer on {@code buffer} (GUI). The immediate draw is a lone buffer, NOT a
-     *  multi with the base, so Embeddium never drops the base. The glint colour rides the RenderType's
-     *  ColorModulator, so the per-vertex colour passed to putBulkData (white) is ignored by the glint shader. */
+    /** One glint layer: draw its quads into their own buffer on {@code buffer}. A LONE buffer, not a multi with
+     *  the base, so Embeddium never drops the base. The glint colour rides the RenderType's ColorModulator, so
+     *  the per-vertex colour passed to putBulkData (white) is ignored by the glint shader. */
     private static void cg_emitGlint(RenderType rt, List<BakedQuad> quads, PoseStack.Pose pose, int light,
-            MultiBufferSource buffer, boolean defer) {
-        if (defer) {
-            ChromaticShaderReplay.captureQuads(rt, quads, pose, light);
-        } else {
-            VertexConsumer vc = buffer.getBuffer(rt);
-            for (BakedQuad q : quads) vc.putBulkData(pose, q, 1.0f, 1.0f, 1.0f, light, OverlayTexture.NO_OVERLAY);
-        }
+            MultiBufferSource buffer) {
+        VertexConsumer vc = buffer.getBuffer(rt);
+        for (BakedQuad q : quads) vc.putBulkData(pose, q, 1.0f, 1.0f, 1.0f, light, OverlayTexture.NO_OVERLAY);
     }
 
     /** Capture a special / 3D BEWLR item's silhouette by re-rendering it through renderStatic into a
