@@ -18,7 +18,7 @@ plugins {
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
 }
 
-// MixinGradle must be applied AFTER ForgeGradle — it queries FG's reobf tasks at apply time.
+// MixinGradle must be applied AFTER ForgeGradle. It queries FG's reobf tasks at apply time.
 apply plugin: 'org.spongepowered.mixin'
 
 version = mod_version
@@ -26,7 +26,7 @@ group = mod_group_id
 
 base {
     // Player-facing downloadable jar name. Display name is "Glint & Glamour"; filenames can't hold '&',
-    // so hyphenate. The API jar has its own archiveBaseName 'glint-and-glamour-api' below — that is the
+    // so hyphenate. The API jar has its own archiveBaseName 'glint-and-glamour-api' below. That is the
     // jarJar / maven coordinate downstream mods depend on; keep the two in sync if renamed again.
     archivesName = 'Glint-and-Glamour'
 }
@@ -199,10 +199,10 @@ tasks.named('processResources', ProcessResources).configure {
 // Two-jar split: api jar (consumed via jarJar) + full jar (Modrinth standalone download).
 //
 // apiJar packages only common/* + mixin config + AT + glint textures + mods.api.toml renamed to
-// META-INF/mods.toml. This is what downstream mods bundle via jarJar — no wand, no tab, no recipes.
+// META-INF/mods.toml. This is what downstream mods bundle via jarJar: no wand, no tab, no recipes.
 //
 // jar (the full standalone) excludes the api content (so api classes only ever exist in one
-// place at runtime — inside the nested api jar) and self-bundles the api jar via
+// place at runtime, inside the nested api jar) and self-bundles the api jar via
 // META-INF/jarjar/, so a player who installs only the full jar still gets the api loaded.
 // --------------------------------------------------------------------------------------------
 
@@ -262,12 +262,12 @@ apiJar.finalizedBy 'reobfApiJar'
 tasks.register('stageApiInFullJar') {
     // Depend on reobfApiJar explicitly. apiJar.finalizedBy('reobfApiJar') doesn't establish a
     // happens-before for downstream consumers, so without this the staged copy may be grabbed
-    // pre-reobf — leaving the nested api jar with named (e.g. onResourceManagerReload) instead
+    // pre-reobf, leaving the nested api jar with named (e.g. onResourceManagerReload) instead
     // of SRG (m_6213_) method names, which crashes prod with AbstractMethodError.
     dependsOn 'apiJar', 'reobfApiJar'
     // Track the (reobfuscated) api jar as an input so this restages whenever its bytes change.
     // Without it the task declares outputs but no inputs, so Gradle marks it UP-TO-DATE as long
-    // as the stage dir exists — meaning an api-source change rebuilds apiJar but the full jar keeps
+    // as the stage dir exists, meaning an api-source change rebuilds apiJar but the full jar keeps
     // bundling the PREVIOUS build's nested api jar (a NoSuchMethodError on any new api method).
     inputs.files(apiJar.archiveFile)
     inputs.property('apiJarName', apiJarName)
@@ -298,7 +298,7 @@ tasks.named('jar', Jar).configure {
     dependsOn 'stageApiInFullJar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-    // Api content lives inside the nested api jar only — drop it from the full jar so classes
+    // Api content lives inside the nested api jar only. Drop it from the full jar so classes
     // aren't loaded twice when a downstream mod's bundled jarJar copy also resolves.
     exclude 'net/tunamods/customglint/common/**'
     exclude 'META-INF/accesstransformer.cfg'
@@ -308,7 +308,7 @@ tasks.named('jar', Jar).configure {
     exclude 'META-INF/mods.api.toml'
     exclude 'META-INF/mods.full.toml'
     // Replace the dev mods.toml (which declares both mods for runClient) with mods.full.toml
-    // (only the customglint mod, declaring customglint_api as a hard dep — resolved at runtime
+    // (only the customglint mod, declaring customglint_api as a hard dep, resolved at runtime
     // via the nested api jar in META-INF/jarjar/).
     exclude 'META-INF/mods.toml'
 
@@ -365,5 +365,5 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
     // -AoutRefMapFile removed: MixinGradle now manages refmap output. Setting both conflicts and
     // produces a silent empty refmap (mappings: {}), which is what caused the prod-only
-    // "Duplicate delegates" crash — @Shadow fixedBuffers couldn't resolve to f_110093_ in SRG.
+    // "Duplicate delegates" crash: @Shadow fixedBuffers couldn't resolve to f_110093_ in SRG.
 }

@@ -15,7 +15,7 @@ Added:
 - Hover tooltips on every button and control, in both the wand editor and the Glint Table
 - Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
 - Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
-- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it — trims go to its library, materials into its slots
+- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it: trims go to its library, materials into its slots
 - Trim Powder: smelt a trim you don't want into powder, then craft 4 powder with 2 Glowstone Dust for a fresh random trim
 
 Fixed:
@@ -110,13 +110,13 @@ Fixed:
 Added:
 - Wand editor now has a Glow section: toggle glow on/off directly in the editor, pick glow
   colors (auto-matches glint or custom color swatches with hex input), and set a trim display
-  name and name color — all without needing to open the crafting table.
-- /glint extract — pulls the glint from the item in your main hand and gives you a Glint Trim
+  name and name color, all without needing to open the crafting table.
+- /glint extract: pulls the glint from the item in your main hand and gives you a Glint Trim
   pre-loaded with those settings, so you can transfer or inspect a glint without a wand.
-- /glint export <name> — saves the current main-hand item's glint to
+- /glint export <name>: saves the current main-hand item's glint to
   config/customglint/trims/<name>.json so you can reload it later via the wand's Import picker.
-- Custom glints can now be applied directly to living entities (mobs, players, animals) —
-  shift-right-click a mob with the wand to apply the wand's current glint to it, or use
+- Custom glints can now be applied directly to living entities (mobs, players, animals).
+  Shift-right-click a mob with the wand to apply the wand's current glint to it, or use
   /glint entity <targets> apply / remove / glow for selector-based application. Glints animate
   across the entity's body and any cosmetic overlays.
 - Glow outlines also apply to entities, with the outline forming a single clean ring around the
@@ -130,7 +130,7 @@ Fixed:
   areas instead of filling the entire texture-space rectangle.
 - With an active shader pack, glow outlines now draw in front of clouds instead of behind them.
 - With an active shader pack, multiple glowing items (e.g. armor and a held sword) no longer
-  bleed into each other's outlines — each item now uses its own independent stencil channel.
+  bleed into each other's outlines. Each item now uses its own independent stencil channel.
 - With an active shader pack, sprite item outlines (tools, food, gems) now render in the chosen
   glow color instead of being tinted by the item's texture.
 - With an active shader pack, armor glow outlines now also render in the chosen color instead of
@@ -139,7 +139,7 @@ Fixed:
   misalign as the camera rotates; non-convex models (crossbow, bow) use per-vertex normal
   displacement and flat sprites use a separate filter pass for a clean ring at all angles.
 - Held outlines on oversized modded sprites (greatswords, 32-pixel and higher item textures) no
-  longer scale up proportionally — outline thickness now matches a vanilla sword regardless of
+  longer scale up proportionally. Outline thickness now matches a vanilla sword regardless of
   the underlying sprite size.
 
 [Compat]
@@ -159,7 +159,7 @@ Fixed:
 - Ice and Fire troll weapons and death worm gauntlets: held-item glints now sit correctly
   on the weapon instead of drifting off-position.
 - Iris/Oculus: glow outlines are now more consistent across armor, held items, sprites, and
-  entities — the same outline look everywhere instead of one item type rendering differently
+  entities: the same outline look everywhere instead of one item type rendering differently
   from another with a shader pack on.
 
 [Dev]
@@ -181,7 +181,7 @@ Fixed:
   EntityGlintRender.refreshClientCache(entity) to force an explicit re-sync after a client-side
   mutation when needed.
 - Applying a new Glint Trim to an item that already has a Glow Trim no longer erases the glow
-  colors — the two systems are independent as documented.
+  colors. The two systems are independent as documented.
 
 [1.3.0]
 
@@ -200,7 +200,7 @@ Added:
 - Glowing items and armor display a colored outline that animates through your chosen colors.
 - Elytra now show custom glint when worn.
 - Horse armor now shows custom glint.
-- /glint glow <true|false> — toggles the glowing outline on the main-hand item.
+- /glint glow <true|false>: toggles the glowing outline on the main-hand item.
 
 [Compat]
 - Glints now apply to modded armor sets that ship their own armor models (e.g. Ice and Fire
@@ -213,9 +213,9 @@ Added:
 
 Fixed:
 - Glint patterns now look correct on tridents and other held 3D models.
-- Glint patterns on armor no longer stretch into squares — designs hold their original aspect
+- Glint patterns on armor no longer stretch into squares. Designs hold their original aspect
   ratio across all armor pieces.
-- Re-writing a glint onto an already-glowing item no longer clears the glowing flag — the
+- Re-writing a glint onto an already-glowing item no longer clears the glowing flag. The
   outline is preserved across edits in the wand UI, /glint apply, and CustomGlint.write().
 - Data-pack designs now appear in the editor picker and command suggestions for all players on a
   server, not just the host.
@@ -223,31 +223,31 @@ Fixed:
 - Black Glint Tear now fully resets a Glowing trim back to a plain blank trim.
 
 [Devs]
-- Mod is now distributed as two artifacts: custom-glint-api (common/client only — no wand,
+- Mod is now distributed as two artifacts: custom-glint-api (common/client only, no wand,
   tab, recipes, or command) and custom_glint (full standalone, includes the api nested via
   jarJar). Devs depend on the api coord; players install the full jar.
 - GitHub raw maven hosts both coords for devs at
   https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo. See README.txt for
   the full devs build.gradle block.
 - Modded armor with custom ArmorModels (e.g. Ice and Fire, Iron's Spellbooks) now receives
-  glints automatically — HumanoidArmorLayerMixin resolves the model and texture through
+  glints automatically. HumanoidArmorLayerMixin resolves the model and texture through
   ForgeHooksClient instead of assuming vanilla.
 - CustomGlint.forGlint() calibrates pattern scale per-axis against the actual block atlas
   dimensions, so designs hold aspect ratio when other mods inflate the atlas to non-square.
-- CustomGlint.isGlowing() / setGlowing() — read/write the glowing flag on any ItemStack.
-- CustomGlint.setGlowColors() / getGlowColors() / hasGlowColors() / clearGlowColors() —
+- CustomGlint.isGlowing() / setGlowing(): read/write the glowing flag on any ItemStack.
+- CustomGlint.setGlowColors() / getGlowColors() / hasGlowColors() / clearGlowColors():
   read/write an independent color array for the outline animation. When set, the outline
   cycles through these colors instead of tracking glint layer 0's animated color.
 - The mod is now safe to load on dedicated servers: client-only rendering code lives in
   net.tunamods.customglint.common.client.CustomGlintRenderer (and module.client.* for the
   standalone). When bundling the api via jarJar, server-reachable code should only reference
-  common.CustomGlint — never common.client.*.
-- CustomGlint.PATTERNS[] — public ResourceLocation[] of all 55 built-in designs in order.
-- CustomGlint.ALL_COLORS[] — public int[] of all 16 dye-named colors.
-- CustomGlint.VIBRANT_COLORS[] — public int[] of the 11 vivid colors.
+  common.CustomGlint, never common.client.*.
+- CustomGlint.PATTERNS[]: public ResourceLocation[] of all 55 built-in designs in order.
+- CustomGlint.ALL_COLORS[]: public int[] of all 16 dye-named colors.
+- CustomGlint.VIBRANT_COLORS[]: public int[] of the 11 vivid colors.
 - Advanced rendering hooks added for mods that draw items or models outside the normal
   ItemRenderer / armor layer flow (outline render types, model/item outline helpers, public
-  ThreadLocals). Documented under "ADVANCED — RENDERING HOOKS" in README.txt.
+  ThreadLocals). Documented under "Advanced rendering hooks" in README.txt.
 
 [Known Issues]
 - Shader Support is implemented but not finished. Glow Outlines while using shaders are improperly rendering the entire texture space rather than cutting out on the texture.
@@ -313,7 +313,7 @@ Added:
 - 5 new glint designs: crystal, ember, vein, solid, skulls (22 designs total including vanilla).
 - Vanilla enchantment texture as a selectable glint design.
 - Tooltips on all tear items describing what they do.
-- Improved armor glint render scale — patterns now tile much more densely on armor pieces instead
+- Improved armor glint render scale. Patterns now tile much more densely on armor pieces instead
   of appearing as large blobs.
 - Glint Trims with multiple layers now show a layer count in the tooltip. Hold Shift to expand and
   see each layer's design and colors.

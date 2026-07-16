@@ -47,7 +47,7 @@ public class CraftingMenuMixin {
     /** Shared logic: stamp the registered craft glint onto the assembled result. The recipe assembles a
      *  fresh stack per grid change, so mutating it cannot poison the recipe's own result template. */
     private static ItemStack cg_glintCraftPreview(ItemStack result) {
-        // No recipe match hands us the shared ItemStack.EMPTY singleton -- writing NBT to that would
+        // No recipe match hands us the shared ItemStack.EMPTY singleton. Writing NBT to that would
         // corrupt every empty stack in the game.
         if (result.isEmpty()) return result;
         CustomGlint.applyCraftGlint(result);
