@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.logging.LogUtils;
@@ -331,7 +332,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /**
      * Bind Sampler0 and ColorModulator for one texture-glint draw: a pre-tinted design and a white modulator
      * under a shader pack, the greyscale design and the colour itself everywhere else. {@code boost} scales the
-     * colour first, for the translucent-shell path that pre-brightens its glint.
+     * colour on the way in, clamped to 1, so it can only lift a colour that is not already saturated.
      */
     public static void bindGlintTexture(String key, ResourceLocation design, float[] holder, float boost) {
         float r = Math.min(1.0f, holder[0] * boost);
@@ -785,27 +786,23 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     // set on the baked texture itself (ChromaticTextureBaker.configureTexture), so
                                     // super's blur/mipmap binding is deliberately skipped.
                                     RenderSystem.setShaderTexture(0, ChromaticTextureBaker.textureId(layer, colors));
-                                    // The slime translucent shell overdraws (dims) this additive glint under
-                                    // shaders, so boost it on that path (SHELL_GLINT_SHADER_BOOST). Every other
-                                    // path keeps 1 - the slick carries its own colour, so there is nothing to tint.
-                                    float b = lateForShaders ? SHELL_GLINT_SHADER_BOOST : 1.0f;
-                                    RenderSystem.setShaderColor(b, b, b, 1.0f);
+                                    // White on every path: the slick carries its own colour, so there is nothing to
+                                    // tint. The shell path used to pre-boost here to fight the shell's overdraw. It
+                                    // draws on top of the shell now, so there is no overdraw left to fight.
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            // Translucent shell (slime) chromatic glint WRITES depth so its own front faces occlude
-                            // its back faces (see forHorseArmorGlint); opaque chromatic writes colour only.
-                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
-                            .setCullState(NO_CULL)
-                            // Translucent shell (slime) chromatic glint: LEQUAL against the stable opaque depth it
-                            // tests under the OPAQUE_DECAL tag below (see forHorseArmorGlint for the full rationale).
+                            // Translucent shell (slime) chromatic glint: no depth write, CULL, LEQUAL and the lift,
+                            // flushed late on top of the shell. Exactly its texture twin. See forHorseArmorGlint for
+                            // why all four are load-bearing and why the lift is only safe in that combination.
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(lateForShaders ? CULL : NO_CULL)
                             .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
-                            // Translucent shell: nudge depth toward the camera so the shell doesn't overdraw/dim
-                            // the glint texels (see forHorseArmorGlint). Opaque chromatic keeps its layering.
-                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : layering)
+                            .setLayeringState(lateForShaders ? SHELL_GLINT_LIFT_LAYERING : layering)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_texturing|" + k.hashCode(),
                                     () -> setChromaticMatrix(layer, scaleU, scaleV), RenderSystem::resetTextureMatrix))
@@ -813,8 +810,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return rt;
         });
         registerFixedBuffer(cached);
-        if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
-        if (lateBucketTag) tagAsLateRenderForShaders(cached);
+        // Both flags want the same LINES bucket now, for different reasons: lateForShaders so the shell glint lands
+        // on top of the shell, lateBucketTag so an EK decoration glint flushes after its own depth pre-pass.
+        if (lateForShaders || lateBucketTag) tagAsLateRenderForShaders(cached);
         return cached;
     }
 
@@ -842,17 +840,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** Noise UV scale for armor / elytra / horse-armor / entity-body chromatic. */
     private static final float CHROMATIC_MODEL_UV_SCALE = 8.0f;
 
-    // Brightness compensation for the TRANSLUCENT-shell TEXTURE glint (slime outer shell) under an active
-    // shaderpack. That glint flushes in the OPAQUE_DECAL bucket (before the shell) for a stable, flicker-free
-    // depth reference; the shell then alpha-blends OVER it in the later GENERAL_TRANSPARENT pass and attenuates
-    // the additive glint by the shell's opacity, so it reads dim. The VIEW_OFFSET_Z_LAYERING "punch-through"
-    // that would occlude the shell at the glint texels is a no-op under Iris (it rewrites the gbuffer
-    // projection, so the projection-matrix offset is ignored), and every depth-based way to occlude the shell
-    // reintroduces flicker. So instead pre-boost the glint colour to counter the shell's overdraw and land near
-    // the shaders-off brightness. Additive GLINT_TRANSPARENCY uses an SRC_COLOR src factor, so the on-screen
-    // contribution scales ~colour^2; this factor is the multiply on the colour, not on the final contribution.
-    // Applied only on the translucent shader path (lateForShaders); shaders-off uses the opaque EQUAL path and
-    // never sees this. Tunable - verify in the shader test env.
+    // The slime outer shell is the one surface a glint cannot simply draw onto. Its rules live on the shards in
+    // forHorseArmorGlint; the short version is LINES bucket (on top of the shell), LEQUAL + a lift to clear the
+    // shell's coplanar depth, CULL so the lift doesn't flicker, and never a depth write.
+    //
+    // There used to be a SHELL_GLINT_SHADER_BOOST here, a 2.6x pre-brighten of the shell glint's colour. It
+    // existed because the glint drew UNDER the shell and was attenuated by it, and it never worked: both call
+    // sites clamped at Math.min(1, colour*BOOST), so any bright colour saturated and came out unboosted, which is
+    // why raising 1.6 to 2.6 did nothing. Drawing the glint on top of the shell removes the attenuation it was
+    // compensating for. Do not reintroduce a boost to paper over a dim shell glint; find what is eating it.
     //
     // TRIED (do NOT retry): replacing this whole scheme with a stencil two-pass - mask the shell's visible
     // pixels in OPAQUE_DECAL, then draw the glint in the LINES bucket with NO_DEPTH_TEST + stencil EQUAL, so it
@@ -860,10 +856,51 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // RT's COLOR_DEPTH_WRITE provides, and produced exactly what the note above predicts: every face visible
     // from every side, plus angle-dependent dropout. The stencil mark is not a substitute for the depth write.
     //
-    // It only meaningfully lifts DARK colours: both call sites clamp (Math.min(1, holder*BOOST)), so any bright
-    // colour saturates and is effectively unboosted. The CHROMATIC shell reads it on the same terms as the texture
-    // shell now: both draw in-pass, in the OPAQUE_DECAL bucket, and both are overdrawn by the shell.
-    private static final float SHELL_GLINT_SHADER_BOOST = 2.6f;
+    // (That note predates CULL. Its "every face visible from every side" was NO_CULL competing with itself, which
+    // culling settles, so the two-pass is no longer structurally doomed. It is still not worth retrying: a stencil
+    // route needs a reserved value, and nextStencilSlot() already hands outlines 1..255 across the whole byte with
+    // mount armor holding 0x80, so a third consumer means bit-per-item isolation. The lift needs no stencil.)
+
+    // How far the shell glint rides toward the camera, as a view-space scale, and the ONE knob for this surface.
+    // It has to clear the shell's own depth, and the number is set by a shader pack rather than by us.
+    //
+    // Complementary Reimagined pulls slimes toward the camera in its entity program (gbuffers_entities.glsl):
+    //     } else if (entityId == 50084) { // Slime, Chicken
+    //         gl_Position.z -= 0.00015;
+    //     }
+    // gated on FLICKERING_FIX, which its common.glsl defines unconditionally, with entity.50084=slime chicken in
+    // entity.properties. The shell picks that shift up. Our glint goes through gbuffers_armor_glint, a bare
+    // ftransform() with no such mutation, so the shell lands IN FRONT of the glint and LEQUAL loses every fragment.
+    // BSL, Bliss and Photon have no gl_Position.z mutation at all, which is the whole reason this was ever a
+    // Complementary-only bug. Nothing about Iris ignoring VIEW_OFFSET_Z_LAYERING was true: the shard works fine
+    // there, it was just outgunned 6 to 1. Any note claiming that shard is "a no-op under Iris" is measuring this.
+    //
+    // Both pushes are the same shape, which is what makes one constant enough. The pack's is dz_ndc = -1.5e-4/|z|,
+    // and a view-space scale S gives dz_ndc = 2n*(S-1)/|z| with 2n = 0.1 (the far plane cancels out of 2fn/(f-n),
+    // so render distance is irrelevant). Beating it needs (1-S) > 1.5e-3. Vanilla VIEW_OFFSET_Z_LAYERING's
+    // 0.99975586 manages only 2.4e-5 of ndc against the pack's 1.5e-4, hence the 6x shortfall. 0.997 gives 3.0e-4,
+    // i.e. 2x margin, and matched shape holds that margin at every range.
+    //
+    // Cost: the glint rides (1-S)*|z| = 0.003*|z| blocks toward the camera, so ~0.03 blocks at 10 and 0.3 at 100,
+    // and draws 0.3% smaller on screen. Both are sub-pixel on a slime. Lower S if some pack shifts slimes harder,
+    // raise it toward 1 if a glint bleeds through a wall.
+    private static final float SHELL_GLINT_LIFT_SCALE = 0.997f;
+
+    // Vanilla's VIEW_OFFSET_Z_LAYERING with a bigger scale, for the reason above. A view-space scale, not a
+    // glDepthRange squeeze: the pack's push scales with distance, so a flat window-depth bias would be too small
+    // up close and bleed through walls far away. This one tracks it.
+    private static final RenderStateShard.LayeringStateShard SHELL_GLINT_LIFT_LAYERING =
+            new RenderStateShard.LayeringStateShard("customglint_shell_glint_lift",
+                    () -> {
+                        PoseStack stack = RenderSystem.getModelViewStack();
+                        stack.pushPose();
+                        stack.scale(SHELL_GLINT_LIFT_SCALE, SHELL_GLINT_LIFT_SCALE, SHELL_GLINT_LIFT_SCALE);
+                        RenderSystem.applyModelViewMatrix();
+                    },
+                    () -> {
+                        RenderSystem.getModelViewStack().popPose();
+                        RenderSystem.applyModelViewMatrix();
+                    });
 
     /** Returns the buffer a chromatic layer's geometry should be fed into: a straight {@code src.getBuffer(crt)}
      *  on every path.
@@ -993,9 +1030,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /** Translucent-surface entity chromatic glint (slime outer shell). Now exactly its texture-glint twin
-     *  {@link #forEntityGlintTranslucent}, one design apart: the same OPAQUE_DECAL bucket, LEQUAL against the
-     *  stable opaque depth, depth write for self-occlusion, and the same {@link #SHELL_GLINT_SHADER_BOOST} to
-     *  counter the shell's overdraw.
+     *  {@link #forEntityGlintTranslucent}, one design apart: the same LINES bucket on top of the shell, the same
+     *  LEQUAL plus lift to clear its coplanar depth, the same CULL, and the same refusal to write depth.
      *
      *  <p>It used to defer under a pack instead, because our private chromatic program landed in Iris's gbuffer and
      *  the pack's lighting dimmed it. The slick is a baked texture now, so this rides the pack's own GLINT program
@@ -1070,13 +1106,19 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /**
-     * Entity glint for a TRANSLUCENT base surface (e.g. the slime's outer shell). Under a shader pack
-     * (Oculus/Iris) translucent entity geometry is deferred to a later pass than our fixed glint buffer
-     * would otherwise flush, so the glint draws first and the shell then paints over it → the glint vanishes
-     * with shaders on (it's fine with shaders off, where everything flushes together). This variant is a
-     * DISTINCT RT instance tagged into the shader mod's late (LINES) transparency bucket so it flushes AFTER
-     * the shell - a no-op without a shader pack. Opaque entity glint keeps its own untagged instance so its
-     * (working) ordering is unchanged.
+     * Entity glint for a TRANSLUCENT base surface (e.g. the slime's outer shell), under an active shader pack
+     * only. A distinct RT instance from the opaque one, so the opaque path's state is never touched.
+     *
+     * <p>One rule governs this surface, and {@link #forHorseArmorGlint}'s shard comments carry the detail: the
+     * glint draws AFTER the shell (LINES bucket) so the shell cannot dim it, and it earns the right to by
+     * writing no depth at all. Everything else follows from that. LEQUAL then tests against the shell's own
+     * coplanar depth, so it needs the lift to land in front rather than behind, and the lift needs CULL or the
+     * shell's near and far faces flicker against each other.
+     *
+     * <p>Both halves of this were shipped separately and both failed. Drawing before the shell (OPAQUE_DECAL)
+     * gave a stable depth reference and a glint too dim to see. Nudging depth in front of the shell made it
+     * bright and erased the shell on BSL, Bliss and Proton. They are the same mechanism pulling opposite ways,
+     * and drawing late is what stops having to choose.
      */
     public static RenderType forEntityGlintTranslucent(Data glint, int layerIdx, float[] frameColor, int colorIdx,
                                                        boolean triangles) {
@@ -1111,38 +1153,44 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    // Translucent shell path: the shell overpaints and dims this additive glint
-                                    // under shaders, so pre-boost the colour (see SHELL_GLINT_SHADER_BOOST).
-                                    bindGlintTexture(k, tex, holder,
-                                            lateForShaders ? SHELL_GLINT_SHADER_BOOST : 1.0f);
+                                    bindGlintTexture(k, tex, holder);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            // Translucent shell WRITES depth (in the OPAQUE_DECAL pass) so its own front faces
-                            // occlude its back faces on a nearest-wins basis - a view-independent self-occlusion the
-                            // shell's Iris-re-sorted depth can't give (without it the far side's glint bleeds through
-                            // the near side and faces flip in/out as the camera orbits). Opaque glint writes colour only.
-                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
-                            .setCullState(NO_CULL)
-                            // Translucent base surface (slime outer shell = entity_translucent). The hard part under
-                            // shaders is the DEPTH REFERENCE, not the glint's own geometry: if the glint flushes after the
-                            // translucent shells (LINES bucket), it tests against the shell's depth, which Iris re-sorts
-                            // per frame - so the test result flips as the camera moves (flicker) and the coplanar margin
-                            // collapses with distance (far dropout). The RT is instead tagged into OPAQUE_DECAL (see the
-                            // tag call below), which flushes right after the OPAQUE pass but BEFORE the translucent shells,
-                            // so the depth buffer holds only stable opaque geometry (inner bodies, terrain, other slimes'
-                            // cubes). LEQUAL against that: the shell's front faces (in front of all opaque) always pass;
-                            // faces behind a nearer opaque body (another slime, this slime's own inner cube) are occluded.
-                            // Stable reference → no flicker, correct at every range. Opaque entity glint keeps EQUAL.
+                            // The shell glint writes NO depth, on any pack. Drawing late leaves it nothing to prepass
+                            // for, and writing nothing is what guarantees the shell renders exactly as it would with
+                            // no glint on it. It is also half of why the lift below is survivable now.
+                            .setWriteMaskState(COLOR_WRITE)
+                            // CULL is what makes the lift below work, and the pair only works together. A lift was
+                            // tried alone and flickered: with NO_CULL the shell's near and far faces rasterise the
+                            // same pixel and compete for the LEQUAL, so the winner flips as the camera orbits.
+                            // Dropping the far faces leaves one fragment per pixel and the compare is settled by
+                            // geometry instead of submission order. Convex cube, so culling IS its self-occlusion.
+                            // CULL was also tried alone and "killed far-away glint", which is the lift's job to fix.
+                            // Opaque glint keeps NO_CULL.
+                            .setCullState(lateForShaders ? CULL : NO_CULL)
+                            // Translucent base surface (slime outer shell = entity_translucent), under a pack only.
+                            // This flushes in the LINES bucket, AFTER the shell, so the shell can no longer paint
+                            // over the glint and dim it. The cost is the depth reference: the buffer now holds the
+                            // shell's own depth at these pixels, and LEQUAL against a coplanar surface lands at D+e
+                            // and vanishes. That is exactly what the lift below buys back. World occlusion still
+                            // comes free from this test, since terrain and bodies in front of the slime sit in the
+                            // same buffer. Opaque entity glint keeps EQUAL.
                             .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
-                            // Translucent shell: nudge the glint's written depth toward the camera so the shell's
-                            // own LEQUAL depth test discards the shell fragments AT the glint texels - the glint
-                            // punches through the shell (full brightness) instead of being painted over and dimmed
-                            // by the later GENERAL_TRANSPARENT shell pass. Opaque glint keeps NO_LAYERING.
-                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : NO_LAYERING)
+                            // The lift, so LEQUAL clears the shell's depth instead of landing behind it. It is not
+                            // VIEW_OFFSET_Z_LAYERING: that shard's 0.99976 is 6x too small to clear the slime-
+                            // specific clip-z shift Complementary's FLICKERING_FIX gives the shell. See
+                            // SHELL_GLINT_LIFT_SCALE for the pack's own code and the arithmetic.
+                            //
+                            // A lift is only safe because this RT writes no depth. The shard version erased the
+                            // shell precisely because it ran in OPAQUE_DECAL WITH a depth write, in FRONT of the
+                            // shell, so the shell failed its own LEQUAL against our lifted depth. Here the shell has
+                            // already drawn and we write nothing, so the lift moves our own fragments and nothing
+                            // else. Never pair a lift with a depth write again. Opaque glint keeps NO_LAYERING.
+                            .setLayeringState(lateForShaders ? SHELL_GLINT_LIFT_LAYERING : NO_LAYERING)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_horse_armor_glint_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx, 1.0f), RenderSystem::resetTextureMatrix))
@@ -1150,7 +1198,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return rt;
         });
         registerFixedBuffer(cached);
-        if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
+        // LINES is the last bucket the shader mod flushes, after the GENERAL_TRANSPARENT one the shell draws in, so
+        // the glint lands on top of the shell rather than underneath it. That ordering is where the brightness comes
+        // from, and it replaces an OPAQUE_DECAL tag that bought a stable depth reference and paid in overdraw.
+        if (lateForShaders) tagAsLateRenderForShaders(cached);
         return cached;
     }
 
