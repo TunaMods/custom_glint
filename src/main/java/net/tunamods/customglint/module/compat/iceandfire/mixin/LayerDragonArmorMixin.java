@@ -183,6 +183,15 @@ public class LayerDragonArmorMixin {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
+                if (CustomGlint.isChromatic(layers[li])) {
+                    // Chromatic carries no design PNG, so forArmorGlint's getTexture lookup below returns null
+                    // and the layer would drop with no warning. forChromaticArmorGlint is its depth twin:
+                    // EQUAL + VIEW_OFFSET_Z_LAYERING, matching the armorCutoutNoCull the base armor was
+                    // rewritten to by cg_capTex above.
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, li);
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(flush, crt));
+                    continue;
+                }
                 int[] colors = layers[li].colors();
                 if (layers[li].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {

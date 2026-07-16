@@ -156,6 +156,14 @@ public class LayerHippogryphArmorMixin {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
+                if (CustomGlint.isChromatic(layers[li])) {
+                    // Chromatic has no PNG for forArmorGlint to key on, so it needs the matching
+                    // armorCutoutNoCull-depth factory or the layer drops silently. See
+                    // LayerDragonArmorMixin for the rationale.
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, li);
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(flush, crt));
+                    continue;
+                }
                 int[] colors = layers[li].colors();
                 if (layers[li].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
