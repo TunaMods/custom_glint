@@ -23,26 +23,25 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Post-composite replay of chromatic glints under an active shaderpack (Oculus/Iris).
+ * Post-composite replay of the ITEM path's glint layers under an active shaderpack (Oculus/Iris).
  *
- * <p>The chromatic glint runs a custom core shader ({@code assets/customglint/shaders/core/chromatic}) instead of
- * riding vanilla's {@code rendertype_glint}. Iris keeps the texture glints bright by intercepting
- * {@code GameRenderer.getRendertypeGlintShader()} and swapping in the pack's additive GLINT program; it never sees
- * our private {@code ShaderInstance}, so our chromatic draw lands in Iris's gbuffer and its scene composite
- * ({@code finalizeLevelRendering}) discards it - the glint is invisible in-world while a pack is on. (Verified:
- * a constant full-bright chromatic output still showed nothing in-world under a pack, while the GUI - where Iris is
- * inactive - drew it fine.)
+ * <p>NAME IS HISTORICAL. This was built for chromatic, which used to bind a private core shader Iris colour-masks
+ * to nothing during the level pass, so its draw had to be captured and re-run after the pack composited. Chromatic
+ * does not come through here any more: its slick is baked to an ordinary texture ({@link ChromaticTextureBaker}),
+ * so it rides the pack's own GLINT program in-gbuffer like every other design - which is what let the pack's TAA
+ * resolve it and stopped it flickering. What remains is the texture-glint item deferral (see
+ * {@link CustomGlintRenderer#postCompositeVariant} / {@code GLINT_POST}), which exists for an Embeddium reason and
+ * is itself pending a revert.
  *
- * <p>The fix mirrors {@link GlowOutlineRenderer}'s shader-pack world drain: while a pack is active, the chromatic
+ * <p>The mechanism mirrors {@link GlowOutlineRenderer}'s shader-pack world drain: while a pack is active, the
  * layer's geometry (camera-space position + UV0) is captured instead of drawn, then re-drawn through a
- * "post-composite" sibling RenderType ({@link CustomGlintRenderer#postCompositeVariant}) at the RETURN of
- * {@code LevelRenderer.renderLevel} - after Iris finalizes - so the pack's composite can't erase it. The capture
- * records the live {@code RenderSystem} model-view + projection and the replay restores them, reproducing the exact
- * clip-space position the in-pass draw would have used. Each {@link Recorder} snapshots its OWN pair, so a pass
- * with a different projection (the first-person hand's FOV) replays correctly alongside the world's.
+ * "post-composite" sibling RenderType at the RETURN of {@code LevelRenderer.renderLevel} - after Iris finalizes -
+ * so the pack's composite can't erase it. The capture records the live {@code RenderSystem} model-view +
+ * projection and the replay restores them, reproducing the exact clip-space position the in-pass draw would have
+ * used. Each {@link Recorder} snapshots its OWN pair, so a pass with a different projection (the first-person
+ * hand's FOV) replays correctly alongside the world's.
  *
- * <p>Off-pack this path is never taken (see {@link CustomGlintRenderer#chromaticWorldBuffer}) - the glint draws
- * in-pass as before.
+ * <p>Off-pack this path is never taken - the glint draws in-pass as before.
  */
 public final class ChromaticShaderReplay {
     private ChromaticShaderReplay() {}
@@ -50,69 +49,12 @@ public final class ChromaticShaderReplay {
     private static final List<Recorder> worldJobs = new ArrayList<>();
 
     // Reused immediate source for the replay flush. One layer's captured stream is emitted, then endBatch runs the
-    // post-composite RT's setup (shader / palette / noise matrix / additive blend / no depth test) and draws it.
+    // post-composite RT's setup (shader / design texture / scroll matrix / additive blend / EQUAL depth) and draws it.
     private static final BufferBuilder REPLAY_BB = new BufferBuilder(2048);
     private static final MultiBufferSource.BufferSource REPLAY_SRC = MultiBufferSource.immediate(REPLAY_BB);
 
     /** Per-frame reset; called from the RenderTickEvent.START listener alongside the glow renderer's. */
     public static void beginFrame() { worldJobs.clear(); }
-
-    // ── Scene-depth snapshot (world occlusion for the translucent-shell glint) ───────────────────────────
-    // The slime shell's glint cannot depth-test against the composited buffer at all (measured: EQUAL and
-    // LEQUAL+nudge both reject every fragment), so its RenderType draws with NO_DEPTH_TEST and takes its
-    // self-occlusion from back-face CULL instead - which leaves nothing to stop it drawing THROUGH the world.
-    // That last piece is an in-shader compare against the scene depth, exactly like glow_silhouette.fsh does.
-    //
-    // Why a snapshot instead of binding main's depth like the glow pass does: the glow samples main's depth
-    // while writing the offscreen MASK, so there is no feedback loop. This replay writes MAIN, and sampling a
-    // texture still attached to the bound framebuffer is undefined - depth writes being off is not enough of a
-    // guarantee in GL 3.2. So blit main's depth into our own target first and sample that. Taken once per
-    // drain, BEFORE any replay draws, so it holds the finished scene and never our own slick.
-    private static TextureTarget depthSnapshot;
-
-    /** Scene-depth texture for the shell glint's occlusion test, or 0 when no snapshot exists (→ Sampler2
-     *  reads texture 0, depth 0, and {@code chromatic.fsh} treats every fragment as visible). */
-    public static int sceneDepthTextureId() {
-        return depthSnapshot != null ? depthSnapshot.getDepthTextureId() : 0;
-    }
-
-    private static void snapshotSceneDepth(RenderTarget main) {
-        if (depthSnapshot == null || depthSnapshot.width != main.width || depthSnapshot.height != main.height) {
-            if (depthSnapshot != null) depthSnapshot.destroyBuffers();
-            depthSnapshot = new TextureTarget(main.width, main.height, true, Minecraft.ON_OSX);
-            depthSnapshot.setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        }
-        // LOAD-BEARING: match main's depth FORMAT, not just its size. glBlitFramebuffer(GL_DEPTH_BUFFER_BIT)
-        // requires identical depth formats on the read and draw targets; mismatched it raises
-        // GL_INVALID_OPERATION and copies nothing, with no error surfaced. Forge's RenderTarget.enableStencil()
-        // re-creates the depth texture as DEPTH32F_STENCIL8 rather than DEPTH_COMPONENT32F, and this mod calls it
-        // on main (the mount-armor stencil mask, the EK decoration mask, the outline slot pool). An un-stencilled
-        // snapshot therefore stops copying the moment one of those draws first appears, and holds its cleared
-        // depth of 1.0 - the far plane - so cgOccluded() occludes nothing and the shell glint draws through
-        // terrain. enableStencil() is idempotent and one-way, and main never reverts, so track it one-way too.
-        if (main.isStencilEnabled() && !depthSnapshot.isStencilEnabled()) depthSnapshot.enableStencil();
-        GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, main.frameBufferId);
-        GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, depthSnapshot.frameBufferId);
-        GL30.glBlitFramebuffer(0, 0, main.width, main.height, 0, 0, depthSnapshot.width, depthSnapshot.height,
-                GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
-        main.bindWrite(false);
-    }
-
-    /** Release the snapshot target. Hooked into the resource-reload cleanup alongside the glint textures. */
-    public static void releaseSceneDepth() {
-        if (depthSnapshot != null) { depthSnapshot.destroyBuffers(); depthSnapshot = null; }
-    }
-
-    /** Capture this deferrable chromatic layer's geometry instead of drawing it in-pass. Snapshots the live
-     *  model-view / projection so the replay can reproduce the draw. Returns the recording consumer the model
-     *  writes its vertices into. */
-    public static VertexConsumer capture(RenderType inPassRt) {
-        Recorder r = new Recorder(inPassRt,
-                new Matrix4f(RenderSystem.getModelViewMatrix()),
-                new Matrix4f(RenderSystem.getProjectionMatrix()));
-        worldJobs.add(r);
-        return r;
-    }
 
     /** Capture a deferrable glint layer directly from the item's BAKED QUADS instead of from the foil vertex
      *  stream. Used by the item path under an active shaderpack: drawing the glint in-phase would put the item
@@ -122,7 +64,7 @@ public final class ChromaticShaderReplay {
      *  post-Iris. {@code pose} is the item's reconstructed display pose (same transform the foil stream applied),
      *  so {@code putBulkData} lands the identical camera-pose-space {@code [x,y,z,u,v]} the foil-stream capture
      *  would have. {@code inPassRt} must have a registered post-composite sibling (see
-     *  {@link CustomGlintRenderer#postCompositeVariant}). */
+     *  {@link CustomGlintRenderer#postCompositeVariant}) - a chromatic RT does not, and no longer reaches here. */
     public static void captureQuads(RenderType inPassRt, List<BakedQuad> quads, PoseStack.Pose pose, int light) {
         if (quads.isEmpty()) return;
         Recorder r = new Recorder(inPassRt,
@@ -132,15 +74,12 @@ public final class ChromaticShaderReplay {
         worldJobs.add(r);
     }
 
-    /** Re-draw every captured chromatic layer over the finished frame. Called at {@code renderLevel} RETURN
+    /** Re-draw every captured layer over the finished frame. Called at {@code renderLevel} RETURN
      *  (LevelRendererMixin), after Iris's finalize, only while a pack is active. */
     public static void drainWorldShaderPack() {
         if (worldJobs.isEmpty()) return;
 
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
-        // Snapshot BEFORE binding main for the replay: the shell glint's sibling samples this for its world
-        // occlusion, and it must hold the composited scene rather than anything this drain draws.
-        snapshotSceneDepth(main);
         main.bindWrite(true);
 
         // Snapshot the GL state this drain mutates and hand it back in the finally. Without this the leaked
