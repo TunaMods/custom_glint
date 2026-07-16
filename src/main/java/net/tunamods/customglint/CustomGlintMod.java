@@ -12,6 +12,7 @@ import net.tunamods.customglint.module.recipe.ModRecipes;
 import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
 import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
 import net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat;
+import net.tunamods.customglint.module.client.PhotonGlintNotice;
 import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 import com.google.gson.Gson;
@@ -85,6 +86,11 @@ public class CustomGlintMod {
         // Client-only: bind the Glint Table menu to its screen. Class-loaded on the client only.
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
                 () -> () -> net.tunamods.customglint.module.client.GlintTableClientInit.register(modEventBus));
+
+        // Client-only: warn Photon users that their pack is collapsing multi-layer glints to one. The nested
+        // supplier is load-bearing. Its body is a second invokedynamic, so PhotonGlintNotice only links on the
+        // client, however the name is spelled.
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> PhotonGlintNotice.register());
 
         ModNetworking.register();
         IceAndFireCompat.register();
