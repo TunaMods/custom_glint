@@ -36,6 +36,7 @@ Fixed:
 - Shared server blueprints now sync reliably even when a very large design was saved
 - Chromatic glints now show on see-through surfaces like a slime's outer shell while shaders are on
 - Horse armor now renders chromatic glint under shaders
+- An item that gets a glint automatically when crafted now shows it in the crafting result slot, instead of only once you take it
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
