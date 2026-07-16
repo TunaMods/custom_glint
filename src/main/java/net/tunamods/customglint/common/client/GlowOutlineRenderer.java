@@ -709,15 +709,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     /** Accumulate the silhouettes of {@code jobs}+{@code models} into the mask and compute each object's
      *  screen box into {@link #itemBoxes}. Returns the composite kernel radius (the widest category
-     *  present). Leaves the mask bound for writing. */
+     *  present). Leaves the mask bound for writing.
+     *
+     *  <p>Every job replays under the modelview it was DRAWN with (captured at its render RETURN), not the
+     *  live drain-time modelview. Those differ on 1.20.1, and the live one offsets the ring. Jobs are grouped
+     *  by that captured matrix ({@link #distinctModelViews}) and each group emits under its own. */
     private static int accumulate(List<ItemJob> jobs, List<ModelJob> models, RenderTarget main, Matrix4f proj,
                                   boolean sceneOcclusion) {
-        // Replay under the modelview the items were DRAWN with (captured at their render RETURN), not the
-        // live drain-time modelview - those differ on 1.20.1 and the live one offsets the ring. All jobs in
-        // one drain share the same draw-time modelview (one render pass), so take it from whichever exists.
-        Matrix4f modelView = !jobs.isEmpty() ? jobs.get(0).modelView : models.get(0).modelView;
-        beginAccumulation(main.width, main.height, modelView, proj);
-
         int searchRadius = 1;
         for (ItemJob j : jobs) searchRadius = Math.max(searchRadius, CAT_THICKNESS[j.category]);
         for (ModelJob j : models) searchRadius = Math.max(searchRadius, CAT_THICKNESS[j.category]);
@@ -736,9 +734,49 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (uSilBiasScale != null) uSilBiasScale.set(0.0f);
         itemBoxes.clear();
 
+        // One emit pass per distinct captured modelview, all into the same already-cleared mask, so the
+        // composite below still sees every object in one image and runs once.
+        for (Matrix4f modelView : distinctModelViews(jobs, models)) {
+            accumulateUnder(modelView, jobs, models, main, proj);
+        }
+
+        RenderSystem.setShaderTexture(1, 0); // don't leave the resize-volatile main depth bound
+        return searchRadius;
+    }
+
+    /** The distinct captured modelviews across {@code jobs}+{@code models}, in queue order. Normally one: a
+     *  render pass draws everything under a single RS modelview, and each job stored a copy of it.
+     *
+     *  <p>Picking an item up is the exception, and it is why this can't just read {@code jobs.get(0)}. Vanilla
+     *  spawns an {@code ItemPickupParticle} (3 ticks) that re-renders a COPY of the item entity from inside the
+     *  particle pass. {@code ParticleEngine.render} pushes the camera rotation onto the RS modelview stack for
+     *  that pass, so that one item's silhouette is captured under a camera-rotated modelview, while every
+     *  entity / armor silhouette from the earlier entity pass was captured under the plain one. Replaying the
+     *  whole drain under either matrix double-transforms the other group and throws its rings across the screen
+     *  as ghosts for the particle's lifetime. */
+    private static List<Matrix4f> distinctModelViews(List<ItemJob> jobs, List<ModelJob> models) {
+        List<Matrix4f> views = new ArrayList<>(1);
+        for (ItemJob j : jobs) addDistinctView(views, j.modelView);
+        for (ModelJob j : models) addDistinctView(views, j.modelView);
+        return views;
+    }
+
+    /** Exact equality, not a delta compare: within one pass every job copied the same live {@code RenderSystem}
+     *  modelview instance, so matrices that belong to the same group are bit-identical, not merely close. */
+    private static void addDistinctView(List<Matrix4f> views, Matrix4f m) {
+        if (m == null) return;
+        for (Matrix4f v : views) if (v.equals(m)) return;
+        views.add(m);
+    }
+
+    /** Emit every job captured under {@code modelView} into the already-bound mask, under that modelview. */
+    private static void accumulateUnder(Matrix4f modelView, List<ItemJob> jobs, List<ModelJob> models,
+                                        RenderTarget main, Matrix4f proj) {
+        beginAccumulation(main.width, main.height, modelView, proj);
+
         // Force the captured modelview onto the RS stack so the silhouette RT's vanilla shader sees the
         // draw-time ModelViewMat (it auto-reads RenderSystem.getModelViewMatrix() at the endBatch draw).
-        com.mojang.blaze3d.vertex.PoseStack rsStack = RenderSystem.getModelViewStack();
+        PoseStack rsStack = RenderSystem.getModelViewStack();
         rsStack.pushPose();
         rsStack.setIdentity();
         rsStack.mulPoseMatrix(modelView);
@@ -746,6 +784,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
         VertexConsumer base = MASK_BUFFERS.getBuffer(silhouetteRT());
         for (ItemJob job : jobs) {
+            if (!modelView.equals(job.modelView)) continue;
             resetCamBox();
             int key = nextGlowKey(job.category);
             int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
@@ -763,6 +802,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // (the immediate buffer flushes the prior batch on each switch). The per-job key makes a
         // multi-texture item's buckets share one id → one unified ring.
         for (ModelJob job : models) {
+            if (!modelView.equals(job.modelView)) continue;
             resetCamBox();
             VertexConsumer tc = MASK_BUFFERS.getBuffer(
                     job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
@@ -775,12 +815,12 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 itemBoxes.add(new Box(box[0], box[1], box[2], box[3], computeScale(d), job.key & 31, d, 0, 1.0f));
             }
         }
+        // Flush before restoring the matrix: the buffered vertices only draw at endBatch, and that draw reads
+        // the LIVE ModelViewMat. Anything still buffered would draw under the next group's matrix.
         MASK_BUFFERS.endBatch();
 
         rsStack.popPose();
         RenderSystem.applyModelViewMatrix();
-        RenderSystem.setShaderTexture(1, 0); // don't leave the resize-volatile main depth bound
-        return searchRadius;
     }
 
     /** Replay a captured special item's {@code [x,y,z,u,v]} vertices (camera-relative, QUADS order) into
