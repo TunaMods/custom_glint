@@ -48,7 +48,6 @@ Altered:
 - Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
 
 [Compat]
-- Improved JEI compatibility
 - Enhanced Visuals: a glowing item no longer turns the whole screen black, and blood and other damage effects no longer draw black boxes
 - Gnetum: animated glints and glow outlines no longer freeze or flicker on the hotbar under its HUD caching
 - Punchy: the held-item glow outline now renders correctly with its first-person animations
@@ -59,16 +58,12 @@ Altered:
 - Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
 
 [Compat fixes]
+- Improved JEI compatibility
 - Ice and Fire: troll weapons and the deathworm gauntlet now show the Chromatic design instead of no glint at all
 - Ice and Fire: a hippogryph or hippocampus with a glint no longer paints its saddle, bridle and harness as solid glinted shapes
 - Elytra Slot: an elytra worn in the mod's elytra slot now shows the Chromatic design instead of no glint at all
 - Sophisticated Backpacks: backpacks now show the Chromatic design instead of no glint at all
 - Epic Knights: plumes, surcoats, crowns and the other armor decorations now show the Chromatic design instead of no glint at all
-- Immersive Armors: worn armor now shows the Chromatic design with shaders on instead of disappearing
-- Iron's Spells 'n Spellbooks and other GeckoLib armor: worn armor now shows the Chromatic design with shaders on instead of disappearing
-- Mekanism: worn armor now shows the Chromatic design with shaders on instead of disappearing
-- Artifacts: belts, necklaces, gloves, boots and other worn artifacts now show the Chromatic design with shaders on instead of disappearing
-
 
 [1.6.0]
 
