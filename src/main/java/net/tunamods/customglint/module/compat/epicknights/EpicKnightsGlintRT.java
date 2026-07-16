@@ -212,8 +212,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setShaderState(CustomGlintRenderer.GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    CustomGlintRenderer.bindGlintTexture(k, tex, holder);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -590,8 +589,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                             .setShaderState(CustomGlintRenderer.GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    CustomGlintRenderer.bindGlintTexture(k, tex, holder);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();

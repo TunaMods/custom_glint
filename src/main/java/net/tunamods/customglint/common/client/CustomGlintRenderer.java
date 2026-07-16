@@ -99,6 +99,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // Drop tagged-RT references too, else each reload orphans the previous generation of compat
         // (EK decoration) RenderTypes here even after their own caches are evicted - they'd never GC.
         SHADER_TT_TAGGED.clear();
+        for (Tinted t : TINTED.values()) releaseTinted(t);
+        TINTED.clear();
+        grayPixels.clear(); // re-stashed by generateTexture when a design is next asked for
         ChromaticTextureBaker.release(); // baked slicks are re-created on demand at the next draw
         if (whiteTex != null) { mc.getTextureManager().release(whiteTex); whiteTex = null; }
     }
@@ -117,10 +120,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return null;
         }
 
-        NativeImage gray = new NativeImage(source.getWidth(), source.getHeight(), false);
+        int w = source.getWidth(), h = source.getHeight();
+        NativeImage gray = new NativeImage(w, h, false);
+        // The texels are kept as well as uploaded: the pre-tinted shader-pack path (see TINTED) rebuilds its
+        // coloured copies from these, and re-reading the PNG per colour per frame would be IO per draw.
+        int[] texels = new int[w * h];
+        long lumSum = 0; // Σ lum×alpha, 0..255*255 per texel; feeds the design's mean energy (see envelopeDim)
         try {
-            for (int y = 0; y < source.getHeight(); y++) {
-                for (int x = 0; x < source.getWidth(); x++) {
+            for (int y = 0, i = 0; y < h; y++) {
+                for (int x = 0; x < w; x++, i++) {
                     // NativeImage pixel format is ABGR stored as int: (A<<24)|(B<<16)|(G<<8)|R
                     int pixel = source.getPixelRGBA(x, y);
                     int r =  pixel        & 0xFF;
@@ -128,23 +136,196 @@ public final class CustomGlintRenderer extends RenderStateShard {
                     int b = (pixel >> 16) & 0xFF;
                     int a = (pixel >> 24) & 0xFF;
                     int lum = (r + g + b) / 3;
-                    gray.setPixelRGBA(x, y, (a << 24) | (lum << 16) | (lum << 8) | lum);
+                    texels[i] = (a << 24) | (lum << 16) | (lum << 8) | lum;
+                    gray.setPixelRGBA(x, y, texels[i]);
+                    lumSum += (long) lum * a;
                 }
             }
         } finally {
             source.close();
         }
+        // long divisor: a 256x256 data-pack design overflows this product in int arithmetic.
+        float mean = lumSum / (float) ((long) w * h * 255 * 255);
+        grayPixels.put(design, new Gray(texels, w, h, envelopeDim(mean)));
 
         String safePath = design.getNamespace() + "/" + design.getPath().replace('/', '_').replace('.', '_');
         ResourceLocation loc = CustomGlint.res("glint/" + safePath);
         DynamicTexture dt = new DynamicTexture(gray);
         mc.getTextureManager().register(loc, dt);
-        dt.bind();
+        configureGlintSampler(dt);
+        return loc;
+    }
+
+    /** Sampler state every glint design is drawn with: REPEAT so {@code patternScale > 1} tiles, NEAREST
+     *  because that is what the designs' look is calibrated against. The tinted copies
+     *  ({@link #getTintedTexture}) have to match the greyscale originals here or they'd filter differently
+     *  under a shader pack only. */
+    private static void configureGlintSampler(DynamicTexture tex) {
+        tex.bind();
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        return loc;
+    }
+
+    // ── Pre-tinted design textures (shader-pack only) ─────────────────────────
+    //
+    // A texture glint is the greyscale design in Sampler0 times the layer's animated colour in ColorModulator,
+    // and off-pack our own copy of vanilla's program multiplies the two (glint.fsh). Under a pack it doesn't:
+    // Iris hands the draw to the pack's own gbuffers_armor_glint, and whether the colour survives is that
+    // pack's business. Complementary and BSL multiply by gl_Color, which Iris feeds from ColorModulator, so
+    // the split works. Photon's armor_glint samples gtexture and nothing else. gl_Color appears in neither of
+    // its stages, so the colour is dropped and every glint renders greyscale. Nothing we can put in
+    // ColorModulator fixes that; it is never read. Vanilla's glint carries no colour, so a pack leaving
+    // gl_Color out of this program is a reasonable thing to write. Expect the next one to do it too.
+    //
+    // The one input every pack agrees on is the texture. So under a pack, bind a design that is ALREADY tinted
+    // and leave ColorModulator white: same product the fragment computed before (tinted × white == greyscale ×
+    // colour), so the packs that read gl_Color are unaffected and Photon gets the colour it was dropping.
+    //
+    // Gated on irisShouldOverrideShaders(), the same question resolveGlintShader() asks. Off-pack, and in the
+    // GUI/HUD phase where our own program runs and reads ColorModulator correctly, none of this runs and the
+    // draw is what it always was. That gate also keeps the cache down to what is on screen in the world rather
+    // than every stack in an open chest.
+    //
+    // Baking the tint also gives the brightness calibration somewhere to live. See envelopeDim.
+
+    /** One design's greyscale texels (ABGR, as {@link #generateTexture} packed them), its dimensions, and the
+     *  under-pack brightness scalar {@link #envelopeDim} derived from its own coverage. */
+    private record Gray(int[] px, int w, int h, float dim) {}
+
+    // ── Vanilla's glint envelope ─────────────────────────────────────────────
+    //
+    // Mean luminance of vanilla's enchanted_glint_item.png, measured off the 1.20.1 asset. Its peak is 0.66,
+    // so it never goes near white. Packs that treat glint as emissive and amplify it are calibrated against
+    // this texture, which makes it the only contract they all share.
+    //
+    // Our designs don't respect it: solid.png is mean 1.00, grid 0.63, crosshatch 0.54, and a dozen more sit
+    // above vanilla with peaks pinned at 1.0. A pack tuned for vanilla is then handed up to 3x the energy it
+    // expects, amplifies it as designed, and the item blows out to a solid slab with the texture lost
+    // underneath. The pack is not wrong. So scale each design under a pack until its mean energy lands inside
+    // vanilla's envelope, and a pack nobody here has tested is handled too, because our glint now looks like
+    // the one it was tuned against.
+    //
+    // Deliberately measured against a vanilla asset rather than keyed on Iris.getCurrentPackName(): a table of
+    // per-pack scalars was tried first and is not maintainable. Every new pack is a new entry, and the two
+    // eyeballed numbers it held (0.6) turned out to be this envelope anyway. Don't reintroduce one.
+    private static final float VANILLA_GLINT_MEAN = 0.36f;
+
+    /** Under-pack brightness for a design of this mean energy: enough to bring it into vanilla's envelope,
+     *  never more than 1.0. The clamp matters as much as the scale: sparse designs (sparkle at 0.05, ember at
+     *  0.01) already sit far below vanilla, and scaling those up would blow a few scattered specks into
+     *  something the design never meant to be. */
+    private static float envelopeDim(float mean) {
+        if (mean <= 0.0f) return 1.0f; // fully transparent or fully black design; nothing to scale
+        return Math.min(1.0f, VANILLA_GLINT_MEAN / mean);
+    }
+
+    /** Tint source per design. Populated by {@link #generateTexture}, dropped on resource reload. */
+    private static final Map<ResourceLocation, Gray> grayPixels = new HashMap<>();
+
+    private static final class Tinted {
+        final ResourceLocation loc;
+        final DynamicTexture tex;
+        int lastColor = -1; // packed premultiplied colour last uploaded; -1 = nothing uploaded yet
+        Tinted(ResourceLocation loc, DynamicTexture tex) { this.loc = loc; this.tex = tex; }
+    }
+
+    /** One tinted design per glint RenderType key. Bounded for the same reason the model-path RT caches are:
+     *  a scene of many differently-coloured glints would otherwise grow one texture per config for the whole
+     *  session. Access-ordered LRU; eviction frees the texture rather than orphaning it. */
+    private static final int TINT_CACHE_CAP = 256;
+    private static int tintSerial;
+    private static final Map<String, Tinted> TINTED = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Tinted> eldest) {
+            if (size() <= TINT_CACHE_CAP) return false;
+            releaseTinted(eldest.getValue());
+            return true;
+        }
+    };
+
+    private static void releaseTinted(Tinted t) {
+        Minecraft.getInstance().getTextureManager().release(t.loc); // unregister; frees the GL id
+        t.tex.close();                                              // and the NativeImage behind it
+    }
+
+    private static int to255(float v) {
+        int i = (int) (v * 255.0f + 0.5f);
+        return i < 0 ? 0 : Math.min(i, 255);
+    }
+
+    /**
+     * Bind Sampler0 and ColorModulator for one texture-glint draw: a pre-tinted design and a white modulator
+     * under a shader pack, the greyscale design and the colour itself everywhere else. {@code boost} scales the
+     * colour first, for the translucent-shell path that pre-brightens its glint.
+     */
+    public static void bindGlintTexture(String key, ResourceLocation design, float[] holder, float boost) {
+        float r = Math.min(1.0f, holder[0] * boost);
+        float g = Math.min(1.0f, holder[1] * boost);
+        float b = Math.min(1.0f, holder[2] * boost);
+        ResourceLocation tinted = irisShouldOverrideShaders()
+                ? getTintedTexture(key, design, r, g, b, holder[3]) : null;
+        if (tinted != null) {
+            RenderSystem.setShaderTexture(0, tinted);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        } else {
+            RenderSystem.setShaderTexture(0, getTexture(design));
+            RenderSystem.setShaderColor(r, g, b, holder[3]);
+        }
+    }
+
+    public static void bindGlintTexture(String key, ResourceLocation design, float[] holder) {
+        bindGlintTexture(key, design, holder, 1.0f);
+    }
+
+    /**
+     * The design tinted by this colour, re-uploading only when the colour actually moves: a static or
+     * simultaneous layer pays one upload and then nothing, a sequential one pays a 64×64 multiply per frame.
+     * Null if the design never generated, which sends the caller back to the greyscale path.
+     *
+     * <p>The colour is scaled by the design's {@link #envelopeDim} on the way in, so a full-coverage design
+     * reaches the pack's glint program carrying no more energy than vanilla's would. It rides the multiply the
+     * tint already does, and scaling here rather than at the call site keeps it off the off-pack path.
+     *
+     * <p>Unlike the chromatic bake this is safe to call mid-pass, which is where every {@code setupRenderState}
+     * runs: it uploads to a texture and never touches an FBO, so there is no framebuffer binding to lose (see
+     * the LOAD-BEARING note on {@link ChromaticTextureBaker#textureId}).
+     */
+    private static ResourceLocation getTintedTexture(String key, ResourceLocation design,
+                                                     float r, float g, float b, float a) {
+        Gray src = grayPixels.get(design);
+        if (src == null) return null;
+        float dim = src.dim();
+        int packed = (to255(a) << 24) | (to255(r * dim) << 16) | (to255(g * dim) << 8) | to255(b * dim);
+        Tinted t = TINTED.get(key);
+        if (t != null && t.lastColor == packed) return t.loc;
+        if (t == null) {
+            DynamicTexture dt = new DynamicTexture(new NativeImage(src.w(), src.h(), false));
+            ResourceLocation loc = CustomGlint.res("glint_tinted/" + Integer.toHexString(tintSerial++));
+            Minecraft.getInstance().getTextureManager().register(loc, dt);
+            configureGlintSampler(dt);
+            t = new Tinted(loc, dt);
+            TINTED.put(key, t); // access-ordered: the new entry is newest, so an eviction here never hits it
+        }
+        NativeImage img = t.tex.getPixels();
+        if (img == null) return null;
+        int tr = (packed >> 16) & 0xFF, tg = (packed >> 8) & 0xFF, tb = packed & 0xFF, ta = (packed >>> 24) & 0xFF;
+        int[] px = src.px();
+        for (int y = 0, i = 0; y < src.h(); y++) {
+            for (int x = 0; x < src.w(); x++, i++) {
+                int p = px[i];
+                int lum = p & 0xFF;         // greyscale, so R == G == B here; read whichever
+                int pa = (p >>> 24) & 0xFF;
+                // ABGR, matching generateTexture's packing. (v*c + 127)/255 is the rounded 8-bit product.
+                img.setPixelRGBA(x, y, (((pa  * ta + 127) / 255) << 24)
+                                     | (((lum * tb + 127) / 255) << 16)
+                                     | (((lum * tg + 127) / 255) <<  8)
+                                     |  ((lum * tr + 127) / 255));
+            }
+        }
+        t.tex.upload();
+        t.lastColor = packed;
+        return t.loc;
     }
 
     // ── Render types ──────────────────────────────────────────────────────────
@@ -772,8 +953,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    bindGlintTexture(k, tex, holder);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -857,18 +1037,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, getTexture(tex));
-                                    if (lateForShaders) {
-                                        // Translucent shell path: the shell overpaints and dims this additive glint
-                                        // under shaders, so pre-boost the colour (see SHELL_GLINT_SHADER_BOOST).
-                                        RenderSystem.setShaderColor(
-                                                Math.min(1.0f, holder[0] * SHELL_GLINT_SHADER_BOOST),
-                                                Math.min(1.0f, holder[1] * SHELL_GLINT_SHADER_BOOST),
-                                                Math.min(1.0f, holder[2] * SHELL_GLINT_SHADER_BOOST),
-                                                holder[3]);
-                                    } else {
-                                        RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
-                                    }
+                                    // Translucent shell path: the shell overpaints and dims this additive glint
+                                    // under shaders, so pre-boost the colour (see SHELL_GLINT_SHADER_BOOST).
+                                    bindGlintTexture(k, tex, holder,
+                                            lateForShaders ? SHELL_GLINT_SHADER_BOOST : 1.0f);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -1002,8 +1174,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    bindGlintTexture(k, tex, holder);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -1087,8 +1258,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setShaderState(GLINT_SHADER_SHARD)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    bindGlintTexture(k, tex, holder);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
@@ -1547,4 +1717,5 @@ public final class CustomGlintRenderer extends RenderStateShard {
             return false;
         }
     }
+
 }
