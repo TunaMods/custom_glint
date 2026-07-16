@@ -56,6 +56,7 @@ Altered:
 - Immersive Armors: the mod's layered armor now takes custom glints and glow outlines while worn
 - Mekanism: the MekaSuit, Jetpacks, Free Runners and their armored variants, and the Scuba tank and mask now take custom glints and glow outlines while worn
 - Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
+- Shader packs: glints and glow outlines are tested and working on Bliss, BSL, Complementary and Photon
 
 [Compat fixes]
 - Improved JEI compatibility
@@ -64,6 +65,11 @@ Altered:
 - Elytra Slot: an elytra worn in the mod's elytra slot now shows the Chromatic design instead of no glint at all
 - Sophisticated Backpacks: backpacks now show the Chromatic design instead of no glint at all
 - Epic Knights: plumes, surcoats, crowns and the other armor decorations now show the Chromatic design instead of no glint at all
+- Shader packs: a slime's glint is no longer dim or washed out with shaders on, and no longer erases the slime's own shell
+- Photon: designs are no longer split between the dense ones rendering too dark to see and the sparse ones rendering vivid; they all land at the brightness every other pack gives them
+- Photon: a chat note now explains that the pack draws glints with blending off, so only the last layer of a multi-layer glint shows, and which of its shader options to turn on to get them all back
+- Shader packs: a held item's glint now renders in first person
+- Ice and Fire: mount armor now shows the Chromatic design under shaders
 
 [1.6.0]
 
