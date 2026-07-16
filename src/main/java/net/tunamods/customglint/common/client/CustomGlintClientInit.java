@@ -45,6 +45,10 @@ public final class CustomGlintClientInit {
                 CustomGlintRenderer.setRenderingWorld(false);
                 GlowOutlineRenderer.beginFrame();
                 ChromaticShaderReplay.beginFrame();
+                // Re-bake each chromatic slick drawn last frame at the current time. HAS to be here rather than
+                // lazily at first use: the bake binds our own chromatic program, and Iris colour-masks a
+                // non-ExtendedShader to nothing once the level pass owns the phase. This runs before that.
+                ChromaticTextureBaker.bakeFrame();
             }
         });
 

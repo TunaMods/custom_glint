@@ -213,7 +213,12 @@ public class ItemRendererMixin {
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, true);
-                if (crt != null) cg_emitGlint(crt, quads, tp.last(), light, buffer, defer);
+                // Never defers, unlike the texture layers below. Chromatic's slick is a baked texture now, so this
+                // RT binds the pack's own GLINT program and draws in-gbuffer, where the pack TAA-resolves it. The
+                // post-composite replay would land it after that resolve - the one thing in the frame TAA never
+                // filters, which is exactly what made chromatic flicker under BSL/Bliss. The immediate draw is a
+                // lone buffer (see cg_emitGlint), so it keeps the Embeddium property the deferral was built for.
+                if (crt != null) cg_emitGlint(crt, quads, tp.last(), light, buffer, false);
                 continue;
             }
             int[] colors = layers[layerIdx].colors();
