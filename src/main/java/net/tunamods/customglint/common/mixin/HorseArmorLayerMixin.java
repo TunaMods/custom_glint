@@ -87,10 +87,8 @@ public class HorseArmorLayerMixin {
             List<RenderType> glintTypes = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    // tex gates the replay's draw the way the stencil mask above gates the in-pass one.
-                    // chromaticWorldBuffer, not buffer.getBuffer: under a pack this hands the layer to
-                    // ChromaticShaderReplay for redraw after the pack composites, since an in-phase draw is
-                    // discarded. Off-pack it is a straight getBuffer and the in-pass RT draws as before.
+                    // chromaticWorldBuffer is a straight getBuffer; kept as the seam every chromatic fan-out
+                    // routes through (see CustomGlintRenderer.chromaticWorldBuffer).
                     RenderType crt = CustomGlintRenderer.forChromaticMountArmorGlint(glint, layerIdx, tex);
                     if (crt != null) { list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt)); glintTypes.add(crt); }
                     continue;

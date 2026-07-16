@@ -92,7 +92,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
         BY_MOUNT_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_MASK.clear();
         BY_CHROMATIC.clear();
-        GLINT_POST.clear();
         GLINT_COLORS.clear();
         for (ResourceLocation loc : paletteCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
@@ -342,15 +341,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * </ul>
      *
      * <p>So the two are exactly complementary. While it is TRUE, our own program would be colour-masked to
-     * nothing (this is the same mechanism that makes chromatic invisible in-world and forced
-     * {@link ChromaticShaderReplay} to exist), and vanilla's accessor is the only way to get a program Iris will
-     * actually draw - so use that. While it is FALSE (GUI/HUD, off-pack, and the post-composite drain, which
-     * runs after {@code finalizeLevelRendering}) nothing is overridden or masked, so use ours and its declared
+     * nothing, and vanilla's accessor is the only way to get a program Iris will actually draw - so use that.
+     * While it is FALSE (GUI/HUD and off-pack) nothing is overridden or masked, so use ours, and its declared
      * blend is what keeps the glint from filling the item.
      *
-     * <p>Do NOT swap the gate for our own {@link #isRenderingWorld()} flag: that one is still true during the
-     * post-composite drain, where Iris's is already false, so the drain would silently bind vanilla's
-     * mismatched-blend program. Ask Iris the same question it asks itself.
+     * <p>Ask Iris the same question it asks itself rather than substituting our own {@link #isRenderingWorld()}
+     * flag: the two do not agree at every phase, and a mismatch silently binds the wrong program's blend.
      */
     private static ShaderInstance resolveGlintShader() {
         if (glintShader == null || irisShouldOverrideShaders()) return GameRenderer.getRendertypeGlintShader();
@@ -614,29 +610,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // shell now: both draw in-pass, in the OPAQUE_DECAL bucket, and both are overdrawn by the shell.
     private static final float SHELL_GLINT_SHADER_BOOST = 2.6f;
 
-    // Post-composite sibling of each deferrable TEXTURE-glint RT (the normal, non-chromatic layers built by
-    // {@link #forGlint}): the layer's geometry is captured and re-drawn AFTER Iris's finalize through this sibling
-    // (same glint shader, design texture, scroll matrix and additive blend, but flushed by the replay's own
-    // immediate source). The sibling reads the SAME per-RT colour holder as the in-pass RT (the animated colour is
-    // frame-stable per RT), so the replay lands the frame's colour. Keyed by identity on the in-pass RT; cleared on
-    // resource reload.
-    //
-    // Texture glints do not need this for brightness: Iris swaps GameRenderer.getRendertypeGlintShader() for the
-    // pack's own GLINT program, so they stay bright drawing in-phase (see resolveGlintShader). This map backs the
-    // item-path deferral only, which is pending a revert - the fill it was built to chase turned out to be
-    // BlendMode.lastApplied and is fixed by the matching blend declarations instead.
-    //
-    // Chromatic no longer has a sibling here at all. It draws in-pass like every other design now that the slick is
-    // a baked texture (see ChromaticTextureBaker), which is the entire point: a post-composite draw lands AFTER the
-    // pack's TAA resolve and is the one thing in the frame TAA never filters, which is what made it flicker.
-    private static final Map<RenderType, RenderType> GLINT_POST = new IdentityHashMap<>();
-
-    /** The post-composite sibling registered for {@code inPass}, or null if that RT is not deferrable. The replay
-     *  drain resolves through here. */
-    public static RenderType postCompositeVariant(RenderType inPass) {
-        return GLINT_POST.get(inPass);
-    }
-
     /** Returns the buffer a chromatic layer's geometry should be fed into: a straight {@code src.getBuffer(crt)}
      *  on every path.
      *
@@ -651,43 +624,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  special handling if a chromatic surface ever needs it again. */
     public static VertexConsumer chromaticWorldBuffer(MultiBufferSource src, RenderType crt) {
         return src.getBuffer(crt);
-    }
-
-    /** Builds the post-composite sibling of a texture-glint RT (see {@link #GLINT_POST}). Mirrors the in-pass
-     *  {@link #forGlint} RT exactly - same glint shader, design texture, EQUAL depth test, additive GLINT blend and
-     *  scroll matrix - so the replay masks to the same item silhouette and animates identically. It shares the
-     *  in-pass RT's {@code holder} colour array (the animated colour is frame-stable per RT, so at drain time the
-     *  holder still carries this frame's colour) and is NOT registered as a fixed buffer (the replay flushes it
-     *  through its own immediate source). {@code tex}, {@code scaleU/scaleV}, {@code colorIdx} and {@code key} are
-     *  the same values {@link #forGlint} used to build the in-pass RT. */
-    private static RenderType buildGlintPostComposite(Layer layer, ResourceLocation tex, float[] holder,
-                                                      float scaleU, float scaleV, int colorIdx, String key) {
-        return RenderType.create(
-                MOD_ID + ":custom_glint_pc|" + key.hashCode(),
-                DefaultVertexFormat.POSITION_TEX,
-                VertexFormat.Mode.QUADS,
-                256,
-                false,
-                false,
-                RenderType.CompositeState.builder()
-                        .setShaderState(GLINT_SHADER_SHARD)
-                        .setTextureState(new TextureStateShard(tex, false, false) {
-                            @Override public void setupRenderState() {
-                                RenderSystem.setShaderTexture(0, getTexture(tex));
-                                RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
-                            }
-                            @Override public void clearRenderState() {
-                                super.clearRenderState();
-                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-                            }
-                        })
-                        .setWriteMaskState(COLOR_WRITE)
-                        .setCullState(NO_CULL)
-                        .setDepthTestState(EQUAL_DEPTH_TEST)
-                        .setTransparencyState(GLINT_TRANSPARENCY)
-                        .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_pc_texturing|" + key.hashCode(),
-                                () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV), RenderSystem::resetTextureMatrix))
-                        .createCompositeState(false));
     }
 
     /** Flat item / 3D held-item chromatic glint (EQUAL depth, no polygon offset). isItem mirrors
@@ -1167,11 +1103,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     () -> setItemScrollMatrix(layer, colorIdx, scaleU, scaleV),
                                     RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
-            // Register the post-composite sibling once, on RT creation (tex / scaleU / scaleV are in scope here).
-            // Shares this RT's colour holder; only the item path under a shaderpack flushes it - the glint is
-            // captured from baked quads (ItemRendererMixin.cg_captureGlintForShaderReplay) and replayed through
-            // this sibling by ChromaticShaderReplay. In-phase callers (off-pack, GUI, compat) never touch it.
-            GLINT_POST.put(rt, buildGlintPostComposite(layer, tex, holder, scaleU, scaleV, colorIdx, k));
             return rt;
         });
         registerFixedBuffer(cached);
