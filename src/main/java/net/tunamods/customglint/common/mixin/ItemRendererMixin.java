@@ -34,6 +34,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ItemRenderer.class)
 public class ItemRendererMixin {
 
+    /** True while render() is drawing a flat baked-quad item, false for a special / 3D BEWLR one. Set at
+     *  render() HEAD beside CURRENT_ITEM_STACK, because applyGlint needs it and is handed no model. Only the
+     *  flat items go through Embeddium's bulk quad encoder, which is what decides their glint path under a
+     *  pack (see applyGlint). */
+    private static final ThreadLocal<Boolean> CG_FLAT_ITEM = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     // ── Stack capture (HEAD) ──────────────────────────────────────────────────
 
@@ -61,6 +66,7 @@ public class ItemRendererMixin {
     private static void cg_onRenderHead(ItemStack stack, ItemDisplayContext ctx, boolean lh,
             PoseStack pose, MultiBufferSource buffer, int light, int overlay, BakedModel model) {
         CustomGlintRenderer.CURRENT_ITEM_STACK.set(stack);
+        CG_FLAT_ITEM.set(model != null && !model.isCustomRenderer());
         // Gnetum caches the in-game HUD per element and re-renders each only every few frames; a glinted /
         // glowing item in a HUD slot needs its element live every frame or the glint freezes and the glow
         // ring flickers. Tell gnetum to stop caching whatever HUD element it is mid-render of (the hotbar).
@@ -80,6 +86,7 @@ public class ItemRendererMixin {
         cg_captureGlowOutline(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pCombinedLight, pModel);
         cg_drawGlintUnderPack(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pModel);
         CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
+        CG_FLAT_ITEM.remove();
     }
 
     /** Named target: captures the glow-outline silhouette, then clears the captured stack. */
@@ -93,6 +100,7 @@ public class ItemRendererMixin {
         cg_captureGlowOutline(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pCombinedLight, pModel);
         cg_drawGlintUnderPack(pItemStack, pDisplayContext, pLeftHand, pPoseStack, pBuffer, pCombinedLight, pModel);
         CustomGlintRenderer.CURRENT_ITEM_STACK.remove();
+        CG_FLAT_ITEM.remove();
     }
 
     // ── Glow-outline capture ─────────────────────────────────────────────────
@@ -160,11 +168,11 @@ public class ItemRendererMixin {
     }
 
     // ── Shader-pack glint draw (item path) ───────────────────────────────────
-    // Under an active shaderpack the glint is NEVER combined with the base in-phase (see applyGlint: the base
-    // draws alone so Embeddium's bulk encoder can't drop it when a chromatic draw flips it on for the frame -
-    // the "everything glinted fills solid" bug, hotbar included). The glint is drawn HERE instead, into its own
-    // buffer on the same MultiBufferSource the base used. Being a LONE buffer rather than a multi with the base
-    // is what keeps the base's writes safe.
+    // Under an active shaderpack a flat item's glint is NEVER combined with the base in-phase (see applyGlint:
+    // the base draws alone so Embeddium's bulk encoder can't drop it when a chromatic draw flips it on for the
+    // frame; the "everything glinted fills solid" bug, hotbar included). The glint is drawn HERE instead, into
+    // its own buffer on the same MultiBufferSource the base used. Being a LONE buffer rather than a multi with
+    // the base is what keeps the base's writes safe.
     //
     // LOAD-BEARING: draw in-phase, do NOT defer to a post-composite replay. A replay runs after Iris finalizes,
     // where Iris's override gate is false, so it binds OUR program, which applies no TAA jitter. Packs that
@@ -174,7 +182,10 @@ public class ItemRendererMixin {
     // the item. Complementary's gbuffers_* are plain ftransform() (its TAA is reprojection-only, in composite),
     // so the replay only ever looked right there. In-phase the draw takes the pack's own GLINT program and the
     // same jitter as the base, so EQUAL matches. That is why chromatic was never affected.
-    // Flat items only - the first-person hand (own projection) and special / 3D BEWLR items are follow-ups.
+    //
+    // Covers the first-person hand: drawing in-phase into the live buffer means the hand pass's own projection
+    // is already current, which is the whole reason the hand needed exempting while this was a replay.
+    // Flat items only. Special / 3D BEWLR items are a follow-up (they keep the multi path in applyGlint).
     private static void cg_drawGlintUnderPack(ItemStack stack, ItemDisplayContext ctx, boolean leftHand,
             PoseStack pose, MultiBufferSource buffer, int light, BakedModel model) {
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
@@ -183,10 +194,6 @@ public class ItemRendererMixin {
         // The Iris shadow pass re-renders the world into the shadow map; a glint there is meaningless and the
         // base already drew alone, so just skip it.
         if (CustomGlintRenderer.isInShadowPass()) return;
-        // First-person hand is drawn under its own projection (a follow-up); applyGlint keeps it on the in-phase
-        // multi path, so drawing it here too would double it. Skip.
-        if (ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
-                || GlowOutlineRenderer.isFpHand()) return;
         CustomGlint.Data glint = CustomGlint.readCached(stack);
         if (glint == null) return;
 
@@ -371,12 +378,22 @@ public class ItemRendererMixin {
 
         // Under an active shaderpack, NEVER combine the base with our glint in a VertexMultiConsumer here:
         // Embeddium's bulk vertex encoder (which a chromatic entity/item draw flips on for the whole frame,
-        // world AND the GUI that renders after it) DROPS the base's writes when it shares a multi with our
-        // foreign glint delegate, so the item loses its texture and fills with solid glint colour. Return the
-        // base ALONE so it always renders clean; the glint is drawn separately in cg_drawGlintUnderPack at
-        // render() RETURN (deferred post-Iris replay for world items, an immediate separate pass for the GUI).
-        // The first-person hand keeps the in-phase path below (its own projection; a follow-up).
-        if (CustomGlintRenderer.isShaderPackActive() && !GlowOutlineRenderer.isFpHand()) {
+        // world AND the GUI that renders after it) mangles the stream when our foreign glint delegate shares a
+        // multi with the base. The base can lose its texture, and the glint samples one texel and fills with a
+        // solid colour. Return the base ALONE so it always renders clean; the glint is drawn separately in
+        // cg_drawGlintUnderPack at render() RETURN.
+        //
+        // This covers the first-person hand too. It used to be exempted here, back when the separate draw was a
+        // post-composite replay that had to snapshot the hand's own projection to reproduce it. That replay is
+        // gone. cg_drawGlintUnderPack draws in-phase into this same buffer, so the hand pass's projection is
+        // already the live one and there is nothing to reproduce. Left on the multi path, the hand was the one
+        // surface still hitting the encoder bug: the design sampled flat and read as a solid tint over the item.
+        //
+        // Special / 3D BEWLR items are the exception, and only in the hand: they draw through renderToBuffer,
+        // never the bulk quad encoder, so the multi is safe for them. And cg_drawGlintUnderPack skips custom
+        // renderers, so routing them there would drop their glint entirely rather than fix it.
+        if (CustomGlintRenderer.isShaderPackActive()
+                && (!GlowOutlineRenderer.isFpHand() || CG_FLAT_ITEM.get())) {
             return buffer.getBuffer(renderType);
         }
 
@@ -388,17 +405,9 @@ public class ItemRendererMixin {
             // Procedural chromatic: one shader-driven draw (the palette + seed ride the RenderType), no
             // per-colour fan-out and no texture sampling.
             //
-            // Under a pack this line is only reached for the FIRST-PERSON HAND (everything else took the
-            // base-alone return above), and it must go through chromaticWorldBuffer, NOT buffer.getBuffer:
-            // Iris draws the hand into its gbuffer BEFORE finalizeLevelRendering, so an in-phase chromatic
-            // there gets multiplied down by the pack's lighting and reads very dim, while every deferred
-            // chromatic surface (dropped / hotbar / entities) draws post-composite at full strength. Routing
-            // it here hands the layer to the replay instead: the multi holds a non-drawing Recorder (the same
-            // Recorder-in-multi the chromatic world MODELS already use), the base still draws in-phase, and the
-            // drain re-draws the slick over the composited frame under the hand's own captured projection.
-            // Texture glints on the hand deliberately stay in-phase - Iris swaps THEM for the pack's GLINT
-            // program, so they are already bright (see CustomGlintRenderer.resolveGlintShader).
-            // Off-pack chromaticWorldBuffer is a straight getBuffer, so nothing here changes.
+            // Under a pack this line is now reached only for a first-person BEWLR item; every flat item took
+            // the base-alone return above. chromaticWorldBuffer is a straight getBuffer either way. It stays
+            // as the single seam every chromatic fan-out routes through.
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
                 if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
