@@ -28,6 +28,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -36,6 +37,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
@@ -221,6 +223,78 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return Math.min(1.0f, VANILLA_GLINT_MEAN / mean);
     }
 
+    // ── Photon compat ────────────────────────────────────────────────────────
+    //
+    // Photon is the one pack that consumes the glint texture through a raw power law, in
+    // program/gbuffers_armor_glint.fsh:
+    //     frag_color.rgb = (srgb_eotf_inv(armor_glint) * rec709_to_working_color) * ENCHANTMENT_GLINT_BRIGHTNESS;
+    // srgb_eotf_inv is sRGB to linear, near enough pow(x, 2.2), and nothing walks it back. envelopeDim's scale is
+    // linear, so the two compound instead of composing: a design dimmed to D reaches the screen at D^2.2, not D.
+    // solid (D = 0.36) lands at 0.099 against vanilla's brightest texel at 0.66^2.2 = 0.40, i.e. 4x too dark, and
+    // reads as no glint at all. Sparse designs clamp to D = 1.0, are untouched by the power law, and come out
+    // vivid. That is the whole "some designs are dead, some are vivid" split, ordered by design density, and it
+    // hits every glinted surface (items and armor as much as the slime shell).
+    //
+    // Pre-compensating with pow(D, 1/2.2) makes Photon's own pow(2.2) land the design at exactly D, which is the
+    // scale every other pack already applies. This does not tune Photon to taste; it restores the intent.
+    //
+    // VANILLA_GLINT_MEAN's note bans keying on the pack name. What it bans is a table of EYEBALLED per-pack
+    // scalars, which decays the moment a new pack ships. This is a different thing: one gate, an exponent read
+    // out of that pack's own source, and derived arithmetic. Do not grow it into a table. If another pack looks
+    // like it needs an entry, first check that it really does linearise without undoing it. BSL looks like it
+    // qualifies and does not, because ALPHA_BLEND == 0 follows its pow(2.2) with a sqrt for a net pow(1.1).
+    private static final double PHOTON_GLINT_GAMMA = 2.2;
+
+    /** {@link #envelopeDim}'s scale, corrected for how the active pack consumes it. */
+    private static float packCorrectedDim(float dim) {
+        if (dim >= 1.0f) return dim; // an unscaled design survives any transfer function unchanged
+        if (!packAppliesGlintGamma()) return dim;
+        return (float) Math.pow(dim, 1.0 / PHOTON_GLINT_GAMMA);
+    }
+
+    private static volatile String PACK_GAMMA_LAST_NAME = null;
+    private static volatile boolean PACK_GAMMA_LAST_RESULT = false;
+
+    /** True while the active pack raises the glint texture to a power and leaves it there. Photon only. */
+    private static boolean packAppliesGlintGamma() {
+        String name = currentPackName();
+        if (name == null) return false;
+        if (!name.equals(PACK_GAMMA_LAST_NAME)) { // recomputed only when the pack actually changes
+            PACK_GAMMA_LAST_NAME = name;
+            PACK_GAMMA_LAST_RESULT = name.toLowerCase(Locale.ROOT).contains("photon");
+        }
+        return PACK_GAMMA_LAST_RESULT;
+    }
+
+    private static volatile boolean PACK_NAME_LOOKUP_DONE = false;
+    private static volatile Field IRIS_PACK_NAME = null;
+
+    /** The active shaderpack's name, or null with no shader mod / no pack. Reads Iris's private
+     *  {@code currentPackName}: neither IrisApi nor Iris exposes a public accessor in 1.8.0, and an access
+     *  transformer only reaches Minecraft classes, so there is no cleaner route to it. */
+    public static String currentPackName() {
+        if (!PACK_NAME_LOOKUP_DONE) {
+            synchronized (CustomGlintRenderer.class) {
+                if (!PACK_NAME_LOOKUP_DONE) {
+                    try {
+                        Field f = Class.forName("net.irisshaders.iris.Iris").getDeclaredField("currentPackName");
+                        f.setAccessible(true);
+                        IRIS_PACK_NAME = f;
+                    } catch (Throwable ignored) {
+                        IRIS_PACK_NAME = null;
+                    }
+                    PACK_NAME_LOOKUP_DONE = true;
+                }
+            }
+        }
+        if (IRIS_PACK_NAME == null) return null;
+        try {
+            return (String) IRIS_PACK_NAME.get(null);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** Tint source per design. Populated by {@link #generateTexture}, dropped on resource reload. */
     private static final Map<ResourceLocation, Gray> grayPixels = new HashMap<>();
 
@@ -295,7 +369,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                                      float r, float g, float b, float a) {
         Gray src = grayPixels.get(design);
         if (src == null) return null;
-        float dim = src.dim();
+        float dim = packCorrectedDim(src.dim());
         int packed = (to255(a) << 24) | (to255(r * dim) << 16) | (to255(g * dim) << 8) | to255(b * dim);
         Tinted t = TINTED.get(key);
         if (t != null && t.lastColor == packed) return t.loc;
