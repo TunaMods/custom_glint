@@ -139,10 +139,17 @@ void main() {
                 if (d2 > r * r) continue;             // world: round ring bounded by THAT source's width
             }
             float srcDist = cg_eyeDist(texture(Sampler1, srcUV).r);
-            // Ring occlusion: skip this ring where the ring pixel's own silhouette is NEARER than the
-            // source's by more than the bias — a different object is in front here, so the source's ring
-            // would wrongly paint around/over it (the armor ring behind an elytra).
-            if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;
+            // Ring occlusion: skip this ring where the ring pixel's own silhouette is NEARER than the source's
+            // by more than the bias. A different object is in front here, so the source's ring would wrongly
+            // paint around/over it (the armor ring behind an elytra).
+            //
+            // Gated on keyP != 0: an EMPTY pixel has no silhouette, so it has no depth to compare and must
+            // never occlude. It reads the mask's CLEAR value, which only linearises to "far" because 1 + ProjA
+            // lands near zero for an ordinary projection. Under a shader pack the hand draws through a
+            // z-squashed projection (z scaled by 0.125); that divisor stops being near zero, cg_eyeDist(1.0)
+            // comes back a small NEGATIVE distance, and every empty pixel claims to sit in front of the item.
+            // A ring is drawn on exactly those pixels, so the whole first-person ring vanished.
+            if (keyP != 0 && ringDist < srcDist - RING_OCCLUSION_BIAS) continue;
             if (!gui) {
                 // Reject isolated specks (morphological opening) — a lone stray "visible" texel (sub-pixel
                 // coverage flicker at a convex corner under Sodium's reduced immediate-mode vertex
