@@ -881,6 +881,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float dt) {
+        // AbstractContainerScreen.render does not dim. Every vanilla container screen calls this itself first,
+        // and JEI listens for the background event it fires to place its ingredient list behind the window.
+        renderBackground(g);
         prologue();
 
         // Arm the per-frame memo BEFORE super.render: the widget face/label suppliers (printBtn, glowModeBtn)
@@ -891,7 +894,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         frameCaptureDone = false; frameTotalLayers = null; frameMemo = true;
         try {
             syncButtons();
-            super.render(g, mx, my, dt); // dim + renderBg + slots + renderLabels + widgets + cursor + slot tooltips
+            super.render(g, mx, my, dt); // renderBg + slots + renderLabels + widgets + cursor + slot tooltips
             drawTrimGrid(g, mx, my);
             drawPrintedGrid(g, mx, my);
             drawMainPreview(g);
