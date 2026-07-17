@@ -10,7 +10,6 @@
     "vertex": "customglint:chromatic",
     "fragment": "customglint:chromatic",
     "samplers": [
-        { "name": "Sampler0" },
         { "name": "Sampler1" }
     ],
     "uniforms": [

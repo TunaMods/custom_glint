@@ -247,7 +247,7 @@ public final class ChromaticTextureBaker {
         void bake() {
             target.bindWrite(true);
             RenderSystem.setShader(CustomGlintRenderer::chromaticShader);
-            RenderSystem.setShaderTexture(0, 0); // Sampler0 declared by the pipeline, unread by the bake fsh
+            RenderSystem.setShaderTexture(0, 0); // the bake fsh reads only the palette, on Sampler1
             RenderSystem.setShaderTexture(1, palette);
             RenderSystem.setTextureMatrix(payload());
 

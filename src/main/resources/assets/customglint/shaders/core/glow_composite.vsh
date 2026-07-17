@@ -2,8 +2,8 @@
 
 // Custom Glints glow-outline composite vertex shader. Fullscreen quad: Position.xy arrives in [0,1]
 // (built by GlowOutlineRenderer's Tesselator quad) and is remapped to NDC. UV0 passes straight through
-// as the screen texCoord. ProjMat/ModelViewMat are intentionally ignored for positioning — the
-// fragment shader uses ProjMat only to linearize the scene depth.
+// as the screen texCoord. Neither stage declares ProjMat/ModelViewMat. Positioning needs no transform,
+// and the fsh linearises the scene depth from the ProjA/ProjB scalars instead.
 
 in vec3 Position;
 in vec2 UV0;
