@@ -19,6 +19,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -495,20 +496,21 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void drainWorld() { drain(worldJobs, modelWorldJobs, RenderSystem.getProjectionMatrix()); }
 
     // Snapshot of the hand-FOV projection taken when a first-person held item is captured (inside the hand
-    // pass, where it is drawn). Replayed at the drain instead of the live projection: under a shader pack Iris
-    // changes the live projection between the hand draw and renderItemInHand RETURN, and sprint's dynamic FOV
-    // moves it further, so reading it live desyncs the ring from the item (drawn behind / inside it). Off-pack
-    // the snapshot equals the live projection, so this is a no-op there.
+    // pass, where it is drawn). Replayed at the drain rather than read live there, because the live matrix can
+    // move in between: under a shader pack the drain is deferred to renderItemInHand RETURN, and sprint's
+    // dynamic FOV shifts it further. Off-pack the snapshot equals the live projection, so this is a no-op there.
     private static final Matrix4f HELD_FP_PROJ = new Matrix4f();
     private static boolean heldFpProjValid = false;
 
-    /** Capture the projection a first-person held item is drawn under. Under a shader pack that is Iris's
-     *  captured gbuffer projection (the hand is rasterized under it, not the vanilla hand-FOV projection that
-     *  {@code RenderSystem.getProjectionMatrix()} still holds); off-pack it is the live projection. */
+    /** Capture the projection a first-person held item is drawn under: the live one, read inside the hand pass.
+     *
+     *  <p>TRIED: preferring the shader mod's captured gbuffer projection here when a pack is active, on the
+     *  theory that the pack rasterizes the hand under its own matrix rather than the vanilla hand-FOV one the
+     *  RenderSystem still holds. It is wrong. Once the mask is drawn through the same matrix the boxes are
+     *  measured with, that choice puts the entire ring visibly down-left of the item under Bliss, while the live
+     *  matrix lands it on the item. The hand rasterizes under the live projection; keep reading it. */
     public static void snapshotHeldFpProjection() {
-        Matrix4f iris = CustomGlintRenderer.isShaderPackActive() ? CustomGlintRenderer.getShaderGbufferProjection() : null;
-        if (iris != null && iris.m11() != 0.0f) HELD_FP_PROJ.set(iris);
-        else HELD_FP_PROJ.set(RenderSystem.getProjectionMatrix());
+        HELD_FP_PROJ.set(RenderSystem.getProjectionMatrix());
         heldFpProjValid = true;
     }
 
@@ -774,13 +776,23 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                         RenderTarget main, Matrix4f proj) {
         beginAccumulation(main.width, main.height, modelView, proj);
 
-        // Force the captured modelview onto the RS stack so the silhouette RT's vanilla shader sees the
-        // draw-time ModelViewMat (it auto-reads RenderSystem.getModelViewMatrix() at the endBatch draw).
+        // Force BOTH captured matrices onto the RS state for the mask draw. The silhouette RT's shader reads
+        // ModelViewMat AND ProjMat off RenderSystem at the endBatch draw, and the screen boxes below are
+        // measured through that same pair via ACC_MVP, so the two have to be the same pair or the box does not
+        // bound the shape it scissors.
+        //
+        // Leaving the projection live is what silently mis-sized the box under a shader pack, where the drain is
+        // deferred past the point the live matrix still matches the snapshot the boxes were measured with. The
+        // difference is a scale, so the box error is negligible at the screen centre and tens of pixels at a
+        // corner, which is why only an item posed right out at the edge showed a cut ring.
         PoseStack rsStack = RenderSystem.getModelViewStack();
         rsStack.pushPose();
         rsStack.setIdentity();
         rsStack.mulPoseMatrix(modelView);
         RenderSystem.applyModelViewMatrix();
+        Matrix4f prevProj = new Matrix4f(RenderSystem.getProjectionMatrix());
+        VertexSorting prevSorting = RenderSystem.getVertexSorting();
+        RenderSystem.setProjectionMatrix(proj, VertexSorting.DISTANCE_TO_ORIGIN);
 
         VertexConsumer base = MASK_BUFFERS.getBuffer(silhouetteRT());
         for (ItemJob job : jobs) {
@@ -815,10 +827,11 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 itemBoxes.add(new Box(box[0], box[1], box[2], box[3], computeScale(d), job.key & 31, d, 0, 1.0f));
             }
         }
-        // Flush before restoring the matrix: the buffered vertices only draw at endBatch, and that draw reads
-        // the LIVE ModelViewMat. Anything still buffered would draw under the next group's matrix.
+        // Flush before restoring the matrices: the buffered vertices only draw at endBatch, and that draw reads
+        // the LIVE matrices. Anything still buffered would draw under the next group's.
         MASK_BUFFERS.endBatch();
 
+        RenderSystem.setProjectionMatrix(prevProj, prevSorting);
         rsStack.popPose();
         RenderSystem.applyModelViewMatrix();
     }
