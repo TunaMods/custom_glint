@@ -105,8 +105,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         SHADER_TT_TAGGED.clear();
         // Drop the entity RenderType verdict cache too, so it doesn't pin RT singletons across reloads.
         EntityGlintRender.GlintWrappingBufferSource.clearRtVerdictCache();
-        // Free the private HUD-glint source's per-RenderType buffers; the forGlint RTs they key on were just
-        // evicted, so these native builders would dangle. The source + builders re-create lazily next HUD glint.
+        // Free the private deferred GUI-glint source's per-RenderType buffers; the forGlint RTs they key on
+        // were just evicted, so these native builders would dangle. The source + builders re-create lazily
+        // next deferred GUI glint.
         for (ByteBufferBuilder b : GUI_GLINT_FIXED.values()) { try { b.close(); } catch (Throwable ignored) {} }
         GUI_GLINT_FIXED.clear();
         if (guiGlintSpare != null) { try { guiGlintSpare.close(); } catch (Throwable ignored) {} guiGlintSpare = null; }
@@ -193,14 +194,18 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final ThreadLocal<Boolean> CURRENT_IS_SPECIAL = ThreadLocal.withInitial(() -> Boolean.FALSE);
     public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
-    // ── HUD glint batching ──────────────────────────────────────────────────────
-    // The HUD hotbar draws each item through GuiGraphics.renderItem, which calls GuiGraphics.flush() after
-    // EVERY icon, so inline glint draws one flush per item and same-design icons never batch. Route the HUD
-    // glint into this private source instead: vanilla's per-item flush never touches it, so every same-config
-    // glint accumulates into ONE RenderType buffer and draws in a single endBatch ({@link #drainGuiGlint},
-    // at Gui.render TAIL while the GUI ortho + the icons' depth are still committed). forGlint's color rides a
-    // per-(design,colors,…) holder, so same-key icons always resolve the same colour in a frame; deferring
-    // the draw is colour-safe. Open screens keep the inline path (they need per-item layering vs tooltips).
+    // ── Deferred GUI glint batching ──────────────────────────────────────────────
+    // A many-icon screen (the creative tab, the Glint Table palettes) draws each icon through
+    // GuiGraphics.renderItem, which calls GuiGraphics.flush() after EVERY icon, so inline glint pays one flush
+    // per item and same-design icons never batch. Route those icons' glint into this private source instead:
+    // vanilla's per-item flush never touches it, so every same-config glint accumulates into ONE RenderType
+    // buffer and drains in a single endBatch ({@link #drainGuiGlint}) right after the screen's icon pass
+    // (AbstractContainerScreenMixin for the creative menu; guiGlintBatchArmed for the Glint Table), while the
+    // GUI ortho + the icons' depth are still committed. forGlint's color rides a per-(design,colors,…) holder,
+    // so same-key icons always resolve the same colour in a frame; deferring the draw is colour-safe. The HUD
+    // hotbar and every other screen keep the inline path. See ItemRendererMixin#applyGlint for why the hotbar
+    // must NOT defer: a late drain at Gui.render RETURN tested EQUAL against depth a shader-pack reload had
+    // disturbed, so the hotbar glint vanished.
     private static final SequencedMap<RenderType, ByteBufferBuilder> GUI_GLINT_FIXED = new LinkedHashMap<>();
     private static MultiBufferSource.BufferSource guiGlintSource;
     private static ByteBufferBuilder guiGlintSpare;
@@ -211,8 +216,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  after its icon pass (before it draws anything on top of those icons). */
     public static boolean guiGlintBatchArmed = false;
 
-    /** A glint-layer buffer in the private HUD source (each RenderType gets its own builder so layers/colours
-     *  accumulate without flushing one another). The base item RT still goes through the normal GUI source. */
+    /** A glint-layer buffer in the private deferred GUI source (each RenderType gets its own builder so
+     *  layers/colours accumulate without flushing one another). The base item RT still goes through the
+     *  normal GUI source. */
     public static VertexConsumer guiGlintBuffer(RenderType rt) {
         GUI_GLINT_FIXED.computeIfAbsent(rt, k -> new ByteBufferBuilder(k.bufferSize()));
         if (guiGlintSource == null) {
@@ -222,9 +228,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return guiGlintSource.getBuffer(rt);
     }
 
-    /** Draws all HUD glint accumulated this frame in one batch per RenderType. Called at Gui.render TAIL,
-     *  where the GUI ortho projection and the icons' committed depth (forGlint EQUAL-depth-tests against it)
-     *  are both still live. No-op until the first HUD glint creates the source. */
+    /** Draws all deferred GUI glint accumulated this frame in one batch per RenderType. Called right after a
+     *  many-icon screen's icon pass (AbstractContainerScreenMixin before the tooltip; the Glint Table after
+     *  its armed palette pass), where the GUI ortho projection and the icons' committed depth (forGlint
+     *  EQUAL-depth-tests against it) are both still live. No-op until the first deferred glint creates the source. */
     public static void drainGuiGlint() {
         if (guiGlintSource != null) guiGlintSource.endBatch();
     }

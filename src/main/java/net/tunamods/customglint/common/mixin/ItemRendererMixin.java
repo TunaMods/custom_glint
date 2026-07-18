@@ -128,21 +128,24 @@ public class ItemRendererMixin {
         CustomGlint.Data glint = CustomGlint.read(stack);
         if (glint == null) return null;
 
-        // Route the glint into the batched source so every icon's glint accumulates and draws in ONE
-        // endBatch (drained once) instead of one flush per item. The per-item GuiGraphics.flush() is the
-        // dominant GUI cost with the creative tab's many distinct-design icons. Scoped to the HUD hotbar
-        // (drained at Gui.render TAIL) and the CREATIVE menu (drained before the tooltip, see
-        // AbstractContainerScreenMixin), where the icons are the last things drawn so the deferred glint's
-        // EQUAL depth test still matches their committed depth. Every OTHER screen keeps the inline path: a
-        // screen that draws its item previews AFTER super.render (the Glint Table's scrollable design +
-        // printed palettes) has no drain left that frame, so a batched glint would land a frame late / at the
-        // wrong depth. Such a screen instead ARMS the batch itself (guiGlintBatchArmed) around its own icon
-        // pass and drains right after, so its palette glint batches too without landing late. That's how the
-        // Glint Table's design + printed palettes route here.
+        // Batch the glint into the private deferred source so many same-config icons draw in ONE endBatch
+        // instead of one GuiGraphics.flush() apiece, the dominant GUI cost with the creative tab's many
+        // distinct-design icons. Only two cases defer, and BOTH drain immediately after their own icon pass
+        // (so the deferred glint's EQUAL depth test still matches the icons' just-committed depth): the
+        // CREATIVE menu (drained before the tooltip, see AbstractContainerScreenMixin) and any screen that
+        // ARMS the batch around its icon pass and drains right after (guiGlintBatchArmed, the Glint Table's
+        // scrollable design + printed palettes, which draw previews AFTER super.render and so have no later
+        // drain to rely on).
+        //
+        // The HUD hotbar (no screen open) does NOT defer: it draws glint inline, in the item's own
+        // GuiGraphics.flush(), the same path the survival inventory uses. It used to defer and drain at
+        // Gui.render RETURN, a whole HUD after the icons and past Gui.render's closing disableDepthTest; a
+        // shader-pack reload left the hotbar's committed depth in a state that late drain read wrong, so the
+        // EQUAL glint tested against the wrong depth and vanished until a screen (chat) forced it inline. The
+        // ~10 hotbar icons make inline's per-item flush cost irrelevant.
         Screen cgScreen = Minecraft.getInstance().screen;
         boolean guiHud = CustomGlintRenderer.CURRENT_CTX.get() == ItemDisplayContext.GUI
-                && (cgScreen == null
-                    || cgScreen instanceof CreativeModeInventoryScreen
+                && (cgScreen instanceof CreativeModeInventoryScreen
                     || CustomGlintRenderer.guiGlintBatchArmed);
 
         CustomGlint.Layer[] layers = glint.layers();
