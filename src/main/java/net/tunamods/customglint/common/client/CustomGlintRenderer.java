@@ -57,6 +57,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // ── Texture cache ─────────────────────────────────────────────────────────
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
     private static final Map<ResourceLocation, ResourceLocation> textureCache = new HashMap<>();
 
     public static ResourceLocation getTexture(ResourceLocation design) {
@@ -83,16 +84,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
         for (RenderType rt : BY_ARMOR_GLINT.values())       evictRt(rt);
         for (RenderType rt : BY_HORSE_ARMOR_GLINT.values()) evictRt(rt);
         for (RenderType rt : BY_MOUNT_ARMOR_GLINT.values()) evictRt(rt);
-        for (RenderType rt : BY_MOUNT_ARMOR_MASK.values())  evictRt(rt);
         for (RenderType rt : BY_CHROMATIC.values())         evictRt(rt);
         for (RenderType rt : BY_CHROMATIC_OVERLAY.values()) evictRt(rt);
+        for (RenderType rt : BY_GLINT_OVERLAY.values())     evictRt(rt);
         BY_GLINT_ITEM.clear();
         BY_ARMOR_GLINT.clear();
         BY_HORSE_ARMOR_GLINT.clear();
         BY_MOUNT_ARMOR_GLINT.clear();
-        BY_MOUNT_ARMOR_MASK.clear();
         BY_CHROMATIC.clear();
         BY_CHROMATIC_OVERLAY.clear();
+        BY_GLINT_OVERLAY.clear();
         GLINT_COLORS.clear();
         LAYER_KEY_CACHE.clear();
         // Release the chromatic palette strips + white dummy (DynamicTextures registered with the manager).
@@ -348,7 +349,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final Map<String, RenderType> BY_ARMOR_GLINT        = new RtCache();
     private static final Map<String, RenderType> BY_HORSE_ARMOR_GLINT  = new RtCache();
     private static final Map<String, RenderType> BY_MOUNT_ARMOR_GLINT  = new RtCache();
-    private static final Map<ResourceLocation, RenderType> BY_MOUNT_ARMOR_MASK = new HashMap<>();
 
     // ── Procedural chromatic glint ──────────────────────────────────────────────
     // The chromatic design has no PNG: a custom core shader (registered via RegisterShadersEvent)
@@ -361,6 +361,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
             new RenderStateShard.ShaderStateShard(() -> chromaticShader);
     private static final Map<String, RenderType> BY_CHROMATIC = new RtCache();
 
+    /** Chromatic slick plus the armor-shape alpha-test on Sampler2; the horse-armor counterpart of
+     *  {@link #glintCutoutShader}. See {@link #forMountChromaticGlint}. */
+    private static ShaderInstance chromaticCutoutShader;
+    private static final RenderStateShard.ShaderStateShard CHROMATIC_CUTOUT_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> chromaticCutoutShader);
+
+    /** Vanilla rendertype_glint plus an alpha-test against a second sampler; see {@link #forMountArmorGlint}. */
+    private static ShaderInstance glintCutoutShader;
+    private static final RenderStateShard.ShaderStateShard GLINT_CUTOUT_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> glintCutoutShader);
+
     // Post-Iris chromatic overlay (shader-pack path only): the in-phase chromatic program is replaced/hijacked
     // by an active pack, so under a pack the chromatic surfaces are re-rendered AFTER the pack finishes, through
     // this NEW_ENTITY overlay shader, onto an isolated target that is then composited back (chromaticComposite).
@@ -370,6 +381,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final RenderStateShard.ShaderStateShard CHROMATIC_OVERLAY_SHADER_SHARD =
             new RenderStateShard.ShaderStateShard(() -> chromaticOverlayShader);
     private static final Map<String, RenderType> BY_CHROMATIC_OVERLAY = new RtCache();
+
+    // Post-Iris TEXTURED-glint overlay (shader-pack path): the non-chromatic counterpart of the chromatic
+    // overlay. A pack hijacks the in-phase glint_cutout program, so horse-armor textured glint re-renders
+    // through this NEW_ENTITY overlay after the pack finishes and composites back (see forGlintEntityOverlay).
+    private static ShaderInstance glintOverlayShader;
+    private static final RenderStateShard.ShaderStateShard GLINT_OVERLAY_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> glintOverlayShader);
+    private static final Map<String, RenderType> BY_GLINT_OVERLAY = new RtCache();
 
     public static ShaderInstance chromaticCompositeShader() { return chromaticCompositeShader; }
 
@@ -409,6 +428,29 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             CustomGlint.res("chromatic_composite"),
                             DefaultVertexFormat.POSITION_TEX),
                     shader -> chromaticCompositeShader = shader);
+            // Post-Iris textured-glint overlay (NEW_ENTITY: replays captured horse-armor vertices), reuses the
+            // chromatic composite to blend over the pack image. See forGlintEntityOverlay.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("glint_overlay"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> glintOverlayShader = shader);
+            // Cutout glint for armor whose model is not its shape (horse armor); see forMountArmorGlint.
+            // NEW_ENTITY, NOT POSITION_TEX: the glint must share the base armor's vertex pipeline so Sodium
+            // builds both coplanar meshes through the same EntityRenderer.renderCuboid path (see the shader
+            // header + forMountArmorGlint for the Sodium z-fight rationale).
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("glint_cutout"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> glintCutoutShader = shader);
+            // Chromatic slick + armor-shape cutout for horse armor (procedural design, no PNG). NEW_ENTITY so it
+            // rides Sodium's renderCuboid alongside the armor; see forMountChromaticGlint.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("chromatic_cutout"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> chromaticCutoutShader = shader);
         } catch (Exception e) {
             LOGGER.error("[{}/CustomGlint] failed to register chromatic shader", MOD_ID, e);
         }
@@ -690,6 +732,60 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         .createCompositeState(false)));
     }
 
+    /**
+     * Post-Iris TEXTURED-glint overlay for horse armor (shader-pack path): the non-chromatic counterpart of
+     * {@link #forChromaticArmorGlintOverlay}. A pack hijacks the in-phase {@code glint_cutout} program (its
+     * Sampler1 armor-cutout binding is dropped, so every fragment discards and the glint vanishes), so the horse
+     * model is captured and re-drawn through this overlay AFTER the pack composites, onto the shared chromatic
+     * target. Sampler0 = the armor texture (cutout alpha), Sampler1 = the scrolled design, Sampler2 = scene depth
+     * (bound by the drain). Occlusion + cutout are decided in-shader, so there is no GPU-depth-test dependence
+     * and no polygon offset; the animated {@code frameColor} rides a per-key holder like {@link #forMountArmorGlint}.
+     */
+    public static RenderType forGlintEntityOverlay(Data glint, int layerIdx, float[] frameColor, int colorIdx,
+                                                   ResourceLocation armorTex, VertexFormat.Mode mode) {
+        if (glintOverlayShader == null) return null;
+        Layer layer = glint.layers()[layerIdx];
+        ResourceLocation design = layer.design();
+        if (getTexture(design) == null) return null;
+        String key = "glint_ov|" + layerKey(layer) + "|" + colorIdx + "|" + armorTex + "|" + mode;
+        float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
+        System.arraycopy(frameColor, 0, holder, 0, 4);
+        return BY_GLINT_OVERLAY.computeIfAbsent(key, k -> RenderType.create(
+                MOD_ID + ":custom_glint_overlay|" + k.hashCode(),
+                DefaultVertexFormat.NEW_ENTITY,
+                mode,
+                1024,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(GLINT_OVERLAY_SHADER_SHARD)
+                        .setTextureState(new TextureStateShard(armorTex, false, false) {
+                            @Override public void setupRenderState() {
+                                RenderSystem.setShaderTexture(0, armorTex);           // cutout alpha
+                                RenderSystem.setShaderTexture(1, getTexture(design)); // scrolled glint pattern
+                                RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                            }
+                            @Override public void clearRenderState() {
+                                super.clearRenderState();
+                                RenderSystem.setShaderTexture(1, 0);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                            }
+                        })
+                        // Additive, no depth write, no GPU depth test: matches the in-phase forMountArmorGlint so
+                        // multiple layers/colours SUM into the target instead of overwriting each other (the
+                        // chromatic overlay's straight write + depth test left only the last layer, and clobbered
+                        // a chromatic slick in a mixed glint). Cutout + occlusion are decided in-shader (Sampler0
+                        // alpha + Sampler2 scene depth), so the GPU depth test isn't needed.
+                        .setWriteMaskState(COLOR_WRITE)
+                        .setCullState(NO_CULL)
+                        .setDepthTestState(NO_DEPTH_TEST)
+                        .setLayeringState(NO_LAYERING)
+                        .setTransparencyState(GLINT_TRANSPARENCY)
+                        .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_glint_overlay_texturing|" + k.hashCode(),
+                                () -> setModelScrollMatrix(layer, colorIdx), RenderSystem::resetTextureMatrix))
+                        .createCompositeState(false)));
+    }
+
     /** Horse-armor / entity-body chromatic glint (EQUAL depth + NO_LAYERING, matching entityCutoutNoCull). */
     public static RenderType forChromaticEntityGlint(Data glint, int layerIdx) {
         if (chromaticShader == null) return null;
@@ -749,7 +845,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         ByteBufferBuilder buf = new ByteBufferBuilder(rt.bufferSize());
         try {
             fixedBufferRegistry.put(rt, buf);
-        } catch (UnsupportedOperationException ignored) {
+        } catch (UnsupportedOperationException uoe) {
             buf.close(); // immutable fixedBuffers (Iris/Sodium); forward/shader path handles these RTs
         }
     }
@@ -767,12 +863,12 @@ public final class CustomGlintRenderer extends RenderStateShard {
      */
     public static void registerLiveFixedBuffer(RenderType rt) {
         if (rt == null) return;
-        SequencedMap<RenderType, ByteBufferBuilder> live =
-                Minecraft.getInstance().renderBuffers().bufferSource().fixedBuffers;
+        MultiBufferSource.BufferSource bs = Minecraft.getInstance().renderBuffers().bufferSource();
+        SequencedMap<RenderType, ByteBufferBuilder> live = bs.fixedBuffers;
         if (live == null || live.containsKey(rt)) return;
         try {
             live.put(rt, new ByteBufferBuilder(rt.bufferSize()));
-        } catch (UnsupportedOperationException ignored) {
+        } catch (UnsupportedOperationException uoe) {
             // immutable fixedBuffers (Iris/Sodium); forward/shader path handles these RTs
         }
     }
@@ -964,114 +1060,100 @@ public final class CustomGlintRenderer extends RenderStateShard {
     }
 
     /**
-     * Stencil-mask write RT for IaF mount armor (dragon / hippogryph / hippocampus). The mount
-     * body shares the same EntityModel as the armor layer, so an EQUAL_DEPTH glint RT (the
-     * scheme {@link #forHorseArmorGlint} uses for vanilla horse armor) passes depth on every
-     * face of the mount, not just the armor. Vanilla horse armor avoids this because its
-     * armor mesh is a separate model, but IaF reuses the parent mount model with an
-     * alpha-cutout armor texture.
+     * Cutout glint for armor whose MODEL is not its SHAPE: HorseArmorLayer renders the whole horse mesh with
+     * the armor texture, so only that texture's alpha says which texels are armor. {@code armorTex} rides
+     * Sampler1 and the glint_cutout shader alpha-tests it at the raw model UV, discarding on the same 0.1
+     * cutoff rendertype_entity_cutout_no_cull used to draw the base armor. The cutout is exact and
+     * per-fragment, in the same draw as the glint.
      *
-     * This RT renders the parent model with the armor texture through entity-cutout's
-     * alpha-discard shader and writes only stencil bit {@code 0x80} at opaque texels;
-     * the LayeringStateShard does the GL state in setup/clear so timing is deterministic
-     * across BufferSource flushes. Bit 0x80 is paired with {@link #forMountArmorGlint}'s
-     * stencil EQUAL 0x80 test, constraining the glint draw to the same armor pixels.
+     * <p>Two independent defects live on this path. They have separate causes and separate fixes; keep both.
      *
-     * Bit isolation: outline slots {@link #nextStencilSlot} use values 1..255 and may set
-     * bit 0x80 at silhouettes when their slot lands in 128..255. To stay independent, this
-     * mask layering clears bit 0x80 across the framebuffer at setup (mask=0x80, glClear),
-     * and writes/reads only that bit (stencilMask=0x80). Outline's lower bits stay intact.
+     * <p>CUTOUT, and the temporal flicker it used to cause. The cutout used to be a stencil-mask pass
+     * (since removed). It was the sole reason anything here
+     * called RenderTarget.enableStencil(), and on NeoForge that reformats the MAIN target's depth from
+     * GL_DEPTH_COMPONENT to a packed GL_DEPTH32F_STENCIL8 (NeoForgeConfig useCombinedDepthStencilAttachment
+     * defaults false, so it binds to GL_DEPTH_ATTACHMENT and GL_STENCIL_ATTACHMENT as two attachment points
+     * on one texture). The mask then did a masked full-screen glClear(GL_STENCIL_BUFFER_BIT) on that packed
+     * surface once per horse, mid-pass: a read-modify-write of every depth+stencil texel in the frame. That
+     * was a whole-glint blink, only on horses (nothing else enabled the stencil) and only without a pack
+     * (Iris binds a stencil-less gbuffer, so the ops no-op). The per-fragment shader cutout removes it: no
+     * enableStencil, no glClear, no stencil at all.
+     *
+     * <p>OCCLUSION, and the coplanar z-fight it must not cause. HorseArmorLayer draws the base armor through
+     * entityCutoutNoCull with no polygon offset, and HorseModel bakes the armor coplanar with the horse body
+     * on the torso and neck, so EQUAL there is a per-pixel coin flip: the speckle. The glint is biased proud to
+     * win the tie, but the bias is in the glint_cutout VERTEX SHADER (gl_Position), NOT a layering shard.
+     * glPolygonOffset and VIEW_OFFSET both fixed this in vanilla and both vanished under Sodium, which
+     * reimplements entity rendering (its own ModelCuboid vertex path) and drops flush-time GL / modelview
+     * layering state. A gl_Position bias is what the rasterizer depth-tests, so nothing can drop it. This RT
+     * therefore uses NO_LAYERING and LEQUAL: the biased glint sits proud of the un-biased base armor and wins,
+     * and its far faces still fail LEQUAL behind the body.
+     *
+     * <p>The bias is necessary but not sufficient under Sodium: a bias only arbitrates a tie cleanly when both
+     * meshes are the SAME geometry. The base armor draws NEW_ENTITY, which Sodium claims for renderCuboid; while
+     * this RT was POSITION_TEX the glint fell to Sodium's vanilla-fallback path (format mismatch), so the two
+     * coplanar meshes came off DIFFERENT vertex pipelines and the tie stayed non-deterministic despite the bias
+     * (it resolves cleanly without Sodium, where both sides share one pipeline).
+     * So this RT now also declares NEW_ENTITY, routing the glint through renderCuboid alongside the armor: same
+     * pipeline, bit-identical coplanar corners, and the +0.01 bias is the only remaining delta. See the format
+     * arg + the glint_cutout shader header for the TRIED detail.
      */
-    public static RenderType forMountArmorStencilMask(ResourceLocation tex) {
-        RenderType cached = BY_MOUNT_ARMOR_MASK.computeIfAbsent(tex, t -> {
-            RenderType rt = RenderType.create(
-                    MOD_ID + ":mount_armor_mask|" + t.toString().hashCode(),
-                    DefaultVertexFormat.NEW_ENTITY,
-                    VertexFormat.Mode.QUADS,
-                    256, false, false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_ENTITY_CUTOUT_NO_CULL_SHADER)
-                            .setTextureState(new TextureStateShard(t, false, false))
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            .setWriteMaskState(NO_WRITE)
-                            .setLayeringState(mountArmorMaskLayering())
-                            .createCompositeState(false));
-            putCapturedFixedBuffer(rt);
-            return rt;
-        });
-        registerLiveFixedBuffer(cached);
-        return cached;
-    }
-
-    private static RenderStateShard.LayeringStateShard mountArmorMaskLayering() {
-        return new RenderStateShard.LayeringStateShard(
-                "custom_glint_mount_armor_mask",
-                () -> {
-                    Minecraft.getInstance().getMainRenderTarget().enableStencil();
-                    GL11.glEnable(GL11.GL_STENCIL_TEST);
-                    GL11.glClearStencil(0);
-                    if (pendingFrameStencilClear) {
-                        GL11.glStencilMask(0xFF);
-                        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-                        pendingFrameStencilClear = false;
-                    } else {
-                        // Clear only our reserved bit so outline slot bits remain intact.
-                        GL11.glStencilMask(0x80);
-                        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-                    }
-                    GL11.glStencilMask(0x80);
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0x80, 0x80);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
-                },
-                () -> {
-                    GL11.glStencilMask(0xFF);
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-                    GL11.glDisable(GL11.GL_STENCIL_TEST);
-                });
-    }
-
-    /**
-     * Stencil-gated armor glint for IaF mounts. Same render state as
-     * {@link #forHorseArmorGlint} (EQUAL depth, no polygon offset, glint transparency,
-     * glint shader + scrolling matrix) but its layering shard tests stencil bit 0x80
-     * EQUAL 1 instead of NO_LAYERING: only the texels marked by
-     * {@link #forMountArmorStencilMask} draw.
-     */
-    public static RenderType forMountArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+    public static RenderType forMountArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx,
+                                                ResourceLocation armorTex) {
+        if (glintCutoutShader == null) return null;
         Layer layer = glint.layers()[layerIdx];
-        if (getTexture(layer.design()) == null) return null;
-        String key = "mount|" + layerKey(layer) + "|" + colorIdx + "|" + layerIdx;
+        ResourceLocation design = layer.design();
+        if (getTexture(design) == null) return null;
+        String key = "mountcut|" + layerKey(layer) + "|" + colorIdx + "|" + layerIdx + "|" + armorTex;
         float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
         RenderType cached = BY_MOUNT_ARMOR_GLINT.computeIfAbsent(key, k -> {
-            ResourceLocation tex = layer.design();
+            // TRIED (2026-07-18, Sodium coplanar z-fight, shaders OFF): NEW_ENTITY, not POSITION_TEX. Sodium's
+            // EntityRenderer.renderCuboid only claims a draw when the buffer format == EntityVertex.FORMAT
+            // (== NEW_ENTITY); on a mismatch VertexConsumerUtils.convertOrLog returns null and the cube falls to
+            // the vanilla per-vertex path. With POSITION_TEX the base horse armor (entity_cutout_no_cull,
+            // NEW_ENTITY) went through renderCuboid while this glint went through vanilla compile, so the two
+            // coplanar meshes were built by DIFFERENT pipelines under Sodium and the shader's camera-ward bias
+            // could not deterministically win the tie (clean without Sodium, same pipeline both sides). Matching
+            // NEW_ENTITY puts the glint back on the identical renderCuboid path as the armor. The glint_cutout
+            // shader reads only Position+UV0; the other NEW_ENTITY attributes are written by compile and ignored.
             RenderType rt = RenderType.create(
-                    MOD_ID + ":custom_mount_armor_glint|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_TEX,
+                    MOD_ID + ":custom_mount_armor_glint_cutout|" + k.hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
                     VertexFormat.Mode.QUADS,
                     256,
                     false,
                     false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
-                            .setTextureState(new TextureStateShard(tex, false, false) {
+                            .setShaderState(GLINT_CUTOUT_SHADER_SHARD)
+                            .setTextureState(new TextureStateShard(design, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, getTexture(tex));
+                                    RenderSystem.setShaderTexture(0, getTexture(design));
+                                    RenderSystem.setShaderTexture(1, armorTex);
                                     RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
+                                    RenderSystem.setShaderTexture(1, 0);
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
                             .setWriteMaskState(COLOR_WRITE)
                             .setCullState(NO_CULL)
-                            .setDepthTestState(EQUAL_DEPTH_TEST)
-                            .setLayeringState(mountArmorGlintTestLayering())
+                            // LEQUAL, and the camera-ward bias that beats the coplanar tie lives in the
+                            // glint_cutout VERTEX SHADER (gl_Position), NOT in a layering shard. The base armor
+                            // is coplanar with the horse body on the torso and neck, so the glint must sit proud
+                            // or it hatches per pixel. glPolygonOffset AND the VIEW_OFFSET modelview scale both
+                            // work in vanilla, but Sodium reimplements entity rendering (its own ModelCuboid
+                            // vertex path) and drops flush-time GL / modelview layering state, so both biases
+                            // vanished under Sodium and the hatch returned (the "flickers only with Sodium"
+                            // report). A bias baked into gl_Position cannot be dropped: it is what the rasterizer
+                            // depth-tests. So this RT carries no layering; the shader owns the offset. LEQUAL
+                            // because the biased glint sits proud of the un-biased base armor and must win.
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setLayeringState(NO_LAYERING)
                             .setTransparencyState(GLINT_TRANSPARENCY)
-                            .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_mount_armor_glint_texturing",
+                            .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_mount_armor_glint_cutout_texturing",
                                     () -> setModelScrollMatrix(layer, colorIdx), RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             putCapturedFixedBuffer(rt);
@@ -1081,21 +1163,60 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return cached;
     }
 
-    private static RenderStateShard.LayeringStateShard mountArmorGlintTestLayering() {
-        return new RenderStateShard.LayeringStateShard(
-                "custom_glint_mount_armor_glint_test",
-                () -> {
-                    Minecraft.getInstance().getMainRenderTarget().enableStencil();
-                    GL11.glEnable(GL11.GL_STENCIL_TEST);
-                    GL11.glStencilMask(0x00);
-                    GL11.glStencilFunc(GL11.GL_EQUAL, 0x80, 0x80);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-                },
-                () -> {
-                    GL11.glStencilMask(0xFF);
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
-                    GL11.glDisable(GL11.GL_STENCIL_TEST);
-                });
+    /** Horse-armor chromatic slick: the {@link #forMountChromaticGlint chromatic} counterpart of the cutout
+     *  {@link #forMountArmorGlint}. Procedural design (no PNG), so it uses the chromatic_cutout shader with the
+     *  palette on Sampler1 and the armor texture on Sampler2 for the shape cutout. Same coplanar depth setup as
+     *  the cutout glint (LEQUAL + NO_LAYERING + the +0.01 gl_Position bias in the shader) and NEW_ENTITY so it
+     *  rides Sodium's renderCuboid alongside the base armor. */
+    public static RenderType forMountChromaticGlint(Data glint, int layerIdx, ResourceLocation armorTex) {
+        if (chromaticCutoutShader == null) return null;
+        Layer layer = glint.layers()[layerIdx];
+        int[] colors = chromaticColors(layer.colors());
+        final int colorCount = Math.min(colors.length, 8);
+        final ResourceLocation white = getWhiteTexture();
+        final ResourceLocation palette = getPaletteTexture(colors);
+        String key = "mountchroma|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
+                + "|" + layer.seed() + "|" + layerIdx + "|" + armorTex;
+        RenderType cached = BY_MOUNT_ARMOR_GLINT.computeIfAbsent(key, k -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":custom_mount_chromatic_cutout|" + k.hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    256,
+                    false,
+                    false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(CHROMATIC_CUTOUT_SHADER_SHARD)
+                            .setTextureState(new TextureStateShard(white, false, false) {
+                                @Override public void setupRenderState() {
+                                    RenderSystem.setShaderTexture(0, white);
+                                    RenderSystem.setShaderTexture(1, palette);
+                                    RenderSystem.setShaderTexture(2, armorTex);
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                }
+                                @Override public void clearRenderState() {
+                                    super.clearRenderState();
+                                    RenderSystem.setShaderTexture(1, 0);
+                                    RenderSystem.setShaderTexture(2, 0);
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                }
+                            })
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(NO_CULL)
+                            // Same coplanar depth setup as forMountArmorGlint: LEQUAL, NO_LAYERING, the bias is in
+                            // the chromatic_cutout VERTEX SHADER (gl_Position), so it survives Sodium.
+                            .setDepthTestState(LEQUAL_DEPTH_TEST)
+                            .setLayeringState(NO_LAYERING)
+                            .setTransparencyState(GLINT_TRANSPARENCY)
+                            .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_mount_chromatic_cutout_texturing|" + k.hashCode(),
+                                    () -> setChromaticMatrix(layer, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE, colorCount),
+                                    RenderSystem::resetTextureMatrix))
+                            .createCompositeState(false));
+            putCapturedFixedBuffer(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
     }
 
     public static RenderType forGlint(Data glint, int layerIdx, float[] frameColor, boolean isItem, int colorIdx) {
@@ -1265,16 +1386,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // ── Glint stencil support (glow outline moved to GlowOutlineRenderer) ──────
 
     /** Guards re-entrance during glint passes that re-enter the item/model render. Kept as a
-     *  recursion guard for the glint paths (item foil, mount-armor/EK glint stencil). */
+     *  recursion guard for the glint paths (item foil, EK glint stencil). */
     public static final ThreadLocal<Boolean> IN_OUTLINE = ThreadLocal.withInitial(() -> false);
 
     /**
-     * Once-per-frame stencil clear gate, still used by the remaining stencil consumers: the IaF
-     * mount-armor glint mask ({@link #forMountArmorStencilMask}) and the Epic Knights decoration
-     * glint mask. Set true at frame start by CustomGlintClientInit's RenderFrameEvent.Pre; the first
-     * stencil mask setup of the frame sees it true, clears the whole stencil buffer, and unsets it so
-     * later mask setups only clear their own reserved bit. (The post-process glow outline does NOT use
-     * the stencil buffer.)
+     * Once-per-frame stencil clear gate, used by the Epic Knights decoration glint mask. Set true at
+     * frame start by CustomGlintClientInit's RenderFrameEvent.Pre; the first stencil mask setup of the
+     * frame sees it true, clears the whole stencil buffer, and unsets it so later mask setups only clear
+     * their own reserved bit. (The post-process glow outline does NOT use the stencil buffer.)
      */
     public static volatile boolean pendingFrameStencilClear = true;
 
@@ -1303,10 +1422,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     /** Frame-start reset; called from CustomGlintClientInit. */
     public static void resetStencilSlots() { stencilSlotCounter = 0; }
-
-    // Disables both color and depth writes; used by the IaF mount-armor stencil-mask RT.
-    private static final RenderStateShard.WriteMaskStateShard NO_WRITE =
-            new RenderStateShard.WriteMaskStateShard(false, false);
 
     // Force-binds the vanilla main render target (which has a stencil attachment via the shader
     // mod's stencil-enabling mixin) and restores the previously-bound FBO on clear.

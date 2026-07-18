@@ -805,11 +805,16 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         final float[] data; final int len; final ResourceLocation tex;
         final CustomGlint.Data glint; final int layerIdx; final boolean triangles; final boolean isItem;
         final boolean special; // special 3D item (trident/shield): own texture + the denser special-item scale
+        final float[] color; final int colorIdx; // non-null color => TEXTURED (non-chromatic) glint overlay
         ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
                   boolean triangles, boolean isItem, boolean special) {
+            this(data, len, tex, glint, layerIdx, triangles, isItem, special, null, 0);
+        }
+        ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
+                  boolean triangles, boolean isItem, boolean special, float[] color, int colorIdx) {
             this.data = data; this.len = len; this.tex = tex;
             this.glint = glint; this.layerIdx = layerIdx; this.triangles = triangles; this.isItem = isItem;
-            this.special = special;
+            this.special = special; this.color = color; this.colorIdx = colorIdx;
         }
     }
 
@@ -823,6 +828,24 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
                                            CustomGlint.Data glint, int layerIdx, boolean triangles) {
         queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_WORLD);
+    }
+
+    /** Queue a captured horse-armor model for the post-Iris TEXTURED (non-chromatic) glint overlay: same world
+     *  drain as {@link #queueChromaticModel}, but the overlay samples the scrolled design × {@code color} and
+     *  cuts itself against {@code tex} (armor alpha). Called ONLY under a shader pack (off-pack the glint draws
+     *  in-phase and never reaches here). Trims to whole primitives so no partial quad/triangle is left. */
+    public static void queueGlintModel(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint,
+                                       int layerIdx, float[] color, int colorIdx, boolean triangles) {
+        if (CustomGlintRenderer.isInShadowPass()) return;
+        if (tex == null || glint == null || color == null) return;
+        int verts = len / 5;
+        verts -= verts % (triangles ? 3 : 4);       // whole primitives only
+        int usable = verts * 5;
+        if (usable < (triangles ? 15 : 20)) return;  // need at least one primitive
+        float[] copy = new float[usable];
+        System.arraycopy(data, 0, copy, 0, usable);
+        float[] col = { color[0], color[1], color[2], color[3] };
+        chromaticWorldJobs.add(new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, false, false, col, colorIdx));
     }
 
     /** Special 3D item (trident/shield) tracing its own {@code tex} at the denser special-item noise scale.
@@ -884,24 +907,34 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // Scene depth -> unit 2 for the overlay's in-shader occlusion. Safe: we write the isolated target, not
         // the main colour, so there is no read/write feedback. The overlay RT setup only touches units 0/1.
         RenderSystem.setShaderTexture(2, sceneOcclusion ? main.getDepthTextureId() : 0);
-        for (ChromaJob job : jobs) {
-            RenderType rt;
-            if (job.isItem) rt = CustomGlintRenderer.forChromaticItemGlintOverlay(job.glint, job.layerIdx);
-            else if (job.special) rt = CustomGlintRenderer.forChromaticSpecialGlintOverlay(job.glint, job.layerIdx, job.tex);
-            else rt = CustomGlintRenderer.forChromaticArmorGlintOverlay(job.glint, job.layerIdx, job.tex,
-                    job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS);
-            if (rt == null) continue;
-            VertexConsumer vc = MASK_BUFFERS.getBuffer(rt);
-            float[] d = job.data;
-            for (int i = 0; i + 4 < job.len; i += 5) {
-                vc.addVertex(d[i], d[i + 1], d[i + 2]);
-                vc.setColor(255, 255, 255, 255);
-                vc.setUv(d[i + 3], d[i + 4]);
-                vc.setUv1(0, 0);
-                vc.setUv2(0, 0);
-                vc.setNormal(0.0f, 1.0f, 0.0f);
+        // Two passes so the straight-write chromatic slicks (NO_TRANSPARENCY) land BEFORE the additive textured
+        // glints: a chromatic job overwrites the target, so a textured job drawn first would be clobbered.
+        // Drawing chromatic first, then adding the textured glint over it, keeps both in a mixed glint. Textured
+        // jobs (color != null) additively sum, so their own order between each other doesn't matter.
+        for (int pass = 0; pass < 2; pass++) {
+            boolean texturedPass = pass == 1;
+            for (ChromaJob job : jobs) {
+                if ((job.color != null) != texturedPass) continue;
+                RenderType rt;
+                if (job.color != null) rt = CustomGlintRenderer.forGlintEntityOverlay(job.glint, job.layerIdx,
+                        job.color, job.colorIdx, job.tex, job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS);
+                else if (job.isItem) rt = CustomGlintRenderer.forChromaticItemGlintOverlay(job.glint, job.layerIdx);
+                else if (job.special) rt = CustomGlintRenderer.forChromaticSpecialGlintOverlay(job.glint, job.layerIdx, job.tex);
+                else rt = CustomGlintRenderer.forChromaticArmorGlintOverlay(job.glint, job.layerIdx, job.tex,
+                        job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS);
+                if (rt == null) continue;
+                VertexConsumer vc = MASK_BUFFERS.getBuffer(rt);
+                float[] d = job.data;
+                for (int i = 0; i + 4 < job.len; i += 5) {
+                    vc.addVertex(d[i], d[i + 1], d[i + 2]);
+                    vc.setColor(255, 255, 255, 255);
+                    vc.setUv(d[i + 3], d[i + 4]);
+                    vc.setUv1(0, 0);
+                    vc.setUv2(0, 0);
+                    vc.setNormal(0.0f, 1.0f, 0.0f);
+                }
+                MASK_BUFFERS.endBatch(); // flush per job so each overlay RT's texture + texture-matrix apply to its own verts
             }
-            MASK_BUFFERS.endBatch(); // flush per job so each overlay RT's texture + texture-matrix apply to its own verts
         }
         RenderSystem.setShaderTexture(2, 0);
         main.bindWrite(true);

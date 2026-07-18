@@ -137,6 +137,36 @@ public final class EntityGlintRender {
         GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, layerIdx, false);
     }
 
+    /** Capture a posed horse-armor model for the post-Iris TEXTURED-glint overlay drain (shader-pack path).
+     *  Mirrors {@link #captureChromaticModel}: a pack hijacks the in-phase glint_cutout program, so re-render
+     *  the model into the record-only buffer once and queue its verts per COLOUR of {@code layerIdx} against
+     *  {@code texture} (its alpha carves the cutout). QUADS (a vanilla {@link Model}); the overlay traces the
+     *  real shape + occludes in-shader. No-op off-pack (caller gates on the shader-pack check) / when invisible. */
+    public static void captureGlintModel(LivingEntity entity, Model model, ResourceLocation texture,
+                                         PoseStack pose, int light, CustomGlint.Data glint, int layerIdx) {
+        if (model == null || texture == null || entity.isInvisible()) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        CustomGlint.Layer layer = glint.layers()[layerIdx];
+        int[] colors = layer.colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layer.colors();
+        if (layer.simultaneous()) {
+            for (int i = 0; i < colors.length; i++) {
+                GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx, cgPackColor(colors[i]), i, false);
+            }
+        } else {
+            GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx,
+                    cgPackColor(CustomGlintRenderer.computeAnimatedColor(glint, layerIdx)), 0, false);
+        }
+    }
+
+    /** ARGB int to premultiplied-RGB + alpha-1 float[4], the form the glint colour holder expects. */
+    private static float[] cgPackColor(int color) {
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        return new float[]{ ((color >> 16) & 0xFF) / 255.0f * a, ((color >> 8) & 0xFF) / 255.0f * a,
+                (color & 0xFF) / 255.0f * a, 1.0f };
+    }
+
     /** As {@link #captureModelSilhouette} but from raw {@code ModelPart[]}. Epic Knights armor decorations
      *  (plumes, surcoats, crowns) draw via {@code ModelPart.render} + {@code getArmorFoilBuffer}, not a
      *  {@link Model} / {@code renderColoredCutoutModel}, so no generic tee reaches them. Re-renders the parts
