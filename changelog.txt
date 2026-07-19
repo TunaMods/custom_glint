@@ -40,6 +40,7 @@ Fixed:
 - Hotbar item glints no longer disappear after reloading shaders (they used to come back only when you opened chat or rejoined the world)
 - A glowing armor's outline no longer bleeds over the wearer's bare arms and legs; the whole figure now takes one clean outline
 - A glow outline is no longer washed out where a chromatic glint sits behind it
+- The Glint Table no longer deletes a white color when you load or click a trim's layer; a real white shard stays, and only an empty layer starts colorless
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
