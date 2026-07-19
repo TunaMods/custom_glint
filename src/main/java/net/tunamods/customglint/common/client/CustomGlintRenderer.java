@@ -924,9 +924,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
      * {@code mode} follows the captured topology (TRIANGLES for Epic Fight skinned armor, QUADS otherwise).
      */
     public static RenderType forChromaticArmorGlintOverlay(Data glint, int layerIdx, ResourceLocation modelTex,
-            VertexFormat.Mode mode) {
+            VertexFormat.Mode mode, float brightness) {
         return chromaticOverlayRT(glint, layerIdx, "armor_ov", CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE,
-                modelTex, mode);
+                modelTex, mode, brightness);
     }
 
     /**
@@ -938,7 +938,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static RenderType forChromaticItemGlintOverlay(Data glint, int layerIdx) {
         ensureAtlasDims();
         return chromaticOverlayRT(glint, layerIdx, "item_ov", cachedAtlasW / 16.0f, cachedAtlasH / 16.0f,
-                TextureAtlas.LOCATION_BLOCKS, VertexFormat.Mode.QUADS);
+                TextureAtlas.LOCATION_BLOCKS, VertexFormat.Mode.QUADS, 1.0f);
     }
 
     /** Noise scale for special 3D BEWLR items (trident/shield). These are much smaller than an armor surface,
@@ -950,18 +950,21 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  the denser special-item noise scale so a small item isn't a coarse blob (see the constant). */
     public static RenderType forChromaticSpecialGlintOverlay(Data glint, int layerIdx, ResourceLocation tex) {
         return chromaticOverlayRT(glint, layerIdx, "special_ov", CHROMATIC_SPECIAL_ITEM_UV_SCALE,
-                CHROMATIC_SPECIAL_ITEM_UV_SCALE, tex, VertexFormat.Mode.QUADS);
+                CHROMATIC_SPECIAL_ITEM_UV_SCALE, tex, VertexFormat.Mode.QUADS, 1.0f);
     }
 
     private static RenderType chromaticOverlayRT(Data glint, int layerIdx, String tag, float scaleU, float scaleV,
-            ResourceLocation surfaceTex, VertexFormat.Mode mode) {
+            ResourceLocation surfaceTex, VertexFormat.Mode mode, float brightness) {
         if (chromaticOverlayShader == null) return null;
         Layer layer = glint.layers()[layerIdx];
         int[] colors = chromaticColors(layer.colors());
         final int colorCount = Math.min(colors.length, 8);
         final ResourceLocation palette = getPaletteTexture(colors);
         final ResourceLocation tex = surfaceTex != null ? surfaceTex : getWhiteTexture();
-        String key = tag + "|" + layerKey(layer) + "|" + tex + "|" + mode;
+        // The overlay shader multiplies the slick by ColorModulator.a, so a sub-1 brightness dims it. Used to
+        // knock the slime shell's slick down (it composites over a translucent surface and reads too hot at 1.0);
+        // opaque armor / items pass 1.0.
+        String key = tag + "|" + layerKey(layer) + "|" + tex + "|" + mode + "|" + brightness;
         return BY_CHROMATIC_OVERLAY.computeIfAbsent(key, k -> RenderType.create(
                 MOD_ID + ":custom_chromatic_overlay|" + k.hashCode(),
                 DefaultVertexFormat.NEW_ENTITY,
@@ -975,7 +978,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             @Override public void setupRenderState() {
                                 RenderSystem.setShaderTexture(0, tex);
                                 RenderSystem.setShaderTexture(1, palette);
-                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, brightness);
                             }
                             @Override public void clearRenderState() {
                                 super.clearRenderState();

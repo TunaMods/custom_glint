@@ -36,8 +36,13 @@ public class SlimeOuterLayerMixin {
             PoseStack poseStack, MultiBufferSource buffer, int packedLight, LivingEntity entity,
             float limbSwing, float limbSwingAmount, float partialTick, float ageInTicks, float netHeadYaw,
             float headPitch) {
-        EntityGlintRender.OutlineSpec spec = EntityGlintRender.surfaceOutlineSpec(entity, cg_textureFor(entity));
+        ResourceLocation texture = cg_textureFor(entity);
+        EntityGlintRender.OutlineSpec spec = EntityGlintRender.surfaceOutlineSpec(entity, texture);
         EntityGlintRender.teeOutline4((Model) drawModel, pose, vc, light, overlay, spec);
+        // The in-phase fan draws the shell's TEXTURE glint (OPAQUE_DECAL) but skips chromatic under a pack, and
+        // the body tee only captures the inner cube; capture the outer shell here so a chromatic slick traces
+        // the visible shell too.
+        EntityGlintRender.captureSurfaceChromatic(entity, (Model) drawModel, texture, pose, light);
     }
 
     /** The slime's body texture (same UVs as the outer shell), via the entity renderer, avoids shadowing

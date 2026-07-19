@@ -806,15 +806,16 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         final CustomGlint.Data glint; final int layerIdx; final boolean triangles; final boolean isItem;
         final boolean special; // special 3D item (trident/shield): own texture + the denser special-item scale
         final float[] color; final int colorIdx; // non-null color => TEXTURED (non-chromatic) glint overlay
+        final float brightness; // sub-1 dims the slick (slime shell); opaque surfaces stay at 1.0
         ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
-                  boolean triangles, boolean isItem, boolean special) {
-            this(data, len, tex, glint, layerIdx, triangles, isItem, special, null, 0);
+                  boolean triangles, boolean isItem, boolean special, float brightness) {
+            this(data, len, tex, glint, layerIdx, triangles, isItem, special, null, 0, brightness);
         }
         ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
-                  boolean triangles, boolean isItem, boolean special, float[] color, int colorIdx) {
+                  boolean triangles, boolean isItem, boolean special, float[] color, int colorIdx, float brightness) {
             this.data = data; this.len = len; this.tex = tex;
             this.glint = glint; this.layerIdx = layerIdx; this.triangles = triangles; this.isItem = isItem;
-            this.special = special; this.color = color; this.colorIdx = colorIdx;
+            this.special = special; this.color = color; this.colorIdx = colorIdx; this.brightness = brightness;
         }
     }
 
@@ -827,7 +828,15 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
                                            CustomGlint.Data glint, int layerIdx, boolean triangles) {
-        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_WORLD);
+        queueChromaticModel(data, len, tex, glint, layerIdx, triangles, 1.0f);
+    }
+
+    /** As {@link #queueChromaticModel} with a {@code brightness} the overlay applies to the slick (sub-1 dims
+     *  it). The slime shell passes < 1 so its chromatic doesn't read as a solid glowing block over the
+     *  translucent jelly; opaque surfaces stay at 1.0. */
+    public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
+                                           CustomGlint.Data glint, int layerIdx, boolean triangles, float brightness) {
+        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_WORLD, brightness);
     }
 
     /** Queue a captured horse-armor model for the post-Iris TEXTURED (non-chromatic) glint overlay: same world
@@ -845,37 +854,37 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         float[] copy = new float[usable];
         System.arraycopy(data, 0, copy, 0, usable);
         float[] col = { color[0], color[1], color[2], color[3] };
-        chromaticWorldJobs.add(new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, false, false, col, colorIdx));
+        chromaticWorldJobs.add(new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, false, false, col, colorIdx, 1.0f));
     }
 
     /** Special 3D item (trident/shield) tracing its own {@code tex} at the denser special-item noise scale.
      *  {@code dest}: world (dropped/3rd-person), FP hand, or GUI icon, matching the world/hand item. */
     public static void queueChromaticSpecial(float[] data, int len, ResourceLocation tex,
                                              CustomGlint.Data glint, int layerIdx, int dest) {
-        queueChroma(data, len, tex, glint, layerIdx, false, false, true, dest);
+        queueChroma(data, len, tex, glint, layerIdx, false, false, true, dest, 1.0f);
     }
 
     /** As {@link #queueChromaticModel} but for a flat/quad ITEM (held third-person, dropped, item frame): the
      *  captured verts are baked item quads and the overlay traces the block atlas (the item overlay RT binds
      *  the atlas itself). QUADS. */
     public static void queueChromaticItem(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
-        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_WORLD);
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_WORLD, 1.0f);
     }
 
     /** First-person-hand variant of {@link #queueChromaticModel} (worn-armor-style model in the hand). */
     public static void queueChromaticModelFp(float[] data, int len, ResourceLocation tex,
                                              CustomGlint.Data glint, int layerIdx, boolean triangles) {
-        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_FP);
+        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_FP, 1.0f);
     }
 
     /** GUI variant for a flat/quad item icon (inventory, hotbar, wand-menu preview). Item scale (atlas). */
     public static void queueChromaticItemGui(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
-        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_GUI);
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_GUI, 1.0f);
     }
 
     private static void queueChroma(float[] data, int len, ResourceLocation tex,
                                     CustomGlint.Data glint, int layerIdx, boolean triangles, boolean isItem,
-                                    boolean special, int dest) {
+                                    boolean special, int dest, float brightness) {
         if (CustomGlintRenderer.isInShadowPass()) return;
         if (tex == null || glint == null) return;
         int verts = len / 5;
@@ -884,7 +893,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (usable < (triangles ? 15 : 20)) return;   // need at least one primitive
         float[] copy = new float[usable];
         System.arraycopy(data, 0, copy, 0, usable);
-        ChromaJob job = new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, isItem, special);
+        ChromaJob job = new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, isItem, special, brightness);
         switch (dest) {
             case DEST_FP -> { chromaticFpJobs.add(job); snapshotHeldFpMatrices(); }
             case DEST_GUI -> chromaticGuiJobs.add(job);
@@ -921,7 +930,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 else if (job.isItem) rt = CustomGlintRenderer.forChromaticItemGlintOverlay(job.glint, job.layerIdx);
                 else if (job.special) rt = CustomGlintRenderer.forChromaticSpecialGlintOverlay(job.glint, job.layerIdx, job.tex);
                 else rt = CustomGlintRenderer.forChromaticArmorGlintOverlay(job.glint, job.layerIdx, job.tex,
-                        job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS);
+                        job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS, job.brightness);
                 if (rt == null) continue;
                 VertexConsumer vc = MASK_BUFFERS.getBuffer(rt);
                 float[] d = job.data;
@@ -1007,7 +1016,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** Queue a first-person hand chromatic ITEM (captured baked quads). Snapshots the hand modelview like the
      *  glow FP path so the drain can re-establish it under a shader pack. */
     public static void queueChromaticItemFp(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
-        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_FP);
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_FP, 1.0f);
     }
 
     /** Drain the first-person hand chromatic items. Called at {@code GameRenderer.renderItemInHand} RETURN

@@ -138,6 +138,33 @@ public final class EntityGlintRender {
         GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, layerIdx, false);
     }
 
+    /** Capture the slime's translucent OUTER shell for the post-Iris CHROMATIC overlay drain. The in-phase
+     *  fan skips chromatic under a pack, and {@link #renderBodyTee} only captures the INNER body, so without
+     *  this the chromatic slick traces the smaller inner cube (reads as dim/buried) instead of the visible
+     *  shell. The textured path already lands on the shell through the OPAQUE_DECAL fan; this brings chromatic
+     *  to parity. Mirrors the glow tee the same mixin runs on the outer draw. No-op off-pack, when invisible,
+     *  or when the entity carries no chromatic layer. */
+    public static void captureSurfaceChromatic(LivingEntity entity, Model model, ResourceLocation texture,
+                                               PoseStack pose, int light) {
+        if (model == null || texture == null || entity.isInvisible()) return;
+        if (!CustomGlintRenderer.isShaderPackActive()) return;
+        CustomGlint.Data glint = resolveData(entity);
+        if (glint == null || !hasChromaticLayer(glint)) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        CustomGlint.Layer[] layers = glint.layers();
+        for (int li = 0; li < layers.length; li++) {
+            if (CustomGlint.isChromatic(layers[li])) {
+                GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, li, false, SHELL_CHROMATIC_BRIGHTNESS);
+            }
+        }
+    }
+
+    /** The slick composites over the translucent shell, so at full strength it reads as a solid glowing block
+     *  instead of an oil-slick sheen on jelly. Knock it down so the shell still shows through. Tunable. */
+    private static final float SHELL_CHROMATIC_BRIGHTNESS = 0.55f;
+
     /** Capture a posed horse-armor model for the post-Iris TEXTURED-glint overlay drain (shader-pack path).
      *  Mirrors {@link #captureChromaticModel}: a pack hijacks the in-phase glint_cutout program, so re-render
      *  the model into the record-only buffer once and queue its verts per COLOUR of {@code layerIdx} against
