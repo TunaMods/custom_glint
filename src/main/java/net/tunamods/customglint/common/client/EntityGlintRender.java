@@ -518,6 +518,11 @@ public final class EntityGlintRender {
             // alone would just drop the shell's self-occlusion (back faces show through); off-pack the shell
             // writes its own depth and the normal EQUAL path self-occludes correctly, so keep it.
             boolean translucent = isTranslucent(rt) && CustomGlintRenderer.isShaderPackActive();
+            // Opaque base surface under a shader pack: route to the OPAQUE_DECAL-tagged cutout variant so the glint
+            // flushes against stable opaque depth. In-phase forEntityGlint flushes too early under a pack and its
+            // EQUAL depth-cutout leaks onto the body's transparent texels. Off-pack, translucent, and TRIANGLES
+            // paths are unchanged.
+            boolean shaderCutout = !translucent && !triangles && CustomGlintRenderer.isShaderPackActive();
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
@@ -544,7 +549,9 @@ public final class EntityGlintRender {
                                 ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, i, triangles)
                                 : triangles
                                     ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, i)
-                                    : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
+                                    : shaderCutout
+                                        ? CustomGlintRenderer.forEntityGlintShaderCutout(glint, layerIdx, buf, i)
+                                        : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
                         if (grt != null) list.add(delegate.getBuffer(grt));
                     }
                 } else {
@@ -554,7 +561,9 @@ public final class EntityGlintRender {
                             ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, 0, triangles)
                             : triangles
                                 ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, 0)
-                                : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
+                                : shaderCutout
+                                    ? CustomGlintRenderer.forEntityGlintShaderCutout(glint, layerIdx, buf, 0)
+                                    : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
                     if (grt != null) list.add(delegate.getBuffer(grt));
                 }
             }

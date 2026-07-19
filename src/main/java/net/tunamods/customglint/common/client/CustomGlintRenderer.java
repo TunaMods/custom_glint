@@ -1283,6 +1283,29 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS, true);
     }
 
+    /**
+     * Opaque entity-body glint tagged for late shader render. Off-pack the plain {@link #forEntityGlint} EQUAL
+     * path carves the cutout against the body's own written depth (COLOR_WRITE, no depth write); under a shader
+     * pack our fixed glint buffer flushes before Iris resolves opaque depth, so the EQUAL test reads incomplete
+     * depth and the glint leaks onto the body's transparent-texel regions. Tagging it into the OPAQUE_DECAL
+     * bucket defers the flush until opaque depth is stable, restoring the cutout. Same EQUAL + NO_LAYERING +
+     * COLOR_WRITE + NO_CULL state as the opaque path; only the shader tag differs, so a distinct RT instance.
+     */
+    public static RenderType forEntityGlintShaderCutout(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        Layer layer = glint.layers()[layerIdx];
+        if (getTexture(layer.design()) == null) return null;
+        String key = "entShaderCut|" + layerKey(layer) + "|" + colorIdx + "|" + layerIdx;
+        float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
+        System.arraycopy(frameColor, 0, holder, 0, 4);
+        RenderType cached = BY_HORSE_ARMOR_GLINT.computeIfAbsent(key, k ->
+                modelGlintRT(layer, colorIdx, MOD_ID + ":custom_entity_glint_shader_cutout", k,
+                        VertexFormat.Mode.QUADS, holder, EQUAL_DEPTH_TEST, NO_LAYERING, COLOR_WRITE, NO_CULL, 1.0f,
+                        MOD_ID + ":custom_entity_glint_shader_cutout_texturing"));
+        registerLiveFixedBuffer(cached);
+        tagAsOpaqueDecalForShaders(cached);
+        return cached;
+    }
+
     // Horse armor uses entityCutoutNoCull (no polygon offset / no VIEW_OFFSET_Z_LAYERING).
     // forArmorGlint uses EQUAL + VIEW_OFFSET_Z_LAYERING; wrong offset → invisible on horses.
     // This variant keeps EQUAL + NO_LAYERING so depth matches, and scale 1.0 matches forArmorGlint visually.
