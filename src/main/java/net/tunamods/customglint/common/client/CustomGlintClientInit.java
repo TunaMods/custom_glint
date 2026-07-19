@@ -31,16 +31,9 @@ public final class CustomGlintClientInit {
         // they aren't pinned for the whole session.
         CustomGlintRenderer.additionalReloadCleanup.add(GlowOutlineRenderer::release);
 
-        // Once-per-frame stencil-clear gate reset, consumed by the compat stencil RTs
-        // (IaF mount armor, EK decorations) that still use pendingFrameStencilClear.
-        // RenderFrameEvent.Pre fires once per rendered frame regardless of shader pack or
-        // batched-render plumbing, which is what we need. Also resets the glow-outline
-        // per-frame capture queue + id counter.
-        NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> {
-            CustomGlintRenderer.pendingFrameStencilClear = true;
-            CustomGlintRenderer.resetStencilSlots();
-            GlowOutlineRenderer.beginFrame();
-        });
+        // Reset the glow-outline per-frame capture queue + id counter. RenderFrameEvent.Pre fires once per
+        // rendered frame regardless of shader pack or batched-render plumbing, which is what we need.
+        NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> GlowOutlineRenderer.beginFrame());
 
         // JEI (and other overlays) draw their ingredient-list icons in ScreenEvent.Render.Post, AFTER the
         // container screen's own batched-glint drains (AbstractContainerScreenMixin, before its tooltip). Those

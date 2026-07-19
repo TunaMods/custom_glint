@@ -26,11 +26,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * {@code renderDecoration} call can look up its glint data without referencing EK's internal
  * {@code ArmorDecorationItem.DecorationInfo} type (not on our compile classpath).
  *
- * Uses the stencil-masked decoration glint render types ({@code EpicKnightsGlintRT#forDecorationGlintSlot}
- * off-pack / {@code forDecorationGlintShader} under a shader pack) rather than
- * {@code CustomGlintRenderer.forArmorGlint} (EQUAL): EK's decoration pass writes depth that doesn't exactly match
- * the EQUAL test of the vanilla-style armor glint, leaving the glint invisible. The stencil mask constrains
- * the glint to opaque decoration texels so it doesn't bleed through transparent cutouts.
+ * Uses {@code EpicKnightsGlintRT#applyDecorationGlint} rather than {@code CustomGlintRenderer.forArmorGlint}: a
+ * plain EQUAL armor glint leaves the decoration glint invisible (EK's decoration pass writes depth that doesn't
+ * match), and an unmasked LEQUAL bleeds through the decoration's transparent texels. applyDecorationGlint clips
+ * the glint to the decoration's opaque texels instead: per-fragment off pack, via a depth self-mask under a
+ * shader pack.
  */
 @Pseudo
 @Mixin(targets = "com.magistuarmory.client.render.entity.layer.ArmorDecorationLayer", remap = false)
@@ -43,9 +43,9 @@ public class ArmorDecorationLayerMixin {
      * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
      * calls per iteration: a colored base (the IIIZ int-color overload) + an overlay (the IIZ
      * no-color overload, which delegates to IIIZ). Both bottom out in the IIIZ draw and fire our
-     * RETURN inject. The second call's stencil pre-pass clears the buffer and writes against the
-     * overlay texture, which is mostly transparent, clobbering the glint we just drew on the base.
-     * Skip when the same parts array fires twice back-to-back.
+     * RETURN inject. applyDecorationGlint already unions the base + sibling overlay, so letting the second call
+     * fire too would draw the same glint again and double-brighten it. Skip when the same parts array fires twice
+     * back-to-back.
      *
      * 1.21 note: EK's renderDecoration lost its old (float r, g, b) tint overload; color is now a
      * single packed int, matching the vanilla renderToBuffer change. Inject the IIIZ overload (the
@@ -92,7 +92,7 @@ public class ArmorDecorationLayerMixin {
                     CustomGlintRenderer.resolveGlowColor(stack));
         }
         if (glint != null) {
-            EpicKnightsGlintRT.applyDecorationGlint(pose, buffer, light, overlay, parts, texture, glint,
+            EpicKnightsGlintRT.applyDecorationGlint(entity, pose, buffer, light, overlay, parts, texture, glint,
                     glowing, stack);
         }
     }

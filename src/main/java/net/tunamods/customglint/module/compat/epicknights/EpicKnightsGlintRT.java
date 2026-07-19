@@ -12,7 +12,6 @@ import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -21,7 +20,6 @@ import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,59 +29,62 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Compat-local render pipeline for Epic Knights armor decorations.
+ * Standalone-only compat: Epic Knights (magistuarmory) renders armor decorations (plumes, surcoats, crowns)
+ * through its own {@code ArmorDecorationLayer}, past the base-armor mixin's reach, so the glint for those is
+ * drawn here. Glow outlines are unaffected; those come from the generic post-process silhouette
+ * ({@link #captureDecorationOutline}).
  *
- * The naive approach (just render parts with a glint render type) fails because:
- * - EQUAL depth test is invisible: EK's decoration depth and our glint depth differ by an FP
- *   epsilon despite using the same VIEW_OFFSET_Z_LAYERING. The same EQUAL works fine on
- *   {@link CustomGlint#forArmorGlint} for vanilla armor, so it's something about EK's pipeline.
- * - LEQUAL depth + no mask renders the full cuboid bounding box of each decoration ModelPart,
- *   bleeding through the transparent regions of the decoration texture; looks "huge" because
- *   the plume's cuboid is much larger than its visible feather shape.
+ * <p>Two paths, chosen by whether a shader pack is active. A decoration model is not its own shape (the mesh is a
+ * cuboid; only the texture's alpha says which texels are the plume, band, or cloth), so both paths clip the glint
+ * to the decoration's opaque texels and differ only in how.
  *
- * Solution: stencil pre-pass for the glint mask.
- * 1. Render parts with an outline-shader RT (alpha-discard, so it skips transparent texels).
- *    Stencil op REPLACE stamps the slot value only where the discard passes. Color/depth masks
- *    off so nothing visible is drawn.
- * 2. Render glint passes with stencil test EQUAL slot: glint only appears on opaque decoration
- *    texels. LEQUAL depth handles occlusion (other geometry in front of the decoration).
+ * <p>Off pack: a per-fragment texture cutout, the same technique {@link CustomGlintRenderer#forMountArmorGlint
+ * horse armor} uses. The custom {@code glint_cutout_deco} shader samples the decoration texture on Sampler1 /
+ * Sampler2 and discards where it is transparent, in the same draw as the glint. LEQUAL plus the camera-ward
+ * {@code gl_Position} bias in that shader's vertex stage let it sit proud of the coplanar decoration mesh, and
+ * NEW_ENTITY keeps it on Sodium's {@code renderCuboid} path alongside the decoration (see {@code forMountArmorGlint}
+ * and the per-buffer draw in {@link #applyDecorationGlint_cutout} for the Sodium rationale). This path replaced the
+ * old stencil mask, so the mod no longer calls {@code enableStencil} anywhere.
  *
- * Glow outlines are no longer drawn here; they come from the generic post-process silhouette.
+ * <p>On pack: defer instead of drawing in phase. An active pack hijacks the custom cutout program (every fragment
+ * discards, so the glint vanishes), and a vanilla-shader depth self-mask flickers under Iris's re-sorted depth. So
+ * capture the decoration parts and queue them for the post-Iris textured-glint overlay drain, the same path
+ * horse/mount armor uses under a pack ({@link EntityGlintRender#captureGlintModelParts}): it re-renders after the
+ * pack finishes and composites back, which is stable. Union over base + sibling so a split-shape decoration is
+ * fully covered.
+ *
+ * <p>Union: dyeable decorations split their shape across a dye-tinted base and an un-tinted overlay file (crowns
+ * keep the band in the overlay and only the gems in the base; surcoats are the opposite), so both paths cover the
+ * union of the two textures.
  */
 public final class EpicKnightsGlintRT extends RenderStateShard {
     private EpicKnightsGlintRT() { super("", () -> {}, () -> {}); }
 
-    private static final RenderStateShard.WriteMaskStateShard EK_NO_WRITE =
-            new RenderStateShard.WriteMaskStateShard(false, false);
+    // Is Sodium's entity render path on the classpath this run? Gates the per-buffer glint draw in the off-pack
+    // cutout, exactly as HorseArmorLayerMixin does for the horse cutout.
+    private static final boolean SODIUM_PRESENT =
+            cg_classPresent("net.caffeinemc.mods.sodium.client.render.immediate.model.EntityRenderer");
 
-    // ── Per-slot infrastructure for FullyBuffered (Oculus-no-pack) path ────────────────────
-    //
-    // Under Oculus's FullyBufferedMultiBufferSource, endBatch(rt) defers the actual draw to a
-    // later graph-ordered flush. Any manual glStencilOp/glStencilFunc/glColorMask calls between
-    // pass A's endBatch and pass B's endBatch execute immediately on the CPU but DON'T apply to
-    // the deferred draws; by the time the graph flushes A and B, GL state is whatever was set
-    // last. Result: stencil disabled, both glint and outline silently invisible.
-    //
-    // Fix: bake every stencil state change into the RT's layering shard (setupRenderState fires
-    // at deferred-flush time, just before the draw). No manual GL state between passes.
-    //
-    // Slot isolation: each applyDecorationGlint call allocates a unique stencil slot V via
-    // CustomGlintRenderer.nextStencilSlot(). WRITE stamps V at the decoration's silhouette;
-    // GLINT tests EQUAL V (this decoration only). Multiple decorations per frame don't
-    // cross-contaminate.
+    private static boolean cg_classPresent(String fqn) {
+        try { Class.forName(fqn, false, EpicKnightsGlintRT.class.getClassLoader()); return true; }
+        catch (Throwable t) { return false; }
+    }
 
-    /** Bound shared by the per-slot/shader decoration RT caches. The per-frame stencil slot (1..255)
-     *  is baked into each RT's layering closure, so a fixed decoration spawns a distinct entry per slot
-     *  it lands on across frames; design/colours/speed/scale are user-controllable on top of that.
-     *  Without a cap these maps grow until resource reload, each entry pinning a native ByteBufferBuilder
-     *  in fixedBuffers, exactly what CustomGlintRenderer's RtCache (cap 256) already prevents for the
-     *  core caches. The cap sits well above the distinct (slot,config) draws possible in one frame, so
-     *  the LRU never evicts an entry still needed in the current frame. */
+    /** Two-mask decoration cutout program (off-pack); loaded in core alongside {@code glint_cutout}. */
+    private static final RenderStateShard.ShaderStateShard DECO_CUTOUT_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(CustomGlintRenderer::glintCutoutDecoShader);
+
+    /** Bound on the off-pack cutout RT cache. Design / colours / speed / scale are user-controllable and each
+     *  distinct config is a distinct entry; a fixed decoration also spans one entry per texture it draws with.
+     *  Without a cap the map grows until resource reload, each entry pinning a native ByteBufferBuilder in
+     *  fixedBuffers, exactly what CustomGlintRenderer's RtCache (cap 256) prevents for the core caches. The cap
+     *  sits well above the distinct configs on screen in one frame, so the LRU never evicts an entry still needed
+     *  this frame. */
     private static final int EK_CACHE_CAP = 512;
 
-    /** Access-order LRU mirroring {@link CustomGlintRenderer}'s RtCache: past {@link #EK_CACHE_CAP} it
-     *  evicts the eldest RT (closing its native fixed buffer via {@link CustomGlintRenderer#evictRt})
-     *  and, when paired, drops its colour holder so the two maps stay in lockstep. */
+    /** Access-order LRU mirroring {@link CustomGlintRenderer}'s RtCache: past {@link #EK_CACHE_CAP} it evicts the
+     *  eldest RT (closing its native fixed buffer via {@link CustomGlintRenderer#evictRt}) and drops its colour
+     *  holder so the two maps stay in lockstep. */
     private static final class EkRtCache extends LinkedHashMap<String, RenderType> {
         private final Map<String, float[]> colors;
         EkRtCache(Map<String, float[]> colors) { super(64, 0.75f, true); this.colors = colors; }
@@ -97,135 +98,65 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         }
     }
 
-    /** Per-slot WRITE RT cache, keyed by (slot, tex). Each entry's TextureStateShard closes
-     *  over a stable texture, so multiple textures in one slot don't clobber each other's
-     *  binding under FullyBuffered's deferred flush. */
-    private static final Map<String, RenderType> SLOT_WRITE_CACHE = new EkRtCache(null);
+    private static final Map<String, float[]> DECO_CUTOUT_COLORS = new HashMap<>();
+    private static final Map<String, RenderType> DECO_CUTOUT_CACHE = new EkRtCache(DECO_CUTOUT_COLORS);
 
-    /** Depth-correct per-slot WRITE shard. dpfail=KEEP (no back-plane bleed). Honors the once-
-     *  per-frame {@code pendingFrameStencilClear} gate from CustomGlintRenderer so the stencil
-     *  buffer is cleared at the first WRITE of the frame (any glint pipeline can do it). */
-    private static RenderStateShard.LayeringStateShard ekStencilWriteLayeringSlot(final int v) {
-        return new RenderStateShard.LayeringStateShard(
-                "custom_glint_ek_stencil_write_slot_v" + v,
-                () -> {
-                    Minecraft.getInstance().getMainRenderTarget().enableStencil();
-                    GL11.glEnable(GL11.GL_STENCIL_TEST);
-                    GL11.glStencilMask(0xFF);
-                    if (CustomGlintRenderer.pendingFrameStencilClear) {
-                        GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
-                        CustomGlintRenderer.pendingFrameStencilClear = false;
-                    }
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, v, 0xFF);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
-                },
-                () -> {
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-                    GL11.glDisable(GL11.GL_STENCIL_TEST);
-                });
-    }
-
-    /** Per-slot WRITE RT factory. Cached per (slot, tex) so calling with different textures in
-     *  the same slot doesn't clobber a shared holder. Crowns need a stencil write through BOTH
-     *  base and overlay textures (shape lives in overlay); a mutable per-slot holder would
-     *  collapse the second call's texture onto both deferred draws under FullyBuffered. */
-    public static RenderType forDecorationStencilWriteSlot(int v, ResourceLocation texture) {
-        String key = v + "|" + texture;
-        RenderType rt = SLOT_WRITE_CACHE.computeIfAbsent(key, k -> {
-            RenderType created = RenderType.create(
-                    "customglint:ek_deco_stencil_write_slot|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_TEX_COLOR,
-                    VertexFormat.Mode.QUADS,
-                    1536, false, false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
-                            .setTextureState(new TextureStateShard(texture, false, false))
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
-                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
-                            .setWriteMaskState(EK_NO_WRITE)
-                            .setLayeringState(ekStencilWriteLayeringSlot(v))
-                            .createCompositeState(false));
-            CustomGlintRenderer.putCapturedFixedBuffer(created);
-            return created;
-        });
-        CustomGlintRenderer.registerLiveFixedBuffer(rt);
-        return rt;
-    }
-
-    /** Per-slot GLINT layering: VIEW_OFFSET_Z polygon offset + stencil EQUAL v. */
-    private static RenderStateShard.LayeringStateShard ekGlintStencilTestLayeringSlot(final int v) {
-        return new RenderStateShard.LayeringStateShard(
-                "custom_glint_ek_glint_stencil_test_slot_v" + v,
-                () -> {
-                    GL11.glEnable(GL11.GL_STENCIL_TEST);
-                    GL11.glStencilMask(0xFF);
-                    GL11.glStencilFunc(GL11.GL_EQUAL, v, 0xFF);
-                    GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-                    GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
-                    GL11.glPolygonOffset(-1.0f, -10.0f);
-                },
-                () -> {
-                    GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
-                    GL11.glDisable(GL11.GL_STENCIL_TEST);
-                    GL11.glPolygonOffset(0.0f, 0.0f);
-                    GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
-                });
-    }
-
-    /** Per-slot glint RT cache, keyed by (slot, design, colors, speed, scale, colorIdx). */
-    private static final Map<String, float[]> SLOT_GLINT_COLORS = new HashMap<>();
-    private static final Map<String, RenderType> SLOT_GLINT_CACHE = new EkRtCache(SLOT_GLINT_COLORS);
-
-    public static RenderType forDecorationGlintSlot(int slot, CustomGlint.Data glint, int layerIdx,
-            float[] frameColor, int colorIdx) {
+    /**
+     * Off-pack decoration cutout glint RT. Sampler0 is the scrolled design; Sampler1 / Sampler2 are the decoration
+     * base + overlay textures whose alpha union masks the glint to the decoration silhouette (see the class header).
+     * NEW_ENTITY + LEQUAL + NO_LAYERING with the depth bias in the vertex program, exactly like
+     * {@link CustomGlintRenderer#forMountArmorGlint}; only the texturing (EK's own scrolling glint drift) and the
+     * second mask differ.
+     */
+    public static RenderType forDecorationGlintCutout(CustomGlint.Data glint, int layerIdx, float[] frameColor,
+            int colorIdx, ResourceLocation baseTex, ResourceLocation overlayTex) {
+        if (CustomGlintRenderer.glintCutoutDecoShader() == null) return null;
         CustomGlint.Layer layer = glint.layers()[layerIdx];
-        if (CustomGlintRenderer.getTexture(layer.design()) == null) return null;
-        String key = "ek-deco-slot|" + slot + "|" + layer.design() + "|" + Arrays.toString(layer.colors())
-                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
-        float[] holder = SLOT_GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
+        final ResourceLocation design = layer.design();
+        if (CustomGlintRenderer.getTexture(design) == null) return null;
+        // Sampler2 = the overlay for dyeable decorations, else the base itself (union collapses to base).
+        final ResourceLocation mask2 = overlayTex != null ? overlayTex : baseTex;
+        // Key MUST include layerIdx: two visually identical layers would otherwise resolve to one cached RT and,
+        // added twice to the same VertexMultiConsumer, trip Mixin's "Duplicate delegates" guard.
+        String key = "ek-deco-cut|" + design + "|" + Arrays.toString(layer.colors()) + "|" + layer.speed()
+                + "|" + layer.patternScale() + "|" + layerIdx + "|" + colorIdx + "|" + baseTex + "|" + mask2;
+        float[] holder = DECO_CUTOUT_COLORS.computeIfAbsent(key, k -> new float[4]);
         System.arraycopy(frameColor, 0, holder, 0, 4);
-        RenderType cached = SLOT_GLINT_CACHE.computeIfAbsent(key, k -> {
-            ResourceLocation tex = layer.design();
+        RenderType cached = DECO_CUTOUT_CACHE.computeIfAbsent(key, k -> {
             RenderType rt = RenderType.create(
-                    "customglint:ek_deco_glint_slot|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_TEX,
+                    "customglint:ek_deco_glint_cutout|" + k.hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
                     VertexFormat.Mode.QUADS,
                     256, false, false,
                     RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
-                            .setTextureState(new TextureStateShard(tex, false, false) {
+                            .setShaderState(DECO_CUTOUT_SHADER_SHARD)
+                            .setTextureState(new TextureStateShard(design, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
+                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(design));
+                                    RenderSystem.setShaderTexture(1, baseTex);
+                                    RenderSystem.setShaderTexture(2, mask2);
                                     RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
+                                    RenderSystem.setShaderTexture(1, 0);
+                                    RenderSystem.setShaderTexture(2, 0);
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
                             .setWriteMaskState(COLOR_WRITE)
                             .setCullState(NO_CULL)
+                            // LEQUAL + NO_LAYERING; the camera-ward bias lives in the glint_cutout VERTEX SHADER
+                            // (gl_Position), so it survives Sodium's entity path. Same setup as forMountArmorGlint.
                             .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            .setLayeringState(ekGlintStencilTestLayeringSlot(slot))
+                            .setLayeringState(NO_LAYERING)
                             .setTransparencyState(GLINT_TRANSPARENCY)
-                            .setTexturingState(new TexturingStateShard("customglint:ek_deco_glint_slot_tx", () -> {
-                                float phase = (float) colorIdx / Math.max(1, layer.colors().length);
-                                long t = (long) (Util.getMillis() * 8.0 * layer.speed());
-                                float f  = (float) (t % 110000L) / 110000.0F + phase;
-                                float f1 = (float) (t % 30000L)  /  30000.0F;
-                                Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, -f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, f1, 0.0F);
-                                m.scale(8.0f * layer.patternScale());
-                                RenderSystem.setTextureMatrix(m);
-                            }, RenderSystem::resetTextureMatrix))
+                            // Same model-UV scroll as worn armor and the on-pack overlay (forGlintEntityOverlay),
+                            // so the decoration glint tiles at one consistent scale on and off pack. NOT the
+                            // item-style 8x scroll, which tiled far too densely on the model-space decoration.
+                            .setTexturingState(new TexturingStateShard("customglint:ek_deco_glint_cutout_tx",
+                                    () -> CustomGlintRenderer.setModelScrollMatrix(layer, colorIdx),
+                                    RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
             CustomGlintRenderer.putCapturedFixedBuffer(rt);
             return rt;
@@ -241,13 +172,12 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
      *   base = textures/.../foo.png         (dye-tinted layer)
      *   overlay = textures/.../foo_overlay.png  (un-tinted detail)
      *
-     * For most decorations the SHAPE lives in the base (plumes, surcoats); for crowns it's
-     * inverted: base holds only the 16 gem pixels, overlay holds the 96 band pixels. Stencil
-     * write must therefore union both texture's opaque pixels so the glint mask covers the
-     * complete decoration silhouette regardless of layout.
+     * For most decorations the SHAPE lives in the base (plumes, surcoats); for crowns it's inverted: base holds
+     * only the 16 gem pixels, overlay holds the 96 band pixels. The mask must therefore union both textures'
+     * opaque pixels so the glint covers the complete decoration silhouette regardless of layout.
      *
-     * Returns null if the path doesn't match the expected suffix shape, or for non-dyeable
-     * decorations whose sibling file doesn't exist.
+     * Returns null if the path doesn't match the expected suffix shape, or for non-dyeable decorations whose
+     * sibling file doesn't exist.
      */
     private static ResourceLocation siblingTexture(ResourceLocation tex) {
         String path = tex.getPath();
@@ -261,8 +191,8 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         } else {
             return null;
         }
-        // Existence check avoids triggering the missing-texture pink fallback (which has
-        // full alpha → would write stencil over the entire decoration cuboid).
+        // Existence check avoids triggering the missing-texture pink fallback (which has full alpha → would
+        // extend the mask over the entire decoration cuboid).
         return Minecraft.getInstance().getResourceManager().getResource(sibling).isPresent() ? sibling : null;
     }
 
@@ -285,96 +215,44 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         }
     }
 
-    /**
-     * Entry point. The decoration-glint masking mechanism depends only on whether a shader PACK is active:
-     * <ul>
-     *   <li><b>No active pack</b> (vanilla, or a shader mod installed but no pack loaded): the main target's
-     *       stencil buffer is usable, so the slot-based stencil-mask path runs.</li>
-     *   <li><b>Active pack</b>: FullyBuffered batching + the pack's own pipeline make stencil unreliable, so
-     *       the depth-prewrite self-mask path runs instead.</li>
-     * </ul>
-     * (The old shader-mod-installed-but-no-pack case had its own branch that just delegated to the no-pack
-     * path, so it's folded into the {@code else} here.)
-     *
-     * <p><b>Why this is the one glint branch on shader state.</b> Every other glint surface (items, armor,
-     * entities, mounts) is single-path and shader-agnostic. EK decorations are the exception, and it's
-     * deliberate, not leftover: the decoration mesh needs its glint clipped to its own silhouette, and the
-     * stencil-slot mask that does that cheaply gets torn apart under an active pack (FullyBuffered reorders
-     * the WRITE-then-test, so the EQUAL test reads a half-written stencil and the glint flickers hard).
-     * Verified by forcing the no-pack stencil path under a pack: it flickered severely. The depth-prewrite
-     * self-mask avoids stencil entirely, so it survives the pack. Keep both paths until decoration glint is
-     * reworked onto the single LEQUAL + texture-cutout mask the core armor glint uses (would drop this branch
-     * and the last {@code isShaderPackActive} glint check).
-     */
-    public static void applyDecorationGlint(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
+    /** Entry point. Off-pack uses the per-fragment cutout; under a shader pack the cutout program is hijacked, so
+     *  it defers to the post-Iris overlay drain (see the class header). */
+    public static void applyDecorationGlint(LivingEntity entity, PoseStack pose, MultiBufferSource buffer,
+            int light, int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
             boolean glowing, ItemStack stack) {
+        if (CustomGlintRenderer.isInShadowPass()) return;
         if (CustomGlintRenderer.isShaderPackActive()) {
-            applyDecorationGlint_shadersOn(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+            applyDecorationGlint_shadersOn(entity, pose, light, parts, decorationTexture, glint);
         } else {
-            applyDecorationGlint_shadersOff(pose, buffer, light, overlay, parts, decorationTexture, glint, glowing, stack);
+            applyDecorationGlint_cutout(pose, buffer, light, overlay, parts, decorationTexture, glint);
         }
     }
 
     /**
-     * SHADERS OFF path (Oculus loaded, no pack active). FullyBufferedMultiBufferSource defers
-     * endBatch(rt) draws to a later graph-ordered flush; manual glStencilXxx calls between
-     * passes don't apply. Solution: bake all stencil state into per-slot RT layering shards.
-     *
-     * Each call allocates a unique stencil slot V. WRITE stamps V; GLINT tests EQUAL V (this
-     * decoration's own silhouette). Multiple decorations per frame use different slots, no
-     * cross-contamination.
-     *
-     * The dependency graph adds edges based on bs.getBuffer() insertion order: calling WRITE→
-     * GLINT registers WRITE-before-GLINT for the eventual flush.
+     * Off-pack path. Binds the decoration's base + sibling overlay to the cutout shader and draws the glint
+     * clipped to their union, biased proud of the decoration.
      */
-    private static void applyDecorationGlint_shadersOff(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
-        // After an Iris pack toggle (activate then deactivate), the entity render dispatcher hands
-        // layers a synthetic lambda MultiBufferSource that does NOT extend BufferSource. The old
-        // `instanceof BufferSource` check then bailed here and the decoration glint silently vanished
-        // until a world reload rebuilt the dispatcher with a real BufferSource. Fall back to the global
-        // bufferSource (the canonical singleton that wrapper delegates to under the hood) so getBuffer
-        // and endBatch hit the same underlying builders.
+    private static void applyDecorationGlint_cutout(PoseStack pose, MultiBufferSource buffer, int light,
+            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
+        if (CustomGlintRenderer.glintCutoutDecoShader() == null) return;
+
+        // After an Iris pack toggle (activate then deactivate) the entity render dispatcher can hand layers a
+        // synthetic lambda MultiBufferSource that does NOT extend BufferSource; its getBuffer would spin up a
+        // throwaway builder instead of our registered fixed buffer, and the glint would silently vanish until a
+        // world reload. Fall back to the canonical global bufferSource (where our fixed buffers live) so getBuffer
+        // routes to the right builders.
         MultiBufferSource.BufferSource bs = buffer instanceof MultiBufferSource.BufferSource direct
                 ? direct : Minecraft.getInstance().renderBuffers().bufferSource();
         if (bs == null) return;
-        if (CustomGlintRenderer.isInShadowPass()) return;
 
-        // Full pre-flush: drains EK's pending decoration verts and any other queued state so
-        // our slot-stamped writes don't compete with unflushed earlier work in the graph order.
-        // A partial endBatch(rt) only flushes the lastState RT; under FullyBuffered we need a full
-        // drain to avoid mid-frame state mixing.
-        bs.endBatch();
+        // Union cutout: crowns put the band in the overlay and only the gems in the base; surcoats are the
+        // opposite. Bind both so the glint lands on the whole silhouette. No sibling → the factory binds the base
+        // to Sampler2 as well.
+        ResourceLocation overlayTex = siblingTexture(decorationTexture);
 
-        int slot = CustomGlintRenderer.nextStencilSlot();
-
-        // ── Pass 1: per-slot stencil write ─────────────────────────────────────────────────
-        // forDecorationStencilWriteSlot's shard handles enableStencil, pendingFrameStencilClear,
-        // and stamps slot V where alpha-pass AND depth-pass. No manual GL here.
-        // Union over base + sibling overlay: crowns put their band shape in the overlay and only
-        // the gems in the base. Without writing through both, stencil V only covers the gems and
-        // the outline's NOTEQUAL-V test fills the entire crown band.
-        ResourceLocation siblingWrite = siblingTexture(decorationTexture);
-        ResourceLocation[] writeTextures = siblingWrite != null
-                ? new ResourceLocation[]{decorationTexture, siblingWrite}
-                : new ResourceLocation[]{decorationTexture};
-        for (ResourceLocation tex : writeTextures) {
-            RenderType writeRT = forDecorationStencilWriteSlot(slot, tex);
-            VertexConsumer writeVC = bs.getBuffer(writeRT);
-            for (ModelPart part : parts) {
-                part.render(pose, writeVC, light, OverlayTexture.NO_OVERLAY, 0x00FFFFFF);
-            }
-            bs.endBatch(writeRT);
-        }
-
-        // ── Pass 2: glint where stencil == slot ────────────────────────────────────────────
-        // forDecorationGlintSlot's shard does stencil EQUAL slot + polygon offset. No manual GL.
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> glintVCs = new ArrayList<>();
-        List<RenderType> glintRTs = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
@@ -384,8 +262,8 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                     buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
                     buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
                     buf[3] = 1.0f;
-                    RenderType rt = forDecorationGlintSlot(slot, glint, li, buf, i);
-                    if (rt != null) { glintRTs.add(rt); glintVCs.add(bs.getBuffer(rt)); }
+                    RenderType rt = forDecorationGlintCutout(glint, li, buf, i, decorationTexture, overlayTex);
+                    if (rt != null) glintVCs.add(bs.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
@@ -394,233 +272,67 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
                 buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
                 buf[2] = ( color        & 0xFF) / 255.0f * a;
                 buf[3] = 1.0f;
-                RenderType rt = forDecorationGlintSlot(slot, glint, li, buf, 0);
-                if (rt != null) { glintRTs.add(rt); glintVCs.add(bs.getBuffer(rt)); }
+                RenderType rt = forDecorationGlintCutout(glint, li, buf, 0, decorationTexture, overlayTex);
+                if (rt != null) glintVCs.add(bs.getBuffer(rt));
             }
         }
-        if (!glintVCs.isEmpty()) {
+        if (glintVCs.isEmpty()) return;
+
+        // Sodium coplanar z-fight (mirrors HorseArmorLayerMixin): the glint is bit-coplanar with the decoration
+        // mesh, and the +0.01 gl_Position bias only wins the tie cleanly when both meshes ride the SAME vertex
+        // pipeline. Under Sodium a single VertexMultiConsumer breaks the renderCuboid fast-path ("does not
+        // support optimized vertex writing"), dropping the glint to the vanilla per-vertex path while the
+        // decoration stays on renderCuboid, so the bias can't arbitrate. Per-buffer walks keep every layer on
+        // renderCuboid alongside the decoration; without Sodium the single combined draw is fine.
+        if (SODIUM_PRESENT) {
+            for (VertexConsumer vc : glintVCs) {
+                for (ModelPart part : parts) {
+                    part.render(pose, vc, light, overlay, 0xFFFFFFFF);
+                }
+            }
+        } else {
             VertexConsumer combined = glintVCs.size() == 1 ? glintVCs.get(0)
                     : VertexMultiConsumer.create(glintVCs.toArray(new VertexConsumer[0]));
             for (ModelPart part : parts) {
                 part.render(pose, combined, light, overlay, 0xFFFFFFFF);
             }
-            for (RenderType rt : glintRTs) bs.endBatch(rt);
         }
-
-        // The glow outline is no longer drawn here; outlines are the post-process silhouette
-        // captured generically by RenderLayerMixin for EK decoration layers.
+        // The glow outline comes from the generic post-process silhouette captured by RenderLayerMixin for EK
+        // decoration layers (see captureDecorationOutline), not here.
     }
 
     /**
-     * SHADERS ON path. An active shader pack runs FullyBufferedMultiBufferSource with
-     * TransparencyType-based RT reordering, so any stencil silhouette we stamp is overwritten /
-     * reordered by pack-injected passes before our glint test fires; the slot-based stencil
-     * path used in {@link #applyDecorationGlint_shadersOff} (which works because Oculus-no-pack
-     * still preserves WRITE→TEST insertion edges) goes completely invisible here.
-     *
-     * Glint pass: a depth pre-write self-mask. {@link #forDecorationDepthPrewrite} writes depth
-     * only at opaque decoration texels via RENDERTYPE_OUTLINE_SHADER's alpha-discard (raw
-     * projected depth, no polygon offset); {@link #forDecorationGlintShader} then tests EQUAL
-     * against that depth so glint draws only at those exact texels. No stencil dependency.
-     *
-     * The glow outline is no longer drawn here; outlines are the post-process silhouette
-     * captured generically by RenderLayerMixin for EK decoration layers.
+     * On-pack path. An active pack hijacks any in-phase custom cutout program, and a vanilla-shader depth
+     * self-mask flickers under Iris's re-sorted depth, so defer: capture the decoration parts and queue them for
+     * the post-Iris textured-glint overlay drain (the same path horse/mount armor uses under a pack). Union over
+     * base + sibling so a split-shape decoration (crown: band in the overlay) is fully covered.
      */
-    private static void applyDecorationGlint_shadersOn(PoseStack pose, MultiBufferSource buffer, int light,
-            int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
-        if (CustomGlintRenderer.isInShadowPass()) return;
-
-        // Sibling overlay union: dyeable decorations have shape split across base+overlay
-        // (crowns: shape in overlay, base = gems only; surcoats: opposite). Compute once.
+    private static void applyDecorationGlint_shadersOn(LivingEntity entity, PoseStack pose, int light,
+            ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
+        if (entity == null) return;
         ResourceLocation sibling = siblingTexture(decorationTexture);
-
-        // ── Glint: depth-prewrite self-mask ─────────────────────────────────────────
-        // forDecorationDepthPrewrite uses RENDERTYPE_OUTLINE_SHADER which alpha-discards at 0
-        // in fragment code (independent of shader pack settings), writing depth ONLY at opaque
-        // texels, no polygon offset, raw projected depth. forDecorationGlintShader then tests
-        // EQUAL against that raw depth (also no offset), so it draws only at the same opaque
-        // texels. Self-mask without stencil. Both RTs are late-tagged so they flush after EK's
-        // own decoration draw under FullyBuffered. Union over base + sibling so the prewrite
-        // covers the complete silhouette regardless of which texture holds the shape (crowns
-        // put the band in overlay, base = gems only; surcoats are the opposite).
-        ResourceLocation[] depthTextures = sibling != null
+        ResourceLocation[] textures = sibling != null
                 ? new ResourceLocation[]{decorationTexture, sibling}
                 : new ResourceLocation[]{decorationTexture};
-        for (ResourceLocation tex : depthTextures) {
-            RenderType prewriteRT = forDecorationDepthPrewrite(tex);
-            VertexConsumer prewriteVC = buffer.getBuffer(prewriteRT);
-            for (ModelPart part : parts) {
-                part.render(pose, prewriteVC, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-            }
-        }
-
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
-        List<VertexConsumer> glintVCs = new ArrayList<>();
-        for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors();
-            if (layers[li].simultaneous()) {
-                for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = forDecorationGlintShader(glint, li, buf, i);
-                    if (rt != null) glintVCs.add(buffer.getBuffer(rt));
-                }
-            } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
-                RenderType rt = forDecorationGlintShader(glint, li, buf, 0);
-                if (rt != null) glintVCs.add(buffer.getBuffer(rt));
+        for (ResourceLocation tex : textures) {
+            for (int li = 0; li < layers.length; li++) {
+                EntityGlintRender.captureGlintModelParts(entity, parts, tex, pose, light, glint, li);
             }
         }
-        if (!glintVCs.isEmpty()) {
-            VertexConsumer combined = glintVCs.size() == 1 ? glintVCs.get(0)
-                    : VertexMultiConsumer.create(glintVCs.toArray(new VertexConsumer[0]));
-            for (ModelPart part : parts) {
-                part.render(pose, combined, light, overlay, 0xFFFFFFFF);
-            }
-        }
-
-        // The glow outline is no longer drawn here; outlines are the post-process silhouette
-        // captured generically by RenderLayerMixin for EK decoration layers.
     }
 
     /**
-     * Depth pre-pass RT for the shader-pack glint path. RENDERTYPE_OUTLINE_SHADER does its own
-     * alpha-discard (alpha == 0) in fragment code (independent of shader pack settings),
-     * so depth gets written ONLY at opaque decoration texels. No polygon offset (raw projected
-     * depth), so the subsequent EQUAL glint pass (also no offset) compares raw depths and
-     * matches exactly: no FP epsilon mismatch with EK's polygon-offset depth.
-     *
-     * Color write disabled: we only need this to land in the depth buffer. Tagged late so
-     * it flushes after EK's color/depth land (we want OUR depth to be the most recent value
-     * at each opaque texel, so the glint EQUAL sees a value we control).
-     */
-    private static final Map<ResourceLocation, RenderType> DEPTH_PREWRITE_CACHE = new HashMap<>();
-    private static RenderType forDecorationDepthPrewrite(ResourceLocation decoTex) {
-        return DEPTH_PREWRITE_CACHE.computeIfAbsent(decoTex, tex -> {
-            RenderType rt = RenderType.create(
-                    "customglint:ek_deco_depth_prewrite",
-                    DefaultVertexFormat.POSITION_TEX_COLOR,
-                    VertexFormat.Mode.QUADS,
-                    1536, false, false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_OUTLINE_SHADER)
-                            .setTextureState(new TextureStateShard(tex, false, false))
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(LEQUAL_DEPTH_TEST)
-                            // DEPTH_WRITE: writes only depth, no color.
-                            .setWriteMaskState(DEPTH_WRITE)
-                            .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
-                            .setOutputState(CustomGlintRenderer.FORCE_MAIN_TARGET)
-                            .createCompositeState(false));
-            CustomGlintRenderer.putCapturedFixedBuffer(rt);
-            CustomGlintRenderer.registerLiveFixedBuffer(rt);
-            CustomGlintRenderer.tagAsLateRenderForShaders(rt);
-            return rt;
-        });
-    }
-
-    /**
-     * Shader-pack-only glint RT: EQUAL depth + VIEW_OFFSET_Z_LAYERING (matches EK's
-     * armorCutoutNoCull polygon offset exactly). Self-masks to opaque decoration texels:
-     * EK's armorCutoutNoCull discards transparent fragments (alpha &lt; 0.1), so depth is
-     * written ONLY where the decoration has visible pixels. EQUAL passes only at those
-     * exact texels, transparent regions don't draw → glint follows the decoration shape
-     * without needing a stencil mask.
-     *
-     * Why we can't just switch {@link #forDecorationGlintSlot} to EQUAL: that RT is used by the
-     * no-shaders and shaders-off paths which rely on its LEQUAL behavior with stencil masking
-     * for cases where the depth-match approach was historically observed to fail (FP epsilon,
-     * documented in this file's javadoc). Under shader packs we don't have a stencil option,
-     * so depth-self-mask is the only path, and empirically it works here.
-     *
-     * Tagged for shader-pack late render (LINES bucket) so this flushes AFTER EK's decoration
-     * depth lands. Otherwise FullyBuffered ordering could schedule the glint first and EQUAL
-     * compares against clear-depth → invisible.
-     */
-    private static final Map<String, float[]> SHADER_GLINT_COLORS = new HashMap<>();
-    private static final Map<String, RenderType> SHADER_GLINT_CACHE = new EkRtCache(SHADER_GLINT_COLORS);
-    public static RenderType forDecorationGlintShader(CustomGlint.Data glint, int layerIdx,
-            float[] frameColor, int colorIdx) {
-        CustomGlint.Layer layer = glint.layers()[layerIdx];
-        if (CustomGlintRenderer.getTexture(layer.design()) == null) return null;
-        String key = "ek-deco-sh|" + layer.design() + "|" + Arrays.toString(layer.colors())
-                + "|" + layer.speed() + "|" + layer.patternScale() + "|" + colorIdx;
-        float[] holder = SHADER_GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
-        System.arraycopy(frameColor, 0, holder, 0, 4);
-        RenderType cached = SHADER_GLINT_CACHE.computeIfAbsent(key, k -> {
-            ResourceLocation tex = layer.design();
-            RenderType rt = RenderType.create(
-                    "customglint:ek_decoration_glint_sh|" + k.hashCode(),
-                    DefaultVertexFormat.POSITION_TEX,
-                    VertexFormat.Mode.QUADS,
-                    256, false, false,
-                    RenderType.CompositeState.builder()
-                            .setShaderState(RENDERTYPE_GLINT_SHADER)
-                            .setTextureState(new TextureStateShard(tex, false, false) {
-                                @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, CustomGlintRenderer.getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
-                                }
-                                @Override public void clearRenderState() {
-                                    super.clearRenderState();
-                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-                                }
-                            })
-                            .setWriteMaskState(COLOR_WRITE)
-                            .setCullState(NO_CULL)
-                            .setDepthTestState(EQUAL_DEPTH_TEST)
-                            // No layering: match the depth pre-pass which uses no polygon
-                            // offset, so EQUAL compares raw projected depths and matches.
-                            .setTransparencyState(GLINT_TRANSPARENCY)
-                            .setTexturingState(new TexturingStateShard("customglint:ek_decoration_glint_sh_texturing", () -> {
-                                float phase = (float) colorIdx / Math.max(1, layer.colors().length);
-                                long t = (long) (Util.getMillis() * 8.0 * layer.speed());
-                                float f  = (float) (t % 110000L) / 110000.0F + phase;
-                                float f1 = (float) (t % 30000L)  /  30000.0F;
-                                Matrix4f m = new Matrix4f().translation(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, -f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(-f, f1, 0.0F);
-                                m.rotateZ((float) (Math.PI / 3.0));
-                                m.translate(f, f1, 0.0F);
-                                m.scale(8.0f * layer.patternScale());
-                                RenderSystem.setTextureMatrix(m);
-                            }, RenderSystem::resetTextureMatrix))
-                            .createCompositeState(false));
-            CustomGlintRenderer.putCapturedFixedBuffer(rt);
-            CustomGlintRenderer.tagAsLateRenderForShaders(rt);
-            return rt;
-        });
-        CustomGlintRenderer.registerLiveFixedBuffer(cached);
-        return cached;
-    }
-
-    /**
-     * Release every cached decoration RenderType (closing its native fixed buffer via
-     * {@link CustomGlintRenderer#evictRt}) and clear the colour holders, on resource reload. Without
-     * this the RTs survive a reload pointing at freed design textures and their {@code ByteBufferBuilder}s
-     * leak. Registered into {@link CustomGlintRenderer#additionalReloadCleanup} by EK client wiring.
+     * Release the off-pack cutout RenderTypes (closing each native fixed buffer via
+     * {@link CustomGlintRenderer#evictRt}) and clear the colour holders, on resource reload. Without this the RTs
+     * survive a reload pointing at freed design textures and their {@code ByteBufferBuilder}s leak. Registered
+     * into {@link CustomGlintRenderer#additionalReloadCleanup} by EK client wiring. (The on-pack path holds no RTs
+     * of its own; it queues into the shared overlay drain.)
      */
     public static void releaseCaches() {
-        for (RenderType rt : SLOT_WRITE_CACHE.values())  CustomGlintRenderer.evictRt(rt);
-        for (RenderType rt : SLOT_GLINT_CACHE.values())  CustomGlintRenderer.evictRt(rt);
-        for (RenderType rt : DEPTH_PREWRITE_CACHE.values()) CustomGlintRenderer.evictRt(rt);
-        for (RenderType rt : SHADER_GLINT_CACHE.values())   CustomGlintRenderer.evictRt(rt);
-        SLOT_WRITE_CACHE.clear();
-        SLOT_GLINT_CACHE.clear();  SLOT_GLINT_COLORS.clear();
-        DEPTH_PREWRITE_CACHE.clear();
-        SHADER_GLINT_CACHE.clear(); SHADER_GLINT_COLORS.clear();
+        for (RenderType rt : DECO_CUTOUT_CACHE.values()) CustomGlintRenderer.evictRt(rt);
+        DECO_CUTOUT_CACHE.clear();
+        DECO_CUTOUT_COLORS.clear();
     }
 
 }

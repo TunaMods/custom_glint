@@ -298,8 +298,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderSystem.setTextureMatrix(m);
     }
 
-    /** Armor / horse / mount / entity directional-drift texture matrix (uniform model-UV scale). */
-    private static void setModelScrollMatrix(Layer layer, int colorIdx) {
+    /** Armor / horse / mount / entity / EK-decoration directional-drift texture matrix (uniform model-UV scale).
+     *  Shared so every model-space glint tiles the design at one scale; the off-pack EK decoration cutout calls
+     *  it too so it matches worn armor and the on-pack overlay. */
+    public static void setModelScrollMatrix(Layer layer, int colorIdx) {
         float[] sc = scrollAmount(layer, colorIdx);
         Matrix4f m = TEX_MATRIX.get().translation(sc[0], sc[1], 0.0F);
         m.translate(0.5f, 0.5f, 0.0f);
@@ -371,6 +373,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static ShaderInstance glintCutoutShader;
     private static final RenderStateShard.ShaderStateShard GLINT_CUTOUT_SHADER_SHARD =
             new RenderStateShard.ShaderStateShard(() -> glintCutoutShader);
+
+    /** Like {@link #glintCutoutShader} but cuts against the UNION of two mask textures (Sampler1 + Sampler2):
+     *  the Epic Knights decoration counterpart, since dyeable EK decorations split their shape across a base +
+     *  overlay file. The RT factory lives in the compat module and builds its shard off {@link #glintCutoutDecoShader()};
+     *  see {@code EpicKnightsGlintRT#forDecorationGlintCutout}. */
+    private static ShaderInstance glintCutoutDecoShader;
+    public static ShaderInstance glintCutoutDecoShader() { return glintCutoutDecoShader; }
 
     // Post-Iris chromatic overlay (shader-pack path only): the in-phase chromatic program is replaced/hijacked
     // by an active pack, so under a pack the chromatic surfaces are re-rendered AFTER the pack finishes, through
@@ -444,6 +453,15 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             CustomGlint.res("glint_cutout"),
                             DefaultVertexFormat.NEW_ENTITY),
                     shader -> glintCutoutShader = shader);
+            // Decoration cutout (Epic Knights): design + UNION alpha-test against a base + overlay decoration
+            // texture. Reuses glint_cutout's vertex program (same NEW_ENTITY format + camera-ward bias for
+            // Sodium's renderCuboid path); only the fragment stage differs (two masks). See
+            // EpicKnightsGlintRT#forDecorationGlintCutout.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("glint_cutout_deco"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> glintCutoutDecoShader = shader);
             // Chromatic slick + armor-shape cutout for horse armor (procedural design, no PNG). NEW_ENTITY so it
             // rides Sodium's renderCuboid alongside the armor; see forMountChromaticGlint.
             event.registerShader(
@@ -1383,65 +1401,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
     }
 
-    // ── Glint stencil support (glow outline moved to GlowOutlineRenderer) ──────
+    // ── Glint render-state support (glow outline moved to GlowOutlineRenderer) ──────
 
     /** Guards re-entrance during glint passes that re-enter the item/model render. Kept as a
-     *  recursion guard for the glint paths (item foil, EK glint stencil). */
+     *  recursion guard for the glint paths (e.g. item foil). */
     public static final ThreadLocal<Boolean> IN_OUTLINE = ThreadLocal.withInitial(() -> false);
-
-    /**
-     * Once-per-frame stencil clear gate, used by the Epic Knights decoration glint mask. Set true at
-     * frame start by CustomGlintClientInit's RenderFrameEvent.Pre; the first stencil mask setup of the
-     * frame sees it true, clears the whole stencil buffer, and unsets it so later mask setups only clear
-     * their own reserved bit. (The post-process glow outline does NOT use the stencil buffer.)
-     */
-    public static volatile boolean pendingFrameStencilClear = true;
 
     /** Reload hooks appended by compat modules; invoked by {@link #clearTextures()} so each
      *  compat can release its own {@code DynamicTexture}s without {@code CustomGlintRenderer}
      *  needing to know about them. */
     public static final List<Runnable> additionalReloadCleanup = new CopyOnWriteArrayList<>();
-
-    // ── Per-draw stencil-value isolation (slot pool) ───────────────────────────
-    //
-    // NOTE: the glow outline no longer uses the stencil buffer (it is a post-process mask +
-    // composite; see GlowOutlineRenderer). This slot pool survives only for the Epic Knights
-    // decoration GLINT mask, which still stencil-clips the scrolling glint to the decoration's
-    // opaque texels. Each EK decoration reserves a unique slot value (1..255) so overlapping
-    // decorations don't share a stencil value: the WRITE shard stamps stencil=V at the
-    // decoration's texels, the glint shard tests stencil==V. Ceiling 255 per frame, then wraps.
-    // Counter reset at frame start by CustomGlintClientInit's RenderFrameEvent.Pre.
-    private static int stencilSlotCounter = 0;
-
-    /** Reserve a unique stencil slot value (1..255) for this outline call. Wraps if exceeded. */
-    public static int nextStencilSlot() {
-        stencilSlotCounter++;
-        if (stencilSlotCounter > 255) stencilSlotCounter = 1;
-        return stencilSlotCounter;
-    }
-
-    /** Frame-start reset; called from CustomGlintClientInit. */
-    public static void resetStencilSlots() { stencilSlotCounter = 0; }
-
-    // Force-binds the vanilla main render target (which has a stencil attachment via the shader
-    // mod's stencil-enabling mixin) and restores the previously-bound FBO on clear.
-    // Why: vanilla's MAIN_TARGET OutputStateShard is a no-op runnable that assumes the main FBO
-    // is already bound. Under the shader mod's HAND_SOLID phase the gbuffer FBO is bound instead;
-    // it has no stencil attachment, so stencil ops are silently dropped and our outline draws
-    // the dilated mesh inside the silhouette (visible as a filled plane). Capturing the previous
-    // FBO and restoring it on clear keeps the shader pipeline state intact.
-    private static final int[] SAVED_FBO = new int[1];
-    /** Exposed for compat code (EK decoration RTs) that needs the same Oculus-no-pack-safe
-     *  FBO binding. */
-    public static final RenderStateShard.OutputStateShard FORCE_MAIN_TARGET =
-            new RenderStateShard.OutputStateShard("custom_glint_force_main_target",
-                () -> {
-                    SAVED_FBO[0] = GlStateManager._getInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-                    Minecraft.getInstance().getMainRenderTarget().bindWrite(false);
-                },
-                () -> {
-                    GlStateManager._glBindFramebuffer(GL30.GL_FRAMEBUFFER, SAVED_FBO[0]);
-                });
 
     // The old stencil/shader glow-outline draw API (doModelOutline / doItemOutline /
     // doGuiItemOutline / doMultiModelOutline / doModelPartsOutline), the silhouette color helpers,
