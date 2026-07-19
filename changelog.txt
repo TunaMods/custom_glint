@@ -103,6 +103,8 @@ Added:
   block-shaped glow.
 - Ice and Fire (Community Edition): the tide trident's glow outline now traces the trident
   itself, both in hand and in the inventory slot, instead of filling a square.
+- Ice and Fire (Community Edition): a glinted dragon's wings now cut to the membrane shape under
+  a shader pack instead of drawing solid planes across each wing.
 - Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
   (they used to come back only after reloading the world).
 
