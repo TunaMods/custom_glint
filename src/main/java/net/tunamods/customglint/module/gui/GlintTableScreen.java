@@ -500,7 +500,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         modOpacity = Math.max(0, Math.min(8, Math.round((255 - alpha) * 8f / (255f - ALPHA_MIN))));
         colorShards.clear();
         selectedColorIdx = -1;
-        for (int col : c) if (!isFillWhite(col)) addColorShard(col & 0xFFFFFF);
+        // writeColors pads a colorless layer to a single white so it stays renderable; that lone white is the
+        // synthetic fill and loads as an empty shard. A layer with real colours keeps every one of them,
+        // including a chosen pure-white, so don't drop white when it's sitting alongside other colours.
+        boolean emptyFill = c.length == 1 && isFillWhite(c[0]);
+        if (!emptyFill) for (int col : c) addColorShard(col & 0xFFFFFF);
     }
 
     private static List<Integer> newShard(int dye) {
@@ -807,7 +811,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             int[] c = GlintTrimItem.getColors(trim);
             int alpha = c.length > 0 ? (c[0] >>> 24) & 0xFF : 255;
             modOpacity = Math.max(0, Math.min(8, Math.round((255 - alpha) * 8f / (255f - ALPHA_MIN))));
-            for (int col : c) if (!isFillWhite(col)) addColorShard(col & 0xFFFFFF);
+            // Raw config colours: an empty trim stores none (the synthetic white fill lives only in the render
+            // Data, never here), so every colour here is real, white included. Never strip it.
+            for (int col : c) addColorShard(col & 0xFFFFFF);
             modGlow = GlintTrimItem.isGlowing(trim);
             modNamed = trim.has(DataComponents.CUSTOM_NAME);
             Component nm = trim.get(DataComponents.CUSTOM_NAME);
@@ -815,7 +821,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             if (nameBox != null) nameBox.setValue(trimName);
             int[] glowCols = CustomGlint.getGlowColors(trim);
             glowAuto = glowCols.length == 0; // override colors => manual
-            for (int col : glowCols) if (!isFillWhite(col)) addShardTo(glowShards, col & 0xFFFFFF);
+            for (int col : glowCols) addShardTo(glowShards, col & 0xFFFFFF);
             CustomGlint.Data d = CustomGlint.read(trim);
             if (d != null && d.layers().length > 0) {
                 tearSimultaneous = d.layers()[0].simultaneous();
@@ -834,7 +840,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             modInterpolate = CustomGlint.getGlowInterpolate(trim);
             modGlow = false;
             activeSourceSim = false;
-            for (int col : GlowTrimItem.getColors(trim)) if (!isFillWhite(col)) addColorShard(col & 0xFFFFFF);
+            for (int col : GlowTrimItem.getColors(trim)) addColorShard(col & 0xFFFFFF);
             modNamed = trim.has(DataComponents.CUSTOM_NAME);
             Component nm = trim.get(DataComponents.CUSTOM_NAME);
             trimName = (modNamed && nm != null) ? nm.getString() : "";
