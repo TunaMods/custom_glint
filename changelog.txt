@@ -102,6 +102,8 @@ Added:
   itself, both in hand and in the inventory slot, instead of filling a square.
 - Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
   (they used to come back only after reloading the world).
+- Epic Knights: armor decoration glints now tile at the same pattern scale as worn armor glints
+  and render the same way whether or not a shader pack is installed.
 
 Fixed:
 - Glowing modded shields and other 3D-model items now trace the item's actual shape instead of
