@@ -162,6 +162,17 @@ public class ItemRendererMixin {
                 int color = only.simultaneous()
                         ? (cols.length == 0 ? 0xFFFFFFFF : cols[0])
                         : CustomGlintRenderer.computeAnimatedColor(glint, 0);
+                // Atlased GUI batch: on a many-icon screen with the batch armed (guiHud) and this a flat item
+                // icon, route the single glint layer through the ONE shared design-atlas RenderType so every
+                // distinct-design icon collapses into a single draw (design/colour/scroll/scale ride the vertex
+                // payload). Designs the atlas doesn't hold (overflow / load failure) return null → forGlint below.
+                if (guiHud && isItem) {
+                    VertexConsumer atlasGlint = CustomGlintRenderer.guiAtlasGlintBuffer(glint, 0, 0, color);
+                    if (atlasGlint != null) {
+                        VertexConsumer base = buffer.getBuffer(renderType);
+                        return VertexMultiConsumer.create(atlasGlint, base);
+                    }
+                }
                 cg_packColor(buf, color);
                 RenderType rt = CustomGlintRenderer.forGlint(glint, 0, buf, isItem, 0);
                 if (rt == null) return null;

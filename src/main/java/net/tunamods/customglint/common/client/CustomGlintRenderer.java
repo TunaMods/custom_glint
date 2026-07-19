@@ -23,6 +23,7 @@ import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import net.tunamods.customglint.common.CustomGlint;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 
@@ -40,6 +41,7 @@ import java.util.SequencedMap;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Supplier;
 
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
@@ -113,6 +115,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         GUI_GLINT_FIXED.clear();
         if (guiGlintSpare != null) { try { guiGlintSpare.close(); } catch (Throwable ignored) {} guiGlintSpare = null; }
         guiGlintSource = null;
+        // Rebuild the shared GUI design atlas on the next inventory glint draw: its cells point at design
+        // textures released above, and the block-atlas scale baked into its RenderType may have changed.
+        invalidateGuiDesignAtlas();
         // Invalidate the cached block-atlas dimensions (the atlas restitches on resource reload).
         cachedAtlasW = 0;
         cachedAtlasH = 0;
@@ -177,6 +182,245 @@ public final class CustomGlintRenderer extends RenderStateShard {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         return loc;
+    }
+
+    // ── Shared GUI design atlas (inventory glint batching) ───────────────────────────────────────
+    // A many-icon screen (creative tab, the Glint Table palettes) draws each glinted icon's glint through the
+    // deferred GUI source (guiGlintBuffer); with a per-design texture, each distinct design is its own
+    // RenderType and so its own draw (a palette of trims = dozens of draws/frame). Stitching every design into
+    // ONE shared atlas lets every icon draw through the single guiAtlasGlintRenderType, batching them into one
+    // draw no matter how many distinct designs are on screen. The per-icon design is picked in-shader from a
+    // cell index carried on the vertex payload; each cell has a wrapped gutter so tiling stays clean. Ported
+    // from the 26.1.2 branch (which atlases the GUI path the same way); only the image build lifts verbatim.
+    private static final int GUI_ATLAS_CONTENT = 64;  // design content per cell (designs are <=64px)
+    private static final int GUI_ATLAS_GUTTER  = 4;   // wrapped border per side (harmless under NEAREST; kept
+                                                      // so the layout matches the shader + the 26.1.2 build)
+    private static final int GUI_ATLAS_STRIDE  = GUI_ATLAS_CONTENT + 2 * GUI_ATLAS_GUTTER; // 72
+    // Cell index rides one vertex short, and the atlas stays a sane texture; past this a design falls back to
+    // the per-design draw (still correct, just its own draw).
+    private static final int GUI_ATLAS_MAX_CELLS = 256;
+    public static final ResourceLocation GUI_DESIGN_ATLAS_ID = CustomGlint.res("gui_design_atlas");
+    private static boolean guiDesignAtlasBuilt = false;
+    /** design → its 0-based atlas cell. Absent (CHROMATIC, a load failure, or past the cap) → per-design draw. */
+    private static final Map<ResourceLocation, Integer> guiDesignCell = new HashMap<>();
+    /** Full design list to atlas (built-ins + data-pack), installed by the full mod at client init since the
+     *  data-pack list lives in the module. Null → built-ins only (an api-only embedder without the full mod). */
+    private static volatile Supplier<List<ResourceLocation>> guiAtlasDesignSource = null;
+
+    /** Installs the design source for the shared GUI atlas (the full mod passes its data-pack-inclusive list)
+     *  and forces a rebuild on the next draw. */
+    public static void setGuiAtlasDesignSource(Supplier<List<ResourceLocation>> source) {
+        guiAtlasDesignSource = source;
+        invalidateGuiDesignAtlas();
+    }
+
+    /** Drops the built atlas (+ its RenderType, whose baked block-atlas scale may go stale) so the next glint
+     *  draw restitches it. Call after the design list changes or a resource reload. No-op if not built. */
+    public static void invalidateGuiDesignAtlas() {
+        guiAtlasGlintRT = null;
+        if (!guiDesignAtlasBuilt) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) mc.getTextureManager().release(GUI_DESIGN_ATLAS_ID);
+        guiDesignCell.clear();
+        guiDesignAtlasBuilt = false;
+    }
+
+    /** Builds the shared atlas once (lazily, on first inventory glint draw). The {@code built} flag is set
+     *  first so a failed build degrades to the per-design fallback for the session instead of retrying every
+     *  frame; a resource reload restitches it via {@link #clearTextures}. */
+    private static void ensureGuiDesignAtlas() {
+        if (guiDesignAtlasBuilt) return;
+        guiDesignAtlasBuilt = true;
+        List<ResourceLocation> designs;
+        try {
+            Supplier<List<ResourceLocation>> src = guiAtlasDesignSource;
+            designs = src != null ? src.get() : Arrays.asList(CustomGlint.PATTERNS);
+        } catch (Throwable t) {
+            designs = Arrays.asList(CustomGlint.PATTERNS);
+        }
+        if (designs == null || designs.isEmpty()) designs = Arrays.asList(CustomGlint.PATTERNS);
+        int count = Math.min(designs.size(), GUI_ATLAS_MAX_CELLS);
+        int grid = Math.max(1, (int) Math.ceil(Math.sqrt(count)));  // cells per side, so grid*grid >= count
+        int dim = grid * GUI_ATLAS_STRIDE;
+        NativeImage atlas = new NativeImage(dim, dim, false);
+        try {
+            for (int i = 0; i < count; i++) {
+                ResourceLocation design = designs.get(i);
+                if (design == null || CustomGlint.isChromatic(design)) continue; // procedural: no texture
+                NativeImage gray = loadGrayscaleImage(design);
+                if (gray == null) continue;                                       // missing → per-design fallback
+                try {
+                    int col = i % grid, row = i / grid;
+                    int ox = col * GUI_ATLAS_STRIDE, oy = row * GUI_ATLAS_STRIDE;
+                    int sw = gray.getWidth(), sh = gray.getHeight();
+                    for (int gy = 0; gy < GUI_ATLAS_STRIDE; gy++) {
+                        for (int gx = 0; gx < GUI_ATLAS_STRIDE; gx++) {
+                            // Cell-local coord (content origin at GUTTER,GUTTER) wrapped into the design, so the
+                            // gutter holds the opposite-edge texels for seam-free tiling.
+                            int lx = gx - GUI_ATLAS_GUTTER, ly = gy - GUI_ATLAS_GUTTER;
+                            int cx = ((lx % GUI_ATLAS_CONTENT) + GUI_ATLAS_CONTENT) % GUI_ATLAS_CONTENT;
+                            int cy = ((ly % GUI_ATLAS_CONTENT) + GUI_ATLAS_CONTENT) % GUI_ATLAS_CONTENT;
+                            atlas.setPixelRGBA(ox + gx, oy + gy,
+                                    gray.getPixelRGBA(cx * sw / GUI_ATLAS_CONTENT, cy * sh / GUI_ATLAS_CONTENT));
+                        }
+                    }
+                    guiDesignCell.put(design, i);
+                } finally {
+                    gray.close();
+                }
+            }
+            // DynamicTexture takes ownership of `atlas` on register (don't close it on the success path).
+            DynamicTexture dt = new DynamicTexture(atlas);
+            Minecraft.getInstance().getTextureManager().register(GUI_DESIGN_ATLAS_ID, dt);
+            dt.bind();
+            // CLAMP (fract + the gutter do the tiling in-shader; the sampler must not wrap across cells) +
+            // NEAREST (the per-design path's filter, so the atlased glint reads identically).
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        } catch (Throwable t) {
+            atlas.close();
+            guiDesignCell.clear();
+            LOGGER.warn("[{}/CustomGlint] GUI design atlas build failed; falling back to per-design glint draws", MOD_ID, t);
+        }
+    }
+
+    /** The atlas cell index for {@code design}, or null when it isn't atlased (CHROMATIC, a load failure, or
+     *  past {@link #GUI_ATLAS_MAX_CELLS}) and the per-design {@link #forGlint} path must be used. */
+    public static Integer guiDesignCellIndex(ResourceLocation design) {
+        ensureGuiDesignAtlas();
+        return guiDesignCell.get(design);
+    }
+
+    /** Reads a design PNG into a fresh greyscale {@link NativeImage} (caller owns + closes it), or null if
+     *  absent/unreadable. Same conversion as {@link #generateTexture}, minus the GL upload; stitches the atlas. */
+    private static NativeImage loadGrayscaleImage(ResourceLocation design) {
+        if (CustomGlint.isChromatic(design)) return null;
+        Minecraft mc = Minecraft.getInstance();
+        NativeImage source;
+        try {
+            var resource = mc.getResourceManager().getResource(design);
+            if (resource.isEmpty()) return null;
+            try (InputStream stream = resource.get().open()) {
+                source = NativeImage.read(stream);
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        NativeImage gray = null;
+        try {
+            gray = new NativeImage(source.getWidth(), source.getHeight(), false);
+            for (int y = 0; y < source.getHeight(); y++) {
+                for (int x = 0; x < source.getWidth(); x++) {
+                    int px = source.getPixelRGBA(x, y);   // ABGR: (A<<24)|(B<<16)|(G<<8)|R
+                    int r =  px        & 0xFF;
+                    int g = (px >>  8) & 0xFF;
+                    int b = (px >> 16) & 0xFF;
+                    int a = (px >> 24) & 0xFF;
+                    int lum = (r + g + b) / 3;
+                    gray.setPixelRGBA(x, y, (a << 24) | (lum << 16) | (lum << 8) | lum);
+                }
+            }
+        } catch (Throwable t) {
+            if (gray != null) gray.close();
+            throw t;
+        } finally {
+            source.close();
+        }
+        return gray;
+    }
+
+    // ── Atlased GUI glint RenderType + per-vertex injector ───────────────────────────────────────
+    /** Atlased GUI item-glint core shader: samples the shared design atlas cell selected per-vertex, so every
+     *  glinted inventory icon batches into one draw. Declared before its shard to avoid a forward reference,
+     *  mirroring {@code glintCutoutShader}. Assigned in {@link #registerShaders}. */
+    private static ShaderInstance guiItemGlintShader;
+    private static final RenderStateShard.ShaderStateShard GUI_ATLAS_GLINT_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> guiItemGlintShader);
+    private static RenderType guiAtlasGlintRT;
+
+    /** The single shared RenderType for atlased GUI glint: every glinted inventory icon whose design is in the
+     *  atlas draws through this ONE type, so the deferred GUI drain collapses them into a single draw. The atlas
+     *  is Sampler0; colour/scroll/scale/cell ride the vertex payload; TextureMat carries the constant per-axis
+     *  block-atlas scale (matching forGlint). EQUAL depth against the icons' committed depth, like forGlint.
+     *  Null until the gui_item_glint shader loads. Nulled on reload so its baked scale can't go stale. */
+    public static RenderType guiAtlasGlintRenderType() {
+        if (guiItemGlintShader == null) return null;
+        if (guiAtlasGlintRT == null) {
+            ensureAtlasDims();
+            final float scaleU = 8.0f * cachedAtlasW / 1024.0f;   // same calibration as forGlint's isItem scale
+            final float scaleV = 8.0f * cachedAtlasH / 512.0f;
+            guiAtlasGlintRT = RenderType.create(
+                    MOD_ID + ":gui_atlas_glint",
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    256, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(GUI_ATLAS_GLINT_SHADER_SHARD)
+                            .setTextureState(new TextureStateShard(GUI_DESIGN_ATLAS_ID, false, false))
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(NO_CULL)
+                            .setDepthTestState(EQUAL_DEPTH_TEST)
+                            .setTransparencyState(GLINT_TRANSPARENCY)
+                            // TextureMat diagonal = the constant per-axis block-atlas scale; the scroll is
+                            // per-vertex, so this stays constant across the whole batch. scaling() (not raw m00/
+                            // m11 setters) so joml's identity-property flag is cleared and the scale isn't ignored.
+                            .setTexturingState(new TexturingStateShard(MOD_ID + ":gui_atlas_glint_tx",
+                                    () -> RenderSystem.setTextureMatrix(TEX_MATRIX.get().scaling(scaleU, scaleV, 1.0f)),
+                                    RenderSystem::resetTextureMatrix))
+                            .createCompositeState(false));
+        }
+        return guiAtlasGlintRT;
+    }
+
+    /** Per-vertex injector for the atlased GUI glint. The icon's own quads render once into this (wrapping the
+     *  shared atlas RT's deferred buffer); it forces every vertex to carry this icon-layer's premultiplied
+     *  colour, pre-fract'd scroll, patternScale and atlas cell, which a batched draw can't pass per item.
+     *  Position + UV0 pass through; overlay/light (setUv1/setUv2) are REPLACED. Mirrors GlowOutlineRenderer's
+     *  SilhouetteConsumer. Reused per icon (a GUI icon renders synchronously), like COLOR_BUF / TEX_MATRIX. */
+    public static final class GuiAtlasGlintConsumer implements VertexConsumer {
+        private VertexConsumer delegate;
+        private int cr, cg, cb;      // premultiplied colour, 0..255
+        private int sx16, sy16;      // scroll x16000, pre-fract'd to [0,16000)
+        private int ps4096, cell;    // patternScale x4096 (clamped) ; atlas cell index
+
+        GuiAtlasGlintConsumer set(VertexConsumer delegate, int cr, int cg, int cb,
+                                  int sx16, int sy16, int ps4096, int cell) {
+            this.delegate = delegate; this.cr = cr; this.cg = cg; this.cb = cb;
+            this.sx16 = sx16; this.sy16 = sy16; this.ps4096 = ps4096; this.cell = cell;
+            return this;
+        }
+        @Override public VertexConsumer addVertex(float x, float y, float z) { delegate.addVertex(x, y, z); return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { delegate.setColor(cr, cg, cb, 255); return this; }
+        @Override public VertexConsumer setUv(float u, float v) { delegate.setUv(u, v); return this; }
+        @Override public VertexConsumer setUv1(int u, int v) { delegate.setUv1(sx16, sy16); return this; }
+        @Override public VertexConsumer setUv2(int u, int v) { delegate.setUv2(ps4096, cell); return this; }
+        @Override public VertexConsumer setNormal(float nx, float ny, float nz) { delegate.setNormal(nx, ny, nz); return this; }
+    }
+    private static final ThreadLocal<GuiAtlasGlintConsumer> GUI_ATLAS_CONSUMER =
+            ThreadLocal.withInitial(GuiAtlasGlintConsumer::new);
+
+    /** The atlased GUI-glint consumer for one icon-layer (wrapping the shared atlas RT's deferred buffer), or
+     *  null if this design isn't atlased so the caller falls back to {@link #forGlint}. {@code color} is the
+     *  animated ARGB (alpha = the layer's opacity); it is premultiplied here to match forGlint's ColorModulator. */
+    public static VertexConsumer guiAtlasGlintBuffer(Data glint, int layerIdx, int colorIdx, int color) {
+        Layer layer = glint.layers()[layerIdx];
+        Integer cell = guiDesignCellIndex(layer.design());
+        if (cell == null) return null;
+        RenderType rt = guiAtlasGlintRenderType();
+        if (rt == null) return null;
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        int cr = Math.round(((color >> 16) & 0xFF) * a);
+        int cg = Math.round(((color >>  8) & 0xFF) * a);
+        int cb = Math.round(( color        & 0xFF) * a);
+        // Pre-fract the scroll to [0,1): the fsh fract-folds it into the cell, so dropping the integer part is
+        // exact, and it keeps x16000 positive and inside the signed short the vertex payload uses.
+        float[] sc = scrollAmount(layer, colorIdx);
+        int sx16 = Math.round((sc[0] - (float) Math.floor(sc[0])) * 16000.0f);
+        int sy16 = Math.round((sc[1] - (float) Math.floor(sc[1])) * 16000.0f);
+        int ps4096 = Math.max(0, Math.min(32767, Math.round(layer.patternScale() * 4096.0f)));
+        return GUI_ATLAS_CONSUMER.get().set(guiGlintBuffer(rt), cr, cg, cb, sx16, sy16, ps4096, cell);
     }
 
     // ── Render types ──────────────────────────────────────────────────────────
@@ -469,6 +713,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             CustomGlint.res("chromatic_cutout"),
                             DefaultVertexFormat.NEW_ENTITY),
                     shader -> chromaticCutoutShader = shader);
+            // Atlased GUI item glint: one shared design atlas so every inventory glint icon batches into a
+            // single draw. NEW_ENTITY so the item's own quads emit through putBulkData; colour/scroll/scale/
+            // cell ride the vertex payload (a batched draw has no per-item uniform). See guiAtlasGlintRenderType.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("gui_item_glint"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> guiItemGlintShader = shader);
         } catch (Exception e) {
             LOGGER.error("[{}/CustomGlint] failed to register chromatic shader", MOD_ID, e);
         }
