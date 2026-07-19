@@ -153,6 +153,20 @@ public class LayerHippogryphArmorMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            if (CustomGlint.isChromatic(layers[li])) {
+                // Chromatic has no PNG, so forArmorGlint returns null for it (armor showed no chromatic at all).
+                // Off-pack, draw the in-phase chromatic cutout RT (armor texture alpha as the mask). Under a pack
+                // that program is hijacked, so capture the model and queue the post-Iris chromatic overlay against
+                // the armor texture; that drain is queued after the mount body's, so it overwrites the body's
+                // chromatic in the armor region instead of the body glint bleeding across the armor.
+                if (CustomGlintRenderer.isShaderPackActive()) {
+                    EntityGlintRender.captureChromaticModel(entity, model, tex, pose, light, glint, li);
+                } else {
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, li);
+                    if (crt != null) list.add(flush.getBuffer(crt));
+                }
+                continue;
+            }
             int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
