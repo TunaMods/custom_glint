@@ -846,13 +846,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
                             })
-                            // Translucent slime-shell variant writes depth to self-occlude (see forHorseArmorGlint).
-                            .setWriteMaskState(lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE)
-                            .setCullState(NO_CULL)
+                            // Shell glint never writes depth; back-face CULL self-occludes the convex shell
+                            // instead (see forHorseArmorGlint for the full rationale).
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(lateForShaders ? CULL : NO_CULL)
                             .setDepthTestState(lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST)
-                            // Translucent shell: nudge depth toward the camera so the shell doesn't overdraw/dim
-                            // the glint texels (see forHorseArmorGlint). Opaque chromatic keeps its layering.
-                            .setLayeringState(lateForShaders ? VIEW_OFFSET_Z_LAYERING : layering)
+                            // NO_LAYERING on the shell: the old VIEW_OFFSET_Z_LAYERING punch is pack-dependent,
+                            // so some packs let the shell overdraw its glint. Opaque chromatic keeps its layering.
+                            .setLayeringState(lateForShaders ? NO_LAYERING : layering)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_chromatic_texturing|" + k.hashCode(),
                                     () -> setChromaticMatrix(layer, scaleU, scaleV, colorCount), RenderSystem::resetTextureMatrix))
@@ -1172,7 +1173,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
      */
     private static RenderType modelGlintRT(Layer layer, int colorIdx, String namePrefix, String key,
             VertexFormat.Mode mode, float[] holder, DepthTestStateShard depthTest,
-            LayeringStateShard layering, WriteMaskStateShard writeMask, String texturingName) {
+            LayeringStateShard layering, WriteMaskStateShard writeMask, CullStateShard cull, float brightness,
+            String texturingName) {
         ResourceLocation tex = layer.design();
         RenderType rt = RenderType.create(
                 namePrefix + "|" + key.hashCode(),
@@ -1186,7 +1188,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         .setTextureState(new TextureStateShard(tex, false, false) {
                             @Override public void setupRenderState() {
                                 RenderSystem.setShaderTexture(0, getTexture(tex));
-                                RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                RenderSystem.setShaderColor(holder[0] * brightness, holder[1] * brightness,
+                                        holder[2] * brightness, holder[3]);
                             }
                             @Override public void clearRenderState() {
                                 super.clearRenderState();
@@ -1194,7 +1197,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             }
                         })
                         .setWriteMaskState(writeMask)
-                        .setCullState(NO_CULL)
+                        .setCullState(cull)
                         .setDepthTestState(depthTest)
                         .setLayeringState(layering)
                         .setTransparencyState(GLINT_TRANSPARENCY)
@@ -1240,7 +1243,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 // D while the buffer held D-ε, they never matched. Fix: EQUAL + keep
                 // VIEW_OFFSET_Z_LAYERING so the glint also tests at D-ε, matching exactly.
                 modelGlintRT(layer, colorIdx, MOD_ID + ":custom_armor_glint", k, mode, holder,
-                        EQUAL_DEPTH_TEST, VIEW_OFFSET_Z_LAYERING, COLOR_WRITE,
+                        EQUAL_DEPTH_TEST, VIEW_OFFSET_Z_LAYERING, COLOR_WRITE, NO_CULL, 1.0f,
                         MOD_ID + ":custom_armor_glint_texturing"));
         registerLiveFixedBuffer(cached);
         return cached;
@@ -1289,6 +1292,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx, mode, false);
     }
 
+    // Colour boost for the translucent slime-shell glint under a shader pack: the OPAQUE_DECAL glint draws
+    // before the shell, which then blends over it and roughly halves it, so lift it back toward full.
+    private static final float SHELL_GLINT_BRIGHTNESS = 1.9f;
+
     public static RenderType forHorseArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx,
                                                 VertexFormat.Mode mode, boolean lateForShaders) {
         Layer layer = glint.layers()[layerIdx];
@@ -1300,19 +1307,29 @@ public final class CustomGlintRenderer extends RenderStateShard {
         RenderType cached = BY_HORSE_ARMOR_GLINT.computeIfAbsent(key, k ->
                 modelGlintRT(layer, colorIdx, MOD_ID + ":custom_horse_armor_glint", k, mode, holder,
                         // Opaque entity glint tests EQUAL (matches the body's own depth). The translucent
-                        // slime-shell variant tests LEQUAL: front faces pass against stable opaque depth
-                        // (OPAQUE_DECAL) and then against their own writes, so back faces are occluded.
+                        // slime-shell variant tests LEQUAL against stable opaque depth (OPAQUE_DECAL flushes
+                        // before the shell), so shell front faces pass and anything behind a nearer opaque
+                        // body is occluded.
                         lateForShaders ? LEQUAL_DEPTH_TEST : EQUAL_DEPTH_TEST,
-                        // Translucent shell: nudge the glint's written depth toward the camera so the shell's
-                        // own LEQUAL depth test discards the shell fragments AT the glint texels: the glint
-                        // punches through the shell (full brightness) instead of being painted over and dimmed
-                        // by the later GENERAL_TRANSPARENT shell pass. Opaque glint keeps NO_LAYERING.
-                        lateForShaders ? VIEW_OFFSET_Z_LAYERING : NO_LAYERING,
-                        // Translucent slime-shell variant WRITES depth (in the OPAQUE_DECAL pass) so its own
-                        // front faces occlude its back faces (nearest-wins, view-independent), a stable
-                        // self-occlusion the shell's Iris-re-sorted depth can't give. Opaque glint writes
-                        // colour only (its EQUAL test already self-occludes against the body's depth).
-                        lateForShaders ? COLOR_DEPTH_WRITE : COLOR_WRITE,
+                        // NO_LAYERING on both. The old shell path punched depth toward the camera with
+                        // VIEW_OFFSET_Z_LAYERING to make the shell fail LEQUAL at the glint texels, but that
+                        // projection nudge is honoured by some shader packs and ignored by others; on the packs
+                        // that ignore it the shell paints over its own glint and only the inner-body glint shows
+                        // through. Drop it so the state is pack-independent.
+                        NO_LAYERING,
+                        // COLOR_WRITE on both: the shell glint never writes depth, so no pack can act on a
+                        // depth value and the base surface stays byte-identical to the no-glint case. Back-face
+                        // CULL below replaces the depth write's self-occlusion.
+                        COLOR_WRITE,
+                        // The slime shell is one convex cube, so dropping its back faces IS its self-occlusion:
+                        // exact, view-independent, and needs no depth. Opaque glint keeps NO_CULL (its EQUAL
+                        // test already self-occludes against the body's depth).
+                        lateForShaders ? CULL : NO_CULL,
+                        // OPAQUE_DECAL flushes the shell glint BEFORE the translucent shell, so the shell then
+                        // alpha-blends over it and attenuates it (~half of the additive glint survives). Boost
+                        // the shell path's colour to compensate; the opaque path draws over solid geometry and
+                        // needs no lift. Tunable eyeball constant.
+                        lateForShaders ? SHELL_GLINT_BRIGHTNESS : 1.0f,
                         MOD_ID + ":custom_horse_armor_glint_texturing"));
         registerLiveFixedBuffer(cached);
         if (lateForShaders) tagAsOpaqueDecalForShaders(cached);
