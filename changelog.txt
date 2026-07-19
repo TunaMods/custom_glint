@@ -41,6 +41,7 @@ Fixed:
 - A glowing armor's outline no longer bleeds over the wearer's bare arms and legs; the whole figure now takes one clean outline
 - A glow outline is no longer washed out where a chromatic glint sits behind it
 - The Glint Table no longer deletes a white color when you load or click a trim's layer; a real white shard stays, and only an empty layer starts colorless
+- A glint on a slime now draws on the slime's outer surface with a shader pack, instead of on the smaller inner body, and a chromatic glint on a slime no longer reads as a solid glowing block over the jelly
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
