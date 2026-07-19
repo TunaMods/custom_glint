@@ -39,7 +39,7 @@ void main() {
     float sceneDepth = texture(Sampler2, uv).r;
     float ndc = sceneDepth * 2.0 - 1.0;
     float sceneDist = ProjMat[3][2] / (ndc + ProjMat[2][2]);
-    float bias = OCCLUSION_BIAS + viewDist * 0.006;
+    float bias = OCCLUSION_BIAS + viewDist * 0.0025;
     if (sceneDepth > 0.0 && viewDist > sceneDist + bias) {
         discard;
     }

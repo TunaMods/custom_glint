@@ -95,7 +95,7 @@ void main() {
     float sceneDist = ProjMat[3][2] / (ndc + ProjMat[2][2]);
     // Small distance-scaled term for reconstruction imprecision that grows with distance, but far tighter
     // than the ring's 0.03 so close self-occlusion (arm over chestplate) still works.
-    float bias = OCCLUSION_BIAS + viewDist * 0.006;
+    float bias = OCCLUSION_BIAS + viewDist * 0.0025;
     if (sceneDepth > 0.0 && viewDist > sceneDist + bias) {
         discard;
     }
