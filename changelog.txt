@@ -65,6 +65,10 @@ Altered:
 [Compat fixes]
 - Ice and Fire (Community Edition): a glinted dragon's wings now cut to the membrane shape under
   a shader pack instead of drawing solid planes across each wing.
+- Ice and Fire (Community Edition): hippogryph and hippocampus armor now shows the Chromatic
+  design, and with shaders on a mount's chromatic no longer bleeds across its armor.
+- Ice and Fire (Community Edition): a glinted hippogryph or hippocampus no longer paints its
+  glint onto its saddle, bridle and chest harness.
 
 [1.6.0]
 
