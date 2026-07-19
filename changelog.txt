@@ -62,6 +62,10 @@ Altered:
 - Mekanism: the MekaSuit, Jetpacks, Free Runners and their armored variants, and the Scuba tank and mask now take custom glints and glow outlines while worn
 - Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
 
+[Compat fixes]
+- Ice and Fire (Community Edition): a glinted dragon's wings now cut to the membrane shape under
+  a shader pack instead of drawing solid planes across each wing.
+
 [1.6.0]
 
 - Added the Glint Table: a block for building and printing trims with a slot-based editor, crafted from iron blocks, a crafting table, a smithing table, and a Glint Trim
@@ -103,8 +107,6 @@ Added:
   block-shaped glow.
 - Ice and Fire (Community Edition): the tide trident's glow outline now traces the trident
   itself, both in hand and in the inventory slot, instead of filling a square.
-- Ice and Fire (Community Edition): a glinted dragon's wings now cut to the membrane shape under
-  a shader pack instead of drawing solid planes across each wing.
 - Epic Knights: armor decoration glints no longer disappear after toggling a shader pack off
   (they used to come back only after reloading the world).
 
