@@ -20,6 +20,7 @@ import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Coerce;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Method;
@@ -99,6 +100,19 @@ public class LayerHippogryphArmorMixin {
         } catch (Throwable t) {
             return 0;
         }
+    }
+
+    // The saddle layer redraws the whole hippogryph model once per equipment piece (saddle, bridle, chest, and
+    // the armor tier) through the wrapped buffer, so the mount's own entity glint fanned onto every one of them,
+    // painting glint over the saddle and chest that don't carry it. Unwrap so those equipment draws render plain;
+    // the armor's own glint is re-added below through the unwrapped buffer, and the body keeps its glint from the
+    // main renderer. No-op when the mount has no entity glint (the buffer isn't wrapped then).
+    @Redirect(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/HippogryphEntity;FFFFFF)V",
+            at = @At(value = "INVOKE",
+                     target = "Lnet/minecraft/client/renderer/MultiBufferSource;getBuffer(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;"),
+            require = 0)
+    private VertexConsumer cg_unwrapEquipment(MultiBufferSource src, RenderType rt) {
+        return EntityGlintRender.unwrap(src).getBuffer(rt);
     }
 
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/HippogryphEntity;FFFFFF)V",
