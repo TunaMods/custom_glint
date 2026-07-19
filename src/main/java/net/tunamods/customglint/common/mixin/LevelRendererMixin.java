@@ -25,8 +25,13 @@ public class LevelRendererMixin {
         at = @At("TAIL"), require = 0, remap = false
     )
     private void cg_compositeDeferredGlowOutline(CallbackInfo ci) {
-        GlowOutlineRenderer.compositeWorld();
-        // Blit the deferred chromatic slick over the pack's final image (no-op off-pack / when nothing queued).
+        // Chromatic slick FIRST, then the glow ring on top. The chromatic composite is a fullscreen SCREEN
+        // blend (src + dst - src*dst); composited after the ring it screen-brightens the ring's own texels
+        // toward white wherever a slick overlaps them (a glowing elytra's own chromatic body abutting its
+        // ring), so the ring was being washed out ("consumed by the chromatic behind it"). Blitting the slick
+        // first, then alpha-blending the ring over it, keeps the ring crisp on top. Both no-op off-pack /
+        // when nothing was queued, and each sets up + restores its own GL state, so the order is free to pick.
         GlowOutlineRenderer.compositeChromaticWorld();
+        GlowOutlineRenderer.compositeWorld();
     }
 }
