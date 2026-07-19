@@ -38,6 +38,8 @@ Fixed:
 - Fixed glint table recipe
 - Chromatic glint designs now render with a shader pack installed instead of turning invisible
 - Hotbar item glints no longer disappear after reloading shaders (they used to come back only when you opened chat or rejoined the world)
+- A glowing armor's outline no longer bleeds over the wearer's bare arms and legs; the whole figure now takes one clean outline
+- A glow outline is no longer washed out where a chromatic glint sits behind it
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
