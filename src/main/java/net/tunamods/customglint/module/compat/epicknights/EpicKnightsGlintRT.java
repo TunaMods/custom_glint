@@ -254,6 +254,19 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> glintVCs = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            if (CustomGlint.isChromatic(layers[li])) {
+                // The chromatic design is procedural (no PNG), so forDecorationGlintCutout can't texture it. Draw
+                // the chromatic slick clipped to the decoration silhouette via the chromatic_cutout shader (same
+                // NEW_ENTITY / LEQUAL / camera-ward bias as forDecorationGlintCutout). One draw per texture unions
+                // a split-shape decoration (crown: band in the overlay) the way the two-mask cutout shader does.
+                RenderType crt = CustomGlintRenderer.forMountChromaticGlint(glint, li, decorationTexture);
+                if (crt != null) glintVCs.add(bs.getBuffer(crt));
+                if (overlayTex != null) {
+                    RenderType crt2 = CustomGlintRenderer.forMountChromaticGlint(glint, li, overlayTex);
+                    if (crt2 != null) glintVCs.add(bs.getBuffer(crt2));
+                }
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
@@ -317,7 +330,13 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         CustomGlint.Layer[] layers = glint.layers();
         for (ResourceLocation tex : textures) {
             for (int li = 0; li < layers.length; li++) {
-                EntityGlintRender.captureGlintModelParts(entity, parts, tex, pose, light, glint, li);
+                // A pack hijacks the in-phase chromatic program too, so chromatic layers queue into the post-Iris
+                // chromatic overlay drain rather than the textured-glint one.
+                if (CustomGlint.isChromatic(layers[li])) {
+                    EntityGlintRender.captureChromaticModelParts(entity, parts, tex, pose, light, glint, li);
+                } else {
+                    EntityGlintRender.captureGlintModelParts(entity, parts, tex, pose, light, glint, li);
+                }
             }
         }
     }

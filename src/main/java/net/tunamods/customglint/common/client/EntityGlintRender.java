@@ -239,6 +239,23 @@ public final class EntityGlintRender {
         }
     }
 
+    /** As {@link #captureChromaticModel} but from raw {@code ModelPart[]}. Epic Knights decorations draw via
+     *  {@code ModelPart.render}, not a {@link Model}, so under a shader pack (where the in-phase chromatic program
+     *  is hijacked) re-render the parts into the pooled recording consumer and queue the verts for the post-Iris
+     *  CHROMATIC overlay drain against {@code texture} (its alpha carves the cutout). Call once per texture
+     *  (base + overlay) to union a split-shape decoration. No-op off-pack (caller gates on the shader-pack check)
+     *  or when invisible. */
+    public static void captureChromaticModelParts(LivingEntity entity, ModelPart[] parts, ResourceLocation texture,
+                                                  PoseStack pose, int light, CustomGlint.Data glint, int layerIdx) {
+        if (parts == null || texture == null || entity == null || entity.isInvisible()) return;
+        CapturingModelConsumer cap = CAPTURE_POOL.get();
+        cap.reset();
+        for (ModelPart part : parts) {
+            if (part != null) part.render(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        }
+        GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, layerIdx, false);
+    }
+
     /** Draw the entity body AND, when it glows, capture its silhouette in the SAME model walk: the in-phase
      *  tee. Replaces the old "re-render the body model into a record-only buffer after the fact" path (a full
      *  second {@code renderToBuffer} walk per glowing entity every frame), which was the dominant cost with
