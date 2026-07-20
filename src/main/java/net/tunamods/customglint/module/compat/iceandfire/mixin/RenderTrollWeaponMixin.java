@@ -71,6 +71,16 @@ public class RenderTrollWeaponMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            if (CustomGlint.isChromatic(layers[li])) {
+                // Chromatic has no PNG, so forGlint skipped it and the weapon showed no chromatic. Off-pack, draw
+                // the in-phase 3D-item chromatic slick; under a pack that program is hijacked and the special-item
+                // capture in ItemRendererMixin drains it post-pass (the same path that traces the glow ring).
+                if (!CustomGlintRenderer.isShaderPackActive()) {
+                    RenderType rt = CustomGlintRenderer.forChromaticSpecialGlint(glint, li);
+                    if (rt != null) list.add(buffer.getBuffer(rt));
+                }
+                continue;
+            }
             int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
