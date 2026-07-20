@@ -274,14 +274,10 @@ public final class EntityGlintRender {
                                      int light, int overlay, int color) {
         Resolution r = entity.isInvisible() ? null : instanceResolver.resolve(entity);
         boolean bodyGlow = r != null && (r.glowing || r.glowColors.length > 0);
-        // Capture the body silhouette when the figure glows through its BODY or through worn ARMOR. Worn-armor
-        // outlines share the wearer's entity id (glowKeyFor(entity)), so without the body in the mask the bare
-        // arms/legs the armor doesn't cover aren't there: the armor ring then bleeds over that skin (no same-id
-        // body texel suppresses the seam, and a separate-id worn ring like the elytra's has nothing nearer to
-        // occlude it). Capturing the body under the same entity id unifies body + armor into ONE figure ring and
-        // gives the bare parts a same-id occluder. figColor is the figure's glow colour (body's own, else the
-        // first glowing armor piece's).
-        int figColor = bodyGlow ? outlineColorFor(r) : (entity.isInvisible() ? 0 : wornGlowColor(entity));
+        // Capture the body silhouette only when the figure glows through its own BODY. A worn armor piece
+        // outlines itself (CAT_ARMOR, captured in HumanoidArmorLayerMixin); it no longer pulls the whole body
+        // into the ring, so a single glowing piece outlines just that piece rather than the entire figure.
+        int figColor = bodyGlow ? outlineColorFor(r) : 0;
         boolean glow = figColor != 0;
         // Under a shader pack the entity body's chromatic layers can't draw in-phase (hijacked), so capture the
         // body here for the post-Iris overlay drain in the SAME walk as the glow tee. Off-pack the wrapping
@@ -312,21 +308,6 @@ public final class EntityGlintRender {
                 }
             }
         }
-    }
-
-    private static final EquipmentSlot[] CG_ARMOR_SLOTS =
-            { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET };
-
-    /** The glow colour of the first worn armor piece that carries a glow effect, or 0 if none do. Lets the body
-     *  silhouette join the figure's unified ring when the glow comes from armor rather than the body itself
-     *  (see {@link #renderBodyTee}). CHEST covers a worn elytra too, so a glowing elytra also anchors the body
-     *  in the mask, which occludes its own separate-id ring where the bare arms cross in front. */
-    private static int wornGlowColor(LivingEntity entity) {
-        for (EquipmentSlot slot : CG_ARMOR_SLOTS) {
-            ItemStack s = entity.getItemBySlot(slot);
-            if (!s.isEmpty() && CustomGlint.hasGlowEffect(s)) return CustomGlintRenderer.resolveGlowColor(s);
-        }
-        return 0;
     }
 
     /** True when any layer of {@code glint} is the procedural chromatic design. */
