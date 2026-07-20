@@ -161,6 +161,20 @@ public class LayerDragonArmorMixin {
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
+                if (CustomGlint.isChromatic(layers[li])) {
+                    // Chromatic has no PNG, so forArmorGlint skipped it and dragon armor showed no chromatic.
+                    // Off-pack, draw the in-phase chromatic cutout RT (this part's armor texture is the mask).
+                    // Under a pack that program is hijacked, so capture the part and queue the post-pass chromatic
+                    // overlay against the part texture, same as the hippogryph and hippocampus armor.
+                    if (CustomGlintRenderer.isShaderPackActive()) {
+                        LivingEntity ent = CG_ENTITY.get();
+                        if (ent != null) EntityGlintRender.captureChromaticModel(ent, model, tex, pose, light, glint, li);
+                    } else {
+                        RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, li);
+                        if (crt != null) list.add(flush.getBuffer(crt));
+                    }
+                    continue;
+                }
                 int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
                 if (layers[li].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
