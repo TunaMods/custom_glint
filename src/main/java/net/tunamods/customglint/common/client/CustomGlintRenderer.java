@@ -613,10 +613,23 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static final RenderStateShard.ShaderStateShard CHROMATIC_CUTOUT_SHADER_SHARD =
             new RenderStateShard.ShaderStateShard(() -> chromaticCutoutShader);
 
+    /** Chromatic slick declared for NEW_ENTITY, no camera-ward bias and no mask, so it can test EQUAL against a
+     *  cutout base's own depth; the chromatic counterpart of {@link #glintModelShader}. See
+     *  {@link #forElytraChromaticGlint}. */
+    private static ShaderInstance chromaticModelShader;
+    private static final RenderStateShard.ShaderStateShard CHROMATIC_MODEL_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> chromaticModelShader);
+
     /** Vanilla rendertype_glint plus an alpha-test against a second sampler; see {@link #forMountArmorGlint}. */
     private static ShaderInstance glintCutoutShader;
     private static final RenderStateShard.ShaderStateShard GLINT_CUTOUT_SHADER_SHARD =
             new RenderStateShard.ShaderStateShard(() -> glintCutoutShader);
+
+    /** Vanilla rendertype_glint declared for NEW_ENTITY, no camera-ward bias and no mask, so it can test EQUAL
+     *  against a cutout base's own depth; see {@link #forElytraGlint}. */
+    private static ShaderInstance glintModelShader;
+    private static final RenderStateShard.ShaderStateShard GLINT_MODEL_SHADER_SHARD =
+            new RenderStateShard.ShaderStateShard(() -> glintModelShader);
 
     /** Like {@link #glintCutoutShader} but cuts against the UNION of two mask textures (Sampler1 + Sampler2):
      *  the Epic Knights decoration counterpart, since dyeable EK decorations split their shape across a base +
@@ -697,6 +710,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             CustomGlint.res("glint_cutout"),
                             DefaultVertexFormat.NEW_ENTITY),
                     shader -> glintCutoutShader = shader);
+            // Model glint (elytra): design only, NEW_ENTITY, no camera-ward bias, so it tests EQUAL against the
+            // base's cutout depth and self-occludes overlapping wings instead of doubling. See forElytraGlint.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("glint_model"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> glintModelShader = shader);
             // Decoration cutout (Epic Knights): design + UNION alpha-test against a base + overlay decoration
             // texture. Reuses glint_cutout's vertex program (same NEW_ENTITY format + camera-ward bias for
             // Sodium's renderCuboid path); only the fragment stage differs (two masks). See
@@ -713,6 +733,13 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             CustomGlint.res("chromatic_cutout"),
                             DefaultVertexFormat.NEW_ENTITY),
                     shader -> chromaticCutoutShader = shader);
+            // Model chromatic (elytra): procedural slick, NEW_ENTITY, no camera-ward bias, so it tests EQUAL
+            // against the base's cutout depth and self-occludes overlapping wings. See forElytraChromaticGlint.
+            event.registerShader(
+                    new ShaderInstance(event.getResourceProvider(),
+                            CustomGlint.res("chromatic_model"),
+                            DefaultVertexFormat.NEW_ENTITY),
+                    shader -> chromaticModelShader = shader);
             // Atlased GUI item glint: one shared design atlas so every inventory glint icon batches into a
             // single draw. NEW_ENTITY so the item's own quads emit through putBulkData; colour/scroll/scale/
             // cell ride the vertex payload (a batched draw has no per-item uniform). See guiAtlasGlintRenderType.
@@ -1466,6 +1493,64 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return cached;
     }
 
+    /**
+     * Elytra glint. Unlike horse armor (whose glint is coplanar with a SEPARATE horse-body mesh and so must sit
+     * proud with a bias + LEQUAL), the elytra's glint relates only to its own base mesh, which is drawn cutout.
+     * So it tests EQUAL against that base's own depth: only the nearest surface's glint matches, which
+     * self-occludes the two folded wings where they overlap at the center instead of additively doubling the
+     * seam. A biased LEQUAL glint (forMountArmorGlint) can't self-occlude there because the wings sit well within
+     * the bias distance, so both pass and stack.
+     *
+     * <p>NEW_ENTITY so the glint rides Sodium's renderCuboid alongside the base and quantizes identically (what
+     * lets EQUAL match under Sodium, the reason forArmorGlint's POSITION_TEX flickered there), and
+     * VIEW_OFFSET_Z_LAYERING to match the base armorCutoutNoCull offset (dropped under Sodium for both, so they
+     * stay equal). The glint_model shader carries no camera-ward bias, precisely so EQUAL can match; no Sampler1
+     * mask, since the EQUAL test already clips the glint to the base's opaque texels.
+     */
+    public static RenderType forElytraGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx) {
+        if (glintModelShader == null) return null;
+        Layer layer = glint.layers()[layerIdx];
+        ResourceLocation design = layer.design();
+        if (getTexture(design) == null) return null;
+        String key = "elytra|" + layerKey(layer) + "|" + colorIdx + "|" + layerIdx;
+        float[] holder = GLINT_COLORS.computeIfAbsent(key, k -> new float[4]);
+        System.arraycopy(frameColor, 0, holder, 0, 4);
+        RenderType cached = BY_MOUNT_ARMOR_GLINT.computeIfAbsent(key, k -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":custom_elytra_glint|" + k.hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    256, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(GLINT_MODEL_SHADER_SHARD)
+                            .setTextureState(new TextureStateShard(design, false, false) {
+                                @Override public void setupRenderState() {
+                                    RenderSystem.setShaderTexture(0, getTexture(design));
+                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                }
+                                @Override public void clearRenderState() {
+                                    super.clearRenderState();
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                }
+                            })
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(NO_CULL)
+                            // EQUAL against the base elytra's own cutout depth (same VIEW_OFFSET), so only the
+                            // nearest wing's glint matches and the overlapping far wing fails, order-independently.
+                            // No shader bias, unlike forMountArmorGlint, precisely so this EQUAL test can match.
+                            .setDepthTestState(EQUAL_DEPTH_TEST)
+                            .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                            .setTransparencyState(GLINT_TRANSPARENCY)
+                            .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_elytra_glint_texturing",
+                                    () -> setModelScrollMatrix(layer, colorIdx), RenderSystem::resetTextureMatrix))
+                            .createCompositeState(false));
+            putCapturedFixedBuffer(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
+    }
+
     /** Horse-armor chromatic slick: the {@link #forMountChromaticGlint chromatic} counterpart of the cutout
      *  {@link #forMountArmorGlint}. Procedural design (no PNG), so it uses the chromatic_cutout shader with the
      *  palette on Sampler1 and the armor texture on Sampler2 for the shape cutout. Same coplanar depth setup as
@@ -1512,6 +1597,57 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setLayeringState(NO_LAYERING)
                             .setTransparencyState(GLINT_TRANSPARENCY)
                             .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_mount_chromatic_cutout_texturing|" + k.hashCode(),
+                                    () -> setChromaticMatrix(layer, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE, colorCount),
+                                    RenderSystem::resetTextureMatrix))
+                            .createCompositeState(false));
+            putCapturedFixedBuffer(rt);
+            return rt;
+        });
+        registerLiveFixedBuffer(cached);
+        return cached;
+    }
+
+    /** Elytra chromatic slick: the {@link #forElytraGlint chromatic} counterpart. Like forElytraGlint it tests
+     *  EQUAL against the base elytra's own cutout depth (NEW_ENTITY for Sodium, VIEW_OFFSET to match the base,
+     *  the chromatic_model shader with no camera-ward bias), so the two folded wings self-occlude at the center
+     *  instead of the LEQUAL bias of {@link #forMountChromaticGlint} letting both overlapping faces double. */
+    public static RenderType forElytraChromaticGlint(Data glint, int layerIdx) {
+        if (chromaticModelShader == null) return null;
+        Layer layer = glint.layers()[layerIdx];
+        int[] colors = chromaticColors(layer.colors());
+        final int colorCount = Math.min(colors.length, 8);
+        final ResourceLocation white = getWhiteTexture();
+        final ResourceLocation palette = getPaletteTexture(colors);
+        String key = "elytrachroma|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
+                + "|" + layer.seed() + "|" + layerIdx;
+        RenderType cached = BY_MOUNT_ARMOR_GLINT.computeIfAbsent(key, k -> {
+            RenderType rt = RenderType.create(
+                    MOD_ID + ":custom_elytra_chromatic|" + k.hashCode(),
+                    DefaultVertexFormat.NEW_ENTITY,
+                    VertexFormat.Mode.QUADS,
+                    256, false, false,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(CHROMATIC_MODEL_SHADER_SHARD)
+                            .setTextureState(new TextureStateShard(white, false, false) {
+                                @Override public void setupRenderState() {
+                                    RenderSystem.setShaderTexture(0, white);
+                                    RenderSystem.setShaderTexture(1, palette);
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                }
+                                @Override public void clearRenderState() {
+                                    super.clearRenderState();
+                                    RenderSystem.setShaderTexture(1, 0);
+                                    RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                                }
+                            })
+                            .setWriteMaskState(COLOR_WRITE)
+                            .setCullState(NO_CULL)
+                            // EQUAL against the base elytra's cutout depth (same VIEW_OFFSET), no shader bias, so
+                            // only the nearest wing's slick matches and the overlapping far wing fails.
+                            .setDepthTestState(EQUAL_DEPTH_TEST)
+                            .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                            .setTransparencyState(GLINT_TRANSPARENCY)
+                            .setTexturingState(new TexturingStateShard(MOD_ID + ":custom_elytra_chromatic_texturing|" + k.hashCode(),
                                     () -> setChromaticMatrix(layer, CHROMATIC_MODEL_UV_SCALE, CHROMATIC_MODEL_UV_SCALE, colorCount),
                                     RenderSystem::resetTextureMatrix))
                             .createCompositeState(false));
