@@ -61,11 +61,18 @@ public class GlintTrimItem extends Item {
         return ResourceLocation.tryParse(stack.getTag().getString(PATTERN_TAG));
     }
 
+    /** Synthetic colour a non-chromatic empty layer carries so it stays renderable (read() rejects a
+     *  zero-colour non-chromatic layer). It is NOT a player-chosen colour: alpha 0xFE sits outside the
+     *  discrete opacity-step alphas any real colour carries, so it stays distinguishable from a genuine
+     *  full-opacity white (0xFFFFFFFF) the player picks via hex - which must survive on printed/imported
+     *  trims. Renders as plain white (254/255 brightness). Tested exactly, never by RGB alone. */
+    public static final int EMPTY_FILL = 0xFEFFFFFF;
+
     /** The color array to bake into the preview glint: chromatic passes the raw list (an empty list renders
      *  with the white/grey/dark-grey "empty" palette), every other design needs at least one color. */
     public static int[] writeColors(ResourceLocation pattern, int[] colors) {
         if (CustomGlint.isChromatic(pattern)) return colors;
-        return colors.length > 0 ? colors : new int[]{0xFFFFFFFF};
+        return colors.length > 0 ? colors : new int[]{EMPTY_FILL};
     }
 
     /** Re-emit the single-layer preview glint from the current config (no-op for a multi-layer trim, whose

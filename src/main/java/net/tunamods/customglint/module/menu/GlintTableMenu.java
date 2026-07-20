@@ -479,7 +479,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
         for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
             for (CustomGlint.Layer l : group) {
                 for (int color : l.colors()) {
-                    if ((color & 0xFFFFFF) == 0xFFFFFF) continue; // synthetic empty-layer fill, not a real colour
+                    if (color == GlintTrimItem.EMPTY_FILL) continue; // synthetic empty-layer fill, not a real colour
                     int idx = dyeIndexForRgb(color);
                     if (idx < 0) { committedRainbow++; continue; }
                     ItemStack ds = container.getItem(SLOT_DYE_START + idx);

@@ -516,11 +516,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return s;
     }
 
-    /** The pure-white writeColors() stamps on an otherwise-colorless layer so it stays renderable (read()
-     *  rejects a non-chromatic layer with zero colors). It is NOT a player-chosen colour - the white dye is
-     *  0xFFF9FFFE - so the editor loads it as an EMPTY shard, letting the player pick the colour themselves. */
+    /** The synthetic fill writeColors() stamps on an otherwise-colorless layer so it stays renderable (read()
+     *  rejects a non-chromatic layer with zero colors). It is NOT a player-chosen colour, so the editor loads
+     *  it as an EMPTY shard. Matched EXACTLY against {@link GlintTrimItem#EMPTY_FILL}, never by RGB - a real
+     *  white (0xFFFFFFFF via hex, or the 0xFFF9FFFE white dye) on a printed/imported trim must survive. */
     private static boolean isFillWhite(int color) {
-        return (color & 0xFFFFFF) == 0xFFFFFF;
+        return color == GlintTrimItem.EMPTY_FILL;
     }
 
     private void addColorShard(int rgb) { addShardTo(colorShards, rgb); }
