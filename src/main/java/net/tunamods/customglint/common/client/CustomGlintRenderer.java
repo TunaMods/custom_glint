@@ -16,6 +16,8 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.ModelBakery;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
@@ -121,6 +123,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // Invalidate the cached block-atlas dimensions (the atlas restitches on resource reload).
         cachedAtlasW = 0;
         cachedAtlasH = 0;
+        // The shield sheet repacks on reload, so the base sprite's UV extent (and its compensation) can move.
+        shieldInvU = 0f;
     }
 
     // Block-atlas dimensions, read once and reused (the atlas only restitches on resource reload, which
@@ -134,6 +138,28 @@ public final class CustomGlintRenderer extends RenderStateShard {
             cachedAtlasW = atlas.width;
             cachedAtlasH = atlas.height;
         }
+    }
+
+    // The shield draws its glint through material.sprite().wrap() (BEWLR.renderByItem), which squeezes the
+    // model's [0,1] UVs into the base shield sprite's small sub-rect of the SHIELD atlas. A glint sampled off
+    // those UVs (the procedural chromatic slick) is compressed by that sub-rect's extent, so at the shared
+    // special-item scale the shield's slick reads far more zoomed-in than the trident's (which draws unwrapped,
+    // raw UVs). shieldInvU/V = 1/(sprite extent): multiply a special-item UV scale by it and the slick tiles
+    // across the shield model's real UVs, matching the trident. Cached; recomputed after a reload.
+    private static float shieldInvU = 0f, shieldInvV = 0f;
+
+    private static void ensureShieldScale() {
+        if (shieldInvU != 0f) return;
+        float du = 0f, dv = 0f;
+        try {
+            TextureAtlasSprite s = ModelBakery.NO_PATTERN_SHIELD.sprite();
+            du = s.getU1() - s.getU0();
+            dv = s.getV1() - s.getV0();
+        } catch (Throwable ignored) {
+            // Sprite not resolvable (atlas not ready / renamed): fall back to a typical shield-sheet extent.
+        }
+        shieldInvU = du > 0f ? 1.0f / du : 8.0f;
+        shieldInvV = dv > 0f ? 1.0f / dv : 8.0f;
     }
 
 
@@ -924,6 +950,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticShader == null) return null;
         return chromaticRT(glint.layers()[layerIdx], "special|L" + layerIdx,
                 CHROMATIC_SPECIAL_ITEM_UV_SCALE, CHROMATIC_SPECIAL_ITEM_UV_SCALE, NO_LAYERING);
+    }
+
+    /** In-phase chromatic glint for a shield. The shield's foil buffer is sprite-atlas-wrapped (BEWLR), which
+     *  compresses its UVs, so at the shared special-item scale the slick reads massively zoomed-in. Dividing by
+     *  the sprite extent ({@link #ensureShieldScale}) tiles the slick across the shield model's real UVs, so it
+     *  matches the (unwrapped) trident. */
+    public static RenderType forChromaticShieldGlint(Data glint, int layerIdx) {
+        if (chromaticShader == null) return null;
+        ensureShieldScale();
+        return chromaticRT(glint.layers()[layerIdx], "shield|L" + layerIdx,
+                CHROMATIC_SPECIAL_ITEM_UV_SCALE * shieldInvU, CHROMATIC_SPECIAL_ITEM_UV_SCALE * shieldInvV, NO_LAYERING);
     }
 
     /** Worn-armor chromatic glint (EQUAL depth + VIEW_OFFSET_Z_LAYERING, matching armorCutoutNoCull). */

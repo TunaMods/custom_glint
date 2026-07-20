@@ -18,6 +18,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
@@ -150,6 +151,9 @@ public class ItemRendererMixin {
 
         CustomGlint.Layer[] layers = glint.layers();
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+        // A shield draws its chromatic slick through a sprite-atlas-wrapped buffer that compresses the model
+        // UVs, so it needs the shield-sprite scale compensation; the raw-UV trident and flat items do not.
+        boolean isShield = stack.is(Items.SHIELD);
 
         // Fast path, the overwhelmingly common single-layer glint that resolves to ONE glint delegate: any
         // non-simultaneous layer (it animates down to a single colour) or a simultaneous layer with ≤1 colour.
@@ -195,10 +199,16 @@ public class ItemRendererMixin {
                 boolean divertedItem = isItem && CustomGlintRenderer.isShaderPackActive();
                 if (!divertedItem) {
                     // Special 3D BEWLR items (shield/trident) take the special-item scale so the in-phase draw
-                    // matches the shader-pack overlay; flat/held items keep the atlas/3D scale.
-                    RenderType crt = CustomGlintRenderer.CURRENT_IS_SPECIAL.get()
-                            ? CustomGlintRenderer.forChromaticSpecialGlint(glint, layerIdx)
-                            : CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
+                    // matches the shader-pack overlay; flat/held items keep the atlas/3D scale. The shield's UVs
+                    // are sprite-atlas-compressed, so it takes the extra shield-sprite compensation.
+                    RenderType crt;
+                    if (isShield) {
+                        crt = CustomGlintRenderer.forChromaticShieldGlint(glint, layerIdx);
+                    } else if (CustomGlintRenderer.CURRENT_IS_SPECIAL.get()) {
+                        crt = CustomGlintRenderer.forChromaticSpecialGlint(glint, layerIdx);
+                    } else {
+                        crt = CustomGlintRenderer.forChromaticGlint(glint, layerIdx, isItem);
+                    }
                     if (crt != null) cg_addDistinct(list, cg_glintBuf(buffer, crt, guiHud));
                 }
                 continue;
