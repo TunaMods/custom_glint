@@ -74,6 +74,8 @@ Altered:
 - Ice and Fire (Community Edition): troll weapons and the deathworm gauntlet now show the
   Chromatic design, with shaders on or off.
 - Epic Knights: armor decorations now show the Chromatic design, with shaders on or off.
+- Sophisticated Backpacks: worn and held backpacks now show the Chromatic design, with shaders
+  on or off.
 
 [1.6.0]
 
