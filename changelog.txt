@@ -61,6 +61,7 @@ Altered:
 - Immersive Armors: the mod's layered armor now takes custom glints and glow outlines while worn
 - Mekanism: the MekaSuit, Jetpacks, Free Runners and their armored variants, and the Scuba tank and mask now take custom glints and glow outlines while worn
 - Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
+- Elytra Slot: an elytra worn in the mod's dedicated slot now takes custom glints and glow outlines, including the Chromatic design
 
 [Compat fixes]
 - Ice and Fire (Community Edition): a glinted dragon's wings now cut to the membrane shape under
@@ -72,6 +73,7 @@ Altered:
 - Ice and Fire (Community Edition): dragon armor now shows the Chromatic design.
 - Ice and Fire (Community Edition): troll weapons and the deathworm gauntlet now show the
   Chromatic design, with shaders on or off.
+- Epic Knights: armor decorations now show the Chromatic design, with shaders on or off.
 
 [1.6.0]
 
