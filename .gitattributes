@@ -3,3 +3,8 @@
 # are changed when only line endings change.
 src/generated/**/.cache/* text eol=lf
 src/generated/**/*.json text eol=lf
+
+# The in-repo maven is served raw from GitHub, so its files must be stored byte for
+# byte. autocrlf rewrites the xml and pom line endings on the way into a blob, which
+# leaves every published checksum describing bytes no consumer ever receives.
+mcmodsrepo/** -text
