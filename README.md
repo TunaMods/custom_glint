@@ -6,13 +6,13 @@ Formerly Custom Glints. The name changed in 1.7.0; the mod id is still `customgl
 
 | MC | Loader | Branch | Maven (`mcmodsrepo`) | Changelog |
 |---|---|---|---|---|
-| 1.20.1 | Forge 47.x | [`1.20.1`](https://github.com/TunaMods/custom_glint/tree/1.20.1) | `.../custom_glint/1.20.1/mcmodsrepo` | [changelog-1.20.1.txt](changelog-1.20.1.txt) |
-| 1.21.1 | NeoForge 21.1.233 | [`1.21.1`](https://github.com/TunaMods/custom_glint/tree/1.21.1) | `.../custom_glint/1.21.1/mcmodsrepo` | [changelog-1.21.1.txt](changelog-1.21.1.txt) |
-| 26.1.2 | NeoForge 26.1.2.76 | [`26.1.2`](https://github.com/TunaMods/custom_glint/tree/26.1.2) | `.../custom_glint/26.1.2/mcmodsrepo` | [changelog-26.1.2.txt](changelog-26.1.2.txt) |
+| 1.20.1 | Forge 47.x | [`1.20.1`](https://github.com/TunaMods/Glint-and-Glamour/tree/1.20.1) | `.../Glint-and-Glamour/1.20.1/mcmodsrepo` | [changelog-1.20.1.txt](changelog-1.20.1.txt) |
+| 1.21.1 | NeoForge 21.1.233 | [`1.21.1`](https://github.com/TunaMods/Glint-and-Glamour/tree/1.21.1) | `.../Glint-and-Glamour/1.21.1/mcmodsrepo` | [changelog-1.21.1.txt](changelog-1.21.1.txt) |
+| 26.1.2 | NeoForge 26.1.2.76 | [`26.1.2`](https://github.com/TunaMods/Glint-and-Glamour/tree/26.1.2) | `.../Glint-and-Glamour/26.1.2/mcmodsrepo` | [changelog-26.1.2.txt](changelog-26.1.2.txt) |
 
-Maven base: `https://raw.githubusercontent.com/TunaMods/custom_glint/<branch>/mcmodsrepo`
+Maven base: `https://raw.githubusercontent.com/TunaMods/Glint-and-Glamour/<branch>/mcmodsrepo`
 
-The GitHub repo kept its old name, so those urls do not change.
+The repo used to be `TunaMods/custom_glint`. GitHub redirects the old links, but point new builds at the url above.
 
 ## Artifacts
 
@@ -26,7 +26,7 @@ Versions through 1.6.0 were published as `custom-glint-api`; 1.7.0 and later are
 Forge (1.20.1):
 
 ```gradle
-repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo" } }
+repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/Glint-and-Glamour/1.20.1/mcmodsrepo" } }
 dependencies {
     compileOnly fg.deobf("net.tunamods.customglint:glint-and-glamour-api:1.7.0")
     runtimeOnly fg.deobf("net.tunamods.customglint:glint-and-glamour-api:1.7.0")
@@ -37,7 +37,7 @@ dependencies {
 NeoForge (1.21.1):
 
 ```gradle
-repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.21.1/mcmodsrepo" } }
+repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/Glint-and-Glamour/1.21.1/mcmodsrepo" } }
 dependencies {
     jarJar(implementation("net.tunamods.customglint:glint-and-glamour-api")) {
         version {
@@ -51,7 +51,7 @@ dependencies {
 NeoForge (26.1.2):
 
 ```gradle
-repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/custom_glint/26.1.2/mcmodsrepo" } }
+repositories { maven { url = "https://raw.githubusercontent.com/TunaMods/Glint-and-Glamour/26.1.2/mcmodsrepo" } }
 dependencies {
     jarJar(implementation("net.tunamods.customglint:glint-and-glamour-api")) {
         version {
