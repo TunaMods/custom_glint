@@ -85,16 +85,20 @@ void main() {
     int keyP = vP >= 128 ? vP - 128 : vP;
 
     // Inward edge bleed (shader-pack path): if this pixel IS the target silhouette and sits within EdgeBleed
-    // texels of a non-silhouette pixel, it's a border pixel — paint it the target's own colour so the ring
+    // texels of an EMPTY pixel, it's an outer border pixel — paint it the target's own colour so the ring
     // straddles the geometric edge and closes the hairline gap the pack's slightly-inset item leaves. Runs
     // before the SoloTarget discard so border pixels survive; deep-interior pixels (no empty neighbour) fall
     // through to the early-out. No-op when EdgeBleed == 0 (off-pack + GUI).
+    // The neighbour test is vn == 0 (empty), NOT vn < 128. An OCCLUDED neighbour (1..127) is the item's own
+    // shape hidden behind scene geometry, e.g. a chestplate behind the player's arm, not an outer edge.
+    // Treating it as one bled a line along every internal occlusion boundary, so the ring showed THROUGH the
+    // player instead of being hidden by it. Only visible under a pack, since EdgeBleed is 0 elsewhere.
     if (EdgeBleed > 0 && vP >= 128 && (keyP & 31) == TargetId) {
         for (int dx = -EdgeBleed; dx <= EdgeBleed; dx++) {
             for (int dy = -EdgeBleed; dy <= EdgeBleed; dy++) {
                 if (dx == 0 && dy == 0) continue;
                 int vn = int(texture(Sampler0, ctr + vec2(float(dx), float(dy)) * step).a * 255.0 + 0.5);
-                if (vn < 128) { fragColor = vec4(texture(Sampler0, ctr).rgb, 1.0); return; }
+                if (vn == 0) { fragColor = vec4(texture(Sampler0, ctr).rgb, 1.0); return; }
             }
         }
     }
