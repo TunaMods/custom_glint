@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * Standalone-only compat: troll weapon BEWLR calls MultiBufferSource.getBuffer(RenderType) directly,
- * bypassing ItemRenderer.getFoilBuffer - so ItemRendererMixin never fires for glint. At RETURN of
+ * bypassing ItemRenderer.getFoilBuffer, so ItemRendererMixin never fires for glint. At RETURN of
  * renderByItem, re-renders MODEL with glint render types.
  *
  * Cannot @Shadow MODEL: the field's runtime descriptor is Lcom/.../ModelTrollWeapon; (an IaF type we
@@ -69,7 +69,7 @@ public class RenderTrollWeaponMixin {
             int light, int overlay) {
         // Glow-outline capture re-renders the whole item through renderStatic into a record-only buffer
         // (ItemRendererMixin.cg_captureSpecialOutline), bucketing vertices by the texture each RenderType
-        // draws through - so it already traces this weapon's real shape via IaF's own entitySolid(weapon
+        // draws through, so it already traces this weapon's real shape via IaF's own entitySolid(weapon
         // .TEXTURE) draw. If we drew our glint layers during that pass they'd be recorded under the SHARED
         // design texture as a full-model-hull bucket, identical for every troll weapon variant (the "all
         // show the same outline" case). Skip the glint draw under IN_OUTLINE; the base capture handles the
@@ -88,7 +88,7 @@ public class RenderTrollWeaponMixin {
         for (int li = 0; li < layers.length; li++) {
             // CHROMATIC has no design PNG, so forGlint returns null and the layer would silently vanish.
             // isItem=false matches the forGlint calls below: 3D BEWLR model, not a flat sprite.
-            // chromaticWorldBuffer rather than buffer.getBuffer - under a shaderpack an in-phase chromatic
+            // chromaticWorldBuffer rather than buffer.getBuffer: under a shaderpack an in-phase chromatic
             // draw lands in the gbuffer and the scene composite discards it, so it defers to the replay.
             if (CustomGlint.isChromatic(layers[li])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, li, false);

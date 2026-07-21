@@ -2,11 +2,9 @@ package net.tunamods.customglint.module.compat.iceandfire.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -15,6 +13,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
+import net.tunamods.customglint.module.compat.iceandfire.client.IceAndFireArmorGlint;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
@@ -23,13 +22,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * Standalone-only compat: LayerDragonArmor is the single convergence point for fire/ice/lightning
- * dragon armor - it composes a per-(dragonType + 4 ordinals) layered texture and renders the dragon
+ * dragon armor: it composes a per-(dragonType + 4 ordinals) layered texture and renders the dragon
  * model once via RenderType.entityTranslucent(layeredTex). We capture the layered ResourceLocation
  * via @Redirect on entityTranslucent (rewriting that RT to armorCutoutNoCull) and unwrap IaF's
  * base-armor getBuffer, then at RETURN re-render MODEL with the glint RTs and draw an outline.
@@ -41,50 +36,27 @@ import java.util.List;
  * armor. Both are fixed by drawing the base through {@code armorCutoutNoCull} (polygon offset nudges
  * the armor in front, depth-occluding the body glint) on the UNWRAPPED buffer (no fan), then
  * glinting with {@link CustomGlintRenderer#forArmorGlint} (EQUAL + the matching offset) which lands
- * only where the cutout base wrote depth - the armor texture's own alpha cutout is the mask, no
+ * only where the cutout base wrote depth: the armor texture's own alpha cutout is the mask, no
  * stencil pass needed. Mirrors the 1.21.1 CE dragon fix.
  *
- * Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET - first stack with a custom glint wins
+ * Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET, first stack with a custom glint wins,
  * and supplies both the animated glint and (if also glowing) the outline color. Mixed-glint
  * configurations across slots fall back to the highest-priority slot's glint.
  *
- * EntityModel&lt;?&gt; access: cannot @Shadow getParentEntityModel&lt;?&gt; because the mixin can't declare
- * an extends clause onto RenderLayer&lt;EntityDragonBase, ...&gt; without compile-time access to those
- * types. Resolve via reflection by return-type match on RenderLayer's no-arg method.
+ * The parent model lookup and the glint fan-out are shared with the hippogryph/hippocampus armor
+ * mixins; both live in {@link IceAndFireArmorGlint}.
  */
 @Pseudo
 @Mixin(targets = "com.github.alexthe666.iceandfire.client.render.entity.layer.LayerDragonArmor", remap = false)
 public class LayerDragonArmorMixin {
 
     private static final ThreadLocal<ResourceLocation> CG_TEX = new ThreadLocal<>();
-    private static volatile Method CG_GET_PARENT_MODEL;
     private static final EquipmentSlot[] CG_SLOTS = {
             EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
     };
 
-    private EntityModel<?> cg_getParentModel() {
-        try {
-            Method m = CG_GET_PARENT_MODEL;
-            if (m == null) {
-                Class<?> cls = Class.forName("net.minecraft.client.renderer.entity.layers.RenderLayer");
-                for (Method mm : cls.getDeclaredMethods()) {
-                    if (mm.getParameterCount() == 0
-                            && mm.getReturnType().getName().equals("net.minecraft.client.model.EntityModel")) {
-                        mm.setAccessible(true);
-                        m = mm;
-                        break;
-                    }
-                }
-                CG_GET_PARENT_MODEL = m;
-            }
-            return m == null ? null : (EntityModel<?>) m.invoke(this);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
     // Clear any texture left over from a previous render that threw between the capture redirect and the
-    // RETURN inject - otherwise the next armorless dragon (whose render never hits the redirect) would read a
+    // RETURN inject, otherwise the next armorless dragon (whose render never hits the redirect) would read a
     // stale CG_TEX and draw a spurious glint/outline. HEAD always runs before the redirect.
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/github/alexthe666/iceandfire/entity/EntityDragonBase;FFFFFF)V",
             at = @At("HEAD"), require = 0)
@@ -153,7 +125,7 @@ public class LayerDragonArmorMixin {
         // No tex captured ⇒ IaF early-exited (no armor / dragon type unsupported) ⇒ nothing to glint.
         if (tex == null) return;
 
-        // HEAD > CHEST > LEGS > FEET - first slot with a glint OR a glow trim wins and supplies both
+        // HEAD > CHEST > LEGS > FEET: first slot with a glint OR a glow trim wins and supplies both
         // the animated glint and (if glowing) the outline colour.
         ItemStack active = null;
         CustomGlint.Data glint = null;
@@ -165,7 +137,7 @@ public class LayerDragonArmorMixin {
         if (active == null) return;
         boolean glowing = CustomGlint.isGlowing(active);
 
-        EntityModel<?> model = cg_getParentModel();
+        EntityModel<?> model = IceAndFireArmorGlint.parentModel(this);
         if (model == null) return;
 
         // Route through the unwrapped source so the dragon's body glint (auto-fanned onto entity_*
@@ -175,50 +147,13 @@ public class LayerDragonArmorMixin {
 
         if (glint != null) {
             // forArmorGlint (EQUAL + armorCutoutNoCull's polygon offset) lands only where IaF's base
-            // armor draw - also routed through armorCutoutNoCull - wrote depth, i.e. the layered
+            // armor draw (also routed through armorCutoutNoCull) wrote depth, i.e. the layered
             // armor texture's opaque texels. The offset sits the armor (and this glint) in front of
             // the dragon body, so the body glint is depth-occluded there. No stencil mask needed:
-            // the armor texture's own alpha cutout IS the mask.
-            CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
-            List<VertexConsumer> list = new ArrayList<>();
-            for (int li = 0; li < layers.length; li++) {
-                if (CustomGlint.isChromatic(layers[li])) {
-                    // Chromatic carries no design PNG, so forArmorGlint's getTexture lookup below returns null
-                    // and the layer would drop with no warning. forChromaticArmorGlint is its depth twin:
-                    // EQUAL + VIEW_OFFSET_Z_LAYERING, matching the armorCutoutNoCull the base armor was
-                    // rewritten to by cg_capTex above.
-                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, li);
-                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(flush, crt));
-                    continue;
-                }
-                int[] colors = layers[li].colors();
-                if (layers[li].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * aa;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
-                        if (rt != null) list.add(flush.getBuffer(rt));
-                    }
-                } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                    float aa = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * aa;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * aa;
-                    buf[2] = ( color        & 0xFF) / 255.0f * aa;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
-                    if (rt != null) list.add(flush.getBuffer(rt));
-                }
-            }
-            if (!list.isEmpty()) {
-                VertexConsumer combined = list.size() == 1 ? list.get(0)
-                        : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-                model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 1.0f, 1.0f, 1.0f, 1.0f);
-            }
+            // the armor texture's own alpha cutout IS the mask. (Chromatic layers take the matching
+            // depth twin inside drawArmorGlint; the armorCutoutNoCull they pair with is the one
+            // cg_capTex above rewrote IaF's RT to.)
+            IceAndFireArmorGlint.drawArmorGlint(glint, model, pose, flush, light);
         }
 
         // Glow outline: trace the dragon model against the composed layered armor texture (its alpha is

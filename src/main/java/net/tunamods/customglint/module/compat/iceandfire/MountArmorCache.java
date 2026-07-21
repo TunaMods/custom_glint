@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Client-side cache of IaF mount armor ItemStacks keyed by entity id. IaF stores hippogryph and
  * hippocampus armor in a SimpleContainer that doesn't auto-sync to clients (only the armor tier
- * int syncs via EntityDataAccessor) - so without this cache the client has no access to the
+ * int syncs via EntityDataAccessor), so without this cache the client has no access to the
  * actual ItemStack's CustomGlint NBT. Populated by GlintMountArmorSyncPacket handler; consumed
  * by LayerHippogryph/HippocampusArmorMixin.
  */

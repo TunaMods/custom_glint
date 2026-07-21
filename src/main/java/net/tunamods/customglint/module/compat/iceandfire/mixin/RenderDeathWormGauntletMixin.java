@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Standalone-only compat: death worm gauntlet BEWLR (RenderDeathWormGauntlet) - same problem shape
+ * Standalone-only compat: death worm gauntlet BEWLR (RenderDeathWormGauntlet), same problem shape
  * as RenderTrollWeapon. One ModelDeathWormGauntlet, three variants (red/white/yellow) selected by
  * item identity → different textures, same combined geometry. We re-render MODEL with glint render
  * types at RETURN of renderByItem.
@@ -65,7 +65,7 @@ public class RenderDeathWormGauntletMixin {
             int light, int overlay) {
         // See RenderTrollWeaponMixin: during the glow-outline capture re-render (IN_OUTLINE), skip our
         // glint draw so the silhouette traces this variant's real texture (IaF's own per-variant draw)
-        // rather than recording a shared full-model-hull bucket under the design texture - which would
+        // rather than recording a shared full-model-hull bucket under the design texture, which would
         // give all three gauntlet variants the same outline.
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
 
