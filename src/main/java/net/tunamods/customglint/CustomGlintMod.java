@@ -1,26 +1,5 @@
 package net.tunamods.customglint;
 
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.client.CustomGlintRenderer;
-import net.tunamods.customglint.module.ModConfigPaths;
-import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
-import net.tunamods.customglint.module.advancement.ModTriggers;
-import net.tunamods.customglint.module.command.GlintCommand;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.ModComponents;
-import net.tunamods.customglint.module.client.GlintTableClientInit;
-import net.tunamods.customglint.module.client.GlintTableModelClient;
-import net.tunamods.customglint.module.client.TrimItemColors;
-import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
-import net.tunamods.customglint.module.network.ModNetworking;
-import net.tunamods.customglint.module.block.ModBlockEntities;
-import net.tunamods.customglint.module.block.ModBlocks;
-import net.tunamods.customglint.module.item.ModCreativeTabs;
-import net.tunamods.customglint.module.item.ModItems;
-import net.tunamods.customglint.module.loot.ModLootModifiers;
-import net.tunamods.customglint.module.menu.ModAttachments;
-import net.tunamods.customglint.module.menu.ModMenuTypes;
-import net.tunamods.customglint.module.recipe.ModRecipes;
 import com.mojang.serialization.Codec;
 import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.resources.Identifier;
@@ -49,12 +28,39 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.client.CustomGlintRenderer;
+import net.tunamods.customglint.module.ModConfigPaths;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
+import net.tunamods.customglint.module.advancement.ModTriggers;
+import net.tunamods.customglint.module.block.ModBlockEntities;
+import net.tunamods.customglint.module.block.ModBlocks;
+import net.tunamods.customglint.module.client.GlintTableClientInit;
+import net.tunamods.customglint.module.client.GlintTableModelClient;
+import net.tunamods.customglint.module.client.TrimItemColors;
+import net.tunamods.customglint.module.command.GlintCommand;
 import net.tunamods.customglint.module.item.GlintBagItem;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModComponents;
+import net.tunamods.customglint.module.item.ModCreativeTabs;
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.loot.ModLootModifiers;
+import net.tunamods.customglint.module.menu.ModAttachments;
+import net.tunamods.customglint.module.menu.ModMenuTypes;
+import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
+import net.tunamods.customglint.module.network.ModNetworking;
+import net.tunamods.customglint.module.recipe.ModRecipes;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Entrypoint for the standalone mod: the content layer (items, blocks, menus, recipes, loot, commands,
+ * networking) that sits on top of the api jar. The api jar's own {@code @Mod} class
+ * ({@code CustomGlintApiMod}) registers the glint component and the rendering pipeline; nothing here is
+ * required for an embedder that bundles only the api.
+ */
 @Mod(CustomGlintMod.MOD_ID)
 public class CustomGlintMod {
     public static final String MOD_ID = "customglint";
@@ -98,6 +104,12 @@ public class CustomGlintMod {
         NeoForge.EVENT_BUS.addListener(this::onPlayerJoin);
         NeoForge.EVENT_BUS.addListener(this::onItemCrafted);
         NeoForge.EVENT_BUS.addListener(this::onItemPickup);
+    }
+
+    private void commonSetup(FMLCommonSetupEvent event) {
+        // Rename the pre-1.7.0 config/customglint/ folder to config/glint-and-glamour/ before anything
+        // reads it (blueprint scans). No-op after the first migrated launch.
+        event.enqueueWork(ModConfigPaths::migrateLegacy);
     }
 
     /** Route Glint loot items straight into a Glint Bag the player is carrying, so a looting run doesn't fill
@@ -158,12 +170,6 @@ public class CustomGlintMod {
         if (EightByEightTrimTrigger.matches(data)) ModTriggers.EIGHT_BY_EIGHT_TRIM.get().trigger(sp);
     }
 
-    private void commonSetup(final FMLCommonSetupEvent event) {
-        // Rename the pre-1.7.0 config/customglint/ folder to config/glint-and-glamour/ before anything
-        // reads it (blueprint scans). No-op after the first migrated launch.
-        event.enqueueWork(ModConfigPaths::migrateLegacy);
-    }
-
     private void onAddReloadListeners(AddServerReloadListenersEvent event) {
         event.addListener(CustomGlint.res("designs"),
                 new SimpleJsonResourceReloadListener<List<String>>(Codec.STRING.listOf(), FileToIdConverter.json("customglint/designs")) {
@@ -196,5 +202,4 @@ public class CustomGlintMod {
             PacketDistributor.sendToPlayer(player, new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns)));
         }
     }
-
 }

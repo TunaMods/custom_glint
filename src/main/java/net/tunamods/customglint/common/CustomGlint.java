@@ -35,6 +35,11 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
  * {@code ClassNotFoundException} on a dedicated server). The split exists because the old unified
  * class extended {@code RenderStateShard} and imported {@code Minecraft}/{@code RenderType}, which
  * crashed dedicated servers.
+ *
+ * <p>Three verb prefixes are used deliberately, and they mean different things:
+ * {@code read}/{@code write} move whole state on or off a live holder (an {@code ItemStack} or a
+ * {@code LivingEntity}); {@code get}/{@code set} touch a single field of that state; {@code fromTag}/
+ * {@code toTag} and the {@code *GlintTag} accessors cross into the serialized {@code CompoundTag} form.
  */
 public final class CustomGlint {
 
@@ -59,28 +64,10 @@ public final class CustomGlint {
             list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
             arr -> Arrays.stream(arr).boxed().toList());
 
-    /** Most-translucent glint alpha (at the 8th glass); 0 glass = fully opaque (255). Shared so the Glint
-     *  Table's opacity↔alpha↔glass mapping matches on both the client (preview/cost) and the server (print). */
-    public static final int GLINT_ALPHA_MIN = 32;
-
-    /** Glint-Table material cost of a speed / scale value: the number of ± stepper clicks it sits from the 1×
-     *  default (0.10 per click below 1×, 0.5 per click above). Each click costs one redstone / slime, so a
-     *  fully-tuned layer is a real material sink. Both sides tally this per layer. */
-    public static int stepCost(float value) {
-        if (value >= 1.0f) return Math.round((value - 1.0f) / 0.5f);
-        return Math.round((1.0f - value) / 0.10f);
-    }
-
-    /** Glint-Table glass cost for a colour's alpha: the opacity level (0..8) it encodes, i.e. one glass per
-     *  opacity click. Inverts the opacity→alpha mapping ({@code alpha = 255 - level*(255-MIN)/8}). */
-    public static int glassCost(int alpha) {
-        return Math.round((255f - alpha) * 8f / (255f - GLINT_ALPHA_MIN));
-    }
-
     public record Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
                         boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
-        /** Truncate to {@link #MAX_COLORS_PER_LAYER} at construction so every path — embedder API, direct
-         *  record build, codec decode — honors the cap the {@code sizeLimitedListOf(8)} codec enforces on
+        /** Truncate to {@link #MAX_COLORS_PER_LAYER} at construction so every path (embedder API, direct
+         *  record build, codec decode) honors the cap the {@code sizeLimitedListOf(8)} codec enforces on
          *  encode. Without this a >8-color layer round-trips fine in memory but throws {@code EncoderException}
          *  the moment it hits a component sync or a disk save. */
         public Layer {
@@ -127,7 +114,7 @@ public final class CustomGlint {
     // ── Data ─────────────────────────────────────────────────────────────────
 
     public record Data(Layer[] layers) {
-        /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous, scroll, offset, seed}, … ] }}.
+        /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous, scroll, offset, seed}, ... ] }}.
          *  Glow state (glowing / glowColors) is stored as sibling keys in the same tag,
          *  outside this codec. */
         public static final Codec<Data> CODEC = Layer.CODEC.listOf().xmap(
@@ -188,6 +175,26 @@ public final class CustomGlint {
         @Override public int hashCode() {
             return Objects.hash(data, glowing, glowSpeed, glowInterp) * 31 + Arrays.hashCode(glowColors);
         }
+    }
+
+    // ── Glint Table cost math ─────────────────────────────────────────────────
+    // Shared so the client preview/cost readout and the server-side print charge the same materials.
+
+    /** Most-translucent glint alpha (at the 8th glass); 0 glass = fully opaque (255). */
+    public static final int GLINT_ALPHA_MIN = 32;
+
+    /** Material cost of a speed / scale value: the number of ± stepper clicks it sits from the 1×
+     *  default (0.10 per click below 1×, 0.5 per click above). Each click costs one redstone / slime, so a
+     *  fully-tuned layer is a real material sink. Both sides tally this per layer. */
+    public static int stepCost(float value) {
+        if (value >= 1.0f) return Math.round((value - 1.0f) / 0.5f);
+        return Math.round((1.0f - value) / 0.10f);
+    }
+
+    /** Glass cost for a colour's alpha: the opacity level (0..8) it encodes, i.e. one glass per opacity
+     *  click. Inverts the opacity→alpha mapping ({@code alpha = 255 - level*(255-MIN)/8}). */
+    public static int glassCost(int alpha) {
+        return Math.round((255f - alpha) * 8f / (255f - GLINT_ALPHA_MIN));
     }
 
     // ── Colors ────────────────────────────────────────────────────────────────
@@ -416,6 +423,14 @@ public final class CustomGlint {
         write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) });
     }
 
+    public static void write(ItemStack stack, Identifier design, int[] colors) {
+        write(stack, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void write(ItemStack stack, Identifier design, int color) {
+        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
+    }
+
     public static void remove(ItemStack stack) {
         stack.remove(CustomGlintComponents.GLINT.get());
     }
@@ -472,14 +487,6 @@ public final class CustomGlint {
         ItemStack stack = new ItemStack(item);
         write(stack, design, colors, speed, interpolate, patternScale, simultaneous);
         return stack;
-    }
-
-    public static void write(ItemStack stack, Identifier design, int[] colors) {
-        write(stack, design, colors, 1.0f, true, 1.0f, true);
-    }
-
-    public static void write(ItemStack stack, Identifier design, int color) {
-        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
     }
 
     public static ItemStack glinted(Item item, Identifier design, int[] colors) {
@@ -549,6 +556,18 @@ public final class CustomGlint {
 
     public static void applyMobDropGlint(ItemStack stack) {
         applyGlint(MOB_DROP_GLINTS, stack);
+    }
+
+    // Loot glints key on the loot table first, so they get their own nested map rather than the shared
+    // per-Item helpers above. The loot modifier walks the inner map itself.
+    public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
+
+    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, oneLayer(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors) {
+        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
     }
 
     // ── Entity glint API ──────────────────────────────────────────────────────
@@ -703,15 +722,5 @@ public final class CustomGlint {
     /** A glint tag holding just these layers (no glow flags). */
     public static CompoundTag toTag(Layer[] layers) {
         return stateToTag(new GlintState(new Data(layers), false, new int[0], 1.0f, true));
-    }
-
-    public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
-
-    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, oneLayer(design, colors, speed, interpolate, patternScale, simultaneous));
-    }
-
-    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors) {
-        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
     }
 }

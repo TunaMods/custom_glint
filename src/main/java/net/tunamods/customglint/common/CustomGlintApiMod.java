@@ -11,6 +11,12 @@ import net.neoforged.neoforge.event.entity.player.ItemFishedEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.tunamods.customglint.common.client.CustomGlintClientInit;
 
+/**
+ * Entrypoint for the api jar: glint storage, the rendering pipeline, and the auto-apply hooks. This is
+ * everything an embedder gets when it bundles {@code customglint_api} on its own, with no dependency on
+ * the standalone mod's items, blocks, or GUIs. Loads on a dedicated server, so client init is reached
+ * only through the {@link FMLEnvironment#getDist()} guard below.
+ */
 @Mod(CustomGlintApiMod.MOD_ID)
 public class CustomGlintApiMod {
     public static final String MOD_ID = "customglint_api";
