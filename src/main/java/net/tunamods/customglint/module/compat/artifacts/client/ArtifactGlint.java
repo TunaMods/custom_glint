@@ -123,7 +123,7 @@ public final class ArtifactGlint {
         int[] glowColors = glintState.glowColors();
         if ((glowing || glowColors.length > 0) && texture != null) {
             EntityGlintRender.queueArmorOutline(model, state, pose.last(), texture, light,
-                    glint, glowing, glowColors, glintState.glowSpeed(), glintState.glowInterp());
+                    glint, glowing, glowColors, glintState.glowSpeed(), glintState.glowInterp(), false);
         }
     }
 

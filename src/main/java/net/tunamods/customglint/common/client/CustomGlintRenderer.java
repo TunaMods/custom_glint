@@ -212,6 +212,7 @@ public final class CustomGlintRenderer {
             dropFixed(BY_GLINT_OVERLAY.values());
             dropFixed(BY_ENTITY_LAYER_GLINT.values());
             dropFixed(BY_GLOW_MASK.values());
+            dropFixed(BY_WING_DEPTH.values());
         }
         BY_GLINT.clear();
         BY_ARMOR_GLINT.clear();
@@ -222,6 +223,7 @@ public final class CustomGlintRenderer {
         BY_GLINT_OVERLAY.clear();
         BY_ENTITY_LAYER_GLINT.clear();
         BY_GLOW_MASK.clear();
+        BY_WING_DEPTH.clear();
         // Free the in-phase glow-body native buffers. Their keys are RenderTypes that the cleared
         // BY_GLOW_MASK maps just dropped, so after a reload glowMaskRT mints fresh RenderType instances
         // and computeIfAbsent would orphan these builders, a slow per-reload native-memory leak. Close
@@ -270,6 +272,23 @@ public final class CustomGlintRenderer {
     public static RenderType glowMaskRT(Identifier texture) {
         RenderType rt = BY_GLOW_MASK.computeIfAbsent(texture, t ->
                 GlintPipelines.glowMaskType(MOD_ID + ":glow_mask_" + texTag(t), t, SCENE_DEPTH_ID));
+        registerFixed(rt);
+        registerLiveFixedBuffer(rt);
+        return rt;
+    }
+
+    private static final Map<Identifier, RenderType> BY_WING_DEPTH = new HashMap<>();
+
+    /** Depth-only pre-pass RenderType for folded elytra/cape wings, keyed by the equipment texture (its alpha
+     *  is the wing cutout). Drawn first in the post-Iris overlay drain to prime the isolated target's depth
+     *  with the NEAREST of the two overlapping wings, so the following wing glint/chromatic pass (LEQUAL,
+     *  {@link GlintPipelines#GLINT_OVERLAY_CULL} / {@link GlintPipelines#CHROMATIC_OVERLAY_CULL}) drops the
+     *  farther wing instead of additively doubling the seam down the spine. Shared by the normal and chromatic
+     *  wing passes; the depth depends only on geometry + cutout, not the design. */
+    public static RenderType forWingDepthPrepass(Identifier texture) {
+        if (texture == null) return null;
+        RenderType rt = BY_WING_DEPTH.computeIfAbsent(texture, t ->
+                GlintPipelines.wingDepthType(MOD_ID + ":wing_depth_" + texTag(t), t));
         registerFixed(rt);
         registerLiveFixedBuffer(rt);
         return rt;
@@ -951,6 +970,13 @@ public final class CustomGlintRenderer {
      *  fight the shell's re-sorted depth. */
     private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture,
                                                  Identifier depthId) {
+        return chromaticOverlayRT(layer, tag, uvScale, texture, depthId, false);
+    }
+
+    /** As above but {@code cull=true} routes onto {@link GlintPipelines#CHROMATIC_OVERLAY_CULL} for thin
+     *  double-sided equipment (elytra wings), so the additive slick doesn't double where the wings overlap. */
+    private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture,
+                                                 Identifier depthId, boolean cull) {
         int[] colors = chromaticColors(layer.colors());
         final double speed = layer.speed();
         final float effScale = layer.patternScale() * uvScale;
@@ -961,11 +987,11 @@ public final class CustomGlintRenderer {
         // dummy (alpha 1 → no discard, full mesh) when the caller has no texture (e.g. an opaque body).
         final Identifier sampler0 = texture != null ? texture : getWhiteTexture();
         Identifier palette = getPaletteTexture(colors);
-        String key = tag + "|" + depthId + "|" + sampler0 + "|" + colorsKey(colors) + "|" + speed + "|" + effScale + "|" + layer.seed();
+        String key = tag + "|" + (cull ? "cull|" : "") + depthId + "|" + sampler0 + "|" + colorsKey(colors) + "|" + speed + "|" + effScale + "|" + layer.seed();
         RenderType cached = BY_CHROMATIC_OVERLAY.computeIfAbsent(key, k -> {
             String name = MOD_ID + ":custom_chromatic_overlay|" + k.hashCode();
             Supplier<Matrix4f> anim = () -> GlintPipelines.chromaticMatrix(speed, effScale, cc, seedPacked);
-            RenderType rt = GlintPipelines.chromaticOverlayType(name, sampler0, palette, depthId, anim);
+            RenderType rt = GlintPipelines.chromaticOverlayType(name, sampler0, palette, depthId, anim, cull);
             registerFixed(rt);
             return rt;
         });
@@ -986,7 +1012,13 @@ public final class CustomGlintRenderer {
      *  {@link #forArmorGlint} chromatic branch re-routed onto {@link GlintPipelines#CHROMATIC_OVERLAY}.
      *  {@code texture} is the equipment-layer texture whose alpha cuts the slick to the real armor shape. */
     public static RenderType forArmorGlintOverlay(Data glint, int layerIdx, @Nullable Identifier texture) {
-        return chromaticOverlayRT(glint.layers()[layerIdx], "armor_ov", CHROMATIC_MODEL_UV_SCALE, texture);
+        return forArmorGlintOverlay(glint, layerIdx, texture, false);
+    }
+
+    /** {@code cull=true} routes the elytra/cape (thin double-sided wings) onto the culling overlay pipeline so
+     *  the additive slick doesn't double where the wings overlap, matching the in-phase {@code isWings} path. */
+    public static RenderType forArmorGlintOverlay(Data glint, int layerIdx, @Nullable Identifier texture, boolean cull) {
+        return chromaticOverlayRT(glint.layers()[layerIdx], "armor_ov", CHROMATIC_MODEL_UV_SCALE, texture, SCENE_DEPTH_ID, cull);
     }
 
     /** Post-Iris chromatic overlay RT for entity bodies / horse armor, the {@link #forEntityGlint} chromatic
@@ -1038,13 +1070,16 @@ public final class CustomGlintRenderer {
      *  {@code cutout} (the model texture, or the white dummy when null) on Sampler1, scene depth on
      *  DepthSampler, and the armor-style scroll matrix. */
     private static RenderType modelGlintOverlayRT(Layer layer, String tag, int colorIdx, @Nullable Identifier cutout) {
-        return modelGlintOverlayRT(layer, tag, colorIdx, cutout, false);
+        return modelGlintOverlayRT(layer, tag, colorIdx, cutout, false, false);
     }
 
     /** @param loose true routes onto {@link GlintPipelines#GLINT_OVERLAY_LOOSE} (flat generous occlusion) for a
-     *      translucent shell; false is the tight per-part-occluding {@link GlintPipelines#GLINT_OVERLAY}. */
+     *      translucent shell; false is the tight per-part-occluding {@link GlintPipelines#GLINT_OVERLAY}.
+     *  @param cull true routes onto {@link GlintPipelines#GLINT_OVERLAY_CULL} for thin double-sided equipment
+     *      (elytra wings), so the additive glint doesn't double where the wings overlap. Mutually exclusive
+     *      with {@code loose} (the translucent-shell path is never a thin wing). */
     private static RenderType modelGlintOverlayRT(Layer layer, String tag, int colorIdx, @Nullable Identifier cutout,
-                                                  boolean loose) {
+                                                  boolean loose, boolean cull) {
         Identifier gray = getTexture(layer.design());
         if (gray == null) return null;
         final Identifier cut = cutout != null ? cutout : getWhiteTexture();
@@ -1053,7 +1088,7 @@ public final class CustomGlintRenderer {
         final float ps = layer.patternScale();
         final int scrollDir = layer.scrollDir();
         final float scrollOffset = layer.scrollOffset();
-        String key = tag + "|" + layer.design() + "|" + cut + "|" + speed + "|" + ps + "|" + colorIdx
+        String key = tag + "|" + (cull ? "cull|" : "") + layer.design() + "|" + cut + "|" + speed + "|" + ps + "|" + colorIdx
                 + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
         RenderType cached = BY_GLINT_OVERLAY.computeIfAbsent(key, k -> {
             String name = MOD_ID + ":custom_glint_overlay|" + k.hashCode();
@@ -1061,7 +1096,7 @@ public final class CustomGlintRenderer {
                     () -> GlintPipelines.armorAnimationMatrix(speed, ps, colorIdx, cc, scrollDir, scrollOffset);
             RenderType rt = loose
                     ? GlintPipelines.glintOverlayLooseType(name, gray, cut, SCENE_DEPTH_ID, anim)
-                    : GlintPipelines.glintOverlayType(name, gray, cut, SCENE_DEPTH_ID, anim);
+                    : GlintPipelines.glintOverlayType(name, gray, cut, SCENE_DEPTH_ID, anim, cull);
             registerFixed(rt);
             return rt;
         });
@@ -1073,7 +1108,13 @@ public final class CustomGlintRenderer {
      *  {@link #forArmorGlint} normal branch re-routed onto {@link GlintPipelines#GLINT_OVERLAY}.
      *  {@code texture} is the equipment-layer texture whose alpha cuts the glint to the real armor shape. */
     public static RenderType forArmorGlintOverlayNormal(Data glint, int layerIdx, int colorIdx, @Nullable Identifier texture) {
-        return modelGlintOverlayRT(glint.layers()[layerIdx], "armor_ovn", colorIdx, texture);
+        return forArmorGlintOverlayNormal(glint, layerIdx, colorIdx, texture, false);
+    }
+
+    /** {@code cull=true} routes the elytra/cape (thin double-sided wings) onto the culling overlay pipeline so
+     *  the additive glint doesn't double where the wings overlap, matching the in-phase {@code isWings} path. */
+    public static RenderType forArmorGlintOverlayNormal(Data glint, int layerIdx, int colorIdx, @Nullable Identifier texture, boolean cull) {
+        return modelGlintOverlayRT(glint.layers()[layerIdx], "armor_ovn", colorIdx, texture, false, cull);
     }
 
     /** Post-Iris NORMAL-glint overlay RT for entity bodies, the {@link #forEntityGlint} normal branch
@@ -1087,7 +1128,7 @@ public final class CustomGlintRenderer {
      *  animation as {@link #forEntityGlintOverlayNormal}, routed onto {@link GlintPipelines#GLINT_OVERLAY_LOOSE}
      *  so the shell's re-sorted committed depth doesn't self-occlude the glint (per-face dropout under Iris). */
     public static RenderType forEntityGlintOverlayNormalLoose(Data glint, int layerIdx, int colorIdx, @Nullable Identifier texture) {
-        return modelGlintOverlayRT(glint.layers()[layerIdx], "entity_ovn_loose", colorIdx, texture, true);
+        return modelGlintOverlayRT(glint.layers()[layerIdx], "entity_ovn_loose", colorIdx, texture, true, false);
     }
 
     /** Post-Iris NORMAL-glint overlay RT for SPECIAL 3D items (shield/trident): the 3D scale-1 item scroll
@@ -1270,6 +1311,13 @@ public final class CustomGlintRenderer {
     // Armor glint matches armor_cutout_no_cull's VIEW_OFFSET_Z layering (EQUAL depth, D-ε) so the
     // glint depth-test lands exactly on the armor depth. See the project_armor_glint_bleed_fix memory.
     public static RenderType forArmorGlint(Data glint, int layerIdx, int colorIdx) {
+        return forArmorGlint(glint, layerIdx, colorIdx, false);
+    }
+
+    /** {@code cull=true} routes the textured glint through {@link GlintPipelines#GLINT_COLOR_CULL} for thin
+     *  double-sided equipment (elytra wings, capes), so the wing's two faces don't both draw at ~equal depth
+     *  and double the additive glint. Solid armor keeps the no-cull pipeline (cull=false). */
+    public static RenderType forArmorGlint(Data glint, int layerIdx, int colorIdx, boolean cull) {
         Layer layer = glint.layers()[layerIdx];
         // Armor samples its own 0..1 texture UV spanning a large area, so use a SMALL noise scale
         // (CHROMATIC_MODEL_UV_SCALE) to read as an oil-slick rather than a tiny tiled grid.
@@ -1281,9 +1329,10 @@ public final class CustomGlintRenderer {
         final float ps = layer.patternScale();
         final int scrollDir = layer.scrollDir();
         final float scrollOffset = layer.scrollOffset();
-        String key = "armor|" + layer.design() + "|" + speed + "|" + ps + "|" + colorIdx + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
+        String key = "armor|" + (cull ? "cull|" : "") + layer.design() + "|" + speed + "|" + ps + "|" + colorIdx + "|" + cc + "|" + scrollDir + "|" + scrollOffset;
         RenderType cached = BY_ARMOR_GLINT.computeIfAbsent(key, k -> {
-            RenderType rt = GlintPipelines.glintType(MOD_ID + ":custom_armor_glint|" + k.hashCode(), gray,
+            RenderType rt = GlintPipelines.glintType(MOD_ID + ":custom_armor_glint|" + k.hashCode(),
+                    cull ? GlintPipelines.GLINT_COLOR_CULL : GlintPipelines.GLINT_COLOR, gray,
                     LayeringTransform.VIEW_OFFSET_Z_LAYERING,
                     () -> GlintPipelines.armorAnimationMatrix(speed, ps, colorIdx, cc, scrollDir, scrollOffset));
             registerFixed(rt);

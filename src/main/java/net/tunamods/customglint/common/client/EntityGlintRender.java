@@ -360,11 +360,15 @@ public final class EntityGlintRender {
         final Object group;
         final boolean entityBound; // worn equipment on an entity (→ merges into the shared entity ring)
                                    // vs a special-renderer item (→ stays its own ring like dropped items)
+        final boolean ownGroup;    // force an ISOLATED mask+composite even though entityBound (elytra/cape):
+                                   // its ring is computed alone so the body's nearer silhouette can't eat the
+                                   // wings and the composite can't drop the seam. Still CAT_ARMOR for thickness.
         ModelOutlineJob(Model model, Object state, Identifier texture,
-                        PoseStack.Pose pose, int light, int color, Object group, boolean entityBound) {
+                        PoseStack.Pose pose, int light, int color, Object group, boolean entityBound,
+                        boolean ownGroup) {
             this.model = model; this.state = state; this.texture = texture;
             this.pose = pose; this.light = light; this.color = color; this.group = group;
-            this.entityBound = entityBound;
+            this.entityBound = entityBound; this.ownGroup = ownGroup;
         }
     }
 
@@ -420,18 +424,22 @@ public final class EntityGlintRender {
     @SuppressWarnings("rawtypes")
     public static void queueArmorOutline(Model model, Object state,
             PoseStack.Pose pose, Identifier texture, int light, @Nullable CustomGlint.Data glint,
-            boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
+            boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp, boolean ownRing) {
         if (model == null || state == null || texture == null || pose == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate ring
         if (!GlintClientConfig.entityOutlines() || beyondOutlineDistance(pose)) return;
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
-        // Group key = the entity render state, so this piece merges with that SAME entity's body outline
-        // (and its other armor pieces) into one ring, but stays separate from other entities. The body
-        // outline (LivingEntityRendererMixin) and the armor layer (EquipmentLayerRenderer.renderLayers)
-        // receive the same render-state instance per entity, so the identities match.
+        // Normal armor's group key is the entity render state, so this piece merges with that SAME entity's
+        // body outline (and its other armor pieces) into one ring but stays separate from other entities;
+        // the body outline (LivingEntityRendererMixin) and the armor layer receive the same render-state
+        // instance per entity, so the identities match. An elytra/cape (ownRing) is a thin mesh that heavily
+        // overlaps the body: in the shared mask the body's nearer silhouette eats the wings and the composite
+        // drops the seam, so the wing ring keeps merging into / vanishing behind the body. Give it its OWN
+        // isolated group (own mask + composite, computed alone) so it always rings on its own. Still CAT_ARMOR.
+        Object group = ownRing ? new Object() : state;
         MODEL_OUTLINES.add(new ModelOutlineJob(model, state, texture, pose.copy(), light,
-                resolveOutlineColor(glint, gc, glowSpeed, glowInterp), state, true));
+                resolveOutlineColor(glint, gc, glowSpeed, glowInterp), group, true, ownRing));
     }
 
     /**
@@ -450,7 +458,7 @@ public final class EntityGlintRender {
         int[] gc = glowColors == null ? new int[0] : glowColors;
         if (!glowing && gc.length == 0) return;
         ModelOutlineJob job = new ModelOutlineJob(model, state, WHITE, pose.copy(), light,
-                resolveOutlineColor(glint, gc, glowSpeed, glowInterp), itemGroup(), false);
+                resolveOutlineColor(glint, gc, glowSpeed, glowInterp), itemGroup(), false, false);
         (inFirstPersonHand ? HELD_FP_MODEL_OUTLINES : MODEL_OUTLINES).add(job);
     }
 
@@ -558,9 +566,15 @@ public final class EntityGlintRender {
         final RenderType rt;
         final int light;
         final int color;
-        ChromaModelJob(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light, int color) {
+        /** Wing depth pre-pass RT ({@code CustomGlintRenderer.forWingDepthPrepass}); non-null only for folded
+         *  elytra/cape wings. When set, the drain re-renders this same posed model into the isolated target's
+         *  depth FIRST so the (LEQUAL) wing colour pass keeps only the nearest wing and the overlapping spine
+         *  seam stops doubling. Null for flat armor / entity bodies (they never self-overlap this way). */
+        final RenderType depthRt;
+        ChromaModelJob(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light, int color,
+                       RenderType depthRt) {
             this.model = model; this.state = state; this.pose = pose; this.rt = rt; this.light = light;
-            this.color = color;
+            this.color = color; this.depthRt = depthRt;
         }
     }
 
@@ -618,7 +632,15 @@ public final class EntityGlintRender {
     @SuppressWarnings("rawtypes")
     public static void queueChromaticModel(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light,
                                            boolean heldFirstPerson) {
-        queueGlintOverlayModel(model, state, pose, rt, light, 0xFFFFFFFF, heldFirstPerson);
+        queueGlintOverlayModel(model, state, pose, rt, light, 0xFFFFFFFF, heldFirstPerson, null);
+    }
+
+    /** As {@link #queueChromaticModel(Model, Object, PoseStack.Pose, RenderType, int, boolean)} but with a
+     *  wing depth pre-pass RT (folded elytra/cape) so the drain de-doubles the overlapping spine seam. */
+    @SuppressWarnings("rawtypes")
+    public static void queueChromaticModel(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light,
+                                           boolean heldFirstPerson, RenderType depthRt) {
+        queueGlintOverlayModel(model, state, pose, rt, light, 0xFFFFFFFF, heldFirstPerson, depthRt);
     }
 
     /** Queues a chromatic special-item part (trident) for the post-Iris overlay drain. Called from
@@ -647,12 +669,20 @@ public final class EntityGlintRender {
     /** Queues a normal-glint model (worn equipment or entity body) for the post-Iris overlay drain. {@code rt}
      *  is a {@code CustomGlintRenderer.forXxxGlintOverlayNormal} RenderType; {@code color} is the layer's
      *  animated colour, drawn onto the model's vertices by the overlay shader. */
-    @SuppressWarnings("rawtypes")
     public static void queueGlintOverlayModel(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light,
                                               int color, boolean heldFirstPerson) {
+        queueGlintOverlayModel(model, state, pose, rt, light, color, heldFirstPerson, null);
+    }
+
+    /** As above but with a wing depth pre-pass RT (non-null only for folded elytra/cape wings): the drain
+     *  re-renders the same posed model into the isolated depth first so the LEQUAL wing colour pass keeps only
+     *  the nearest wing per pixel, collapsing the additive spine seam. */
+    @SuppressWarnings("rawtypes")
+    public static void queueGlintOverlayModel(Model model, Object state, PoseStack.Pose pose, RenderType rt, int light,
+                                              int color, boolean heldFirstPerson, RenderType depthRt) {
         if (model == null || state == null || pose == null || rt == null) return;
         if (CustomGlintRenderer.isInShadowPass()) return;   // shadow-pass pose ⇒ detached duplicate overlay
-        ChromaModelJob job = new ChromaModelJob(model, state, pose.copy(), rt, light, color);
+        ChromaModelJob job = new ChromaModelJob(model, state, pose.copy(), rt, light, color, depthRt);
         (heldFirstPerson ? HELD_FP_CHROMA_MODELS : CHROMA_MODELS).add(job);
     }
 
@@ -701,8 +731,9 @@ public final class EntityGlintRender {
         }
         // The overlay shader samples the committed scene depth for its per-fragment occlusion test.
         CustomGlintRenderer.bindSceneDepth(main.getDepthTextureView());
-        // Fresh target each frame (colour cleared to 0 so the GLINT-blend composite adds only the slick;
-        // depth to far, unused by the ALWAYS-test pipeline but kept consistent with the attachment).
+        // Fresh target each frame: colour cleared to 0 so the GLINT-blend composite adds only the slick; depth
+        // cleared to far so the wing depth pre-pass (WING_DEPTH, LEQUAL + write) accumulates the nearest wing
+        // from a clean slate and the wing colour pass (now LEQUAL) tests against it.
         RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(
                 chromaticTarget.getColorTexture(), 0, chromaticTarget.getDepthTexture(), 1.0);
         try {
@@ -710,6 +741,9 @@ public final class EntityGlintRender {
             RenderSystem.outputDepthTextureOverride = chromaticTarget.getDepthTextureView();
             MultiBufferSource.BufferSource bs = mc.renderBuffers().bufferSource();
             Set<RenderType> used = new LinkedHashSet<>();
+            // Wing depth pre-pass RTs (folded elytra/cape): flushed BEFORE `used` so the isolated depth holds
+            // the nearest wing before any wing colour LEQUAL-tests against it. Colour is a GLINT-blend no-op.
+            Set<RenderType> prepass = new LinkedHashSet<>();
             // One scratch PoseStack reused across every job: each iteration fully overwrites last() before
             // rendering synchronously (the model/part renderers push/pop balanced and don't retain it), so a
             // fresh allocation per job is pure churn in this per-frame drain.
@@ -717,6 +751,13 @@ public final class EntityGlintRender {
             for (ChromaModelJob job : modelJobs) {
                 scratch.last().set(job.pose);
                 setupAnim(job.model, job.state);
+                // Wing depth pre-pass reuses this iteration's pose/setupAnim (same posed model): prime the
+                // isolated depth with the nearest wing so the seam where the two folded wings overlap stops
+                // additively doubling. Null for flat armor / entity bodies.
+                if (job.depthRt != null) {
+                    job.model.renderToBuffer(scratch, bs.getBuffer(job.depthRt), job.light, OverlayTexture.NO_OVERLAY, job.color);
+                    prepass.add(job.depthRt);
+                }
                 // job.color is white for chromatic (palette carries the colours) and the layer's animated
                 // colour for a normal-glint overlay (read by core/glint_overlay.fsh's per-vertex Color).
                 job.model.renderToBuffer(scratch, bs.getBuffer(job.rt), job.light, OverlayTexture.NO_OVERLAY, job.color);
@@ -746,6 +787,9 @@ public final class EntityGlintRender {
                     used.add(rt);
                 }
             }
+            // Depth first (writes the nearest wing into the isolated depth), then colour (wing pass LEQUAL-tests
+            // against it; non-wing/part/item RTs keep ALWAYS and ignore it).
+            for (RenderType rt : prepass) bs.endBatch(rt);
             for (RenderType rt : used) bs.endBatch(rt);
         } finally {
             RenderSystem.outputColorTextureOverride = null;
@@ -837,7 +881,7 @@ public final class EntityGlintRender {
         // grouping was added for). So entity cost collapses to O(1); item cost stays O(few).
         Map<Object, Group> groups = new LinkedHashMap<>();
         for (ModelOutlineJob j : modelJobs)
-            groups.computeIfAbsent(j.entityBound ? ENTITY_GROUP : j.group, k -> new Group()).models.add(j);
+            groups.computeIfAbsent((j.entityBound && !j.ownGroup) ? ENTITY_GROUP : j.group, k -> new Group()).models.add(j);
         for (PartOutlineJob j : partJobs) groups.computeIfAbsent(j.group, k -> new Group()).parts.add(j);
         for (ItemOutlineJob j : itemJobs) groups.computeIfAbsent(j, k -> new Group()).items.add(j);
         // Entity bodies are captured in-phase (ModelFeatureRendererMixin → CustomGlintRenderer.fanBodyGlow),
@@ -916,6 +960,7 @@ public final class EntityGlintRender {
                 // Worn armor merges with its wearer's body + other pieces (identity = the entity render
                 // state, category ARMOR); a special-renderer item's sub-models merge with each other
                 // (identity = its submit-token group, category ITEM). Shared id ⇒ no doubled ring on overlap.
+                // An elytra is its OWN group (queueArmorOutline ownRing → ownGroup), so it rings alone here.
                 int itemCat = allowScissor ? CustomGlintRenderer.CAT_ITEM : CustomGlintRenderer.CAT_HELD_FP;
                 int glowKey = job.entityBound
                         ? CustomGlintRenderer.glowKeyFor(job.state, CustomGlintRenderer.CAT_ARMOR)

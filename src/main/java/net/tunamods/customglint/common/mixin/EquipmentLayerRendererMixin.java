@@ -79,6 +79,12 @@ public class EquipmentLayerRendererMixin {
         // the GlintState component), this fires per equipment layer per wearer per frame.
         var glintState = CustomGlint.readState(itemStack);
         CustomGlint.Data glint = glintState.data();
+        // Elytra/capes (WINGS) are thin double-sided meshes AND the two folded wings overlap along the spine:
+        // back-face cull drops each wing's hidden inner face, and under a shader pack a depth pre-pass
+        // (forWingDepthPrepass) + LEQUAL wing pass keeps only the nearest of the two overlapping wings so the
+        // additive glint stops doubling into a bright spine seam. The wing glow also needs its OWN isolated
+        // ring so it doesn't fuse into the wearer's body outline.
+        boolean isWings = layerType == EquipmentClientInfo.LayerType.WINGS;
 
         if (glint != null) {
             CustomGlint.Layer[] gl = glint.layers();
@@ -92,27 +98,30 @@ public class EquipmentLayerRendererMixin {
                 boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
                 if (CustomGlintRenderer.isShaderPackActive()) {
                     Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
+                    // Depth pre-pass RT for the two overlapping folded wings (null for flat armor); the drain
+                    // primes the isolated depth with it so the LEQUAL wing pass drops the farther wing.
+                    RenderType wingDepth = isWings && tex != null ? CustomGlintRenderer.forWingDepthPrepass(tex) : null;
                     if (chroma) {
-                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex);
-                        if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false);
+                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex, isWings);
+                        if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false, wingDepth);
                     } else if (gl[layerIdx].simultaneous()) {
                         for (int i = 0; i < colors.length; i++) {
-                            RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, i, tex);
-                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, colors[i], false);
+                            RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, i, tex, isWings);
+                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, colors[i], false, wingDepth);
                         }
                     } else {
                         int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, 0, tex);
-                        if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, color, false);
+                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, 0, tex, isWings);
+                        if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, color, false, wingDepth);
                     }
                 } else if (gl[layerIdx].simultaneous() && !chroma) {
                     for (int i = 0; i < colors.length; i++) {
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i);
+                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i, isWings);
                         if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, 0);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, 0, isWings);
                     if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, color);
                 }
             }
@@ -130,7 +139,7 @@ public class EquipmentLayerRendererMixin {
             Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
             if (tex != null) {
                 EntityGlintRender.queueArmorOutline(model, state, poseStack.last(), tex, lightCoords,
-                        glint, glowing, glowColors, glintState.glowSpeed(), glintState.glowInterp());
+                        glint, glowing, glowColors, glintState.glowSpeed(), glintState.glowInterp(), isWings);
             }
         }
     }

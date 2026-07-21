@@ -141,6 +141,15 @@ public final class GlintPipelines {
             .withCull(false)
             .build();
 
+    /** {@link #GLINT_COLOR} with back-face culling ON, for thin double-sided equipment (elytra wings, capes).
+     *  No-cull draws both faces of a thin wing at ~equal depth, so the additive {@code GLINT} blend doubles
+     *  the brightness where the wings overlap; culling keeps only the camera-facing face, so the glint reads
+     *  single-covered like it does on solid armor. */
+    public static final RenderPipeline GLINT_COLOR_CULL = GLINT_COLOR.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/glint_color_cull"))
+            .withCull(true)
+            .build();
+
     /** {@link #GLINT_COLOR} with {@link CompareOp#LESS_THAN_OR_EQUAL} depth (still no write) for entity LAYER
      *  surfaces (sheep wool, slime outer cube, saddles, …). Those layers are drawn by a DIFFERENT pipeline than
      *  our glint and sit flush on / translucent over the base body, so an EQUAL test flickers per-fragment on
@@ -240,6 +249,20 @@ public final class GlintPipelines {
             .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
             .build();
 
+    /** {@link #CHROMATIC_OVERLAY} for thin double-sided equipment (elytra wings, capes) drawn post-Iris:
+     *  back-face culling ON (drop each wing's hidden inner face) plus depth test {@link
+     *  CompareOp#LESS_THAN_OR_EQUAL} (still no write) against the isolated target's OWN depth. The two folded
+     *  wings overlap along the spine at near-coincident depth, which the in-shader scene occlusion (a biased
+     *  inequality) can't separate, so both draw and the additive slick doubles into a bright seam. The
+     *  overlay drain primes the isolated depth with the nearest wing first ({@link #WING_DEPTH}), and this
+     *  LEQUAL then keeps only that nearest wing per pixel, matching the off-shader {@link #GLINT_COLOR_CULL}
+     *  EQUAL path. (World occlusion is still the fragment shader's DepthSampler test.) */
+    public static final RenderPipeline CHROMATIC_OVERLAY_CULL = CHROMATIC_OVERLAY.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/chromatic_overlay_cull"))
+            .withCull(true)
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
+            .build();
+
     // ── Normal-glint POST-IRIS overlay ───────────────────────────────────────────
     //
     // Under an active shader pack a NORMAL (non-chromatic) glint layer can't draw in-phase either: Iris
@@ -285,6 +308,48 @@ public final class GlintPipelines {
     public static final RenderPipeline GLINT_OVERLAY_LOOSE = GLINT_OVERLAY.toBuilder()
             .withLocation(CustomGlint.res("pipeline/glint_overlay_loose"))
             .withFragmentShader(GLINT_OVERLAY_LOOSE_SHADER)
+            .build();
+
+    /** {@link #GLINT_OVERLAY} for thin double-sided equipment (elytra wings, capes) drawn post-Iris:
+     *  back-face culling ON plus depth test {@link CompareOp#LESS_THAN_OR_EQUAL} (no write) against the
+     *  isolated target's OWN depth. The post-Iris counterpart of {@link #GLINT_COLOR_CULL}: cull drops each
+     *  wing's hidden inner face. The two folded wings overlap along the spine at near-coincident depth that the
+     *  biased in-shader occlusion can't split, so the overlay drain first primes the isolated depth with the
+     *  nearest wing ({@link #WING_DEPTH}) and this LEQUAL keeps only that one per pixel instead of additively
+     *  doubling the seam. (World occlusion is still the fragment shader's DepthSampler test.) */
+    public static final RenderPipeline GLINT_OVERLAY_CULL = GLINT_OVERLAY.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/glint_overlay_cull"))
+            .withCull(true)
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
+            .build();
+
+    // ── Wing depth pre-pass (folded-elytra spine-seam fix, shader path only) ──────────────────────
+
+    /** Depth-only wing pre-pass shader (vertex + fragment): writes depth on the wing cutout shape and nothing
+     *  to colour. Files at {@code assets/customglint/shaders/core/overlay_depth.{vsh,fsh}}. */
+    public static final Identifier OVERLAY_DEPTH_SHADER = CustomGlint.res("core/overlay_depth");
+
+    /**
+     * Wing depth PRE-PASS pipeline. Re-rendered first in the overlay drain to prime the isolated target's
+     * depth with the NEAREST of the two folded elytra/cape wings, so the wing colour pass ({@link
+     * #GLINT_OVERLAY_CULL} / {@link #CHROMATIC_OVERLAY_CULL}, now LEQUAL) drops the farther overlapping wing
+     * instead of additively doubling it into a bright spine seam.
+     * <ul>
+     * <li><b>{@link CompareOp#LESS_THAN_OR_EQUAL} depth + WRITE</b> against the isolated target's own depth
+     *     (cleared to far each frame): keeps the minimum (nearest) wing depth per pixel, order-independently.</li>
+     * <li><b>Cull ON</b>, matching the colour pass, so only camera-facing wing faces seed the depth.</li>
+     * <li><b>{@link #OVERLAY_DEPTH_SHADER}</b> alpha-tests {@code Sampler0} (the equipment texture) to the
+     *     wing silhouette and outputs {@code vec4(0)}, a no-op under the inherited GLINT blend, so this pass
+     *     never touches colour. gl_Position is bit-identical to both colour-pass vertex shaders, so their
+     *     LEQUAL test against this depth is exact.</li>
+     * </ul>
+     */
+    public static final RenderPipeline WING_DEPTH = GLINT_COLOR.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/wing_depth"))
+            .withVertexShader(OVERLAY_DEPTH_SHADER)
+            .withFragmentShader(OVERLAY_DEPTH_SHADER)
+            .withCull(true)
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true))
             .build();
 
     /** Fragment shader for the chromatic overlay composite (passthrough blit; blend is on the pipeline).
@@ -340,7 +405,14 @@ public final class GlintPipelines {
      */
     public static RenderType chromaticOverlayType(String name, Identifier modelTex, Identifier paletteTex,
                                                   Identifier sceneDepth, Supplier<Matrix4f> animation) {
-        RenderSetup setup = RenderSetup.builder(CHROMATIC_OVERLAY)
+        return chromaticOverlayType(name, modelTex, paletteTex, sceneDepth, animation, false);
+    }
+
+    /** {@code cull=true} routes onto {@link #CHROMATIC_OVERLAY_CULL} for thin double-sided equipment (elytra
+     *  wings), so the additive slick doesn't double where the two wing faces overlap. */
+    public static RenderType chromaticOverlayType(String name, Identifier modelTex, Identifier paletteTex,
+                                                  Identifier sceneDepth, Supplier<Matrix4f> animation, boolean cull) {
+        RenderSetup setup = RenderSetup.builder(cull ? CHROMATIC_OVERLAY_CULL : CHROMATIC_OVERLAY)
                 .withTexture("Sampler0", modelTex)   // model texture: the cutout alpha-test silhouette
                 .withTexture("Sampler1", paletteTex, GlintPipelines::paletteSampler)
                 .withTexture("DepthSampler", sceneDepth,
@@ -367,6 +439,13 @@ public final class GlintPipelines {
         return glintOverlayType(GLINT_OVERLAY, name, grayDesign, cutoutTex, sceneDepth, animation);
     }
 
+    /** {@code cull=true} routes onto {@link #GLINT_OVERLAY_CULL} for thin double-sided equipment (elytra
+     *  wings), so the additive glint doesn't double where the two wing faces overlap. */
+    public static RenderType glintOverlayType(String name, Identifier grayDesign, Identifier cutoutTex,
+                                              Identifier sceneDepth, Supplier<Matrix4f> animation, boolean cull) {
+        return glintOverlayType(cull ? GLINT_OVERLAY_CULL : GLINT_OVERLAY, name, grayDesign, cutoutTex, sceneDepth, animation);
+    }
+
     /** LOOSE-occlusion counterpart of {@link #glintOverlayType} on {@link #GLINT_OVERLAY_LOOSE}, for
      *  translucent entity-layer shells (slime outer cube). Identical payload; only the fragment shader's bias
      *  differs. */
@@ -384,6 +463,20 @@ public final class GlintPipelines {
                         () -> RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
                 .setLayeringTransform(LayeringTransform.NO_LAYERING)
                 .setTextureTransform(new TextureTransform(name + "|tex", animation))
+                .bufferSize(1536)
+                .createRenderSetup();
+        return RenderType.create(name, setup);
+    }
+
+    /** Depth-only pre-pass {@link RenderType} for folded elytra/cape wings on {@link #WING_DEPTH}: {@code
+     *  cutout} (the equipment texture) on Sampler0 drives the wing-shape alpha-test. It writes depth, not
+     *  colour, so no design/animation/scene depth is needed and the normal and chromatic wing colour passes
+     *  share it (depth depends only on geometry + cutout). Runs first in the overlay drain, into the isolated
+     *  target's depth, so the wing colour pass LEQUAL-tests against it. */
+    public static RenderType wingDepthType(String name, Identifier cutout) {
+        RenderSetup setup = RenderSetup.builder(WING_DEPTH)
+                .withTexture("Sampler0", cutout)
+                .setLayeringTransform(LayeringTransform.NO_LAYERING)
                 .bufferSize(1536)
                 .createRenderSetup();
         return RenderType.create(name, setup);
