@@ -79,7 +79,11 @@ public class LivingEntityRendererMixin {
         EntityModel<?> model = ((LivingEntityRenderer<?, ?, ?>) (Object) this).getModel();
         if (model == null) return;
 
-        if (r.data != null) {
+        // Skip the inner-body glint on an entity whose TRANSLUCENT outer shell already carries the glint
+        // (slime): the shell is the visible surface, so glinting the hidden inner body too doubles it and the
+        // inner reads over the shell. The shell's layer submit (SubmitNodeCollectionMixin) runs before this
+        // popPose hook, so the mark is already set. Non-shelled entities glint their body as normal.
+        if (r.data != null && !EntityGlintRender.hasTranslucentShell(state)) {
             // Body texture: only needed for the chromatic post-Iris overlay's cutout alpha-test (the in-phase
             // path ignores it). getTextureLocation is in hand here; null is fine (overlay draws the full mesh).
             Identifier bodyTex = ((LivingEntityRenderer) (Object) this).getTextureLocation(state);
@@ -87,7 +91,7 @@ public class LivingEntityRendererMixin {
         }
 
         // Glow outline ring around the body silhouette. Instead of queuing a deferred re-pose + second
-        // setupAnim at AfterOpaqueFeatures, we stash the colour + texture on the render state here (where
+        // setupAnim at AfterWeather, we stash the colour + texture on the render state here (where
         // getTextureLocation is in hand). ModelFeatureRendererMixin reads it back at the body draw and
         // tees the silhouette IN-PHASE on the already-posed model, exactly how vanilla's own glowing-
         // entity outline works (ModelFeatureRenderer.renderModel re-renders into OutlineBufferSource).

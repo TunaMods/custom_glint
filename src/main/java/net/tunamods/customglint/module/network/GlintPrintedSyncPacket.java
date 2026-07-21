@@ -28,8 +28,8 @@ public record GlintPrintedSyncPacket(List<ItemStack> trims) implements CustomPac
                     },
                     buf -> {
                         int count = buf.readVarInt();
-                        // Clamp the pre-sized capacity so a crafted server can't trigger a huge eager
-                        // allocation; the loop drains the real count and underflows cleanly if it's fake.
+                        // Cap the pre-sized capacity so a bogus count can't pre-allocate a huge array; the
+                        // loop still drains the real count.
                         List<ItemStack> trims = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
                         for (int i = 0; i < count; i++) {
                             ItemStack s = ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);

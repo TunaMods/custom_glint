@@ -24,7 +24,6 @@ public final class TrimItemColors {
 
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener((RegisterColorHandlersEvent.ItemTintSources event) ->
-                event.register(CustomGlint.res("glow"),
-                        GlowTintSource.MAP_CODEC));
+                event.register(CustomGlint.res("glow"), GlowTintSource.MAP_CODEC));
     }
 }

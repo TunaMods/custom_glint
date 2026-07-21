@@ -20,6 +20,14 @@ public class GlintWandItem extends Item {
         super(props);
     }
 
+    /** True if the player holds the wand in either hand. The wand is creative/command-only, so this is the
+     *  server-side gate for the wand-driven shared-blueprint edits: a crafted packet from a wandless client
+     *  is rejected rather than trusted. */
+    public static boolean isHeldBy(Player player) {
+        return player.getMainHandItem().is(ModItems.GLINT_WAND.get())
+                || player.getOffhandItem().is(ModItems.GLINT_WAND.get());
+    }
+
     @Override
     public InteractionResult use(Level level, Player player, InteractionHand hand) {
         if (level.isClientSide() && FMLEnvironment.getDist() == Dist.CLIENT) {

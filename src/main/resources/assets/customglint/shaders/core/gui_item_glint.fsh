@@ -12,7 +12,7 @@ layout(std140) uniform DynamicTransforms {
     vec3 ModelOffset;
     mat4 TextureMat;
 };
-// Globals carries GlintAlpha — the vanilla glint-strength dimmer. Inlined (startup core shaders can't
+// Globals carries GlintAlpha, the vanilla glint-strength dimmer. Inlined (startup core shaders can't
 // moj_import); bound for GUI draws by RenderSystem.bindDefaultUniforms, same as the world glint.
 layout(std140) uniform Globals {
     ivec3 CameraBlockPos;
@@ -24,22 +24,45 @@ layout(std140) uniform Globals {
     int UseRgss;
 };
 
-uniform sampler2D Sampler0;   // cached item slot — silhouette mask
-uniform sampler2D Sampler1;   // grayscale glint design (REPEAT + LINEAR)
+uniform sampler2D Sampler0;   // cached item slot, the silhouette mask
+uniform sampler2D Sampler1;   // grayscale glint design: single design (REPEAT), or the shared atlas (CLAMP)
 
 in vec2 texCoord0;
 in vec4 vertexColor;
 in float vGuiScale;
 in vec2 vScroll;   // 2D scroll vector (design-UV), direction+speed/static already resolved CPU-side
 in float vPS;
+in float vAtlasMode; // 1 = Sampler1 is the shared design atlas; 0 = a single REPEAT design texture
+in float vCellIndex; // atlas cell for this design when vAtlasMode == 1
 
 out vec4 fragColor;
+
+// Shared GUI design atlas layout — MUST match CustomGlintRenderer.GUI_ATLAS_* constants. Designs pack into a
+// square grid of 64px cells, each with a GUTTER-px wrapped border so fract() tiling stays seamless under
+// LINEAR (the bound sampler CLAMPs; the wrap is the gutter, not the hardware). The grid dimension is dynamic
+// (sized CPU-side to the design count so data-pack designs atlas too) and recovered here from the atlas
+// texture size, so no uniform is needed: the atlas is square with dim = grid * STRIDE, hence grid = dim/STRIDE.
+const float ATLAS_CONTENT = 64.0;
+const float ATLAS_GUTTER  = 4.0;
+const float ATLAS_STRIDE  = ATLAS_CONTENT + 2.0 * ATLAS_GUTTER; // 72
+
+// Maps a (tiled) design coordinate onto this layer's atlas cell. duv is unbounded (the scroll wraps it);
+// fract() folds it into the cell, then the content sub-rect (inside the gutter) is addressed.
+vec2 atlasUV(vec2 duv) {
+    float dim  = float(textureSize(Sampler1, 0).x);   // square atlas: dim = grid * STRIDE
+    int   grid = int(dim / ATLAS_STRIDE + 0.5);        // cells per side, recovered exactly
+    int   ci   = int(vCellIndex + 0.5);
+    float col  = float(ci - (ci / grid) * grid);       // ci % grid
+    float row  = float(ci / grid);                     // ci / grid
+    vec2 origin = (vec2(col, row) * ATLAS_STRIDE + ATLAS_GUTTER) / dim;
+    return origin + fract(duv) * (ATLAS_CONTENT / dim);
+}
 
 // Silhouette alpha threshold (same role as gui_item_outline's EDGE).
 const float EDGE = 0.1;
 // Apparent design size on the icon: BIGGER = bigger motifs (fewer repeats). It's the inverse of the
 // tiling factor (k = patternScale / GLINT_SIZE), so the knob reads the intuitive way now. The 64x64
-// source caps crispness at large sizes — pushing this much past ~3 magnifies the texels (soft/blocky).
+// source caps crispness at large sizes. Pushing this much past ~3 magnifies the texels (soft/blocky).
 const float GLINT_SIZE = 3.0;
 
 // Sample coord for the design + scroll. The world's forGlint samples V twice as densely as U (scaleU =
@@ -55,20 +78,23 @@ vec2 glintUV(vec2 p, vec2 scroll, float ps) {
 
 void main() {
     // Item-local (0..1 over the 16px icon, v measured downward) from the atlas slot coord. s is the slot
-    // UV size, derived EXACTLY from guiScale (the slot is always 16*guiScale atlas texels) — same scheme
+    // UV size, derived EXACTLY from guiScale (the slot is always 16*guiScale atlas texels). Same scheme
     // as gui_item_outline, no fwidth/drift.
     float s = 16.0 * vGuiScale / float(textureSize(Sampler0, 0).x);
     float vv = 1.0 - texCoord0.y;
     vec2 origin = vec2(floor(texCoord0.x / s), floor(vv / s)) * s;
     vec2 itemLocal = vec2((texCoord0.x - origin.x) / s, (vv - origin.y) / s);
 
-    // Only draw over the item itself — the cached slot's alpha is the silhouette.
+    // Only draw over the item itself: the cached slot's alpha is the silhouette.
     if (texture(Sampler0, texCoord0).a < EDGE) {
         discard;
     }
 
     vec2 duv = glintUV(itemLocal, vScroll, vPS);
-    vec4 design = texture(Sampler1, duv) * vertexColor;
+    // Atlas mode: every glinted icon shares one design atlas so the glint glyphs batch into one draw; the
+    // design is selected by cell index. Single-design mode samples the bound design directly (REPEAT).
+    vec2 suv = (vAtlasMode > 0.5) ? atlasUV(duv) : duv;
+    vec4 design = texture(Sampler1, suv) * vertexColor;
     if (design.a < 0.004) {
         discard;   // design texture's own alpha decides the glint SHAPE
     }

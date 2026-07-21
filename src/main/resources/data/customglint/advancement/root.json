@@ -1,0 +1,51 @@
+{
+  "display": {
+    "icon": {
+      "id": "customglint:glint_trim",
+      "components": {
+        "customglint:glint": {
+          "glint": {
+            "layers": [
+              {
+                "design": "customglint:textures/glint/sparkle.png",
+                "colors": [
+                  -16711681
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "title": {
+      "translate": "advancement.customglint.root.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.root.description"
+    },
+    "background": "minecraft:block/polished_blackstone_bricks",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "get_trim": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": [
+              "customglint:glint_trim"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "get_trim"
+    ]
+  ]
+}

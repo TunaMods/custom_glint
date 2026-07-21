@@ -22,7 +22,7 @@ layout(std140) uniform Globals {
     int UseRgss;
 };
 
-uniform sampler2D Sampler0;   // cached item slot — silhouette mask
+uniform sampler2D Sampler0;   // cached item slot, the silhouette mask
 uniform sampler2D Sampler1;   // palette strip (1px tall, one texel per colour)
 
 in vec2 texCoord0;
@@ -36,7 +36,8 @@ in float vSpeed;
 out vec4 fragColor;
 
 const float EDGE = 0.1;
-const float DENSITY = 7.0;
+const float DENSITY = 14.0; // global chromatic fineness knob — keep in sync with
+                            // chromatic/chromatic_overlay/chromatic_block so armor/item/GUI match
 
 float hash(vec2 p) {
     p = fract(p * vec2(127.31, 311.7));
@@ -85,7 +86,7 @@ vec3 cgChroma(int n, float n1, float n2, float t) {
 }
 
 void main() {
-    // Item-local (0..1 over the 16px icon, v measured downward) from the atlas slot coord — same scheme as
+    // Item-local (0..1 over the 16px icon, v measured downward) from the atlas slot coord. Same scheme as
     // gui_item_glint, slot UV size s derived exactly from guiScale.
     float s = 16.0 * vGuiScale / float(textureSize(Sampler0, 0).x);
     float vv = 1.0 - texCoord0.y;
@@ -97,12 +98,16 @@ void main() {
     }
 
     float t = GameTime * 5000.0 * max(0.05, vSpeed); // matches core/chromatic.fsh (× speed)
-    vec2 uv = itemLocal * (DENSITY * max(0.05, vPS));
+    // vPS arrives pre-scaled by the flat-item match factor (1/2, see GuiRendererMixin), so the low-scale
+    // floor is scaled to match (0.05/2). Keeps sub-1 patternScales from collapsing to one cell.
+    // Scale about the icon CENTRE, matching GlintPipelines.chromaticMatrix. Scaling raw itemLocal pins the
+    // noise to the icon's corner, so the scale knob grew the slick out of that corner instead of in place.
+    vec2 uv = ((itemLocal - 0.5) * max(0.025, vPS) + 0.5) * DENSITY;
     vec2 so = vec2(vSeed * 3.1, vSeed * 6.7);
 
     int n = int(vCount + 0.5);
 
-    // Continuous full-coverage oil-slick (no thresholded blobs / no gaps) — matches core/chromatic.fsh.
+    // Continuous full-coverage oil-slick (no thresholded blobs / no gaps), matching core/chromatic.fsh.
     float n1 = fbm(uv + so + vec2(t * 0.10, -t * 0.07));
     float n2 = fbm(uv * 1.7 + so.yx - vec2(t * 0.06, t * 0.04));
     vec3 col = cgChroma(n, n1, n2, t);

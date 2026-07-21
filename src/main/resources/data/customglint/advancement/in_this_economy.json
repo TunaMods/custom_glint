@@ -1,0 +1,44 @@
+{
+  "parent": "customglint:how_many_cheeses",
+  "display": {
+    "icon": {
+      "id": "customglint:glint_trim",
+      "components": {
+        "customglint:glint": {
+          "glint": {
+            "layers": [
+              { "design": "customglint:textures/glint/sparkle.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/swirl.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/stars.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/hexagon.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/aurora.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/prism.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/oil.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] },
+              { "design": "customglint:textures/glint/ripple.png", "colors": [ -65536, -32768, -256, -16711936, -16711681, -16776961, -8388353, -65281 ] }
+            ]
+          }
+        }
+      }
+    },
+    "title": {
+      "translate": "advancement.customglint.in_this_economy.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.in_this_economy.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "eight_by_eight": {
+      "trigger": "customglint:eight_by_eight_trim"
+    }
+  },
+  "requirements": [
+    [
+      "eight_by_eight"
+    ]
+  ]
+}

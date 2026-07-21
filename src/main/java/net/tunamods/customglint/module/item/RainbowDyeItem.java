@@ -35,6 +35,6 @@ public class RainbowDyeItem extends Item {
 
     @Override
     public void appendHoverText(ItemStack pStack, Item.TooltipContext pContext, TooltipDisplay pDisplay, Consumer<Component> pTooltipComponents, TooltipFlag pIsAdvanced) {
-        pTooltipComponents.accept(Component.literal("At the Glint Table, sets a colour shard to a custom hex colour").withStyle(ChatFormatting.GRAY));
+        pTooltipComponents.accept(Component.literal("At the Glint Table, sets a color shard to a custom hex color").withStyle(ChatFormatting.GRAY));
     }
 }

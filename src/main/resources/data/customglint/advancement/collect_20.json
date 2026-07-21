@@ -1,0 +1,45 @@
+{
+  "parent": "customglint:collect_10",
+  "display": {
+    "icon": {
+      "id": "customglint:glint_trim",
+      "components": {
+        "customglint:glint": {
+          "glint": {
+            "layers": [
+              {
+                "design": "customglint:textures/glint/hexagon.png",
+                "colors": [
+                  -16776961
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "title": {
+      "translate": "advancement.customglint.collect_20.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.collect_20.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "collect": {
+      "trigger": "customglint:designs_collected",
+      "conditions": {
+        "count": 20
+      }
+    }
+  },
+  "requirements": [
+    [
+      "collect"
+    ]
+  ]
+}

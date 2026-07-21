@@ -25,6 +25,8 @@ public class ItemStackRenderStateMixin implements CgGlintHolder {
     @Unique private CustomGlint.Data customglint$glint;
     @Unique private boolean customglint$glowing;
     @Unique private int[] customglint$glowColors;
+    @Unique private float customglint$glowSpeed = 1.0f;
+    @Unique private boolean customglint$glowInterp = true;
     @Unique private boolean customglint$guiGlintOverlay;
 
     @Override
@@ -58,6 +60,26 @@ public class ItemStackRenderStateMixin implements CgGlintHolder {
     }
 
     @Override
+    public float customglint$getGlowSpeed() {
+        return this.customglint$glowSpeed;
+    }
+
+    @Override
+    public void customglint$setGlowSpeed(float speed) {
+        this.customglint$glowSpeed = speed;
+    }
+
+    @Override
+    public boolean customglint$getGlowInterp() {
+        return this.customglint$glowInterp;
+    }
+
+    @Override
+    public void customglint$setGlowInterp(boolean interp) {
+        this.customglint$glowInterp = interp;
+    }
+
+    @Override
     public boolean customglint$isGuiGlintOverlay() {
         return this.customglint$guiGlintOverlay;
     }
@@ -82,7 +104,8 @@ public class ItemStackRenderStateMixin implements CgGlintHolder {
         // Save/restore (push/pop) rather than set/remove so a nested cross-instance submit restores this
         // item's context on return instead of clearing it. Fresh per-item token so all of a special item's
         // sub-model submits share one outline group.
-        GlintCarrier.pushSubmit(this.customglint$glint, this.customglint$glowing, this.customglint$glowColors, new Object());
+        GlintCarrier.pushSubmit(this.customglint$glint, this.customglint$glowing, this.customglint$glowColors,
+                new Object(), this.customglint$glowSpeed, this.customglint$glowInterp);
     }
 
     @Inject(method = "submit", at = @At("RETURN"), require = 0)

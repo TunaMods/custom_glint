@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.tunamods.customglint.module.compat.sophisticatedbackpacks.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "BackpackSpecialRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

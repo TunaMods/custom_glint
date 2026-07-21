@@ -31,7 +31,21 @@ public class ModNetworking {
         registrar.playToServer(GlintDepositPacket.TYPE, GlintDepositPacket.STREAM_CODEC, GlintDepositPacket::handle);
         // GlintWithdrawPacket    C→S  shift-click: pull a printed trim out of the library into the inventory
         registrar.playToServer(GlintWithdrawPacket.TYPE, GlintWithdrawPacket.STREAM_CODEC, GlintWithdrawPacket::handle);
+        // GlintDeletePrintedPacket C→S shift-click: delete a still-locked imported trim from the library
+        registrar.playToServer(GlintDeletePrintedPacket.TYPE, GlintDeletePrintedPacket.STREAM_CODEC, GlintDeletePrintedPacket::handle);
         // GlintGiveDesignPacket  C→S  shift-click: pull a free blank trim of a palette design into the inventory
         registrar.playToServer(GlintGiveDesignPacket.TYPE, GlintGiveDesignPacket.STREAM_CODEC, GlintGiveDesignPacket::handle);
+        // GlintImportPacket      C→S  Import list: add a config trim to the library as a locked (dimmed) build target
+        registrar.playToServer(GlintImportPacket.TYPE, GlintImportPacket.STREAM_CODEC, GlintImportPacket::handle);
+        // GlintServerBlueprintsSyncPacket S→C  dedicated server's shared blueprint trims, pushed on table open
+        registrar.playToClient(GlintServerBlueprintsSyncPacket.TYPE, GlintServerBlueprintsSyncPacket.STREAM_CODEC, GlintServerBlueprintsSyncPacket::handle);
+        // GlintDeleteServerBlueprintPacket C→S  op-only: delete one of the server's shared blueprint trims
+        registrar.playToServer(GlintDeleteServerBlueprintPacket.TYPE, GlintDeleteServerBlueprintPacket.STREAM_CODEC, GlintDeleteServerBlueprintPacket::handle);
+        // GlintWandSaveBlueprintPacket    C→S  wand "Save Design": save the build to the shared blueprint pool
+        registrar.playToServer(GlintWandSaveBlueprintPacket.TYPE, GlintWandSaveBlueprintPacket.STREAM_CODEC, GlintWandSaveBlueprintPacket::handle);
+        // GlintWandDeleteBlueprintPacket  C→S  wand Import trash icon: delete a shared blueprint
+        registrar.playToServer(GlintWandDeleteBlueprintPacket.TYPE, GlintWandDeleteBlueprintPacket.STREAM_CODEC, GlintWandDeleteBlueprintPacket::handle);
+        // GlintWandRequestBlueprintsPacket C→S  wand Import open: request the current shared blueprint pool
+        registrar.playToServer(GlintWandRequestBlueprintsPacket.TYPE, GlintWandRequestBlueprintsPacket.STREAM_CODEC, GlintWandRequestBlueprintsPacket::handle);
     }
 }

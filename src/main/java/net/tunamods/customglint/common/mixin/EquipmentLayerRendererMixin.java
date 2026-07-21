@@ -79,23 +79,49 @@ public class EquipmentLayerRendererMixin {
         // the GlintState component), this fires per equipment layer per wearer per frame.
         var glintState = CustomGlint.readState(itemStack);
         CustomGlint.Data glint = glintState.data();
+        // Elytra/capes (WINGS) are thin double-sided meshes AND the two folded wings overlap along the spine.
+        // In phase the EQUAL depth test already keeps only the nearest surface, but the post-shader overlay
+        // has no such test, so it gets a depth pre-pass (forWingDepthPrepass) + a LEQUAL wing pass, which
+        // keeps the nearest surface per pixel and stops the additive glint doubling into a bright spine seam.
+        // Back-face culling is NOT the answer here (it eats the mirrored wing's faces, killing the glint on
+        // the underside), see the note on GlintPipelines.CHROMATIC_OVERLAY_WING. The wing glow also needs its
+        // OWN isolated ring so it doesn't fuse into the wearer's body outline.
+        boolean isWings = layerType == EquipmentClientInfo.LayerType.WINGS;
 
         if (glint != null) {
             CustomGlint.Layer[] gl = glint.layers();
             for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
                 int[] colors = gl[layerIdx].colors();
                 if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
-                // Under an active shader pack a chromatic layer can't draw in-phase (Iris replaces our
-                // procedural program → flat white, the reported elytra bug); queue it for the post-Iris
-                // overlay drain instead. See EntityGlintRender.queueChromaticModel / drainChromaticOverlays.
-                if (CustomGlint.isChromatic(gl[layerIdx]) && CustomGlintRenderer.isShaderPackActive()) {
+                // Under an active shader pack NOTHING draws in-phase correctly: Iris replaces our program, so
+                // chromatic goes flat white (the reported elytra bug) and normal glint goes SOLID (opaque
+                // gbuffer program). Queue BOTH for the post-Iris overlay drain, cut out against the equipment
+                // texture. See EntityGlintRender.queueGlintOverlayModel / drainChromaticOverlays.
+                boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
+                if (CustomGlintRenderer.isShaderPackActive()) {
                     Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
-                    RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex);
-                    if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false);
-                } else if (gl[layerIdx].simultaneous() && !CustomGlint.isChromatic(gl[layerIdx])) {
+                    // Depth pre-pass RT for the two overlapping folded wings (null for flat armor); the drain
+                    // primes the isolated depth with it so the LEQUAL wing pass drops the farther wing.
+                    RenderType wingDepth = isWings && tex != null ? CustomGlintRenderer.forWingDepthPrepass(tex) : null;
+                    if (chroma) {
+                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlay(glint, layerIdx, tex, isWings);
+                        if (rt != null) EntityGlintRender.queueChromaticModel(model, state, poseStack.last(), rt, lightCoords, false, wingDepth);
+                    } else if (gl[layerIdx].simultaneous()) {
+                        for (int i = 0; i < colors.length; i++) {
+                            RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, i, tex, isWings);
+                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords,
+                                    CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), false, wingDepth);
+                        }
+                    } else {
+                        int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
+                        RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, 0, tex, isWings);
+                        if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, color, false, wingDepth);
+                    }
+                } else if (gl[layerIdx].simultaneous() && !chroma) {
                     for (int i = 0; i < colors.length; i++) {
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i);
-                        if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);
+                        if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords,
+                                CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -106,7 +132,7 @@ public class EquipmentLayerRendererMixin {
         }
 
         // Glow outline, independent of the glint (a Glow-Trimmed armor piece with no glint still
-        // outlines). Queued for the AfterOpaqueFeatures drain (the same mask + composite as entities).
+        // outlines). Queued for the AfterWeather drain (the same mask + composite as entities).
         // The first layer's texture drives the silhouette alpha-discard so the ring follows the real
         // armor shape; the model + state are re-posed via setupAnim at drain (matching the armor body
         // draw), so multi-wearer scenes don't share a stale pose. Covers humanoid armor, elytra/capes
@@ -117,7 +143,7 @@ public class EquipmentLayerRendererMixin {
             Identifier tex = cg_equipTexture(layers, layerType, itemStack, playerTextureOverride);
             if (tex != null) {
                 EntityGlintRender.queueArmorOutline(model, state, poseStack.last(), tex, lightCoords,
-                        glint, glowing, glowColors);
+                        glint, glowing, glowColors, glintState.glowSpeed(), glintState.glowInterp(), isWings);
             }
         }
     }
@@ -125,9 +151,8 @@ public class EquipmentLayerRendererMixin {
     /** The equipment layer's resolved texture (player-skin override, then the layer's own texture, then the
      *  Forge armor-texture hook for modded armor). Its alpha drives the cutout silhouette for both the glow
      *  outline and the post-Iris chromatic overlay. Returns null when the ordinal-captured {@code layers}
-     *  local doesn't hold {@link EquipmentClientInfo.Layer}s, a mapping shift in a future 26.x point release
-     *  could rebind {@code @Local(ordinal=0)} to a different List; failing soft here degrades the cosmetic
-     *  texture-dependent passes instead of throwing ClassCastException on the render thread. */
+     *  local doesn't hold {@link EquipmentClientInfo.Layer}s, so a rebound {@code @Local(ordinal=0)} degrades
+     *  the cosmetic passes instead of throwing on the render thread. */
     private static Identifier cg_equipTexture(List<?> layers, EquipmentClientInfo.LayerType layerType,
             ItemStack itemStack, Identifier playerTextureOverride) {
         if (layers.isEmpty() || !(layers.get(0) instanceof EquipmentClientInfo.Layer first)) return null;

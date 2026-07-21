@@ -32,12 +32,14 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
  * and the auto-apply registries live here. The rendering pipeline lives in
  * {@code net.tunamods.customglint.common.client.CustomGlintRenderer} (referenced by name, not imported:
  * it is client-only, and a real symbol reference from this server-reachable class would
- * {@code ClassNotFoundException} on a dedicated server), which references this class for
- * {@link Layer}/{@link Data} types and state access.
+ * {@code ClassNotFoundException} on a dedicated server). The split exists because the old unified
+ * class extended {@code RenderStateShard} and imported {@code Minecraft}/{@code RenderType}, which
+ * crashed dedicated servers.
  *
- * Split was required because the previous unified class extended {@code RenderStateShard} (a
- * client-only base class) and imported {@code Minecraft}/{@code RenderType}/etc., so any
- * server-reachable reference triggered {@code ClassNotFoundException} on dedicated servers.
+ * <p>Three verb prefixes are used deliberately, and they mean different things:
+ * {@code read}/{@code write} move whole state on or off a live holder (an {@code ItemStack} or a
+ * {@code LivingEntity}); {@code get}/{@code set} touch a single field of that state; {@code fromTag}/
+ * {@code toTag} and the {@code *GlintTag} accessors cross into the serialized {@code CompoundTag} form.
  */
 public final class CustomGlint {
 
@@ -55,8 +57,24 @@ public final class CustomGlint {
      *  decode via {@link Layer#CODEC}); the renderer cycles through them, so more would never display. */
     public static final int MAX_COLORS_PER_LAYER = 8;
 
+    /** Codec for a color/glow-color array, capped at {@link #MAX_COLORS_PER_LAYER} at every decode. The
+     *  explicit primitive round-trip is required: {@code List<Integer>::toArray} yields {@code Object[]},
+     *  not {@code int[]}. Shared by {@link Layer#CODEC} (colors) and {@link GlintState#MAP_CODEC} (glowColors). */
+    private static final Codec<int[]> COLOR_ARRAY_CODEC = Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
+            list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
+            arr -> Arrays.stream(arr).boxed().toList());
+
     public record Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
                         boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
+        /** Truncate to {@link #MAX_COLORS_PER_LAYER} at construction so every path (embedder API, direct
+         *  record build, codec decode) honors the cap the {@code sizeLimitedListOf(8)} codec enforces on
+         *  encode. Without this a >8-color layer round-trips fine in memory but throws {@code EncoderException}
+         *  the moment it hits a component sync or a disk save. */
+        public Layer {
+            if (colors != null && colors.length > MAX_COLORS_PER_LAYER)
+                colors = Arrays.copyOf(colors, MAX_COLORS_PER_LAYER);
+        }
+
         /** Back-compat constructor for the eight-field call sites (recipes, packets, tear apply): the
          *  procedural-chromatic {@link #seed} defaults to 0 (only {@link #CHROMATIC} layers use it). */
         public Layer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale,
@@ -66,14 +84,7 @@ public final class CustomGlint {
 
         public static final Codec<Layer> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Identifier.CODEC.fieldOf("design").forGetter(Layer::design),
-                // Bound the color list to the same 8-color cap every other path enforces (item NBT, the wand
-                // editor, the print/apply/give packets). Without it, a crafted print-packet NBT layer or a
-                // future component decode could carry an arbitrarily large color array straight into a stored
-                // ItemStack/attachment. sizeLimitedListOf rejects an oversized list during decode.
-                Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
-                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
-                        arr -> Arrays.stream(arr).boxed().toList()
-                ).fieldOf("colors").forGetter(Layer::colors),
+                COLOR_ARRAY_CODEC.fieldOf("colors").forGetter(Layer::colors),
                 Codec.FLOAT.optionalFieldOf("speed", 1.0f).forGetter(Layer::speed),
                 Codec.BOOL.optionalFieldOf("interpolate", true).forGetter(Layer::interpolate),
                 Codec.FLOAT.optionalFieldOf("scale", 1.0f).forGetter(Layer::patternScale),
@@ -103,7 +114,7 @@ public final class CustomGlint {
     // ── Data ─────────────────────────────────────────────────────────────────
 
     public record Data(Layer[] layers) {
-        /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous}, … ] }}.
+        /** Root form: {@code { "layers": [ {design, colors, speed, interpolate, scale, simultaneous, scroll, offset, seed}, ... ] }}.
          *  Glow state (glowing / glowColors) is stored as sibling keys in the same tag,
          *  outside this codec. */
         public static final Codec<Data> CODEC = Layer.CODEC.listOf().xmap(
@@ -125,24 +136,32 @@ public final class CustomGlint {
      * {@link CustomGlintComponents#ENTITY_GLINT} entity attachment. Codec-serialized; the attachment
      * auto-syncs on write, so there is no manual sync packet.
      */
-    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors) {
-        public static final GlintState EMPTY = new GlintState(null, false, new int[0]);
+    public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
+        /** Same cap as {@link Layer}: {@code setGlowColors} / {@code setEntityGlowColors} feed the raw array
+         *  straight in, and the glowColors codec is {@code sizeLimitedListOf(8)} on encode, so truncate here to
+         *  keep a >8-color glow from throwing {@code EncoderException} on the auto-syncing attachment / save. */
+        public GlintState {
+            if (glowColors != null && glowColors.length > MAX_COLORS_PER_LAYER)
+                glowColors = Arrays.copyOf(glowColors, MAX_COLORS_PER_LAYER);
+        }
+
+        public static final GlintState EMPTY = new GlintState(null, false, new int[0], 1.0f, true);
 
         public boolean isEmpty() {
+            // glowSpeed / glowInterp are modifiers of an existing glow, meaningless without it, so they don't
+            // count toward emptiness: a stack carrying only a non-default glow speed but no glow is still empty.
             return data == null && !glowing && glowColors.length == 0;
         }
 
         public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Data.CODEC.optionalFieldOf("glint").forGetter(s -> Optional.ofNullable(s.data())),
                 Codec.BOOL.optionalFieldOf("glowing", false).forGetter(GlintState::glowing),
-                // Same 8-color cap as Layer.colors above (every input path, Glow Trim, the print/apply
-                // packets, the wand editor, already enforces it). Without it a crafted component/packet
-                // could round-trip an arbitrarily large glow-color list into a stored item / synced attachment.
-                Codec.INT.sizeLimitedListOf(MAX_COLORS_PER_LAYER).xmap(
-                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
-                        arr -> Arrays.stream(arr).boxed().toList()
-                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors)
-        ).apply(i, (glint, glowing, colors) -> new GlintState(glint.orElse(null), glowing, colors)));
+                COLOR_ARRAY_CODEC.optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
+                // Glow-outline animation speed + interpolation, kept alongside the glow colors. Default 1.0 /
+                // true so any pre-existing item decodes to the vanilla cycle (they're absent from its tag).
+                Codec.FLOAT.optionalFieldOf("glowSpeed", 1.0f).forGetter(GlintState::glowSpeed),
+                Codec.BOOL.optionalFieldOf("glowInterp", true).forGetter(GlintState::glowInterp)
+        ).apply(i, (glint, glowing, colors, speed, interp) -> new GlintState(glint.orElse(null), glowing, colors, speed, interp)));
 
         public static final Codec<GlintState> CODEC = MAP_CODEC.codec();
         public static final StreamCodec<ByteBuf, GlintState> STREAM_CODEC = ByteBufCodecs.fromCodec(CODEC);
@@ -150,12 +169,32 @@ public final class CustomGlint {
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof GlintState g)) return false;
-            return glowing == g.glowing
+            return glowing == g.glowing && glowInterp == g.glowInterp && Float.compare(glowSpeed, g.glowSpeed) == 0
                     && Objects.equals(data, g.data) && Arrays.equals(glowColors, g.glowColors);
         }
         @Override public int hashCode() {
-            return Objects.hash(data, glowing) * 31 + Arrays.hashCode(glowColors);
+            return Objects.hash(data, glowing, glowSpeed, glowInterp) * 31 + Arrays.hashCode(glowColors);
         }
+    }
+
+    // ── Glint Table cost math ─────────────────────────────────────────────────
+    // Shared so the client preview/cost readout and the server-side print charge the same materials.
+
+    /** Most-translucent glint alpha (at the 8th glass); 0 glass = fully opaque (255). */
+    public static final int GLINT_ALPHA_MIN = 32;
+
+    /** Material cost of a speed / scale value: the number of ± stepper clicks it sits from the 1×
+     *  default (0.10 per click below 1×, 0.5 per click above). Each click costs one redstone / slime, so a
+     *  fully-tuned layer is a real material sink. Both sides tally this per layer. */
+    public static int stepCost(float value) {
+        if (value >= 1.0f) return Math.round((value - 1.0f) / 0.5f);
+        return Math.round((1.0f - value) / 0.10f);
+    }
+
+    /** Glass cost for a colour's alpha: the opacity level (0..8) it encodes, i.e. one glass per opacity
+     *  click. Inverts the opacity→alpha mapping ({@code alpha = 255 - level*(255-MIN)/8}). */
+    public static int glassCost(int alpha) {
+        return Math.round((255f - alpha) * 8f / (255f - GLINT_ALPHA_MIN));
     }
 
     // ── Colors ────────────────────────────────────────────────────────────────
@@ -324,12 +363,10 @@ public final class CustomGlint {
     }
 
     // ── Item glint storage ────────────────────────────────────────────────────
-    // All field names ("layers"/"glint"/"glowing"/"glowColors"/…) live in the codecs
-    // (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants any more.
-
-    // Item glint state is a typed GlintState data component (see GLINT), no more CompoundTag in
-    // CUSTOM_DATA. These accessors keep their old signatures so callers (recipes, GUI, packets, the
-    // trim items, the renderer) are unaffected by the storage change.
+    // Item glint state is a typed GlintState data component (see GLINT); field names live in the
+    // codecs (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC), no loose NBT keys. These accessors
+    // keep their old signatures so callers (recipes, GUI, packets, trim items, renderer) are
+    // unaffected by the storage change.
 
     private static GlintState itemState(ItemStack stack) {
         if (stack.isEmpty()) return GlintState.EMPTY;
@@ -368,7 +405,7 @@ public final class CustomGlint {
     /** Sets the glint layers, preserving the stack's existing glow flags. */
     public static void write(ItemStack stack, Layer[] layers) {
         GlintState cur = itemState(stack);
-        setItemState(stack, new GlintState(new Data(layers), cur.glowing(), cur.glowColors()));
+        setItemState(stack, new GlintState(new Data(layers), cur.glowing(), cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
     public static void write(ItemStack stack, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
@@ -386,6 +423,14 @@ public final class CustomGlint {
         write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) });
     }
 
+    public static void write(ItemStack stack, Identifier design, int[] colors) {
+        write(stack, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void write(ItemStack stack, Identifier design, int color) {
+        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
+    }
+
     public static void remove(ItemStack stack) {
         stack.remove(CustomGlintComponents.GLINT.get());
     }
@@ -396,7 +441,7 @@ public final class CustomGlint {
 
     public static void setGlowing(ItemStack stack, boolean glowing) {
         GlintState cur = itemState(stack);
-        setItemState(stack, new GlintState(cur.data(), glowing, cur.glowColors()));
+        setItemState(stack, new GlintState(cur.data(), glowing, cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
     /** Glow Trim colors, drive the outline color animation independently of any glint Data. */
@@ -411,27 +456,37 @@ public final class CustomGlint {
     /** Sets glowColors AND glowing=true. Independent of any glint Data on the stack. */
     public static void setGlowColors(ItemStack stack, int[] colors) {
         GlintState cur = itemState(stack);
-        setItemState(stack, new GlintState(cur.data(), true, colors));
+        setItemState(stack, new GlintState(cur.data(), true, colors, cur.glowSpeed(), cur.glowInterp()));
     }
 
     public static void clearGlowColors(ItemStack stack) {
         GlintState cur = itemState(stack);
         if (cur.glowColors().length == 0) return;
-        setItemState(stack, new GlintState(cur.data(), cur.glowing(), new int[0]));
+        setItemState(stack, new GlintState(cur.data(), cur.glowing(), new int[0], cur.glowSpeed(), cur.glowInterp()));
+    }
+
+    /** Glow-outline animation speed (how fast the outline cycles its glow colors), default 1.0. */
+    public static float getGlowSpeed(ItemStack stack) {
+        return itemState(stack).glowSpeed();
+    }
+
+    /** Whether the glow outline blends smoothly between its colors (default true) or steps hard between them. */
+    public static boolean getGlowInterpolate(ItemStack stack) {
+        return itemState(stack).glowInterp();
+    }
+
+    /** Sets the glow outline's animation speed + interpolation (kept alongside {@code glowColors}). Only
+     *  meaningful on a glowing stack, {@link GlintState#isEmpty()} ignores these, so calling it on an
+     *  otherwise-empty stack still stores nothing. */
+    public static void setGlowAnim(ItemStack stack, float speed, boolean interpolate) {
+        GlintState cur = itemState(stack);
+        setItemState(stack, new GlintState(cur.data(), cur.glowing(), cur.glowColors(), speed, interpolate));
     }
 
     public static ItemStack glinted(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
         ItemStack stack = new ItemStack(item);
         write(stack, design, colors, speed, interpolate, patternScale, simultaneous);
         return stack;
-    }
-
-    public static void write(ItemStack stack, Identifier design, int[] colors) {
-        write(stack, design, colors, 1.0f, true, 1.0f, true);
-    }
-
-    public static void write(ItemStack stack, Identifier design, int color) {
-        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
     }
 
     public static ItemStack glinted(Item item, Identifier design, int[] colors) {
@@ -443,11 +498,28 @@ public final class CustomGlint {
     }
 
     // ── Auto-apply registries ─────────────────────────────────────────────────
+    //
+    // CRAFT / FISHING / MOB_DROP share one shape: a per-Item Data map with register/apply helpers. The
+    // public registerX/applyX names are thin wrappers over the shared helpers so the API is unchanged.
+
+    /** The single-layer Data (default east scroll, no offset) that every auto-apply registry stores. */
+    private static Data oneLayer(Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        return new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) });
+    }
+
+    private static void registerGlint(Map<Item, Data> registry, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        registry.put(item, oneLayer(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    private static void applyGlint(Map<Item, Data> registry, ItemStack stack) {
+        Data data = registry.get(stack.getItem());
+        if (data != null) write(stack, data.layers());
+    }
 
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
 
     public static void registerCraftGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        CRAFT_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        registerGlint(CRAFT_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerCraftGlint(Item item, Identifier design, int[] colors) {
@@ -455,15 +527,13 @@ public final class CustomGlint {
     }
 
     public static void applyCraftGlint(ItemStack stack) {
-        Data data = CRAFT_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(CRAFT_GLINTS, stack);
     }
 
     public static final Map<Item, Data> FISHING_GLINTS = new HashMap<>();
 
     public static void registerFishingGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        FISHING_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        registerGlint(FISHING_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerFishingGlint(Item item, Identifier design, int[] colors) {
@@ -471,15 +541,13 @@ public final class CustomGlint {
     }
 
     public static void applyFishingGlint(ItemStack stack) {
-        Data data = FISHING_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(FISHING_GLINTS, stack);
     }
 
     public static final Map<Item, Data> MOB_DROP_GLINTS = new HashMap<>();
 
     public static void registerMobDropGlint(Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        MOB_DROP_GLINTS.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
+        registerGlint(MOB_DROP_GLINTS, item, design, colors, speed, interpolate, patternScale, simultaneous);
     }
 
     public static void registerMobDropGlint(Item item, Identifier design, int[] colors) {
@@ -487,9 +555,19 @@ public final class CustomGlint {
     }
 
     public static void applyMobDropGlint(ItemStack stack) {
-        Data data = MOB_DROP_GLINTS.get(stack.getItem());
-        if (data == null) return;
-        write(stack, data.layers());
+        applyGlint(MOB_DROP_GLINTS, stack);
+    }
+
+    // Loot glints key on the loot table first, so they get their own nested map rather than the shared
+    // per-Item helpers above. The loot modifier walks the inner map itself.
+    public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
+
+    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, oneLayer(design, colors, speed, interpolate, patternScale, simultaneous));
+    }
+
+    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors) {
+        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
     }
 
     // ── Entity glint API ──────────────────────────────────────────────────────
@@ -528,7 +606,7 @@ public final class CustomGlint {
     }
 
     public static void registerEntityGlint(EntityType<?> type, Identifier design, int[] colors) {
-        registerEntityGlint(type, new Data(new Layer[]{ new Layer(design, colors, 1.0f, true, 1.0f, true, SCROLL_E, 0.0f) }));
+        registerEntityGlint(type, oneLayer(design, colors, 1.0f, true, 1.0f, true));
     }
 
     @Nullable
@@ -549,7 +627,7 @@ public final class CustomGlint {
     /** Sets the glint layers, preserving the entity's existing glow flags. Auto-syncs to trackers. */
     public static void writeEntity(LivingEntity entity, Layer[] layers) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors()));
+        setEntityState(entity, new GlintState(new Data(layers), cur.glowing(), cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
     public static void removeEntity(LivingEntity entity) {
@@ -562,7 +640,7 @@ public final class CustomGlint {
 
     public static void setEntityGlowing(LivingEntity entity, boolean glowing) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors()));
+        setEntityState(entity, new GlintState(cur.data(), glowing, cur.glowColors(), cur.glowSpeed(), cur.glowInterp()));
     }
 
     /** Per-entity Glow Trim colors, drive the outline color animation independently of any
@@ -578,13 +656,13 @@ public final class CustomGlint {
     /** Sets glowColors AND glowing=true on the entity. Auto-syncs to tracking clients (no manual call). */
     public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
         GlintState cur = entityState(entity);
-        setEntityState(entity, new GlintState(cur.data(), true, colors));
+        setEntityState(entity, new GlintState(cur.data(), true, colors, cur.glowSpeed(), cur.glowInterp()));
     }
 
     public static void clearEntityGlowColors(LivingEntity entity) {
         GlintState cur = entityState(entity);
         if (cur.glowColors().length == 0) return;
-        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0]));
+        setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0], cur.glowSpeed(), cur.glowInterp()));
     }
 
     // ── CompoundTag bridge (serialized snapshot / restore) ────────────────────
@@ -643,16 +721,6 @@ public final class CustomGlint {
 
     /** A glint tag holding just these layers (no glow flags). */
     public static CompoundTag toTag(Layer[] layers) {
-        return stateToTag(new GlintState(new Data(layers), false, new int[0]));
-    }
-
-    public static final Map<Identifier, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
-
-    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, SCROLL_E, 0.0f) }));
-    }
-
-    public static void registerLootGlint(Identifier lootTable, Item item, Identifier design, int[] colors) {
-        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
+        return stateToTag(new GlintState(new Data(layers), false, new int[0], 1.0f, true));
     }
 }

@@ -10,7 +10,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.Level;
 
-/** Two or more Glow Trims → single Glow Trim with merged colors (cap 8). Mirrors GlintTrimMergeRecipe. */
+/** Two or more Glow Trims -> a single Glow Trim with merged colors (cap 8). Mirrors GlintTrimMergeRecipe. */
 public class GlowTrimMergeRecipe extends CustomRecipe {
     private static final GlowTrimMergeRecipe INSTANCE = new GlowTrimMergeRecipe();
     public static final MapCodec<GlowTrimMergeRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);

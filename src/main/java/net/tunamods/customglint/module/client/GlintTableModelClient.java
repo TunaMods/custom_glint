@@ -25,6 +25,7 @@ import net.neoforged.neoforge.client.model.standalone.StandaloneModelKey;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.tunamods.customglint.module.block.ModBlocks;
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.GlintClientConfig;
 import net.tunamods.customglint.module.block.GlintTableBlockEntity;
 
@@ -52,7 +53,7 @@ public final class GlintTableModelClient {
     static {
         for (String skin : SKINS) {
             for (Direction d : FACINGS) {
-                String id = "customglint:glint_table_" + skin + "_" + d.getSerializedName();
+                String id = CustomGlint.res("glint_table_" + skin + "_" + d.getSerializedName()).toString();
                 KEYS.put(id(skin, d), new StandaloneModelKey<>(() -> id));
             }
         }
@@ -63,7 +64,7 @@ public final class GlintTableModelClient {
     }
 
     private static Identifier model(String skin, Direction d) {
-        return Identifier.fromNamespaceAndPath("customglint", "block/glint_table_" + skin + "_" + d.getSerializedName());
+        return CustomGlint.res("block/glint_table_" + skin + "_" + d.getSerializedName());
     }
 
     // Client-side positions of every loaded Glint Table, so a skin change can re-mesh just those sections
@@ -184,8 +185,8 @@ public final class GlintTableModelClient {
         @Override
         public Object createGeometryKey(BlockAndTintGetter level, BlockPos pos, BlockState state, RandomSource random) {
             // Geometry depends on the chosen skin and this model's fixed facing, so the mesher can cache per-skin.
-            // Normalize the skin index the same way pick() does, two raw config values that fold to the same
-            // skin must share a cache key, or an out-of-range config value forces a redundant re-mesh.
+            // Normalize the skin index the same way pick() does, so the cache key matches the skin rendered.
+            // Stride 8 > the 6 Direction ordinals, so (skin, facing) pairs never collide in the key.
             return Math.floorMod(GlintClientConfig.glintTableSkin(), SKINS.length) * 8 + facing.ordinal();
         }
     }

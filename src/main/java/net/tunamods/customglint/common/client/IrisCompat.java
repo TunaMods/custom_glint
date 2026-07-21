@@ -19,7 +19,7 @@ import java.util.Map;
  * which computes {@code vertexColour × texture} (grayscale design × glint colour) and is emissive.
  *
  * <p>The glow pipelines ({@code GLOW_MASK_*}, {@code GLOW_COMPOSITE_ID}, {@code GLOW_UPSCALE}) are
- * deliberately NOT assigned, they run our own post-process GLSL, which an Iris program would replace and
+ * deliberately NOT assigned: they run our own post-process GLSL, which an Iris program would replace and
  * destroy. Glow survives a pack by TIMING instead: its capture + composite drain after Iris finishes the
  * frame (see {@code EntityGlintRender} / {@code LevelRendererMixin}), not by program assignment.
  *
@@ -27,8 +27,6 @@ import java.util.Map;
  * a missing Iris just no-ops.
  */
 public final class IrisCompat {
-    private IrisCompat() {}
-
     private static final String API_CLASS = "net.irisshaders.iris.api.v0.IrisApi";
     private static final String PROGRAM_CLASS = "net.irisshaders.iris.api.v0.IrisProgram";
 
@@ -38,8 +36,11 @@ public final class IrisCompat {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     /** Set once the assignment actually lands (api ready + assign succeeded), or once Iris is confirmed
-     *  absent. Until then {@link #register()} retries, it's called every frame, cheap after this trips. */
+     *  absent. Until then {@link #register()} retries; it runs every frame and costs one read after this
+     *  trips. */
     private static volatile boolean applied = false;
+
+    private IrisCompat() {}
 
     /**
      * Assign the glint pipeline to its Iris program. Idempotent and self-retrying: safe to call every

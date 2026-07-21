@@ -16,9 +16,8 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 public record GlintGiveDesignPacket(String design) implements CustomPacketPayload {
 
     public static final Type<GlintGiveDesignPacket> TYPE = new Type<>(CustomGlint.res("glint_give_design"));
-    public static final StreamCodec<FriendlyByteBuf, GlintGiveDesignPacket> STREAM_CODEC = StreamCodec.of(
-            (buf, pkt) -> buf.writeUtf(pkt.design),
-            buf -> new GlintGiveDesignPacket(buf.readUtf()));
+    public static final StreamCodec<FriendlyByteBuf, GlintGiveDesignPacket> STREAM_CODEC =
+            NetworkCodecs.string(GlintGiveDesignPacket::design, GlintGiveDesignPacket::new);
 
     @Override
     public Type<? extends CustomPacketPayload> type() {
@@ -26,10 +25,6 @@ public record GlintGiveDesignPacket(String design) implements CustomPacketPayloa
     }
 
     public static void handle(GlintGiveDesignPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.giveDesignCopy(pkt.design());
-            }
-        });
+        GlintTableMenu.withOpenMenu(ctx, (sp, m) -> m.giveDesignCopy(pkt.design()));
     }
 }

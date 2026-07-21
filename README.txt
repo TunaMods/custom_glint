@@ -1,4 +1,4 @@
-Custom Glints - developer documentation
+Glint & Glamour - developer documentation
 Minecraft 26.1.2 / NeoForge 26.1.2 - MIT license (attribution required)
 ================================================================================
 
@@ -13,11 +13,11 @@ packs.
   Two artifacts
 ================================================================================
 
-  custom-glint-api-<ver>.jar   (modid: customglint_api)
+  glint-and-glamour-api-<ver>.jar   (modid: customglint_api)
       Rendering pipeline + Java API. No wand, recipes, or /glint command.
       Bundle this via jarJar.
 
-  customglint-<ver>.jar        (modid: customglint + customglint_api)
+  Glint-and-Glamour-<ver>.jar       (modid: customglint + customglint_api)
       Full standalone download. Adds wand, Glint Trim / Glow Trim / Tear
       items, recipes, /glint command, loot modifiers, JEI integration.
       The api jar is nested inside via META-INF/jarjar/.
@@ -34,16 +34,16 @@ In build.gradle:
 
     repositories {
         maven {
-            name = "TunaMods Custom Glints"
+            name = "TunaMods Glint & Glamour"
             url = "https://raw.githubusercontent.com/TunaMods/custom_glint/26.1.2/mcmodsrepo"
         }
     }
 
     dependencies {
-        jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
+        jarJar(implementation("net.tunamods.customglint:glint-and-glamour-api")) {
             version {
-                strictly "[1.6.0,2.0)"
-                prefer "1.6.0"
+                strictly "[1.7.0,2.0)"
+                prefer "1.7.0"
             }
         }
     }
@@ -64,7 +64,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
     [[dependencies.yourmodid]]
         modId="customglint_api"
         type="required"
-        versionRange="[1.6,)"
+        versionRange="[1.7,)"
         ordering="NONE"
         side="BOTH"
 
@@ -232,6 +232,27 @@ including 3D models with custom BEWLR renderers, which the submit-node pipeline
 picks up with no per-mod code. A renderer that bypasses that pipeline (drawing
 straight to its own RenderType) is not covered by the api; supporting one needs a
 dedicated mixin, which ships in the standalone mod, not the bundled api jar.
+
+
+================================================================================
+  Specifically supported mods
+================================================================================
+
+These integrations ship in the FULL standalone jar only, NOT in the bundled
+api jar. Each targets the other mod by class name with a soft mixin (no hard
+dependency) and no-ops when the mod is absent, so they never affect a modpack
+that lacks them.
+
+  Artifacts             - belts, necklaces, gloves, boots and other artifacts
+                          worn in Curios slots take glints and glow outlines.
+  Sophisticated          - backpacks take glints and glow outlines in hand
+  Backpacks               (including first person), dropped, in the inventory,
+                          and worn on the back.
+  JEI                   - Glint Trim, Glow Trim, and Tear items show their
+                          information pages in the recipe view.
+
+Modded armor and held items that go through the normal item / armor draw flow
+are handled automatically without a per-mod integration.
 
 
 ================================================================================

@@ -15,16 +15,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * callback is async), so the offending draw can't be identified from the log alone.
  *
  * <p>When enabled this installs OUR debug callback in {@code GL_DEBUG_OUTPUT_SYNCHRONOUS} mode, so the
- * callback fires on the render thread at the exact GL call. For each distinct high-severity error id it
- * logs the message plus a Java stack trace ONCE, that trace names the method (ours, vanilla's, or Iris's)
- * issuing the bad draw, which is what the fix needs.
+ * callback fires on the render thread at the exact GL call. For each distinct error id it logs the message
+ * plus a Java stack trace ONCE. That trace names the method (ours, vanilla's, or Iris's) issuing the bad
+ * draw, which is what the fix needs.
  *
  * <p>Off by default. Enable with the JVM arg {@code -Dcustomglint.gldebug=true} (add it to the launcher's
  * JVM arguments). Pure diagnostic: it changes no render state and never runs in a normal session.
  */
 public final class GlDebugProbe {
-    private GlDebugProbe() {}
-
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final boolean ENABLED = Boolean.getBoolean("customglint.gldebug");
 
@@ -37,8 +35,10 @@ public final class GlDebugProbe {
     /** Held so the native callback isn't garbage-collected while GL still points at it. */
     @SuppressWarnings("unused")
     private static GLDebugMessageCallback callback;
-    /** One stack trace per distinct error id, the spam repeats the same id, we only need it once. */
+    /** One stack trace per distinct error id. The spam repeats the same id, so once is enough. */
     private static final Set<Integer> loggedIds = ConcurrentHashMap.newKeySet();
+
+    private GlDebugProbe() {}
 
     /** Idempotent; safe to call every frame. No-ops unless {@code -Dcustomglint.gldebug=true}. Must run on
      *  the render thread with the GL context current. */
@@ -58,7 +58,7 @@ public final class GlDebugProbe {
             });
             GL43.glDebugMessageCallback(callback, 0L);
             LOGGER.info("[customglint gldebug] synchronous GL debug probe installed, first occurrence of "
-                    + "each high-severity GL error id will be logged with a stack trace.");
+                    + "each GL error id will be logged with a stack trace.");
         } catch (Throwable t) {
             LOGGER.warn("[customglint gldebug] failed to install GL debug probe", t);
         }

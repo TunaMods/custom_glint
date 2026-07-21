@@ -3,6 +3,12 @@ loaderVersion="${loader_version_range}"
 license="${mod_license}"
 issueTrackerURL="https://github.com/TunaMods/custom_glint/issues"
 
+# Standalone-only compat mixins (not in the api jar). Soft compat: @Pseudo targets, no-op when the mod is absent.
+[[mixins]]
+config="custom_glint.sophisticatedbackpacks.mixins.json"
+[[mixins]]
+config="custom_glint.artifacts.mixins.json"
+
 # --- Full mod ---
 [[mods]]
 modId="${mod_id}"

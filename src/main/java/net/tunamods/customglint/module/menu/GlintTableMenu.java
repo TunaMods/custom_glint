@@ -6,6 +6,7 @@ import net.minecraft.network.chat.TextColor;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
@@ -17,14 +18,22 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.tunamods.customglint.module.item.GlintBagItem;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
+import net.tunamods.customglint.module.advancement.ModTriggers;
 import net.tunamods.customglint.module.block.ModBlocks;
+import net.tunamods.customglint.module.item.ModComponents;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.item.GlintLayerTearItem;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.blueprint.ServerBlueprints;
 import net.tunamods.customglint.module.network.GlintPrintedSyncPacket;
 import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 
@@ -33,6 +42,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
@@ -85,6 +95,16 @@ public class GlintTableMenu extends AbstractContainerMenu {
     private static final int INV_START = TABLE_SIZE;          // 29
     private static final int INV_END   = TABLE_SIZE + 36;     // 65
 
+    /** Hard cap on a player's stored-design and printed-trim libraries. Both lists come from client-supplied
+     *  data, so this bounds the save-persisted per-player state. */
+    private static final int MAX_LIBRARY_ENTRIES = 128;
+    private static final int MAX_STORED_DESIGNS = MAX_LIBRARY_ENTRIES;
+    private static final int MAX_PRINTED_TRIMS = MAX_LIBRARY_ENTRIES;
+
+    /** When true (only during {@link #depositBagContents}), the library store helpers mutate + persist but skip
+     *  their per-call client sync, so a bulk deposit can push one combined sync instead of one per item. */
+    private static boolean deferLibrarySync = false;
+
     /** Client-only flags set by the screen to show/hide the conditional name/glow dye slots. */
     public boolean showNameDye = false, showGlowDye = false;
 
@@ -124,14 +144,18 @@ public class GlintTableMenu extends AbstractContainerMenu {
         // add order. See the SLOT_* constants above for the authoritative index → role mapping; the
         // material/modifier slots are spread under the left panel to leave room for their labels +
         // value + [-]/[+] controls beneath each.
-        addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  GlintTableMenu::isAnyTrim,        SLOT_MAX)); // 8 main (left of center, aligned to the grids' top row)
-        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL),      SLOT_MAX)); // 12 scale
-        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE),        SLOT_MAX)); // 10 speed
-        addSlot(new FilteredSlot(container, SLOT_GLASS,     54,  154, s -> s.is(Items.GLASS),           SLOT_MAX)); // 11 opacity
-        addSlot(new FilteredSlot(container, SLOT_GLOWSTONE, 233, 154, s -> s.is(Items.GLOWSTONE_DUST),  SLOT_MAX)); // 13
-        addSlot(new FilteredSlot(container, SLOT_NAMETAG,   267, 154, s -> s.is(Items.NAME_TAG),         1)); // 14 (boolean gate, one only)
-        addSlot(new FilteredSlot(container, SLOT_TRIM_B,    188, 19,  GlintTableMenu::isAnyTrim,        SLOT_MAX)); // 9 layered (right of center, aligned to the grids' top row)
-        addSlot(new FilteredSlot(container, SLOT_TEAR,      292, 154, GlintTableMenu::isSimTear,        SLOT_MAX)); // 15 simultaneous tear (left of the shared toggle)
+        // Main / merge trim slots reject physical placement (mayPlace=false): the screen turns a placed trim
+        // into a library deposit + ghost preview, so these slots never hold a real item and it can't get stuck
+        // where it couldn't be pulled back out. They still exist for layout (the ghost draws over them).
+        addSlot(new FilteredSlot(container, SLOT_TRIM,      136, 19,  s -> false,                      SLOT_MAX)); // main (left of center, aligned to the grids' top row)
+        // Speed (redstone) and scale (slime ball) cost is capped at one 64 stack per slot; loose items only.
+        addSlot(new FilteredSlot(container, SLOT_SLIME,     90,  154, s -> s.is(Items.SLIME_BALL), SLOT_MAX)); // scale
+        addSlot(new FilteredSlot(container, SLOT_REDSTONE,  18,  154, s -> s.is(Items.REDSTONE),   SLOT_MAX)); // speed
+        addSlot(new FilteredSlot(container, SLOT_GLASS,     54,  154, s -> s.is(Items.GLASS),           SLOT_MAX)); // opacity
+        addSlot(new FilteredSlot(container, SLOT_GLOWSTONE, 233, 154, s -> s.is(Items.GLOWSTONE_DUST),  SLOT_MAX)); // glow
+        addSlot(new FilteredSlot(container, SLOT_NAMETAG,   267, 154, s -> s.is(Items.NAME_TAG),         1)); // name tag (boolean gate, one only)
+        addSlot(new FilteredSlot(container, SLOT_TRIM_B,    188, 19,  s -> false,                      SLOT_MAX)); // layered (right of center, aligned to the grids' top row); placement rejected, see SLOT_TRIM note
+        addSlot(new FilteredSlot(container, SLOT_TEAR,      292, 154, GlintTableMenu::isSimTear,        SLOT_MAX)); // simultaneous tear (left of the shared toggle)
 
         // 16 dye slots + the rainbow dye (17 cells total), full-width bar, recentered: 17*18 = 306 → x0 = 18.
         for (int i = 0; i < 16; i++) {
@@ -160,11 +184,38 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
         // Push the player's stored-design set + printed-trim library to the client when the table opens.
         if (player instanceof ServerPlayer sp) {
+            consolidatePrintedLibrary(sp); // drop any leftover ghost that a real trim already covers
             PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(sp.getData(ModAttachments.STORED_DESIGNS.get()))));
             List<ItemStack> printed = new ArrayList<>();
             for (ItemStack s : sp.getData(ModAttachments.PRINTED_TRIMS.get())) if (!s.isEmpty()) printed.add(s);
             PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(printed));
+            // On a dedicated server, push the shared blueprint trims so the client can list them alongside its
+            // own personal ones. The integrated (single-player) server skips this: the client's local config
+            // scan already covers the very same directory, so syncing would just duplicate every entry.
+            if (sp.level().getServer().isDedicatedServer()) ServerBlueprints.syncTo(sp);
+            // Re-check the design-collection advancements on open so a player who already owns designs from
+            // before this feature existed (or via another path) still earns them.
+            checkDesignAdvancements(sp);
         }
+    }
+
+    /** Base design names (the built-in {@link CustomGlint#PATTERNS}), the pool the collection advancements
+     *  count against. Data-pack designs don't count toward "base" totals. */
+    private static Set<String> baseDesignNames() {
+        Set<String> set = new HashSet<>();
+        for (Identifier d : CustomGlint.PATTERNS)
+            set.add(d.equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(d));
+        return set;
+    }
+
+    /** Fire the design-collection advancements with the player's current count of BASE designs owned. Called
+     *  after any change to the stored-design set (and on table open). Advancements are idempotent, so the
+     *  extra fires are harmless. */
+    public static void checkDesignAdvancements(ServerPlayer sp) {
+        Set<String> base = baseDesignNames();
+        int collected = 0;
+        for (String s : sp.getData(ModAttachments.STORED_DESIGNS.get())) if (base.contains(s)) collected++;
+        ModTriggers.DESIGNS_COLLECTED.get().trigger(sp, collected, base.size());
     }
 
     /** A "painted" trim, one that has had color applied, lives in the printed library; an empty trim
@@ -179,17 +230,173 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return false;
     }
 
-    /** Records one finished painted trim into the player's printed library (deduped, capped at 128) + syncs.
+    /** Records one finished painted trim into the player's printed library (deduped, capped) + syncs.
      *  Returns true only if it actually stored: false on a dedup hit or at the cap, so deposit callers can
-     *  leave the physical trim in place instead of consuming it for nothing. */
+     *  leave the physical trim in place instead of consuming it for nothing.
+     *
+     *  Crafting a trim that matches a dimmed IMPORTED entry clears its lock (un-dims it, makes it
+     *  withdrawable) instead of appending a duplicate, so importing a trim then building it "pays off" the
+     *  import. Matching is by {@link #trimSignature} (glint layers + glow, ignoring seed / custom name). */
     private static boolean storePrinted(ServerPlayer sp, ItemStack trim) {
         List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
-        for (ItemStack s : list) if (ItemStack.isSameItemSameComponents(s, trim)) return false; // already have this config
-        if (list.size() >= 128) return false;
+        String sig = trimSignature(trim);
+
+        // First pass: unlock a matching import if one is dimmed in the library.
+        List<ItemStack> cleaned = new ArrayList<>();
+        boolean unlocked = false;
+        for (ItemStack s : list) {
+            if (s.isEmpty()) continue;
+            if (!unlocked && isImportLocked(s) && trimSignature(s).equals(sig)) {
+                ItemStack u = s.copy();
+                u.remove(ModComponents.IMPORT_LOCKED.get());
+                cleaned.add(u);
+                unlocked = true;
+            } else {
+                cleaned.add(s);
+            }
+        }
+        if (unlocked) {
+            cleaned = consolidateGhosts(cleaned); // the just-unlocked real shadows any other matching ghost
+            sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
+            if (!deferLibrarySync) PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
+            return true;
+        }
+
+        for (ItemStack s : cleaned) if (ItemStack.isSameItemSameComponents(s, trim)) return false; // already have this config
+        if (cleaned.size() >= MAX_PRINTED_TRIMS) return false;
         ItemStack one = trim.copy();
         one.setCount(1);
+        cleaned.add(one);
+        cleaned = consolidateGhosts(cleaned); // the new real shadows any matching import ghost
+        sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
+        if (!deferLibrarySync) PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(cleaned)));
+        return true;
+    }
+
+    /** True when a printed-library entry is a not-yet-crafted import (dimmed, non-withdrawable). */
+    private static boolean isImportLocked(ItemStack stack) {
+        return Boolean.TRUE.equals(stack.get(ModComponents.IMPORT_LOCKED.get()));
+    }
+
+    /** Real (unlocked) trims always take priority: drop any import-locked ghost whose signature matches a real
+     *  entry, so the two never coexist as a duplicate. Returns the same list when nothing changed. */
+    private static List<ItemStack> consolidateGhosts(List<ItemStack> list) {
+        Set<String> real = new HashSet<>();
+        for (ItemStack s : list) if (!s.isEmpty() && !isImportLocked(s)) real.add(trimSignature(s));
+        if (real.isEmpty()) return list;
+        List<ItemStack> out = new ArrayList<>(list.size());
+        boolean changed = false;
+        for (ItemStack s : list) {
+            if (!s.isEmpty() && isImportLocked(s) && real.contains(trimSignature(s))) { changed = true; continue; }
+            out.add(s);
+        }
+        return changed ? out : list;
+    }
+
+    /** Consolidate the player's printed library in place (drop ghosts shadowed by a real trim) and persist it.
+     *  Run on open so any pre-existing duplicate is cleaned up; storePrinted does the same after each change. */
+    private static void consolidatePrintedLibrary(ServerPlayer sp) {
+        List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
+        List<ItemStack> cleaned = consolidateGhosts(list);
+        if (cleaned != list) sp.setData(ModAttachments.PRINTED_TRIMS.get(), cleaned);
+    }
+
+    /** A trim's identity for import matching: its glint layers (design + colors + timing/flags, seed
+     *  excluded so a rolled chromatic seed doesn't block the match) plus the glow flag and glow colors. The
+     *  custom name is intentionally left out, reproducing the glint and glow is enough to "craft" an import. */
+    private static String trimSignature(ItemStack stack) {
+        StringBuilder sb = new StringBuilder();
+        CustomGlint.Data d = CustomGlint.read(stack);
+        if (d != null) {
+            for (CustomGlint.Layer l : d.layers()) {
+                sb.append(l.design()).append('|');
+                for (int c : l.colors()) sb.append(Integer.toHexString(c)).append(',');
+                // A single-colour layer renders identically whether "simultaneous" or not, and the two build
+                // paths set that flag differently for such layers (import normalizes every layer, print only
+                // the active one). Canonicalize it to false so the same trim, imported vs printed, hashes the
+                // same, otherwise it shows up as a duplicate the print-unlock never consolidates.
+                boolean sim = l.simultaneous() && l.colors().length >= 2;
+                sb.append(';').append(l.speed()).append(';').append(l.interpolate())
+                  .append(';').append(l.patternScale()).append(';').append(sim)
+                  .append(';').append(l.scrollDir()).append(';').append(l.scrollOffset()).append('#');
+            }
+        }
+        sb.append("glow=").append(CustomGlint.isGlowing(stack)).append(';');
+        for (int c : CustomGlint.getGlowColors(stack)) sb.append(Integer.toHexString(c)).append(',');
+        return sb.toString();
+    }
+
+    /** Runs {@code action} on the server thread if the sender still has a Glint Table open. Shared by every
+     *  Glint Table C→S packet handler, which all gate on the same open-menu check. */
+    public static void withOpenMenu(IPayloadContext ctx, BiConsumer<ServerPlayer, GlintTableMenu> action) {
+        ctx.enqueueWork(() -> {
+            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
+                action.accept(sp, m);
+            }
+        });
+    }
+
+    /**
+     * Import a premade trim from a config file (sent by the client's Import list): rebuild it, mark every
+     * layer's design owned so it can be built, and drop it into the printed library as a LOCKED (dimmed,
+     * non-withdrawable) entry. The lock clears only when the player prints a matching trim, so importing
+     * hands out a build target, not a free finished trim. No-op if an identical trim is already in the library.
+     */
+    public void importTrim(CustomGlint.Layer[] layers, boolean glowing, int[] glowColors, String name, int nameColor) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        if (layers.length == 0) return;
+        CustomGlint.Layer[] withSeeds = CustomGlint.ensureChromaticSeeds(layers);
+        // A single-color layer is always sequential (simultaneous needs 2+ colors to mean anything, and
+        // print() builds it that way), so store the import the same way it will be crafted, otherwise the
+        // exact-match unlock would never fire on a 1-color import.
+        for (int i = 0; i < withSeeds.length; i++) {
+            CustomGlint.Layer l = withSeeds[i];
+            if (l.simultaneous() && l.colors().length < 2)
+                withSeeds[i] = new CustomGlint.Layer(l.design(), l.colors(), l.speed(), l.interpolate(),
+                        l.patternScale(), false, l.scrollDir(), l.scrollOffset(), l.seed());
+        }
+
+        ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
+        CustomGlint.Layer l0 = withSeeds[0];
+        GlintTrimItem.setPattern(trim, l0.design());
+        for (int c : l0.colors()) GlintTrimItem.addColor(trim, c);
+        GlintTrimItem.setSpeed(trim, l0.speed());
+        GlintTrimItem.setScale(trim, l0.patternScale());
+        GlintTrimItem.setScrollDir(trim, l0.scrollDir());
+        GlintTrimItem.setScrollOffset(trim, l0.scrollOffset());
+        GlintTrimItem.setGlowing(trim, glowing);
+        CustomGlint.setGlowing(trim, glowing);
+        if (glowColors.length > 0) CustomGlint.setGlowColors(trim, glowColors);
+        // The client packs the name colour as (rgb << 8) | alpha.
+        if (!name.isEmpty()) setCustomName(trim, name, (nameColor >>> 8) & 0xFFFFFF);
+        // Full multi-layer glint Data is authoritative; write() preserves the glow flag / glow colors set above.
+        CustomGlint.write(trim, withSeeds);
+
+        // Owning the designs makes the trim buildable; without this the print's ownsDesign gate would keep the
+        // import permanently locked. Blank designs are already freely craftable, so this leaks only the pattern.
+        for (CustomGlint.Layer l : withSeeds) {
+            String dn = l.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(l.design());
+            if (dn != null) storeDesign(sp, dn);
+        }
+
+        storePrintedImport(sp, trim);
+    }
+
+    /** Adds an imported trim to the printed library as a locked (dimmed) entry, deduped by signature so a
+     *  trim the player already owns or already imported isn't added again. Capped with the library. */
+    private static boolean storePrintedImport(ServerPlayer sp, ItemStack trim) {
+        List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
+        String sig = trimSignature(trim);
         List<ItemStack> updated = new ArrayList<>();
-        for (ItemStack s : list) if (!s.isEmpty()) updated.add(s); // drop any stale empty entries
+        for (ItemStack s : list) {
+            if (s.isEmpty()) continue;
+            if (trimSignature(s).equals(sig)) return false; // already imported or already owned
+            updated.add(s);
+        }
+        if (updated.size() >= MAX_PRINTED_TRIMS) return false;
+        ItemStack one = trim.copy();
+        one.setCount(1);
+        one.set(ModComponents.IMPORT_LOCKED.get(), true);
         updated.add(one);
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
@@ -203,7 +410,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
     public void print(String designId, float speed, float scale, int opacity,
                       boolean glow, boolean glowAuto, boolean named, String name, boolean simultaneous,
                       int scrollDir, float scrollOffset, boolean interpolate, int glowHex, int nameHex, int[][] shardDyes,
-                      int[] donorColors, CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous) {
+                      int[] donorColors, CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                      int[][] glowShardDyes) {
         if (!(player instanceof ServerPlayer sp)) return;
         // tryParse (not parse): designId is a raw client-supplied string; a malformed one would otherwise
         // throw ResourceLocationException on the server thread inside enqueueWork.
@@ -241,11 +449,10 @@ public class GlintTableMenu extends AbstractContainerMenu {
         int[] baseColors = fromBase ? GlintTrimItem.getColors(base) : new int[0];
         int colorBudget = Math.max(0, 8 - baseColors.length);
         List<Integer> newColors = new ArrayList<>();
-        List<Integer> usedDyeSlots = new ArrayList<>();
-        // Each shard is a list of dye indices (0..15) the player chose: one dye is a pure colour, several
-        // average into a custom mix. A dye is consumed once per distinct slot across the whole print;
-        // colours already on the base trim are free. A shard with any missing dye is skipped.
-        Set<Integer> consumed = new HashSet<>();
+        // Cumulative dye cost: every colour shard on every layer charges its own dye. A shade reused across
+        // shards / layers costs one of that dye each time, no de-duplication. dyeUsed tracks the running
+        // per-shade count so each colour validates against what the slot still holds after earlier claims.
+        int[] dyeUsed = new int[16];
         int rainbowNeeded = 0; // custom-hex colours, each consuming one rainbow dye
         for (int[] shard : shardDyes) {
             if (shard.length == 0 || newColors.size() >= colorBudget) continue;
@@ -258,20 +465,32 @@ public class GlintTableMenu extends AbstractContainerMenu {
                 rainbowNeeded++;
                 continue;
             }
-            int r = 0, g = 0, b = 0;
-            boolean allPresent = true;
-            for (int idx : shard) {
-                if (idx < 0 || idx >= 16 || container.getItem(SLOT_DYE_START + idx).get(DataComponents.DYE) == null) { allPresent = false; break; }
-                int rgb = GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF; // mod palette (matches the tooltip names + recipes)
-                r += (rgb >> 16) & 0xFF; g += (rgb >> 8) & 0xFF; b += rgb & 0xFF;
-            }
-            if (!allPresent) continue; // player doesn't have one of the mix's dyes
-            int n = shard.length;
-            int rgb = ((r / n) << 16) | ((g / n) << 8) | (b / n); // equal-weight blend (matches the client)
+            int rgb = blendShardRgb(shard, dyeUsed);
+            if (rgb < 0) continue; // player doesn't have enough of one of the mix's dyes
             if (containsRgb(baseColors, rgb)) continue; // already on the base trim, free, no consume
             newColors.add((alpha << 24) | rgb);
-            for (int idx : shard) if (consumed.add(SLOT_DYE_START + idx)) usedDyeSlots.add(SLOT_DYE_START + idx);
+            for (int idx : shard) dyeUsed[idx]++; // charge each component dye, cumulative
         }
+        // The committed layers (below/above the active one) also cost dyes, cumulatively: every colour of every
+        // committed layer wants its own dye, stacking on top of the active layer's claims (no de-dup). The
+        // synthetic white fill an empty layer carries is skipped (it isn't a chosen colour). A non-dye colour
+        // takes a rainbow dye instead.
+        int committedRainbow = 0;
+        for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
+            for (CustomGlint.Layer l : group) {
+                for (int color : l.colors()) {
+                    if ((color & 0xFFFFFF) == 0xFFFFFF) continue; // synthetic empty-layer fill, not a real colour
+                    int idx = dyeIndexForRgb(color);
+                    if (idx < 0) { committedRainbow++; continue; }
+                    ItemStack ds = container.getItem(SLOT_DYE_START + idx);
+                    if (ds.get(DataComponents.DYE) == null || ds.getCount() < dyeUsed[idx] + 1) return; // required dye missing / not enough
+                    dyeUsed[idx]++;
+                }
+            }
+        }
+        if (container.getItem(SLOT_RAINBOW_DYE).getCount() < rainbowNeeded + committedRainbow) return;
+        rainbowNeeded += committedRainbow;
+
         // At least one color is required: the placed trim's existing colors, or a newly selected dye.
         if (baseColors.length + newColors.size() == 0) return;
         // The merge slot's (donor) colors are folded in for free (mirrors GlintTrimMergeRecipe); the
@@ -280,31 +499,41 @@ public class GlintTableMenu extends AbstractContainerMenu {
 
         // Flat cost: one material per LAYER (active + every extra layer) that tunes speed/scale off 1× or sets
         // any opacity, so the cost is the total for the whole trim, not just the active layer.
-        int redCost = Math.abs(speed - 1.0f) > 0.001f ? 1 : 0;
-        int slimeCost = Math.abs(scale - 1.0f) > 0.001f ? 1 : 0;
-        int glassCost = opacity > 0 ? 1 : 0;
-        for (CustomGlint.Layer l : belowLayers) { redCost += layerTunedSpeed(l); slimeCost += layerTunedScale(l); glassCost += layerTranslucent(l); }
-        for (CustomGlint.Layer l : aboveLayers) { redCost += layerTunedSpeed(l); slimeCost += layerTunedScale(l); glassCost += layerTranslucent(l); }
+        // One redstone/slime per ± step speed/scale sits off 1×, one glass per opacity level, tallied across the
+        // active + every committed layer (mirrors GlintTableScreen.layerCosts). Tuning a trim is a real cost now.
+        int redCost = CustomGlint.stepCost(speed);
+        int slimeCost = CustomGlint.stepCost(scale);
+        int glassCost = opacity;
+        for (CustomGlint.Layer l : belowLayers) { redCost += CustomGlint.stepCost(l.speed()); slimeCost += CustomGlint.stepCost(l.patternScale()); glassCost += layerGlass(l); }
+        for (CustomGlint.Layer l : aboveLayers) { redCost += CustomGlint.stepCost(l.speed()); slimeCost += CustomGlint.stepCost(l.patternScale()); glassCost += layerGlass(l); }
 
         // Validate every required material is present before consuming anything.
-        if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return;
-        if (slimeCost > 0 && container.getItem(SLOT_SLIME).getCount() < slimeCost) return;
-        if (glassCost > 0 && container.getItem(SLOT_GLASS).getCount() < glassCost) return;
+        if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return;   // caps at 64
+        if (slimeCost > 0 && container.getItem(SLOT_SLIME).getCount() < slimeCost) return;  // caps at 64
+        if (glassCost > 0 && container.getItem(SLOT_GLASS).getCount() < glassCost) return;  // caps at 64
         // A base trim already carries its glow / name / glow-color, so re-printing them is free; only
         // glow/name that wasn't there needs the glowstone / name tag / glow-color dye.
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
         boolean baseHasGlowColors = fromBase && CustomGlint.getGlowColors(base).length > 0;
         boolean baseNamed = fromBase && base.has(DataComponents.CUSTOM_NAME);
-        if (glow && !baseGlowing && container.getItem(SLOT_GLOWSTONE).isEmpty()) return;
+        // Glow costs one glowstone per layer of the finished trim (active + every committed layer): an 8-layer
+        // glowing trim burns 8 glowstone. Only charged when glow is newly added (a base already glowing is free).
+        int glowstoneCost = (glow && !baseGlowing) ? extraLayers + 1 : 0;
+        if (glowstoneCost > 0 && container.getItem(SLOT_GLOWSTONE).getCount() < glowstoneCost) return;
         if (named && !baseNamed && container.getItem(SLOT_NAMETAG).isEmpty()) return;
-        DyeColor glowDye = container.getItem(SLOT_GLOW_DYE).get(DataComponents.DYE);
         DyeColor nameDye = container.getItem(SLOT_NAME_DYE).get(DataComponents.DYE);
-        // A rainbow dye in the glow / name slot supplies a custom hex colour instead of a dye colour.
-        boolean glowRainbow = isRainbowDye(container.getItem(SLOT_GLOW_DYE));
+        // A rainbow dye in the name slot supplies a custom hex colour instead of a dye colour.
         boolean nameRainbow = isRainbowDye(container.getItem(SLOT_NAME_DYE));
-        int glowColor = glowRainbow ? glowHex : dyeColor(glowDye);
         int nameColor = nameRainbow ? nameHex : dyeColor(nameDye);
-        if (glow && !glowAuto && glowColor < 0 && !baseHasGlowColors) return; // manual glow needs a colour (dye or rainbow hex)
+
+        // Manual glow colours: built from the glow shards (its own list of up to 8, separate from the glint
+        // colours), each charging a dye cumulatively on top of everything above. Auto glow / glow off / a base
+        // already glowing contribute none. A shard whose dye isn't present (or short) is skipped.
+        List<Integer> glowColors = new ArrayList<>();
+        if (glow && !glowAuto) {
+            rainbowNeeded += collectGlowColors(glowShardDyes, glowColors, dyeUsed, rainbowNeeded);
+            if (glowColors.isEmpty() && !baseHasGlowColors) return; // manual glow needs at least one colour
+        }
 
         // Build the trim: start from the placed trim (keeping its colors/layers) or a blank one, then
         // append the newly selected dye colors (addColor caps the total at 8).
@@ -322,34 +551,33 @@ public class GlintTableMenu extends AbstractContainerMenu {
         GlintTrimItem.setScrollDir(trim, scrollDir);
         GlintTrimItem.setScrollOffset(trim, scrollOffset);
         GlintTrimItem.setPattern(trim, design);
-        // Simultaneous tears: one per simultaneous layer in the finished trim. The committed extra layers are
-        // already baked simultaneous, so each REQUIRES a tear; the active layer becomes simultaneous only if
-        // its toggle is on and a tear is left over after covering the committed ones. (This is why the cost no
-        // longer depends on which layer is selected, it counts the whole trim.)
-        int committedSim = 0;
-        for (CustomGlint.Layer l : belowLayers) if (l.simultaneous()) committedSim++;
-        for (CustomGlint.Layer l : aboveLayers) if (l.simultaneous()) committedSim++;
-        int availSimTears = container.getItem(SLOT_TEAR).getCount();
-        if (availSimTears < committedSim) return; // not enough tears for the simultaneous extra layers
-        boolean activeSim = simultaneous && availSimTears > committedSim;
-        int simTearsUsed = committedSim + (activeSim ? 1 : 0);
-        // The sequential tear is consumed when reverting a SIMULTANEOUS source layer back to sequential. The
-        // source's mode rides in from the client (sourceSimultaneous) so it works whether the trim was placed
-        // physically or just selected from the printed library.
-        boolean consumeSeqTear = !simultaneous && sourceSimultaneous && !container.getItem(SLOT_TEAR_SEQ).isEmpty();
+        // Mode tears: every multi-colour layer costs one tear matching how its colours animate, a simultaneous
+        // tear for a simultaneous layer, a sequential tear for a sequential one. A single-colour layer renders
+        // the same either way, so it costs no tear. The active layer keeps its chosen mode, so the print BLOCKS
+        // on a missing tear instead of quietly printing the other mode.
+        int committedSim = 0, committedSeq = 0;
+        for (CustomGlint.Layer[] group : new CustomGlint.Layer[][]{belowLayers, aboveLayers}) {
+            for (CustomGlint.Layer l : group) {
+                if (l.colors().length < 2) continue;
+                if (l.simultaneous()) committedSim++; else committedSeq++;
+            }
+        }
+        boolean activeMulti = GlintTrimItem.getColors(trim).length >= 2;
+        int simTearsUsed = committedSim + (simultaneous && activeMulti ? 1 : 0);
+        int seqTearsUsed = committedSeq + (!simultaneous && activeMulti ? 1 : 0);
+        if (container.getItem(SLOT_TEAR).getCount() < simTearsUsed) return;     // not enough simultaneous tears
+        if (container.getItem(SLOT_TEAR_SEQ).getCount() < seqTearsUsed) return; // not enough sequential tears
         GlintTrimItem.setGlowing(trim, glow);
         CustomGlint.setGlowing(trim, glow);
-        if (glow && !glowAuto && glowColor >= 0) CustomGlint.setGlowColors(trim, new int[]{0xFF000000 | glowColor});
-        if (named && !name.isEmpty()) {
-            int rgb = nameColor >= 0 ? nameColor : 0xFFFFFF;
-            trim.set(DataComponents.CUSTOM_NAME, Component.literal(name).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
-        }
+        if (glow && !glowAuto && !glowColors.isEmpty())
+            CustomGlint.setGlowColors(trim, glowColors.stream().mapToInt(Integer::intValue).toArray());
+        if (named && !name.isEmpty()) setCustomName(trim, name, nameColor >= 0 ? nameColor : 0xFFFFFF);
         // Final active-layer Data write carrying the chosen interpolation (and simultaneous when a tear is
         // present). Write it LAST, setGlowing/setPattern reset interpolate/simultaneous, so an earlier
         // write would be clobbered. (write() preserves glowing/glowColors.)
         int seed = CustomGlint.isChromatic(design) ? CustomGlint.randomChromaticSeed() : 0;
         CustomGlint.write(trim, design, GlintTrimItem.getColors(trim), speed, interpolate, scale,
-                activeSim,
+                simultaneous && activeMulti,
                 GlintTrimItem.getScrollDir(trim), GlintTrimItem.getScrollOffset(trim), seed);
         if (seed != 0) GlintTrimItem.setSeed(trim, seed);
 
@@ -368,24 +596,76 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (redCost > 0) container.removeItem(SLOT_REDSTONE, redCost);
         if (slimeCost > 0) container.removeItem(SLOT_SLIME, slimeCost);
         if (glassCost > 0) container.removeItem(SLOT_GLASS, glassCost);
-        for (int slot : usedDyeSlots) container.removeItem(slot, 1);
+        for (int i = 0; i < 16; i++) if (dyeUsed[i] > 0) container.removeItem(SLOT_DYE_START + i, dyeUsed[i]);
         if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded); // one per custom-hex colour
-        if (glow && !baseGlowing) container.removeItem(SLOT_GLOWSTONE, 1);
+        if (glowstoneCost > 0) container.removeItem(SLOT_GLOWSTONE, glowstoneCost);
         // The name tag is a gate, not an ingredient: having one in the slot enables custom names, but it
         // is never consumed.
         if (simTearsUsed > 0) container.removeItem(SLOT_TEAR, simTearsUsed);
-        if (consumeSeqTear) container.removeItem(SLOT_TEAR_SEQ, 1);
-        // Consume the glow / name dye only when its color was actually written (guards must match the write
-        // conditions at the setGlowColors / CUSTOM_NAME calls above), otherwise a rainbow/name dye placed in
-        // a config that writes nothing (manual glow with no hex on a base that already has glow colors; named
-        // with an empty name) would be eaten for no output.
-        if (glow && !glowAuto && glowColor >= 0) container.removeItem(SLOT_GLOW_DYE, 1);
+        if (seqTearsUsed > 0) container.removeItem(SLOT_TEAR_SEQ, seqTearsUsed);
+        // The name dye supplies the custom-name colour; consume it only when a name was actually written.
         if (named && !name.isEmpty() && (nameDye != null || nameRainbow)) container.removeItem(SLOT_NAME_DYE, 1);
         if (extraLayers > 0) container.removeItem(SLOT_LAYER_TEAR, extraLayers); // one tear per extra layer
 
         // Output: give to the player (drop overflow) and store in the printed library.
         if (!sp.addItem(trim)) sp.drop(trim, false);
         storePrinted(sp, trim);
+
+        // A trim printed with the full 8 colors earns "Ratatouille"; a layered trim earns "Like Ogres", the
+        // full 8 layers earns "How many cheeses?", and 8 layers each with all 8 colors earns "In this Economy?".
+        if (GlintTrimItem.getColors(trim).length >= 8) ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
+        CustomGlint.Data printed = CustomGlint.read(trim);
+        int layers = printed != null ? printed.layers().length : 0;
+        if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
+        if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
+        if (EightByEightTrimTrigger.matches(printed)) ModTriggers.EIGHT_BY_EIGHT_TRIM.get().trigger(sp);
+    }
+
+    /**
+     * Print a Glow Trim: a glow-only trim carries no glint design, layers, speed/scale or opacity, just its
+     * glow colours. The colours come from the selected dye shards (one dye per shade, one rainbow dye per
+     * custom colour, exactly like the glint print, cumulative with no de-dup), the dyes are consumed, and the
+     * finished Glow Trim is given to the player + stored in the printed library. No-op on validation fail.
+     */
+    public void printGlow(int[][] shardDyes, float speed, boolean interpolate, boolean named, String name, int nameHex) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        float safeSpeed = Float.isFinite(speed) ? Math.max(0.10f, Math.min(8.0f, speed)) : 1.0f;
+        int redCost = CustomGlint.stepCost(safeSpeed); // glow-cycle speed off 1× costs redstone, like a glint layer
+        if (redCost > 0 && container.getItem(SLOT_REDSTONE).getCount() < redCost) return; // caps at 64
+
+        // Resolve the glow colours from the selected shards (opaque, glow has no opacity dimension), tracking
+        // which dyes to consume. A shard whose dye isn't present (or short) is skipped; a custom-hex shard
+        // costs a rainbow dye. Cumulative: each shard charges its own dye, no de-duplication.
+        List<Integer> colors = new ArrayList<>();
+        int[] dyeUsed = new int[16];
+        int rainbowNeeded = collectGlowColors(shardDyes, colors, dyeUsed, 0);
+        if (colors.isEmpty()) return; // a glow trim needs at least one colour
+
+        // Optional custom name (name tag is a gate, not consumed; the name dye supplies the colour).
+        DyeColor nameDye = container.getItem(SLOT_NAME_DYE).get(DataComponents.DYE);
+        boolean nameRainbow = isRainbowDye(container.getItem(SLOT_NAME_DYE));
+        int nameColor = nameRainbow ? nameHex : dyeColor(nameDye);
+        if (named && !name.isEmpty() && container.getItem(SLOT_NAMETAG).isEmpty()) return;
+
+        ItemStack trim = new ItemStack(ModItems.GLOW_TRIM.get());
+        for (int c : colors) GlowTrimItem.addColor(trim, c); // stores under the colors tag + writes the glow preview
+        CustomGlint.setGlowing(trim, true);
+        CustomGlint.setGlowAnim(trim, safeSpeed, interpolate); // speed + interpolation drive the glow cycle
+        if (named && !name.isEmpty()) setCustomName(trim, name, nameColor >= 0 ? nameColor : 0xFFFFFF);
+
+        // Consume the cost.
+        if (redCost > 0) container.removeItem(SLOT_REDSTONE, redCost);
+        for (int i = 0; i < 16; i++) if (dyeUsed[i] > 0) container.removeItem(SLOT_DYE_START + i, dyeUsed[i]);
+        if (rainbowNeeded > 0) container.removeItem(SLOT_RAINBOW_DYE, rainbowNeeded);
+        if (named && !name.isEmpty() && (nameDye != null || nameRainbow)) container.removeItem(SLOT_NAME_DYE, 1);
+
+        if (!sp.addItem(trim)) sp.drop(trim, false);
+        storePrinted(sp, trim);
+    }
+
+    /** Apply a player-chosen display name in {@code rgb} (0xRRGGBB) to a finished trim. */
+    private static void setCustomName(ItemStack trim, String name, int rgb) {
+        trim.set(DataComponents.CUSTOM_NAME, Component.literal(name).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
     }
 
     /** Storage-library name for a trim stack (a Glint design name, or the Glow Trim sentinel), or null. */
@@ -421,13 +701,24 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (updated != null) {
             sp.setData(ModAttachments.STORED_DESIGNS.get(), updated);
             PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+            checkDesignAdvancements(sp);
         }
     }
 
-    /** Hard cap on a player's stored-design library, mirroring {@link #storePrinted}'s 128. Design names can
-     *  be derived from client-supplied trim patterns, so without a bound a scripted client could grow this
-     *  per-player (save-persisted) list without limit. */
-    private static final int MAX_STORED_DESIGNS = 128;
+    /** Teach every design a trim carries (all glint layers, or the Glow Trim key) so a trim deposited into the
+     *  library stays fully re-printable from its ghost. Each store is idempotent + deduped. */
+    private static void storeTrimDesigns(ServerPlayer sp, ItemStack trim) {
+        if (trim.getItem() instanceof GlowTrimItem) { storeDesign(sp, GlowTrimItem.STORAGE_KEY); return; }
+        CustomGlint.Data d = CustomGlint.read(trim);
+        if (d != null) {
+            for (CustomGlint.Layer l : d.layers()) {
+                String dn = l.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(l.design());
+                if (dn != null) storeDesign(sp, dn);
+            }
+        }
+        String base = designName(trim); // fallback for a trim with no glint Data yet
+        if (base != null) storeDesign(sp, base);
+    }
 
     /** Records a single design into the player's storage library (the scrollable grid) and syncs it. */
     private static boolean storeDesign(ServerPlayer sp, String name) {
@@ -437,18 +728,67 @@ public class GlintTableMenu extends AbstractContainerMenu {
         List<String> updated = new ArrayList<>(stored);
         updated.add(name);
         sp.setData(ModAttachments.STORED_DESIGNS.get(), updated);
-        PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+        if (!deferLibrarySync) PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(updated)));
+        checkDesignAdvancements(sp);
         return true;
     }
 
-    /** Mod-palette RGB (no alpha) for a dye, or -1 for none. DyeColor is a non-extensible vanilla enum with
-     *  exactly 16 constants and {@link GlintTrimItem#DYE_COLORS} has 16 entries, so the index is safe today;
-     *  the explicit bound just keeps a future palette/enum drift from throwing on a client-supplied dye. */
+    /** Mod-palette RGB (no alpha) for a dye, or -1 for none. DyeColor has 16 constants and
+     *  {@link GlintTrimItem#DYE_COLORS} has 16 entries; the bounds check guards against future palette drift. */
     private static int dyeColor(DyeColor dye) {
         if (dye == null) return -1;
         int idx = dye.ordinal();
         if (idx < 0 || idx >= GlintTrimItem.DYE_COLORS.length) return -1;
         return GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF;
+    }
+
+    /** RGB (lower 24 bits) → the vanilla dye index whose mod-palette colour matches, or -1 if it isn't a dye
+     *  shade (a mix / custom colour, which costs a rainbow dye instead). */
+    private static int dyeIndexForRgb(int color) {
+        int rgb = color & 0xFFFFFF;
+        for (int i = 0; i < GlintTrimItem.DYE_COLORS.length; i++)
+            if ((GlintTrimItem.DYE_COLORS[i] & 0xFFFFFF) == rgb) return i;
+        return -1;
+    }
+
+    /** Equal-weight blend of a multi-dye shard's mod-palette colors into 0xRRGGBB, or -1 if any component
+     *  dye is absent or already exhausted by earlier claims ({@code dyeUsed}). Does not consume; the caller
+     *  charges {@code dyeUsed} once it commits the color. Shared by the glint / glow / glow-only prints. */
+    private int blendShardRgb(int[] shard, int[] dyeUsed) {
+        int r = 0, g = 0, b = 0;
+        for (int idx : shard) {
+            ItemStack ds = idx >= 0 && idx < 16 ? container.getItem(SLOT_DYE_START + idx) : ItemStack.EMPTY;
+            if (idx < 0 || idx >= 16 || ds.get(DataComponents.DYE) == null || ds.getCount() < dyeUsed[idx] + 1) return -1;
+            int rgb = GlintTrimItem.DYE_COLORS[idx] & 0xFFFFFF; // mod palette (matches the tooltip names + recipes)
+            r += (rgb >> 16) & 0xFF; g += (rgb >> 8) & 0xFF; b += rgb & 0xFF;
+        }
+        int n = shard.length;
+        return ((r / n) << 16) | ((g / n) << 8) | (b / n); // equal-weight blend (matches the client)
+    }
+
+    /**
+     * Resolve dye shards into opaque glow colours (glow has no opacity dimension), appending up to 8 into
+     * {@code out} and charging each component dye into {@code dyeUsed}. A shard whose dye is absent or already
+     * exhausted is skipped; a custom-hex shard takes a rainbow dye instead. Returns how many rainbow dyes this
+     * call needs on top of the {@code rainbowUsed} already claimed elsewhere in the print. Shared by the glint
+     * print's manual-glow colours and the Glow Trim print.
+     */
+    private int collectGlowColors(int[][] shardDyes, List<Integer> out, int[] dyeUsed, int rainbowUsed) {
+        int rainbow = 0;
+        for (int[] shard : shardDyes) {
+            if (shard.length == 0 || out.size() >= 8) continue;
+            if (shard.length == 1 && (shard[0] & CUSTOM_FLAG) != 0) {
+                if (container.getItem(SLOT_RAINBOW_DYE).getCount() < rainbowUsed + rainbow + 1) continue;
+                out.add(0xFF000000 | (shard[0] & 0xFFFFFF));
+                rainbow++;
+                continue;
+            }
+            int rgb = blendShardRgb(shard, dyeUsed);
+            if (rgb < 0) continue;
+            out.add(0xFF000000 | rgb);
+            for (int idx : shard) dyeUsed[idx]++; // charge each component dye, cumulative
+        }
+        return rainbow;
     }
 
     private boolean isServer() {
@@ -479,9 +819,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
         return sp.getData(ModAttachments.STORED_DESIGNS.get()).contains(dn);
     }
 
-    private static int layerTunedSpeed(CustomGlint.Layer l) { return Math.abs(l.speed() - 1.0f) > 0.001f ? 1 : 0; }
-    private static int layerTunedScale(CustomGlint.Layer l) { return Math.abs(l.patternScale() - 1.0f) > 0.001f ? 1 : 0; }
-    private static int layerTranslucent(CustomGlint.Layer l) { int[] c = l.colors(); return (c.length > 0 && ((c[0] >>> 24) & 0xFF) < 255) ? 1 : 0; }
+    /** A committed layer's glass cost, from the alpha baked into its first colour (mirrors the client). */
+    private static int layerGlass(CustomGlint.Layer l) { int[] c = l.colors(); return c.length > 0 ? CustomGlint.glassCost((c[0] >>> 24) & 0xFF) : 0; }
 
     private static boolean isAnyTrim(ItemStack stack) {
         return stack.getItem() instanceof GlintTrimItem || stack.getItem() instanceof GlowTrimItem;
@@ -530,12 +869,104 @@ public class GlintTableMenu extends AbstractContainerMenu {
         ItemStack carried = getCarried();
         if (carried.isEmpty() || !isAnyTrim(carried)) return;
         boolean stored;
-        if (isPainted(carried)) stored = storePrinted(sp, carried);
-        else if (designName(carried) != null) stored = storeDesign(sp, designName(carried));
-        else return;
+        if (isPainted(carried)) {
+            stored = storePrinted(sp, carried);
+            // Placing/depositing a real trim also teaches its designs, so the ghost it leaves behind stays fully
+            // re-printable (a painted trim's design is owned via the printed library, matching a printed/imported
+            // one). This replaces the design-store that physical placement used to get from slotsChanged.
+            storeTrimDesigns(sp, carried);
+        } else if (designName(carried) != null) {
+            stored = storeDesign(sp, designName(carried));
+        } else return;
         if (!stored) return; // already in the library (or library full): keep the trim, don't consume it
         carried.shrink(1);
         setCarried(carried);
+    }
+
+    /**
+     * Bulk-deposit a Glint Bag's contents into the player's libraries (shift-right-click the table with a bag).
+     * Empty trims register their design into the stored-design palette; painted trims go into the printed
+     * library. Only the first of each new design/config is consumed from the bag; once it's registered, the
+     * remaining duplicates stay in the bag (there's nothing left to learn from them).
+     */
+    public static void depositBagContents(ServerPlayer sp, ItemStack bag) {
+        IItemHandler handler = GlintBagItem.createHandler(bag);
+
+        // A bag can carry dozens of trims; syncing on every store would burst a packet per deposit. Defer the
+        // library sync through the loop, then push the stored/printed state once at the end.
+        int storedBefore = sp.getData(ModAttachments.STORED_DESIGNS.get()).size();
+        boolean printedChanged = false;
+        deferLibrarySync = true;
+        try {
+            for (int i = 0; i < handler.getSlots(); i++) {
+                if (!isAnyTrim(handler.getStackInSlot(i))) continue;
+                // Deposit one at a time; each newly-stored copy is consumed, and the moment a copy is a
+                // duplicate (or the library is full) we stop on this slot, leaving the rest in the bag.
+                while (true) {
+                    ItemStack s = handler.getStackInSlot(i);
+                    if (s.isEmpty()) break;
+                    boolean stored;
+                    if (isPainted(s)) {
+                        stored = storePrinted(sp, s);
+                        storeTrimDesigns(sp, s);
+                        if (stored) printedChanged = true;
+                    } else if (designName(s) != null) {
+                        stored = storeDesign(sp, designName(s));
+                    } else break;
+                    if (!stored) break;
+                    handler.extractItem(i, 1, false);
+                }
+            }
+        } finally {
+            deferLibrarySync = false;
+        }
+
+        List<String> storedNow = sp.getData(ModAttachments.STORED_DESIGNS.get());
+        if (storedNow.size() != storedBefore) {
+            PacketDistributor.sendToPlayer(sp, new GlintStoredSyncPacket(new ArrayList<>(storedNow)));
+            checkDesignAdvancements(sp);
+        }
+        if (printedChanged) {
+            List<ItemStack> printed = new ArrayList<>();
+            for (ItemStack s : sp.getData(ModAttachments.PRINTED_TRIMS.get())) if (!s.isEmpty()) printed.add(s);
+            PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(printed));
+        }
+
+        depositBagMaterials(sp, handler);
+    }
+
+    /**
+     * Move the bag's table materials (dyes, redstone, slime, glass, glowstone, name tag, tears, rainbow dye)
+     * into the player's Glint Table slots, so shift-right-clicking the table also stocks it. Trims are handled
+     * by the library deposit above and skipped here. Each material fills its own slot up to the slot's cap; the
+     * remainder stays in the bag.
+     */
+    private static void depositBagMaterials(ServerPlayer sp, IItemHandler handler) {
+        SimpleContainer table = new SimpleContainer(TABLE_SIZE);
+        sp.getData(ModAttachments.GLINT_TABLE_CONTENTS.get()).copyInto(table.getItems());
+        boolean changed = false;
+        for (int i = 0; i < handler.getSlots(); i++) {
+            ItemStack s = handler.getStackInSlot(i);
+            if (s.isEmpty() || isAnyTrim(s)) continue; // trims go to the library, not the build slots
+            int[] targets = candidateSlots(s);
+            if (targets.length == 0) continue; // not a table material
+            int slot = targets[0];
+            int cap = slot == SLOT_NAMETAG ? 1 : SLOT_MAX;
+            ItemStack cur = table.getItem(slot);
+            if (!cur.isEmpty() && !ItemStack.isSameItemSameComponents(cur, s)) continue; // occupied by something else
+            int space = cap - cur.getCount();
+            if (space <= 0) continue;
+            ItemStack pulled = handler.extractItem(i, Math.min(space, s.getCount()), false);
+            if (pulled.isEmpty()) continue;
+            if (cur.isEmpty()) {
+                table.setItem(slot, pulled);
+            } else {
+                cur.grow(pulled.getCount());
+                table.setItem(slot, cur);
+            }
+            changed = true;
+        }
+        if (changed) sp.setData(ModAttachments.GLINT_TABLE_CONTENTS.get(), ItemContainerContents.fromItems(table.getItems()));
     }
 
     /** Withdraw (server): shift-click a trim in the printed library pulls one copy into the player's
@@ -546,10 +977,27 @@ public class GlintTableMenu extends AbstractContainerMenu {
         if (index < 0 || index >= list.size()) return;
         ItemStack trim = list.get(index);
         if (trim.isEmpty()) return;
+        if (isImportLocked(trim)) return; // an imported trim stays in the library until it's actually crafted
         ItemStack one = trim.copy();
         one.setCount(1);
         if (!sp.addItem(one)) return; // inventory full, leave it in the library
+        removePrintedAt(sp, list, index);
+    }
 
+    /** Delete (server): shift-click a still-locked imported trim in the printed library removes it outright.
+     *  Only import-locked (un-crafted) entries can be deleted this way; a real printed trim is withdrawn. */
+    public void deletePrinted(int index) {
+        if (!(player instanceof ServerPlayer sp)) return;
+        List<ItemStack> list = sp.getData(ModAttachments.PRINTED_TRIMS.get());
+        if (index < 0 || index >= list.size()) return;
+        ItemStack trim = list.get(index);
+        if (trim.isEmpty() || !isImportLocked(trim)) return; // only imported, un-crafted entries are deletable
+        removePrintedAt(sp, list, index);
+    }
+
+    /** Drop entry {@code index} from the printed library, persist the rest (empties pruned) and re-sync.
+     *  Shared by the withdraw and delete paths, which differ only in what they do with the removed trim. */
+    private static void removePrintedAt(ServerPlayer sp, List<ItemStack> list, int index) {
         List<ItemStack> updated = new ArrayList<>();
         for (int i = 0; i < list.size(); i++) {
             if (i == index) continue;
@@ -558,6 +1006,15 @@ public class GlintTableMenu extends AbstractContainerMenu {
         }
         sp.setData(ModAttachments.PRINTED_TRIMS.get(), updated);
         PacketDistributor.sendToPlayer(sp, new GlintPrintedSyncPacket(new ArrayList<>(updated)));
+    }
+
+    /** Delete (server): an op removes one of the server's shared blueprint trims. Requires op permission on a
+     *  dedicated server; deletes the matching config file and re-syncs the shared list to the player. */
+    public void deleteServerBlueprint(ServerPlayer sp, String name) {
+        if (!sp.level().getServer().isDedicatedServer()) return; // single-player uses the client store
+        if (!sp.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER)) return; // ops only (level 2)
+        ServerBlueprints.delete(name); // rejects a path-escaping name and swallows a locked file
+        ServerBlueprints.syncTo(sp);
     }
 
     /** Give the player a free blank trim of a palette design (shift-click in the left grid). No-op if the
@@ -590,17 +1047,18 @@ public class GlintTableMenu extends AbstractContainerMenu {
         ItemStack original = stack.copy();
 
         if (index < TABLE_SIZE) {
-            // Table slot -> player inventory
+            // Table slot → player inventory
             if (!moveItemStackTo(stack, INV_START, INV_END, true)) return ItemStack.EMPTY;
         } else if (isAnyTrim(stack) && (isPainted(stack) || designName(stack) != null)) {
-            // Player inventory -> library: a painted (colored/glow) trim deposits its full config into
+            // Player inventory → library: a painted (colored/glow) trim deposits its full config into
             // the right "printed" library; an empty (colorless) trim deposits its design into the left
             // palette. Either way one trim is consumed; this bypasses the build slots.
             // Consume the physical trim ONLY if the bank actually recorded it; a dedup hit or a full library
             // leaves the trim in the player's inventory instead of destroying it.
             boolean stored = true;
             if (player instanceof ServerPlayer sp) {
-                stored = isPainted(stack) ? storePrinted(sp, stack) : storeDesign(sp, designName(stack));
+                if (isPainted(stack)) { stored = storePrinted(sp, stack); storeTrimDesigns(sp, stack); }
+                else stored = storeDesign(sp, designName(stack));
             }
             if (!stored) return ItemStack.EMPTY; // leave the trim, no consumption
             stack.shrink(1);
@@ -608,7 +1066,7 @@ public class GlintTableMenu extends AbstractContainerMenu {
             else slot.setChanged();
             return ItemStack.EMPTY; // returning EMPTY stops the quick-move loop after one trim
         } else {
-            // Player inventory -> matching table slot(s)
+            // Player inventory → matching table slot(s)
             int[] candidates = candidateSlots(stack);
             if (candidates.length == 0) return ItemStack.EMPTY;
             boolean moved = false;

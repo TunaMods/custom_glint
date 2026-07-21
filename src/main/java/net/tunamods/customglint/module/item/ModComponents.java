@@ -63,12 +63,28 @@ public final class ModComponents {
                     .persistent(TrimConfig.CODEC)
                     .networkSynchronized(TrimConfig.STREAM_CODEC));
 
-    /** The Glow Trim's color list (drives the glow-color animation on smithing). Capped at 8 to match
-     *  every input path (GlowTrimItem.addColor / mergeColors) so a crafted component can't store more. */
+    /** The Glow Trim's color list (drives the glow-color animation on smithing). Capped at
+     *  {@link CustomGlint#MAX_COLORS_PER_LAYER} to match every input path (GlowTrimItem.addColor /
+     *  mergeColors) so a crafted component can't store more. */
     public static final Supplier<DataComponentType<List<Integer>>> GLOW_TRIM =
             DATA_COMPONENTS.registerComponentType("glow_trim", b -> b
                     .persistent(Codec.INT.sizeLimitedListOf(CustomGlint.MAX_COLORS_PER_LAYER))
                     .networkSynchronized(ByteBufCodecs.fromCodec(Codec.INT.sizeLimitedListOf(CustomGlint.MAX_COLORS_PER_LAYER))));
+
+    /** Marks a printed-library trim that was imported from a config file but not yet crafted: it renders
+     *  dimmed in the Glint Table's right grid and can't be withdrawn until the player prints a matching
+     *  trim, which clears the flag. Present (true) = locked; absent = a normal, owned printed trim. */
+    public static final Supplier<DataComponentType<Boolean>> IMPORT_LOCKED =
+            DATA_COMPONENTS.registerComponentType("import_locked", b -> b
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
+
+    /** Glint Bag auto-collect flag. Absent (default) = on; present false = off. Drives the pickup hook, the
+     *  inventory sweep, and the golden glint/glow that marks the bag as active. */
+    public static final Supplier<DataComponentType<Boolean>> BAG_AUTO_COLLECT =
+            DATA_COMPONENTS.registerComponentType("bag_auto_collect", b -> b
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
 
     public static void register(IEventBus modEventBus) {
         DATA_COMPONENTS.register(modEventBus);
