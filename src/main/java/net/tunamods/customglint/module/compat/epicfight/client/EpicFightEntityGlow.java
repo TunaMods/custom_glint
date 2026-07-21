@@ -22,7 +22,7 @@ import java.util.Map;
  * in-phase body tee that feeds the glow silhouette) never fires for patched entities. The outline just
  * vanishes.
  *
- * <p>{@link net.tunamods.customglint.module.compat.epicfight.mixin.PatchedLivingEntityRendererMixin} wraps
+ * <p>{@code PatchedLivingEntityRendererMixin} wraps
  * the {@code MultiBufferSource} arg at HEAD with {@link #wrap} and calls {@link #flush} at RETURN. wrap does
  * two jobs, both because Epic Fight draws its mesh through a TRIANGLES-mode RenderType:
  *

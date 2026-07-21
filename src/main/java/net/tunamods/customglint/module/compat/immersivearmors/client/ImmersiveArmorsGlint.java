@@ -178,6 +178,8 @@ public final class ImmersiveArmorsGlint {
     private static final Map<Class<?>, ModelAccess> MODEL_ACCESS = new ConcurrentHashMap<>();
     private static volatile boolean textureLookupTried = false;
     private static Method textureMethod;
+    /** Sentinel for "this piece class has no such getter", so a failed lookup caches a miss instead of
+     *  rescanning the class hierarchy on every frame. Any always-present Method works. */
     private static final Method NO_METHOD;
     static { Method n = null; try { n = Object.class.getMethod("hashCode"); } catch (NoSuchMethodException ignored) {} NO_METHOD = n; }
     private static volatile Method translucentMethod;

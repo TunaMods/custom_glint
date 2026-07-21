@@ -269,21 +269,12 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    packColor(buf, colors[i]);
                     RenderType rt = forDecorationGlintCutout(glint, li, buf, i, decorationTexture, overlayTex);
                     if (rt != null) glintVCs.add(bs.getBuffer(rt));
                 }
             } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
+                packColor(buf, CustomGlintRenderer.computeAnimatedColor(glint, li));
                 RenderType rt = forDecorationGlintCutout(glint, li, buf, 0, decorationTexture, overlayTex);
                 if (rt != null) glintVCs.add(bs.getBuffer(rt));
             }
@@ -353,4 +344,13 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
         DECO_CUTOUT_COLORS.clear();
     }
 
+    /** Unpack an ARGB colour into the shader-colour buffer, RGB premultiplied by alpha (the cutout RT
+     *  drives alpha through the transparency state, so slot 3 stays 1.0). */
+    private static void packColor(float[] buf, int color) {
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+        buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+        buf[2] = ( color        & 0xFF) / 255.0f * a;
+        buf[3] = 1.0f;
+    }
 }

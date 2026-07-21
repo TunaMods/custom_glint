@@ -39,19 +39,7 @@ public class ArmorDecorationLayerMixin {
     private static final ThreadLocal<ItemStack> CG_STACK = new ThreadLocal<>();
     private static final ThreadLocal<LivingEntity> CG_ENTITY = new ThreadLocal<>();
 
-    /**
-     * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
-     * calls per iteration: a colored base (the IIIZ int-color overload) + an overlay (the IIZ
-     * no-color overload, which delegates to IIIZ). Both bottom out in the IIIZ draw and fire our
-     * RETURN inject. applyDecorationGlint already unions the base + sibling overlay, so letting the second call
-     * fire too would draw the same glint again and double-brighten it. Skip when the same parts array fires twice
-     * back-to-back.
-     *
-     * 1.21 note: EK's renderDecoration lost its old (float r, g, b) tint overload; color is now a
-     * single packed int, matching the vanilla renderToBuffer change. Inject the IIIZ overload (the
-     * one that actually draws via getArmorFoilBuffer); the IIZ overload delegates into it. The old
-     * FFFZ descriptor matched nothing and silently no-opped, so decorations got no glint/glow.
-     */
+    /** Last parts array drawn, so a back-to-back repeat of the same decoration draw is skipped (see cg_applyGlint). */
     private static final ThreadLocal<ModelPart[]> CG_LAST_PARTS = new ThreadLocal<>();
 
     @Inject(method = "renderPiece(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/entity/EquipmentSlot;I)V",
@@ -72,6 +60,19 @@ public class ArmorDecorationLayerMixin {
         CG_LAST_PARTS.remove();
     }
 
+    /**
+     * Dyeable decorations (e.g. ceremonial helm's default big_plume) trigger TWO renderDecoration
+     * calls per iteration: a colored base (the IIIZ int-color overload) + an overlay (the IIZ
+     * no-color overload, which delegates to IIIZ). Both bottom out in the IIIZ draw and fire our
+     * RETURN inject. applyDecorationGlint already unions the base + sibling overlay, so letting the second call
+     * fire too would draw the same glint again and double-brighten it. Skip when the same parts array fires twice
+     * back-to-back.
+     *
+     * 1.21 note: EK's renderDecoration lost its old (float r, g, b) tint overload; color is now a
+     * single packed int, matching the vanilla renderToBuffer change. Inject the IIIZ overload (the
+     * one that actually draws via getArmorFoilBuffer); the IIZ overload delegates into it. The old
+     * FFFZ descriptor matched nothing and silently no-opped, so decorations got no glint/glow.
+     */
     @Inject(method = "renderDecoration(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IIIZ[Lnet/minecraft/client/model/geom/ModelPart;Lnet/minecraft/resources/ResourceLocation;)V",
             at = @At("RETURN"), require = 0)
     private void cg_applyGlint(PoseStack pose, MultiBufferSource buffer, int light, int overlay,

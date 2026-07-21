@@ -77,21 +77,12 @@ public final class GeckoArmorGlint {
                         ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        packColor(buf, colors[i]);
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
                         if (rt != null) list.add(bufferSource.getBuffer(rt));
                     }
                 } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    packColor(buf, CustomGlintRenderer.computeAnimatedColor(glint, layerIdx));
                     RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
                     if (rt != null) list.add(bufferSource.getBuffer(rt));
                 }
@@ -109,6 +100,16 @@ public final class GeckoArmorGlint {
 
         if (list.size() == 1) return base;
         return VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+    }
+
+    /** Unpack an ARGB colour into the shader-colour buffer, RGB premultiplied by alpha (the glint RTs
+     *  drive alpha through the transparency state, so slot 3 stays 1.0). */
+    private static void packColor(float[] buf, int color) {
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+        buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+        buf[2] = ( color        & 0xFF) / 255.0f * a;
+        buf[3] = 1.0f;
     }
 
     /** Queue the recorded armor silhouette as one glow ring, keyed on the wearer + CAT_ARMOR so it

@@ -143,6 +143,16 @@ public final class EpicFightArmorGlint {
         return ClientHooks.getArmorTexture(entity, stack, layers.get(0), inner, slot);
     }
 
+    /** Unpack an ARGB colour into the shader-colour buffer, RGB premultiplied by alpha (the glint RTs
+     *  drive alpha through the transparency state, so slot 3 stays 1.0). */
+    private static void packColor(float[] buf, int color) {
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+        buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+        buf[2] = ( color        & 0xFF) / 255.0f * a;
+        buf[3] = 1.0f;
+    }
+
     /**
      * Wrapping {@code MultiBufferSource} installed for one {@code renderArmor} call. On the first buffer
      * request that carries an armor texture it returns a {@link VertexMultiConsumer} of the real armor buffer
@@ -230,21 +240,12 @@ public final class EpicFightArmorGlint {
                         ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        packColor(buf, colors[i]);
                         RenderType rt = CustomGlintRenderer.forArmorGlintTriangles(glint, layerIdx, buf, i);
                         if (rt != null) list.add(delegate.getBuffer(rt));
                     }
                 } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    packColor(buf, CustomGlintRenderer.computeAnimatedColor(glint, layerIdx));
                     RenderType rt = CustomGlintRenderer.forArmorGlintTriangles(glint, layerIdx, buf, 0);
                     if (rt != null) list.add(delegate.getBuffer(rt));
                 }

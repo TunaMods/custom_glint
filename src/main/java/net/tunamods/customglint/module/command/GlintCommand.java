@@ -44,8 +44,14 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 import net.tunamods.customglint.module.menu.ModAttachments;
 import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 
+/**
+ * The op-gated {@code /glint} command tree: apply, remove and glow on the held item, entity glints on a
+ * target selector, plus the cheat/extract/export utilities. Every branch is permission level 2, so it is a
+ * creative and server-admin tool; players get the same operations through the wand and the Glint Table.
+ */
 public class GlintCommand {
 
+    /** Palette the {@code colors} argument accepts, in wand-swatch order. Names match the vanilla dyes. */
     private static final Map<String, Integer> COLORS = new LinkedHashMap<>();
 
     static {
@@ -272,56 +278,6 @@ public class GlintCommand {
         return count;
     }
 
-    /** The command sender as a player, or null (after sending "Must be a player") when the source isn't one. */
-    private static ServerPlayer requirePlayer(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) source.sendFailure(Component.literal("Must be a player"));
-        return player;
-    }
-
-    /** The player's main-hand item, or null (after sending "Hold an item...") when the hand is empty. */
-    private static ItemStack requireHeldItem(CommandSourceStack source, ServerPlayer player) {
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return null;
-        }
-        return stack;
-    }
-
-    /** Resolves a design name to its ResourceLocation, or reports the valid names and returns null. */
-    private static ResourceLocation resolveDesign(CommandSourceStack source, String designName) {
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return null;
-        }
-        // designFromName handles the vanilla/chromatic sentinels and namespace:name forms, and uses tryParse
-        // (not the throwing factory) so a malformed data-pack design name can't crash the tick.
-        return CustomGlint.designFromName(key);
-    }
-
-    /** Parses a comma-separated color-name list to ARGB (capped at MAX_COLORS_PER_LAYER, since the renderer
-     *  fans out one draw per color), or reports the offending name and returns null. */
-    private static int[] parseColors(CommandSourceStack source, String colorsArg) {
-        String[] parts = colorsArg.split(",");
-        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
-            parts = Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return null;
-            }
-            colors[i] = c;
-        }
-        return colors;
-    }
-
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
                               float speed, boolean smooth, float scale, boolean simultaneous) {
         ServerPlayer player = requirePlayer(source);
@@ -434,6 +390,8 @@ public class GlintCommand {
             // Copy the full multi-layer glint tag verbatim from the held item.
             CustomGlint.writeItemTag(trim, CustomGlint.itemGlintTag(held));
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
+            // Same index scheme as GlintTrimItem: glowing variants sit in a +1000 band, and +1 keeps
+            // index 0 (the default model) free.
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
             if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData((glowing ? 1000 : 0) + idx + 1));
@@ -516,5 +474,58 @@ public class GlintCommand {
             source.sendFailure(Component.literal("Failed to export: " + e.getMessage()));
             return 0;
         }
+    }
+
+    // Shared argument/source checks. Each reports its own failure message and returns null, so callers
+    // only need a null check before carrying on.
+
+    /** The command sender as a player, or null (after sending "Must be a player") when the source isn't one. */
+    private static ServerPlayer requirePlayer(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) source.sendFailure(Component.literal("Must be a player"));
+        return player;
+    }
+
+    /** The player's main-hand item, or null (after sending "Hold an item...") when the hand is empty. */
+    private static ItemStack requireHeldItem(CommandSourceStack source, ServerPlayer player) {
+        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (stack.isEmpty()) {
+            source.sendFailure(Component.literal("Hold an item in your main hand"));
+            return null;
+        }
+        return stack;
+    }
+
+    /** Resolves a design name to its ResourceLocation, or reports the valid names and returns null. */
+    private static ResourceLocation resolveDesign(CommandSourceStack source, String designName) {
+        String key = designName.toLowerCase();
+        if (!GlintTrimItem.PATTERNS.contains(key)) {
+            source.sendFailure(Component.literal(
+                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
+            return null;
+        }
+        // designFromName handles the vanilla/chromatic sentinels and namespace:name forms, and uses tryParse
+        // (not the throwing factory) so a malformed data-pack design name can't crash the tick.
+        return CustomGlint.designFromName(key);
+    }
+
+    /** Parses a comma-separated color-name list to ARGB (capped at MAX_COLORS_PER_LAYER, since the renderer
+     *  fans out one draw per color), or reports the offending name and returns null. */
+    private static int[] parseColors(CommandSourceStack source, String colorsArg) {
+        String[] parts = colorsArg.split(",");
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
+        int[] colors = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            String name = parts[i].trim().toLowerCase();
+            Integer c = COLORS.get(name);
+            if (c == null) {
+                source.sendFailure(Component.literal(
+                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
+                return null;
+            }
+            colors[i] = c;
+        }
+        return colors;
     }
 }

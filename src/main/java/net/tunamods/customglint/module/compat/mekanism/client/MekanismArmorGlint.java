@@ -22,11 +22,11 @@ import java.util.List;
  * vanilla armor layer, so our core {@code HumanoidArmorLayerMixin} never sees them and the plain Hazmat
  * suit (a vanilla {@code ArmorItem}) is the only piece that glints on its own.
  *
- * <p>Every one of those models ultimately obtains its draw buffer from
+ * <p>Every one of those models gets its draw buffer from
  * {@code ItemRenderer.getFoilBufferDirect}: the MekaSuit's baked quads call it directly, the Java-model
- * pieces via {@code MekanismJavaModel.getVertexConsumer} (which always routes through it). {@link
- * net.tunamods.customglint.module.compat.mekanism.mixin.MekanismArmorGlintMixin} arms this glue for the
- * span of one {@code ICustomArmor.render} (so only Mekanism special armor is touched, never vanilla
+ * pieces via {@code MekanismJavaModel.getVertexConsumer} (which always routes through it).
+ * {@code MekanismArmorGlintMixin} arms this glue for the span of one {@code ICustomArmor.render} (so only
+ * Mekanism special armor is touched, never vanilla
  * armor), and {@code FoilBufferMixin} calls {@link #wrap} on that method's return value while armed,
  * fanning the same geometry across our glint render types and, when glowing, a record-only silhouette.
  * {@link #flush} queues the recorded silhouettes as one glow ring keyed on the wearer + {@code CAT_ARMOR}
@@ -89,23 +89,14 @@ public final class MekanismArmorGlint {
                         ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt2 = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, i);
-                        if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
+                        packColor(buf, colors[i]);
+                        RenderType glintRt = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, i);
+                        if (glintRt != null) list.add(bufferSource.getBuffer(glintRt));
                     }
                 } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt2 = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, 0);
-                    if (rt2 != null) list.add(bufferSource.getBuffer(rt2));
+                    packColor(buf, CustomGlintRenderer.computeAnimatedColor(glint, layerIdx));
+                    RenderType glintRt = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, buf, 0);
+                    if (glintRt != null) list.add(bufferSource.getBuffer(glintRt));
                 }
             }
         }
@@ -119,6 +110,16 @@ public final class MekanismArmorGlint {
 
         if (list.size() == 1) return base;
         return VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+    }
+
+    /** Unpack an ARGB colour into the shader-colour buffer, RGB premultiplied by alpha (the glint RTs
+     *  drive alpha through the transparency state, so slot 3 stays 1.0). */
+    private static void packColor(float[] buf, int color) {
+        float a = ((color >> 24) & 0xFF) / 255.0f;
+        buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
+        buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
+        buf[2] = ( color        & 0xFF) / 255.0f * a;
+        buf[3] = 1.0f;
     }
 
     /** Queue every recorded silhouette from this piece as one glow ring (wearer + CAT_ARMOR, so it folds

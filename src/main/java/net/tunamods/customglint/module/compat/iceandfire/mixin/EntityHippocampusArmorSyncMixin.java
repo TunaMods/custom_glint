@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * See {@link EntityHippogryphArmorSyncMixin}. Hippocampus inventory field is `inventory`, and
+ * See {@link EntityHippogryphArmorSyncMixin}. Hippocampus inventory field is {@code inventory}, and
  * IaF reacts to inventory changes by overriding ContainerListener.containerChanged directly
  * rather than exposing a custom refreshInventory.
  */
