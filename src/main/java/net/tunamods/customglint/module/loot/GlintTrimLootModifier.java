@@ -17,93 +17,70 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
+/**
+ * Adds the mod's own drops to vanilla chest loot: Glint and Glow Trims picked by biome theme, plus the
+ * bulk-consumed tears and rainbow dye. Its instance JSON lives in {@code data/customglint/loot_modifiers/}
+ * and is switched on by {@code data/neoforge/loot_modifiers/global_loot_modifiers.json}.
+ */
 public class GlintTrimLootModifier extends LootModifier {
 
     public static final Supplier<MapCodec<GlintTrimLootModifier>> CODEC =
         Suppliers.memoize(() -> RecordCodecBuilder.mapCodec(inst ->
             codecStart(inst).apply(inst, GlintTrimLootModifier::new)));
 
+    /** Roll weight for a design no theme claims, including any design a data pack adds. */
+    private static final float UNTHEMED_WEIGHT = 1.0f;
+
+    /** Themed designs roll three times as often in their own biome. */
+    private static final float THEME_BONUS = 3.0f;
+
+    /**
+     * One biome theme: the biome-path fragments it covers, and the designs it owns with their base roll
+     * weights. A design belongs to at most one theme, and its weight is multiplied by {@link #THEME_BONUS}
+     * when the chest sits in a matching biome. Mushroom biomes deliberately share the plains theme.
+     */
+    private record Theme(List<String> biomes, Map<String, Float> weights) {
+        boolean coversBiome(String biome) {
+            for (String fragment : biomes)
+                if (biome.contains(fragment)) return true;
+            return false;
+        }
+    }
+
+    private static final List<Theme> THEMES = List.of(
+        new Theme(List.of("nether"), Map.of(
+            "fire", 10.0f, "ember", 10.0f, "plasma", 10.0f, "oil", 8.0f, "smoke", 8.0f)),
+        new Theme(List.of("end"), Map.of(
+            "glitch", 10.0f, "matrix", 10.0f, "static", 10.0f, "vanilla", 8.0f, "arcs", 8.0f, "pulse", 8.0f)),
+        new Theme(List.of("ocean"), Map.of(
+            "tide", 10.0f, "wave", 10.0f, "ripple", 10.0f, "coral", 9.0f, "scales", 9.0f, "silk", 8.0f,
+            "net", 8.0f)),
+        new Theme(List.of("desert", "badlands"), Map.of(
+            "dunes", 10.0f, "sand", 10.0f, "solid", 8.0f, "swirl", 8.0f)),
+        new Theme(List.of("forest", "jungle", "birch", "bamboo"), Map.of(
+            "petal", 10.0f, "feather", 10.0f, "blobs", 9.0f, "cascade", 8.0f, "debris", 8.0f, "mosaic", 8.0f)),
+        new Theme(List.of("mountain", "peak", "hill", "stony"), Map.of(
+            "crystal", 10.0f, "diamonds", 10.0f, "vein", 9.0f, "cracks", 8.0f, "plate", 8.0f, "mesh", 8.0f,
+            "grid", 8.0f, "tile", 8.0f)),
+        new Theme(List.of("snow", "frozen", "ice"), Map.of(
+            "frost", 10.0f, "aurora", 10.0f, "shimmer", 8.0f)),
+        new Theme(List.of("swamp", "mangrove"), Map.of(
+            "weave", 10.0f)),
+        new Theme(List.of("plains", "savanna", "meadow", "mushroom"), Map.of(
+            "stars", 10.0f, "lightning", 10.0f, "halo", 9.0f, "prism", 8.0f, "glow", 8.0f, "sheen", 8.0f,
+            "sparkle", 8.0f))
+    );
+
     protected GlintTrimLootModifier(LootItemCondition[] conditions) {
         super(conditions);
     }
 
-    private static final Map<String, Float> PATTERN_WEIGHTS = buildWeights();
-
-    private static Map<String, Float> buildWeights() {
-        Map<String, Float> weights = new HashMap<>();
-        // Nether
-        weights.put("fire", 10.0f);
-        weights.put("ember", 10.0f);
-        weights.put("plasma", 10.0f);
-        weights.put("oil", 8.0f);
-        weights.put("smoke", 8.0f);
-        // The End
-        weights.put("glitch", 10.0f);
-        weights.put("matrix", 10.0f);
-        weights.put("static", 10.0f);
-        weights.put("vanilla", 8.0f);
-        weights.put("arcs", 8.0f);
-        weights.put("pulse", 8.0f);
-        // Ocean
-        weights.put("tide", 10.0f);
-        weights.put("wave", 10.0f);
-        weights.put("ripple", 10.0f);
-        weights.put("coral", 9.0f);
-        weights.put("scales", 9.0f);
-        weights.put("silk", 8.0f);
-        weights.put("net", 8.0f);
-        // Desert
-        weights.put("dunes", 10.0f);
-        weights.put("sand", 10.0f);
-        weights.put("solid", 8.0f);
-        weights.put("swirl", 8.0f);
-        // Forest
-        weights.put("petal", 10.0f);
-        weights.put("feather", 10.0f);
-        weights.put("blobs", 9.0f);
-        weights.put("cascade", 8.0f);
-        weights.put("debris", 8.0f);
-        weights.put("mosaic", 8.0f);
-        // Mountains
-        weights.put("crystal", 10.0f);
-        weights.put("diamonds", 10.0f);
-        weights.put("vein", 9.0f);
-        weights.put("cracks", 8.0f);
-        weights.put("plate", 8.0f);
-        weights.put("mesh", 8.0f);
-        weights.put("grid", 8.0f);
-        weights.put("tile", 8.0f);
-        // Snow
-        weights.put("frost", 10.0f);
-        weights.put("aurora", 10.0f);
-        weights.put("shimmer", 8.0f);
-        // Swamp
-        weights.put("weave", 10.0f);
-        // Plains
-        weights.put("stars", 10.0f);
-        weights.put("lightning", 10.0f);
-        weights.put("halo", 9.0f);
-        weights.put("prism", 8.0f);
-        weights.put("glow", 8.0f);
-        weights.put("sheen", 8.0f);
-        weights.put("sparkle", 8.0f);
-        // Mushroom
-        // (inherits from plains)
-        // Universal fallback
-        weights.put("chevron", 1.0f);
-        weights.put("checker", 1.0f);
-        weights.put("crosshatch", 1.0f);
-        weights.put("hexagon", 1.0f);
-        weights.put("stripes", 1.0f);
-        weights.put("zigzag", 1.0f);
-        weights.put("slash", 1.0f);
-        return weights;
-    }
-
-    private String selectPattern(LootContext context) {
+    /** Weighted design roll for one dropped trim, biased toward the chest's biome theme. */
+    private static String selectPattern(LootContext context) {
         // ORIGIN is absent on some data-pack / modded chest tables, so fall back to a neutral biome.
         var origin = context.getParamOrNull(LootContextParams.ORIGIN);
         String biomeName = "plains";
@@ -126,66 +103,15 @@ public class GlintTrimLootModifier extends LootModifier {
         return GlintTrimItem.PATTERNS.get(context.getRandom().nextInt(GlintTrimItem.PATTERNS.size()));
     }
 
-    /** Roll weight for one design in the given biome: its base {@link #PATTERN_WEIGHTS} entry, tripled when the
-     *  design's theme matches the chest's biome category. Only the first matching category applies. The 3x
-     *  bonus makes themed designs (fire in the Nether, frost in snow) the common drop there. */
+    /** Roll weight for one design in the given biome: its theme's base weight, tripled in that theme's own
+     *  biome so fire drops in the Nether and frost in the snow. Designs no theme claims sit at the floor. */
     private static float weightOf(String pattern, String biomeName) {
-        float weight = PATTERN_WEIGHTS.getOrDefault(pattern, 1.0f);
-        if (isNetherBiome(biomeName) && (pattern.equals("fire") || pattern.equals("ember") || pattern.equals("plasma") || pattern.equals("oil") || pattern.equals("smoke")))
-            weight *= 3.0f;
-        else if (isEndBiome(biomeName) && (pattern.equals("glitch") || pattern.equals("matrix") || pattern.equals("static") || pattern.equals("vanilla") || pattern.equals("arcs") || pattern.equals("pulse")))
-            weight *= 3.0f;
-        else if (isOceanBiome(biomeName) && (pattern.equals("tide") || pattern.equals("wave") || pattern.equals("ripple") || pattern.equals("coral") || pattern.equals("scales") || pattern.equals("silk") || pattern.equals("net")))
-            weight *= 3.0f;
-        else if (isDesertBiome(biomeName) && (pattern.equals("dunes") || pattern.equals("sand") || pattern.equals("solid") || pattern.equals("swirl")))
-            weight *= 3.0f;
-        else if (isForestBiome(biomeName) && (pattern.equals("petal") || pattern.equals("feather") || pattern.equals("blobs") || pattern.equals("cascade") || pattern.equals("debris") || pattern.equals("mosaic")))
-            weight *= 3.0f;
-        else if (isMountainBiome(biomeName) && (pattern.equals("crystal") || pattern.equals("diamonds") || pattern.equals("vein") || pattern.equals("cracks") || pattern.equals("plate") || pattern.equals("mesh") || pattern.equals("grid") || pattern.equals("tile")))
-            weight *= 3.0f;
-        else if (isSnowBiome(biomeName) && (pattern.equals("frost") || pattern.equals("aurora") || pattern.equals("shimmer")))
-            weight *= 3.0f;
-        else if (isSwampBiome(biomeName) && pattern.equals("weave"))
-            weight *= 3.0f;
-        else if (isPlainsOrMushroomBiome(biomeName) && (pattern.equals("stars") || pattern.equals("lightning") || pattern.equals("halo") || pattern.equals("prism") || pattern.equals("glow") || pattern.equals("sheen") || pattern.equals("sparkle")))
-            weight *= 3.0f;
-        return weight;
-    }
-
-    private static boolean isNetherBiome(String biome) {
-        return biome.contains("nether");
-    }
-
-    private static boolean isEndBiome(String biome) {
-        return biome.contains("end");
-    }
-
-    private static boolean isOceanBiome(String biome) {
-        return biome.contains("ocean") || biome.contains("deep_ocean") || biome.contains("warm_ocean") || biome.contains("frozen_ocean") || biome.contains("cold_ocean") || biome.contains("lukewarm_ocean");
-    }
-
-    private static boolean isDesertBiome(String biome) {
-        return biome.contains("desert") || biome.contains("badlands");
-    }
-
-    private static boolean isForestBiome(String biome) {
-        return biome.contains("forest") || biome.contains("jungle") || biome.contains("dark_forest") || biome.contains("birch") || biome.contains("bamboo");
-    }
-
-    private static boolean isMountainBiome(String biome) {
-        return biome.contains("mountain") || biome.contains("peak") || biome.contains("hill") || biome.contains("stony");
-    }
-
-    private static boolean isSnowBiome(String biome) {
-        return biome.contains("snow") || biome.contains("frozen") || biome.contains("ice");
-    }
-
-    private static boolean isSwampBiome(String biome) {
-        return biome.contains("swamp") || biome.contains("mangrove");
-    }
-
-    private static boolean isPlainsOrMushroomBiome(String biome) {
-        return biome.contains("plains") || biome.contains("savanna") || biome.contains("meadow") || biome.contains("mushroom");
+        for (Theme theme : THEMES) {
+            Float base = theme.weights().get(pattern);
+            if (base == null) continue;
+            return theme.coversBiome(biomeName) ? base * THEME_BONUS : base;
+        }
+        return UNTHEMED_WEIGHT;
     }
 
     @Override

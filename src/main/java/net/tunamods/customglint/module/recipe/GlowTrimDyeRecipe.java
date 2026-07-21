@@ -73,9 +73,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(result, 0xFFFF0000);
-        return result;
+        return TrimRecipes.exampleGlowTrim(0xFFFF0000);
     }
 
     @Override
@@ -84,13 +82,8 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(new ItemStack(ModItems.GLOW_TRIM.get())));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
+        list.add(Ingredient.of(TrimRecipes.exampleGlowTrim()));
+        list.add(TrimRecipes.anyDye());
         return list;
     }
 

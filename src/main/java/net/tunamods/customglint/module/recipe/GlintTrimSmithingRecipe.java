@@ -20,6 +20,10 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/**
+ * Smithing: Glint Trim (template) + base item + Glowstone Dust → the base item wearing the trim's glint.
+ * The glow-only counterpart is {@link GlowTrimSmithingRecipe}.
+ */
 public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();
 
@@ -84,10 +88,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000)));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
         list.add(Ingredient.of(Items.GLOWSTONE_DUST));
         return list;
@@ -100,7 +101,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        return CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.res("textures/glint/wave.png"), new int[]{0xFFFF0000});
+        return CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{0xFFFF0000});
     }
 
     @Override

@@ -75,9 +75,7 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(TrimRecipes.exampleGlowTrim(0xFFFF0000)));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
         list.add(Ingredient.of(Items.GLOWSTONE_DUST));
         return list;

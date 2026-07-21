@@ -16,6 +16,8 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** A colored Glint Trim ringed by Diamonds, with Glowstone Dust below it, copies itself: 3x3 grid in, two
+ *  identical trims out. {@link GlintTrimBlankDuplicateRecipe} is the same craft for an uncolored trim. */
 public class GlintTrimDuplicateRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimDuplicateRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimDuplicateRecipe::new);
@@ -57,9 +59,8 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get(), 2);
-        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
+        ItemStack result = TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000);
+        result.setCount(2);
         return result;
     }
 
@@ -69,9 +70,7 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
+        ItemStack trimExample = TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000);
         for (int i = 0; i < 9; i++) {
             if (i == 4) list.set(i, Ingredient.of(trimExample));
             else if (i == 7) list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));

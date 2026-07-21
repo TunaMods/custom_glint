@@ -8,6 +8,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import net.tunamods.customglint.CustomGlintMod;
 
+/** Loot-modifier serializer registrations. The registered names are the {@code type} the modifier JSON under
+ *  {@code data/customglint/loot_modifiers/} resolves by, so renaming one breaks its JSON. */
 public final class ModLootModifiers {
     private ModLootModifiers() {}
 

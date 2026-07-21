@@ -72,7 +72,6 @@ public class CustomGlintMod {
     private final List<String> dataPackDesigns = new ArrayList<>();
 
     public CustomGlintMod(IEventBus modEventBus) {
-        modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::registerCapabilities);
 
         ModItems.register(modEventBus);
@@ -161,17 +160,15 @@ public class CustomGlintMod {
             return;
         }
         if (!(event.getCrafting().getItem() instanceof GlintTrimItem)) return;
-        if (GlintTrimItem.getColors(event.getCrafting()).length >= 8) {
+        if (GlintTrimItem.getColors(event.getCrafting()).length >= CustomGlint.MAX_COLORS_PER_LAYER) {
             ModTriggers.EIGHT_COLOR_TRIM.get().trigger(sp);
         }
         CustomGlint.Data data = CustomGlint.read(event.getCrafting());
         int layers = data != null ? data.layers().length : 0;
         if (layers >= 2) ModTriggers.LAYERED_TRIM.get().trigger(sp);
+        // 8 layers is the layer-tear cap, so this fires on a maxed-out stack (see GlintLayerTearRecipe).
         if (layers >= 8) ModTriggers.EIGHT_LAYER_TRIM.get().trigger(sp);
         if (EightByEightTrimTrigger.matches(data)) ModTriggers.EIGHT_BY_EIGHT_TRIM.get().trigger(sp);
-    }
-
-    private void commonSetup(final FMLCommonSetupEvent event) {
     }
 
     private void onAddReloadListeners(AddReloadListenerEvent event) {

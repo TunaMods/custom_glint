@@ -31,40 +31,21 @@ public class GlintTrimAlphaRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
-        ItemStack trim = ItemStack.EMPTY;
-        int count = 0;
-        for (int i = 0; i < pInv.size(); i++) {
-            ItemStack s = pInv.getItem(i);
-            if (s.isEmpty()) continue;
-            if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null) {
-                if (!trim.isEmpty()) return false;
-                trim = s;
-            } else if (s.is(Items.GLASS)) {
-                count++;
-            } else {
-                return false;
-            }
-        }
-        return !trim.isEmpty() && GlintTrimItem.getColors(trim).length > 0 && count >= 1 && count <= 8;
+        TrimRecipes.TrimAndCount found = TrimRecipes.matchTrimPlusModifier(pInv, Items.GLASS);
+        return found != null && GlintTrimItem.getColors(found.trim()).length > 0;
     }
 
     @Override
     public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
-        ItemStack trim = ItemStack.EMPTY;
-        int count = 0;
-        for (int i = 0; i < pInv.size(); i++) {
-            ItemStack s = pInv.getItem(i);
-            if (s.isEmpty()) continue;
-            if (s.getItem() instanceof GlintTrimItem) trim = s;
-            else if (s.is(Items.GLASS)) count++;
-        }
-        if (trim.isEmpty()) return ItemStack.EMPTY;
-        int[] colors = GlintTrimItem.getColors(trim);
+        TrimRecipes.TrimAndCount found = TrimRecipes.scanTrimPlusModifier(pInv, Items.GLASS);
+        if (found.trim().isEmpty()) return ItemStack.EMPTY;
+        int[] colors = GlintTrimItem.getColors(found.trim());
         if (colors.length == 0) return ItemStack.EMPTY;
-        int alpha = Math.round(count * 255f / 8f);
+        // Full glass = opaque, so the count scales the 0..255 alpha channel.
+        int alpha = Math.round(found.count() * 255f / TrimRecipes.MAX_MODIFIERS);
         int[] out = new int[colors.length];
         for (int i = 0; i < colors.length; i++) out[i] = (alpha << 24) | (colors[i] & 0xFFFFFF);
-        ItemStack result = trim.copy();
+        ItemStack result = found.trim().copy();
         result.setCount(1);
         GlintTrimItem.setColors(result, out);
         return result;
@@ -72,10 +53,7 @@ public class GlintTrimAlphaRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        return result;
+        return TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000);
     }
 
     @Override
@@ -84,10 +62,7 @@ public class GlintTrimAlphaRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000)));
         list.add(Ingredient.of(Items.GLASS));
         return list;
     }

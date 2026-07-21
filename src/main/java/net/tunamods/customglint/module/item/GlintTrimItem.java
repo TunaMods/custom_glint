@@ -22,6 +22,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.CustomModelData;
 import net.tunamods.customglint.common.CustomGlint;
 
+/**
+ * Glint Trim: carries a design plus its colors and timing, and applies them to an item at a smithing table.
+ * The editable state is the {@link ModComponents#TRIM} component; the glint written alongside it is only the
+ * preview the trim itself renders with. Every mutator here re-emits that preview, except on a multi-layer
+ * trim, whose glint data is authoritative and must not be flattened back to one layer.
+ */
 public class GlintTrimItem extends Item {
     // ARGB per DyeColor ordinal: WHITE ORANGE MAGENTA LIGHT_BLUE YELLOW LIME PINK
     //                             GRAY  LIGHT_GRAY CYAN PURPLE BLUE BROWN GREEN RED BLACK
@@ -30,8 +36,6 @@ public class GlintTrimItem extends Item {
         0xFF808080, 0xFFAAAAAA, 0xFF00FFFF, 0xFF8800CC, 0xFF0000FF, 0xFF885522, 0xFF008800,
         0xFFFF0000, 0xFF000000
     };
-
-    /** Cap on a trim's color list; the smithing/dye/merge recipes and the Glint Table share this limit. */
 
     // CopyOnWriteArrayList: the design-sync handler (client thread) mutates this via removeAll/add
     // while loot/creative-tab/GUI code iterates it on the server/render thread. In singleplayer a
@@ -309,19 +313,7 @@ public class GlintTrimItem extends Item {
                     String dname = layer.design().equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(layer.design()));
                     pTooltipComponents.add(Component.literal("Layer " + (i + 1)).withStyle(ChatFormatting.WHITE));
                     pTooltipComponents.add(Component.literal("  " + dname).withStyle(ChatFormatting.GRAY));
-                    if (layer.colors().length > 0) {
-                        MutableComponent lc = Component.literal("  Colors: ").withStyle(ChatFormatting.GRAY);
-                        for (int k = 0; k < layer.colors().length; k++) {
-                            int rgb = layer.colors()[k] & 0xFFFFFF;
-                            String cname = "#" + String.format("%06X", rgb);
-                            for (int j = 0; j < DYE_COLORS.length; j++) {
-                                if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) { cname = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
-                            }
-                            if (k > 0) lc = lc.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                            lc = lc.append(Component.literal(cname).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-                        }
-                        pTooltipComponents.add(lc);
-                    }
+                    if (layer.colors().length > 0) pTooltipComponents.add(colorsLine("  Colors: ", layer.colors()));
                 }
             }
         } else {
@@ -333,18 +325,27 @@ public class GlintTrimItem extends Item {
             int scroll = getScrollDir(pStack);
             if (scroll != CustomGlint.SCROLL_E)
                 pTooltipComponents.add(Component.literal("Scroll: ").append(scrollLabel(scroll)).withStyle(ChatFormatting.AQUA));
-            MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
-            for (int i = 0; i < colors.length; i++) {
-                int rgb = colors[i] & 0xFFFFFF;
-                String name = "#" + String.format("%06X", rgb);
-                for (int j = 0; j < DYE_COLORS.length; j++) {
-                    if ((DYE_COLORS[j] & 0xFFFFFF) == rgb) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
-                }
-                if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-            }
-            pTooltipComponents.add(line);
+            pTooltipComponents.add(colorsLine("Colors: ", colors));
         }
+    }
+
+    /** Display name for one color: the dye name when it matches a {@link #DYE_COLORS} entry, else its hex. */
+    public static String colorName(int rgb) {
+        for (int i = 0; i < DYE_COLORS.length; i++) {
+            if ((DYE_COLORS[i] & 0xFFFFFF) == rgb) return capitalize(DyeColor.values()[i].getName().replace("_", " "));
+        }
+        return "#" + String.format("%06X", rgb);
+    }
+
+    /** Comma-joined tooltip line of color names, each drawn in its own color. Shared with {@link GlowTrimItem}. */
+    public static MutableComponent colorsLine(String prefix, int[] colors) {
+        MutableComponent line = Component.literal(prefix).withStyle(ChatFormatting.GRAY);
+        for (int i = 0; i < colors.length; i++) {
+            int rgb = colors[i] & 0xFFFFFF;
+            if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
+            line = line.append(Component.literal(colorName(rgb)).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
+        }
+        return line;
     }
 
     public static String extractPatternName(ResourceLocation pattern) {

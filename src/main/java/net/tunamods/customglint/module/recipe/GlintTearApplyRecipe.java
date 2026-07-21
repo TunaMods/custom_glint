@@ -15,6 +15,8 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** Glint Tear + any glinted item → the same item with every layer switched to the tear's color mode
+ *  (simultaneous or sequential). Nothing else about the glint changes. */
 public class GlintTearApplyRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTearApplyRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTearApplyRecipe::new);
@@ -74,11 +76,8 @@ public class GlintTearApplyRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        GlintTrimItem.addColor(result, 0xFF0000FF);
-        CustomGlint.write(result, CustomGlint.res("textures/glint/wave.png"), new int[]{0xFFFF0000, 0xFF0000FF}, 1.0f, true, 1.0f, true);
+        ItemStack result = TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000, 0xFF0000FF);
+        CustomGlint.write(result, CustomGlint.WAVE, new int[]{0xFFFF0000, 0xFF0000FF}, 1.0f, true, 1.0f, true);
         return result;
     }
 
@@ -92,20 +91,12 @@ public class GlintTearApplyRecipe extends CustomRecipe {
             ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance(),
             ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance()
         ));
-        ItemStack trimRed = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimRed, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimRed, 0xFFFF0000);
-        ItemStack trimBlue = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimBlue, CustomGlint.res("textures/glint/sparkle.png"));
-        GlintTrimItem.addColor(trimBlue, 0xFF0000FF);
-        ItemStack trimRedBlue = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimRedBlue, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimRedBlue, 0xFFFF0000);
-        GlintTrimItem.addColor(trimRedBlue, 0xFF0000FF);
-        ItemStack trimGold = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimGold, CustomGlint.res("textures/glint/stars.png"));
-        GlintTrimItem.addColor(trimGold, 0xFFFFAA00);
-        list.add(Ingredient.of(trimRed, trimBlue, trimRedBlue, trimGold));
+        list.add(Ingredient.of(
+            TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000),
+            TrimRecipes.exampleTrim(CustomGlint.SPARKLE, 0xFF0000FF),
+            TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000, 0xFF0000FF),
+            TrimRecipes.exampleTrim(CustomGlint.STARS, 0xFFFFAA00)
+        ));
         return list;
     }
 

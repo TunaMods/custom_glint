@@ -17,6 +17,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** Glint Trim + Dye → the same trim with one more color appended (cap 8). Mirrored by GlowTrimDyeRecipe. */
 public class GlintTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimDyeRecipe::new);
@@ -73,10 +74,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        return result;
+        return TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000);
     }
 
     @Override
@@ -85,16 +83,8 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
+        list.add(Ingredient.of(TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000)));
+        list.add(TrimRecipes.anyDye());
         return list;
     }
 

@@ -25,8 +25,6 @@ public class GlowTrimItem extends Item {
     /** Sentinel design-name for a Glow Trim in the Glint Table's per-player stored-design library. */
     public static final String STORAGE_KEY = "glow_trim";
 
-    /** Cap on the glow color list; mirrors {@link GlintTrimItem}'s limit for the dye/merge recipes. */
-
     public GlowTrimItem(Properties pProperties) {
         super(pProperties);
     }
@@ -93,21 +91,6 @@ public class GlowTrimItem extends Item {
             return;
         }
         pTooltipComponents.add(Component.literal("Applies a colored outline glow. Apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
-        MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
-        for (int i = 0; i < colors.length; i++) {
-            int rgb = colors[i] & 0xFFFFFF;
-            String name = "#" + String.format("%06X", rgb);
-            for (int j = 0; j < GlintTrimItem.DYE_COLORS.length; j++) {
-                if ((GlintTrimItem.DYE_COLORS[j] & 0xFFFFFF) == rgb) { name = capitalize(DyeColor.values()[j].getName().replace("_", " ")); break; }
-            }
-            if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-            line = line.append(Component.literal(name).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-        }
-        pTooltipComponents.add(line);
-    }
-
-    private static String capitalize(String s) {
-        if (s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        pTooltipComponents.add(GlintTrimItem.colorsLine("Colors: ", colors));
     }
 }

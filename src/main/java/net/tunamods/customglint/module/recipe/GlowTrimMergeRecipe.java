@@ -50,10 +50,7 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(result, 0xFFFF0000);
-        GlowTrimItem.addColor(result, 0xFF00AAFF);
-        return result;
+        return TrimRecipes.exampleGlowTrim(0xFFFF0000, 0xFF00AAFF);
     }
 
     @Override
@@ -62,12 +59,8 @@ public class GlowTrimMergeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trim1 = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(trim2, 0xFF00AAFF);
-        list.add(Ingredient.of(trim1));
-        list.add(Ingredient.of(trim2));
+        list.add(Ingredient.of(TrimRecipes.exampleGlowTrim(0xFFFF0000)));
+        list.add(Ingredient.of(TrimRecipes.exampleGlowTrim(0xFF00AAFF)));
         return list;
     }
 
