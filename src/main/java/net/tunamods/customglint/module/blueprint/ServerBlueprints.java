@@ -1,8 +1,10 @@
 package net.tunamods.customglint.module.blueprint;
 
+import net.minecraft.Util;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.module.network.GlintServerBlueprintsSyncPacket;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -94,6 +96,24 @@ public final class ServerBlueprints {
     /** Push the current blueprint set to one player (works on both the integrated and dedicated server). */
     public static void syncTo(ServerPlayer sp) {
         PacketDistributor.sendToPlayer(sp, new GlintServerBlueprintsSyncPacket(readAll()));
+    }
+
+    /**
+     * As {@link #syncTo}, but reads off the server thread. {@link #readAll} opens and reads the full contents
+     * of every trim file, and the first read in a world hits a cold file cache, a server-thread stall felt on
+     * the client as a lag spike (gone on later reads once the cache is warm). Use this on paths that fire
+     * from player action, such as opening the table or the wand's Import list. The reply goes back on the
+     * server thread, and is dropped if the player left while the read was in flight.
+     */
+    public static void syncToOffThread(ServerPlayer sp) {
+        Util.ioPool().execute(() -> {
+            Map<String, String> all = readAll();
+            sp.server.execute(() -> {
+                if (!sp.hasDisconnected()) {
+                    PacketDistributor.sendToPlayer(sp, new GlintServerBlueprintsSyncPacket(all));
+                }
+            });
+        });
     }
 
     private static String sanitize(String s) {
