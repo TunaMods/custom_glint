@@ -25,6 +25,9 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
     /** Cap on each of the below/above extra-layer arrays (mirrors GlintTableMenu's own decode cap). */
     private static final int MAX_EXTRA_LAYERS = 16;
 
+    /** Shards kept, and colours kept per shard. print() caps the finished trim's colour layers at 8. */
+    private static final int MAX_SHARD_COLORS = 8;
+
     public static final Type<GlintPrintPacket> TYPE = new Type<>(CustomGlint.res("glint_print"));
 
     public static final StreamCodec<FriendlyByteBuf, GlintPrintPacket> STREAM_CODEC = StreamCodec.of(
@@ -46,8 +49,8 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
                 buf.writeVarInt(pkt.shardDyes.length);
                 for (int[] shard : pkt.shardDyes) buf.writeVarIntArray(shard);
                 buf.writeVarIntArray(pkt.donorColors);
-                GlintApplyPacket.writeLayers(buf, pkt.belowLayers);
-                GlintApplyPacket.writeLayers(buf, pkt.aboveLayers);
+                NetworkCodecs.writeLayers(buf, pkt.belowLayers);
+                NetworkCodecs.writeLayers(buf, pkt.aboveLayers);
                 buf.writeBoolean(pkt.sourceSimultaneous);
                 buf.writeBoolean(pkt.glowBase);
                 buf.writeVarInt(pkt.glowShardDyes.length);
@@ -57,36 +60,24 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
                     buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readUtf(32767), buf.readBoolean(),
                     buf.readVarInt(), buf.readFloat(), buf.readBoolean(),
                     buf.readInt(), buf.readInt(),
-                    readShardDyes(buf), readCappedVarIntArray(buf, 8),
-                    GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
-                    GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(),
+                    readShardDyes(buf), NetworkCodecs.readCappedVarIntArray(buf, MAX_SHARD_COLORS),
+                    NetworkCodecs.readLayers(buf, MAX_EXTRA_LAYERS),
+                    NetworkCodecs.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(),
                     buf.readBoolean(), readShardDyes(buf))
     );
 
     private static int[][] readShardDyes(FriendlyByteBuf buf) {
         // Consume EVERY shard the sender wrote (the encoder writes shardDyes.length) so the buffer stays
-        // aligned with the fields after it. Only the first 8 are kept (print() caps colour layers at 8);
-        // per-shard length is capped too.
+        // aligned with the fields after it.
         int sent = buf.readVarInt();
-        if (sent < 0 || sent > GlintApplyPacket.MAX_WIRE_COUNT) throw new DecoderException("Bad shard count: " + sent);
-        int keep = Math.max(0, Math.min(sent, 8));
+        if (sent < 0 || sent > NetworkCodecs.MAX_WIRE_COUNT) throw new DecoderException("Bad shard count: " + sent);
+        int keep = Math.max(0, Math.min(sent, MAX_SHARD_COLORS));
         int[][] shards = new int[keep][];
         for (int i = 0; i < sent; i++) {
-            int[] shard = readCappedVarIntArray(buf, 8);
+            int[] shard = NetworkCodecs.readCappedVarIntArray(buf, MAX_SHARD_COLORS);
             if (i < keep) shards[i] = shard;
         }
         return shards;
-    }
-
-    /** VarInt-array read that rejects a negative or oversized count as a {@link DecoderException}. Vanilla
-     *  {@link FriendlyByteBuf#readVarIntArray(int)} only checks the upper bound, so a negative size would
-     *  otherwise throw {@code NegativeArraySizeException} rather than the clean decode error used elsewhere. */
-    private static int[] readCappedVarIntArray(FriendlyByteBuf buf, int cap) {
-        int size = buf.readVarInt();
-        if (size < 0 || size > cap) throw new DecoderException("Bad array size: " + size);
-        int[] out = new int[size];
-        for (int i = 0; i < size; i++) out[i] = buf.readVarInt();
-        return out;
     }
 
     @Override

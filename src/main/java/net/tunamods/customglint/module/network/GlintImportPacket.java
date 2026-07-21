@@ -24,17 +24,17 @@ public record GlintImportPacket(CustomGlint.Layer[] layers, boolean glowing, int
             StreamCodec.of(GlintImportPacket::encode, GlintImportPacket::decode);
 
     private static void encode(FriendlyByteBuf buf, GlintImportPacket pkt) {
-        GlintApplyPacket.writeLayers(buf, pkt.layers);
+        NetworkCodecs.writeLayers(buf, pkt.layers);
         buf.writeBoolean(pkt.glowing);
-        GlintApplyPacket.writeColors(buf, pkt.glowColors);
+        NetworkCodecs.writeColors(buf, pkt.glowColors);
         buf.writeUtf(pkt.name);
         buf.writeInt(pkt.nameColor);
     }
 
     private static GlintImportPacket decode(FriendlyByteBuf buf) {
-        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
+        CustomGlint.Layer[] layers = NetworkCodecs.readLayers(buf, NetworkCodecs.MAX_TRIM_LAYERS);
         boolean glowing = buf.readBoolean();
-        int[] glowColors = GlintApplyPacket.readCappedColors(buf);
+        int[] glowColors = NetworkCodecs.readCappedColors(buf);
         String name = buf.readUtf();
         int nameColor = buf.readInt();
         return new GlintImportPacket(layers, glowing, glowColors, name, nameColor);

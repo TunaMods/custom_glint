@@ -16,9 +16,8 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 public record GlintDeletePrintedPacket(int index) implements CustomPacketPayload {
 
     public static final Type<GlintDeletePrintedPacket> TYPE = new Type<>(CustomGlint.res("glint_delete_printed"));
-    public static final StreamCodec<FriendlyByteBuf, GlintDeletePrintedPacket> STREAM_CODEC = StreamCodec.of(
-            (buf, pkt) -> buf.writeVarInt(pkt.index),
-            buf -> new GlintDeletePrintedPacket(buf.readVarInt()));
+    public static final StreamCodec<FriendlyByteBuf, GlintDeletePrintedPacket> STREAM_CODEC =
+            NetworkCodecs.varInt(GlintDeletePrintedPacket::index, GlintDeletePrintedPacket::new);
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

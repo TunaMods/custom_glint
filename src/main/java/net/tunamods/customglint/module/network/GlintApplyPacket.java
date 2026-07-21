@@ -2,7 +2,6 @@ package net.tunamods.customglint.module.network;
 
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintWandItem;
-import io.netty.handler.codec.DecoderException;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
@@ -21,10 +20,6 @@ public class GlintApplyPacket implements CustomPacketPayload {
 
     public static final Type<GlintApplyPacket> TYPE =
             new Type<>(CustomGlint.res("glint_apply"));
-
-    /** Hard upper bound on any wire-supplied count drained in a read loop (colors, layers, shards). Legit
-     *  values are ≤16; a larger count throws DecoderException at decode instead of underflowing the buffer. */
-    static final int MAX_WIRE_COUNT = 256;
 
     public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
             StreamCodec.of(GlintApplyPacket::encode, GlintApplyPacket::decode);
@@ -68,10 +63,10 @@ public class GlintApplyPacket implements CustomPacketPayload {
         buf.writeEnum(pkt.wandHand);
         buf.writeBoolean(pkt.remove);
         if (!pkt.remove) {
-            writeLayers(buf, pkt.layers);
+            NetworkCodecs.writeLayers(buf, pkt.layers);
             buf.writeUtf(pkt.itemId);
             buf.writeBoolean(pkt.glowing);
-            writeColors(buf, pkt.glowColors);
+            NetworkCodecs.writeColors(buf, pkt.glowColors);
             buf.writeUtf(pkt.trimName);
             buf.writeInt(pkt.trimNameColor);
         }
@@ -85,77 +80,14 @@ public class GlintApplyPacket implements CustomPacketPayload {
             boolean wandOnly = buf.readBoolean();
             return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0], "", 0xFFFFFFFF, wandOnly);
         }
-        CustomGlint.Layer[] layers = readLayers(buf, 8);
+        CustomGlint.Layer[] layers = NetworkCodecs.readLayers(buf, NetworkCodecs.MAX_TRIM_LAYERS);
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
-        int[] glowColors = readCappedColors(buf);
+        int[] glowColors = NetworkCodecs.readCappedColors(buf);
         String trimName = buf.readUtf();
         int trimNameColor = buf.readInt();
         boolean wandOnly = buf.readBoolean();
         return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
-    }
-
-    /** Writes a color array as a VarInt length followed by each ARGB int. Symmetric with {@link #readCappedColors}. */
-    static void writeColors(FriendlyByteBuf buf, int[] colors) {
-        buf.writeVarInt(colors.length);
-        for (int c : colors) buf.writeInt(c);
-    }
-
-    /** Reads a color array, draining every int the sender wrote (so the buffer stays aligned) while keeping
-     *  at most the first 8. */
-    static int[] readCappedColors(FriendlyByteBuf buf) {
-        int sent = buf.readVarInt();
-        if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad color count: " + sent);
-        int len = Math.min(sent, 8);
-        int[] colors = new int[len];
-        for (int j = 0; j < sent; j++) {
-            int c = buf.readInt();
-            if (j < len) colors[j] = c;
-        }
-        return colors;
-    }
-
-    /** Shared layer-array wire format. Symmetric with {@link #readLayers}. */
-    static void writeLayers(FriendlyByteBuf buf, CustomGlint.Layer[] layers) {
-        buf.writeVarInt(layers.length);
-        for (CustomGlint.Layer layer : layers) {
-            buf.writeUtf(layer.design().toString());
-            writeColors(buf, layer.colors());
-            buf.writeFloat(layer.speed());
-            buf.writeBoolean(layer.interpolate());
-            buf.writeFloat(layer.patternScale());
-            buf.writeBoolean(layer.simultaneous());
-            buf.writeVarInt(layer.scrollDir());
-            buf.writeFloat(layer.scrollOffset());
-            buf.writeInt(layer.seed());
-        }
-    }
-
-    /** Reads a layer array, draining every layer the sender wrote (so the buffer stays aligned) while keeping
-     *  at most {@code cap}. Malformed design strings fall back to the vanilla glint and a non-positive speed is
-     *  clamped to 1, keeping the trailing fields aligned. */
-    static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
-        int sent = buf.readVarInt();
-        if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad layer count: " + sent);
-        int keep = Math.max(0, Math.min(sent, cap));
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[keep];
-        for (int i = 0; i < sent; i++) {
-            String design = buf.readUtf();
-            int[] colors = readCappedColors(buf);
-            float speed = buf.readFloat();
-            if (speed <= 0) speed = 1.0f;
-            boolean interp = buf.readBoolean();
-            float scale = buf.readFloat();
-            boolean simultaneous = buf.readBoolean();
-            int scrollDir = buf.readVarInt();
-            float scrollOffset = buf.readFloat();
-            int seed = buf.readInt();
-            if (i >= keep) continue; // drained for alignment; not stored
-            Identifier designRl = Identifier.tryParse(design);
-            if (designRl == null) designRl = CustomGlint.VANILLA;
-            layers[i] = new CustomGlint.Layer(designRl, colors, speed, interp, scale, simultaneous, scrollDir, scrollOffset, seed);
-        }
-        return layers;
     }
 
     public static void handle(GlintApplyPacket pkt, IPayloadContext ctx) {

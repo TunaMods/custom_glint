@@ -25,7 +25,7 @@ public final class ServerBlueprints {
     /** Cap on stored blueprints so an un-gated save can't fill the disk with files. */
     public static final int MAX_BLUEPRINTS = 1024;
 
-    public static Path dir() {
+    private static Path dir() {
         return ModConfigPaths.TRIMS_DIR;
     }
 

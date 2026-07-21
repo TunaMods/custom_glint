@@ -16,9 +16,8 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 public record GlintWithdrawPacket(int index) implements CustomPacketPayload {
 
     public static final Type<GlintWithdrawPacket> TYPE = new Type<>(CustomGlint.res("glint_withdraw"));
-    public static final StreamCodec<FriendlyByteBuf, GlintWithdrawPacket> STREAM_CODEC = StreamCodec.of(
-            (buf, pkt) -> buf.writeVarInt(pkt.index),
-            buf -> new GlintWithdrawPacket(buf.readVarInt()));
+    public static final StreamCodec<FriendlyByteBuf, GlintWithdrawPacket> STREAM_CODEC =
+            NetworkCodecs.varInt(GlintWithdrawPacket::index, GlintWithdrawPacket::new);
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

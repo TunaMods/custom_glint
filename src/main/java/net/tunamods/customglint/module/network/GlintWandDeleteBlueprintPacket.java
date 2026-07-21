@@ -19,9 +19,8 @@ public record GlintWandDeleteBlueprintPacket(String name) implements CustomPacke
     public static final Type<GlintWandDeleteBlueprintPacket> TYPE =
             new Type<>(CustomGlint.res("glint_wand_delete_blueprint"));
 
-    public static final StreamCodec<FriendlyByteBuf, GlintWandDeleteBlueprintPacket> STREAM_CODEC = StreamCodec.of(
-            (buf, pkt) -> buf.writeUtf(pkt.name),
-            buf -> new GlintWandDeleteBlueprintPacket(buf.readUtf()));
+    public static final StreamCodec<FriendlyByteBuf, GlintWandDeleteBlueprintPacket> STREAM_CODEC =
+            NetworkCodecs.string(GlintWandDeleteBlueprintPacket::name, GlintWandDeleteBlueprintPacket::new);
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

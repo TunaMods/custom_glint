@@ -19,9 +19,8 @@ public record GlintDeleteServerBlueprintPacket(String name) implements CustomPac
     public static final Type<GlintDeleteServerBlueprintPacket> TYPE =
             new Type<>(CustomGlint.res("glint_delete_server_blueprint"));
 
-    public static final StreamCodec<FriendlyByteBuf, GlintDeleteServerBlueprintPacket> STREAM_CODEC = StreamCodec.of(
-            (buf, pkt) -> buf.writeUtf(pkt.name),
-            buf -> new GlintDeleteServerBlueprintPacket(buf.readUtf()));
+    public static final StreamCodec<FriendlyByteBuf, GlintDeleteServerBlueprintPacket> STREAM_CODEC =
+            NetworkCodecs.string(GlintDeleteServerBlueprintPacket::name, GlintDeleteServerBlueprintPacket::new);
 
     @Override
     public Type<? extends CustomPacketPayload> type() {

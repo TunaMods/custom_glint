@@ -22,6 +22,10 @@ public record GlintServerBlueprintsSyncPacket(Map<String, String> blueprints) im
     public static final Type<GlintServerBlueprintsSyncPacket> TYPE =
             new Type<>(CustomGlint.res("glint_server_blueprints"));
 
+    /** Decode ceiling on blueprint entries, four times {@code ServerBlueprints.MAX_BLUEPRINTS} so a legitimate
+     *  full pool always fits. */
+    private static final int MAX_ENTRIES = 4096;
+
     public static final StreamCodec<FriendlyByteBuf, GlintServerBlueprintsSyncPacket> STREAM_CODEC =
             StreamCodec.of(
                     (buf, pkt) -> {
@@ -34,7 +38,9 @@ public record GlintServerBlueprintsSyncPacket(Map<String, String> blueprints) im
                     buf -> {
                         int count = buf.readVarInt();
                         Map<String, String> map = new LinkedHashMap<>();
-                        for (int i = 0; i < Math.max(0, Math.min(count, 4096)); i++) {
+                        // Read at most MAX_ENTRIES pairs. This is the payload's only field, so stopping short
+                        // of an absurd count can't misalign anything after it.
+                        for (int i = 0; i < Math.max(0, Math.min(count, MAX_ENTRIES)); i++) {
                             String name = buf.readUtf();
                             String json = buf.readUtf();
                             map.put(name, json);

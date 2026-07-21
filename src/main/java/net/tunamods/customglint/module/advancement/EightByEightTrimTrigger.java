@@ -3,9 +3,9 @@ package net.tunamods.customglint.module.advancement;
 import net.tunamods.customglint.common.CustomGlint;
 
 /**
- * Fires when a player finishes a Glint Trim with all 8 layers, each carrying all 8 colors. Neither count is
- * data-expressible in an item predicate, so the trim-producing paths (Glint Table print, a color/layer-adding
- * craft) test {@link #matches(CustomGlint.Data)} and call {@code trigger} directly. See {@link SimplePlayerTrigger}.
+ * Fires when a player finishes a Glint Trim with all 8 layers, each carrying all 8 colors. The trim-producing
+ * paths test {@link #matches(CustomGlint.Data)} and call {@code trigger} directly. See
+ * {@link SimplePlayerTrigger} for why the check lives in Java.
  */
 public final class EightByEightTrimTrigger extends SimplePlayerTrigger {
 
