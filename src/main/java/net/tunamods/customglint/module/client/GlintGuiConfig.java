@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
 
+import javax.annotation.Nullable;
+
 /**
  * Tiny client-side persistence for the Glint GUI preferences (wand / table skin index and the button-click
  * sound toggle). Backed by {@code config/customglint/gui.properties} so the choice survives restarts; loaded
@@ -17,11 +19,13 @@ import java.util.Properties;
  * registration wiring; these are cosmetic, client-local toggles that never sync.
  */
 public final class GlintGuiConfig {
-    private GlintGuiConfig() {}
-
     private static final Path FILE = Paths.get("config", "customglint", "gui.properties");
-    private static Properties props;
+
+    /** Null until the first read; {@link #props()} loads it lazily. */
+    @Nullable private static Properties props;
     private static boolean dirty;
+
+    private GlintGuiConfig() {}
 
     private static Properties props() {
         if (props == null) {

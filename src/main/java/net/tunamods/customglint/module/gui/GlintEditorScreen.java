@@ -50,6 +50,21 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import javax.annotation.Nullable;
+
+/**
+ * The Glint Wand editor: a free-form, creative-side builder for a glint. Layers, colours, speed, scale,
+ * scroll and glow are edited live against an item preview, then sent to the server as a packet (give item,
+ * give trim, apply to the off-hand item) or saved to the shared blueprint pool. Nothing here validates
+ * materials or ownership; the Glint Table is the survival-gated path.
+ *
+ * <p>Three modal overlays sit on top of the panel and each owns the mouse and keyboard while open: the
+ * design picker, the Import list, and the item picker. Their state follows one shape (a search box, a
+ * filtered list, a scroll index and a scrollbar), named {@code design*} / {@code import*} / {@code item*}.
+ *
+ * <p>Client-only, standalone module code. The wand item reaches it through
+ * {@code GlintWandClientHandler}, never by import.
+ */
 @OnlyIn(Dist.CLIENT)
 public class GlintEditorScreen extends Screen {
 
@@ -57,6 +72,24 @@ public class GlintEditorScreen extends Screen {
     private static final int PANEL_W    = 300;
     private static final int PANEL_H    = 270;
     private static final int PREVIEW_SZ = 80;
+
+    /** 8 layers max, matching the Glint Table's cap and the renderer's per-item budget. */
+    private static final int MAX_LAYERS = 8;
+
+    /** The colour a freshly added layer or swatch starts on, and the editor's initial R/G/B. */
+    private static final int DEFAULT_COLOR = 0xFF8844EE;
+
+    // Shared overlay palette, so the three pickers can't drift apart.
+    private static final int PICKER_BORDER = 0xFF666666;
+    private static final int PICKER_BG     = 0xEE111111;
+    private static final int ROW_HOVER     = 0x40FFFFFF;
+    private static final int ROW_ACTIVE    = 0x6044AA44;
+
+    /** GLFW escape keycode. Closes whichever overlay owns the keyboard. */
+    private static final int KEY_ESCAPE = 256;
+
+    /** Z push for the modal overlays, above the panel and its 200-deep item preview. */
+    private static final int OVERLAY_Z = 400;
 
     // ── Active skin ───────────────────────────────────────────────────────────
     // The window frame, divider and preview recess are baked into the skin PNG; the palette colours every
@@ -132,22 +165,17 @@ public class GlintEditorScreen extends Screen {
     private String trimName = "";
     private int trimNameColor = 0xFFFFFFFF;
 
+    // The live channel values behind the hex / R / G / B / A fields. Seeded to DEFAULT_COLOR, split out.
     private int editR = 0x88, editG = 0x44, editB = 0xEE, editA = 0xFF;
 
     private Item      previewItem  = Items.NETHERITE_SWORD;
     private ItemStack previewStack = ItemStack.EMPTY;
 
-    // ── Item-picker overlay ─────────────────────────────────────────────────
-    private boolean    showPicker    = false;
-    private List<Item> allItems      = null;
-    private List<Item> filteredItems = new ArrayList<>();
-    private int        pickerScroll  = 0;
-    private static final int VISIBLE_ROWS = 8, ROW_H = 18;
-
     // ── Design-picker overlay ───────────────────────────────────────────────
     private boolean      showDesignPicker = false;
     private List<String> filteredDesigns  = new ArrayList<>();
     private int          designScroll     = 0;
+    /** Built in init() and positioned per frame; deliberately not a renderable (see init()). */
     private EditBox      designSearchBox;
     private static final int DESIGN_ROWS = 10, DESIGN_ROW_H = 13;
 
@@ -161,18 +189,28 @@ public class GlintEditorScreen extends Screen {
     private final Set<String>  localGlints = new HashSet<>();
     private List<String> availableGlints  = new ArrayList<>();
     private int          importScroll     = 0;
-    private EditBox      importSearchBox;
+    /** Created lazily on the first render of this overlay, so null until the Import list has been opened. */
+    @Nullable private EditBox importSearchBox;
     /** Server-pool size the list was last built from, so the picker rebuilds when the async sync lands. */
     private int          lastListedCount  = -1;
     private static final int IMPORT_ROWS = 10, IMPORT_ROW_H = 13;
     private static final int IMP_TRASH_W = 11; // trash hotzone at the right edge of a hovered row
+
+    // ── Item-picker overlay ─────────────────────────────────────────────────
+    private boolean    showItemPicker = false;
+    /** The whole item registry minus this mod's own items. Null until the picker is first opened. */
+    @Nullable private List<Item> allItems = null;
+    private List<Item> filteredItems     = new ArrayList<>();
+    private int        itemScroll        = 0;
+    /** Built in init() and positioned per frame; deliberately not a renderable (see init()). */
+    private EditBox    itemSearchBox;
+    private static final int ITEM_ROWS = 8, ITEM_ROW_H = 18;
 
     /** Which picker's scrollbar the mouse is currently dragging: 0 none, 1 design, 2 import, 3 item. */
     private int draggingSb = 0;
 
     // ── Widget refs ─────────────────────────────────────────────────────────
     private EditBox hexBox, rBox, gBox, bBox, aBox;
-    private EditBox searchBox;
     private EditBox trimNameBox, nameHexBox;
     private EditBox glowHexBox;
 
@@ -212,7 +250,7 @@ public class GlintEditorScreen extends Screen {
     private void addDefaultLayer() {
         layerDesigns.add("sparkle");
         List<Integer> lc = new ArrayList<>();
-        lc.add(0xFF8844EE);
+        lc.add(DEFAULT_COLOR);
         layerColors.add(lc);
         layerSpeeds.add(1.0f);
         layerInterpolates.add(true);
@@ -234,7 +272,7 @@ public class GlintEditorScreen extends Screen {
             c = glowOverrideColors.get(editingGlowColorIdx);
         } else {
             List<Integer> colors = currentColors();
-            c = editingColorIdx < colors.size() ? colors.get(editingColorIdx) : 0xFF8844EE;
+            c = editingColorIdx < colors.size() ? colors.get(editingColorIdx) : DEFAULT_COLOR;
         }
         editA = (c >> 24) & 0xFF;
         editR = (c >> 16) & 0xFF;
@@ -300,6 +338,8 @@ public class GlintEditorScreen extends Screen {
     private void onRChanged(String s) { onChannelChanged(s, c -> editR = c, true); }
     private void onGChanged(String s) { onChannelChanged(s, c -> editG = c, true); }
     private void onBChanged(String s) { onChannelChanged(s, c -> editB = c, true); }
+    // Alpha is not part of the hex field, so it skips the hex re-sync.
+    private void onAChanged(String s) { onChannelChanged(s, c -> editA = c, false); }
 
     /** Clamp a typed 0-255 channel into its field, then sync preview; RGB channels also re-sync the hex box. */
     private void onChannelChanged(String s, IntConsumer setChannel, boolean syncHex) {
@@ -313,16 +353,6 @@ public class GlintEditorScreen extends Screen {
             if (c != v) syncChannelBoxes();
         } catch (NumberFormatException ignored) {}
     }
-
-    /** Dark track + grey thumb for a picker scrollbar, thumb sized/positioned for scroll over count rows. */
-    private void drawScrollbar(GuiGraphics g, int sbX, int listY, int trackH, int minThumb, int rows, int count, int scroll) {
-        g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-        int thumbH = Math.max(minThumb, trackH * rows / count);
-        int thumbY = listY + (int)((trackH - thumbH) * (float) scroll / (count - rows));
-        g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
-    }
-
-    private void onAChanged(String s) { onChannelChanged(s, c -> editA = c, false); }
 
     // ── Preview ──────────────────────────────────────────────────────────────
 
@@ -384,12 +414,12 @@ public class GlintEditorScreen extends Screen {
 
     // Transient "saved / couldn't save" confirmation, drawn in-screen for a couple seconds (an actionbar
     // overlay would sit behind the open GUI).
-    private Component saveMsg = null;
+    @Nullable private Component saveMsg = null;
     private long saveMsgUntil = 0;
 
     private void showSaveMsg(Component c) {
         saveMsg = c;
-        saveMsgUntil = Util.getMillis() + 2500;
+        saveMsgUntil = Util.getMillis() + 2500; // ~2.5s, long enough to read without lingering over the panel
     }
 
     private void drawSaveMsg(GuiGraphics g) {
@@ -423,7 +453,7 @@ public class GlintEditorScreen extends Screen {
         filteredDesigns = lq.isEmpty() ? new ArrayList<>(GlintTrimItem.PATTERNS) : GlintTrimItem.PATTERNS.stream()
                 .filter(d -> d.toLowerCase().contains(lq))
                 .collect(Collectors.toList());
-        designScroll = Math.max(0, Math.min(designScroll, Math.max(0, filteredDesigns.size() - DESIGN_ROWS)));
+        designScroll = clampScroll(designScroll, filteredDesigns.size(), DESIGN_ROWS);
     }
 
     private static final int DPW = 190, DPH = DESIGN_ROWS * DESIGN_ROW_H + 20;
@@ -495,8 +525,8 @@ public class GlintEditorScreen extends Screen {
         // Add color [+]
         tip(bevel(px + 100 + currentColors().size() * 18 + 16, py + 50, 14, 14, () -> "+", () -> {
             List<Integer> colors = currentColors();
-            if (colors.size() < 8) {
-                colors.add(0xFF8844EE);
+            if (colors.size() < CustomGlint.MAX_COLORS_PER_LAYER) {
+                colors.add(DEFAULT_COLOR);
                 editingColorIdx = colors.size() - 1;
                 loadEditRGB();
                 rebuildWidgets();
@@ -606,11 +636,11 @@ public class GlintEditorScreen extends Screen {
             if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
                     .filter(item -> { ResourceLocation k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
-            // Keep the last scroll position when reopening the picker (matches 26.1.2): filterItems clamps
-            // pickerScroll to the current list, and the search responder still resets it to 0 on a new query.
-            filterItems(searchBox != null ? searchBox.getValue() : "");
-            showPicker = true;
-            searchBox.setFocused(true);
+            // Keep the last scroll position when reopening the picker: filterItems clamps itemScroll to the
+            // current list, and the search responder still resets it to 0 on a new query.
+            filterItems(itemSearchBox != null ? itemSearchBox.getValue() : "");
+            showItemPicker = true;
+            itemSearchBox.setFocused(true);
         }), "screen.customglint.glint_editor.tip.change_item");
 
         // Give new item with glint
@@ -699,7 +729,7 @@ public class GlintEditorScreen extends Screen {
             tip(bevel(px + 162, py + 218, 82, 14,
                     () -> Component.translatable("screen.customglint.glint_editor.auto_to_custom").getString(), () -> {
                 List<Integer> l0 = layerColors.get(0);
-                glowOverrideColors.add(l0.isEmpty() ? 0xFF8844EE : l0.get(0));
+                glowOverrideColors.add(l0.isEmpty() ? DEFAULT_COLOR : l0.get(0));
                 editingGlowColor = true;
                 editingGlowColorIdx = 0;
                 loadEditRGB();
@@ -735,7 +765,7 @@ public class GlintEditorScreen extends Screen {
 
             // Add glow color [+]
             bevel(px + 100 + glowOverrideColors.size() * 18 + 16, py + 234, 14, 14, () -> "+", () -> {
-                if (glowOverrideColors.size() < 8) {
+                if (glowOverrideColors.size() < CustomGlint.MAX_COLORS_PER_LAYER) {
                     glowOverrideColors.add(0xFFFFFFFF);
                     editingGlowColorIdx = glowOverrideColors.size() - 1;
                     editingGlowColor = true;
@@ -749,13 +779,13 @@ public class GlintEditorScreen extends Screen {
 
         // Item picker search box, managed manually. Same preserve-across-init handling as the design box.
         // Re-seed the value with the responder detached so restoring the query across an init()/rebuild does
-        // NOT fire pickerScroll = 0; only real typing resets the scroll, so reopening keeps your position.
-        String prevItemQuery = searchBox != null ? searchBox.getValue() : "";
-        searchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
-        searchBox.setMaxLength(40);
-        searchBox.setValue(prevItemQuery);
-        searchBox.setResponder(s -> { pickerScroll = 0; filterItems(s); });
-        if (showPicker) searchBox.setFocused(true);
+        // NOT fire itemScroll = 0; only real typing resets the scroll, so reopening keeps your position.
+        String prevItemQuery = itemSearchBox != null ? itemSearchBox.getValue() : "";
+        itemSearchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
+        itemSearchBox.setMaxLength(40);
+        itemSearchBox.setValue(prevItemQuery);
+        itemSearchBox.setResponder(s -> { itemScroll = 0; filterItems(s); });
+        if (showItemPicker) itemSearchBox.setFocused(true);
 
         refreshPreview();
     }
@@ -770,7 +800,7 @@ public class GlintEditorScreen extends Screen {
             return (rl != null && rl.toString().contains(lq))
                     || itemName(item).toLowerCase().contains(lq);
         }).collect(Collectors.toList());
-        pickerScroll = Math.max(0, Math.min(pickerScroll, Math.max(0, filteredItems.size() - VISIBLE_ROWS)));
+        itemScroll = clampScroll(itemScroll, filteredItems.size(), ITEM_ROWS);
     }
 
     private void syncWandState() {
@@ -787,11 +817,9 @@ public class GlintEditorScreen extends Screen {
         // Show whatever we already have (last-known local names + the already-synced server pool) at once,
         // then refresh the local names below. The server reply lands asynchronously and rebuilds again.
         rebuildImportList();
-        // Read the personal-trims directory off the render thread. The first listing after a fresh launch
-        // hits a cold OS file cache and stalls the frame if done inline: a visible spike on the first Import
-        // click, gone on later clicks once the cache is warm. The io pool absorbs that; the result is applied
-        // back on the client thread, slotting into the same "rebuild when the data shows up" flow the async
-        // server sync already uses.
+        // List the personal-trims directory on the io pool, not the render thread: the first listing after a
+        // launch hits a cold OS file cache and visibly stalls the frame. The result is applied back on the
+        // client thread, through the same "rebuild when the data shows up" path the server sync uses.
         Minecraft mc = this.minecraft;
         Util.ioPool().execute(() -> {
             List<String> found = new ArrayList<>();
@@ -875,7 +903,7 @@ public class GlintEditorScreen extends Screen {
 
             if (obj.has("layers")) {
                 JsonArray layers = obj.getAsJsonArray("layers");
-                for (int i = 0; i < Math.min(layers.size(), 8); i++) {
+                for (int i = 0; i < Math.min(layers.size(), MAX_LAYERS); i++) {
                     JsonObject layer = layers.get(i).getAsJsonObject();
                     // Skip a malformed layer rather than NPEing the whole import: design/colors are mandatory.
                     if (!layer.has("design") || !layer.has("colors")) continue;
@@ -884,7 +912,8 @@ public class GlintEditorScreen extends Screen {
 
                     List<Integer> colors = new ArrayList<>();
                     for (JsonElement e : layer.getAsJsonArray("colors")) {
-                        if (colors.size() >= 8) break; // enforce the 8-color-per-layer cap every other path uses
+                        // Same per-layer colour cap every other decode path enforces.
+                        if (colors.size() >= CustomGlint.MAX_COLORS_PER_LAYER) break;
                         String colorStr = e.getAsString();
                         colors.add((int) Long.parseLong(colorStr.replace("0x", ""), 16));
                     }
@@ -901,7 +930,7 @@ public class GlintEditorScreen extends Screen {
             if (tDesigns.isEmpty()) {
                 tDesigns.add("sparkle");
                 List<Integer> lc = new ArrayList<>();
-                lc.add(0xFF8844EE);
+                lc.add(DEFAULT_COLOR);
                 tColors.add(lc);
                 tSpeeds.add(1.0f);
                 tInterp.add(true);
@@ -929,7 +958,7 @@ public class GlintEditorScreen extends Screen {
             glowOverrideColors.clear();
             if (obj.has("glowColors")) {
                 for (JsonElement e : obj.getAsJsonArray("glowColors")) {
-                    if (glowOverrideColors.size() >= 8) break; // mirror the 8-color glow cap
+                    if (glowOverrideColors.size() >= CustomGlint.MAX_COLORS_PER_LAYER) break;
                     glowOverrideColors.add((int) Long.parseLong(e.getAsString().replace("0x", ""), 16));
                 }
             }
@@ -961,7 +990,7 @@ public class GlintEditorScreen extends Screen {
             showImportPicker = false;
             syncWandState();
         } catch (Exception e) {
-            // Silently fail
+            // Malformed or unreadable trim: leave the editor exactly as it was.
         }
     }
 
@@ -1030,7 +1059,8 @@ public class GlintEditorScreen extends Screen {
         }
     }
 
-    /** A skinned button with the default header text colour. */
+    /** A skinned button with the default header text colour. The {@code (h - 8) / 2} text offset centres a
+     *  vanilla 8px-tall font line in the button. */
     private BevelButton bevel(int x, int y, int w, int h, Supplier<String> label, Runnable onPress) {
         return addRenderableWidget(new BevelButton(x, y, w, h, (h - 8) / 2, false,
                 label, () -> skin.labelHdr, () -> skin.guiFace, b -> onPress.run()));
@@ -1096,7 +1126,7 @@ public class GlintEditorScreen extends Screen {
                 label(g, "x", tx + 14, tabRowY + 1, 0xFFFFFF);
             }
         }
-        if (layerDesigns.size() < 8) {
+        if (layerDesigns.size() < MAX_LAYERS) {
             int plusX = px + 100 + layerDesigns.size() * 22;
             skin.raised(g, plusX - 1, tabRowY - 1, 22, 16, skin.guiFace);
             centered(g, "+", plusX + 10, tabRowY + 3, skin.costOk);
@@ -1177,25 +1207,25 @@ public class GlintEditorScreen extends Screen {
 
         // Overlays
         if (showDesignPicker) {
-            g.pose().pushPose(); g.pose().translate(0, 0, 400);
+            g.pose().pushPose(); g.pose().translate(0, 0, OVERLAY_Z);
             renderDesignPicker(g, mx, my, dt);
             g.pose().popPose();
         }
         if (showImportPicker) {
-            g.pose().pushPose(); g.pose().translate(0, 0, 400);
+            g.pose().pushPose(); g.pose().translate(0, 0, OVERLAY_Z);
             renderImportPicker(g, mx, my, dt);
             g.pose().popPose();
         }
-        if (showPicker) {
-            g.pose().pushPose(); g.pose().translate(0, 0, 400);
-            renderPicker(g, mx, my, dt);
+        if (showItemPicker) {
+            g.pose().pushPose(); g.pose().translate(0, 0, OVERLAY_Z);
+            renderItemPicker(g, mx, my, dt);
             g.pose().popPose();
         }
 
         drawSaveMsg(g); // transient save confirmation, on top of everything
 
         // Hover tooltips for the control buttons (suppressed while an overlay owns the mouse).
-        if (!showDesignPicker && !showPicker && !showImportPicker) {
+        if (!showDesignPicker && !showItemPicker && !showImportPicker) {
             boolean shown = false;
             for (var child : children()) {
                 if (!(child instanceof BevelButton bb) || bb.tooltip == null || !bb.visible) continue;
@@ -1204,7 +1234,7 @@ public class GlintEditorScreen extends Screen {
                 if (!lines.isEmpty()) { g.renderComponentTooltip(font, lines, mx, my); shown = true; break; }
             }
             // The add-layer "+" tab is hand-drawn, not a widget, so tooltip it here.
-            if (!shown && layerDesigns.size() < 8) {
+            if (!shown && layerDesigns.size() < MAX_LAYERS) {
                 int plusX = px + 100 + layerDesigns.size() * 22, plusY = py + 6;
                 if (mx >= plusX - 1 && mx < plusX + 21 && my >= plusY - 1 && my < plusY + 15)
                     g.renderTooltip(font, Component.translatable("screen.customglint.glint_editor.tip.add_layer"), mx, my);
@@ -1212,13 +1242,28 @@ public class GlintEditorScreen extends Screen {
         }
     }
 
+    // ── Shared picker helpers ─────────────────────────────────────────────────
+
+    /** Dark track + grey thumb for a picker scrollbar, thumb sized/positioned for scroll over count rows. */
+    private void drawScrollbar(GuiGraphics g, int sbX, int listY, int trackH, int minThumb, int rows, int count, int scroll) {
+        g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
+        int thumbH = Math.max(minThumb, trackH * rows / count);
+        int thumbY = listY + (int)((trackH - thumbH) * (float) scroll / (count - rows));
+        g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+    }
+
+    /** Hold a picker's scroll index inside [0, count - rows]. Every filter and wheel step goes through this. */
+    private static int clampScroll(int scroll, int count, int rows) {
+        return Math.max(0, Math.min(Math.max(0, count - rows), scroll));
+    }
+
     // ── Design picker rendering ───────────────────────────────────────────────
 
     private void renderDesignPicker(GuiGraphics g, int mx, int my, float dt) {
         int ox = dpX(), oy = dpY();
 
-        g.fill(ox - 1, oy - 1, ox + DPW + 1, oy + DPH + 1, 0xFF666666);
-        g.fill(ox, oy, ox + DPW, oy + DPH, 0xEE111111);
+        g.fill(ox - 1, oy - 1, ox + DPW + 1, oy + DPH + 1, PICKER_BORDER);
+        g.fill(ox, oy, ox + DPW, oy + DPH, PICKER_BG);
 
         designSearchBox.setX(ox + 2);
         designSearchBox.setY(oy + 3);
@@ -1233,8 +1278,8 @@ public class GlintEditorScreen extends Screen {
             String d = filteredDesigns.get(designScroll + i);
             int ry = listY + i * DESIGN_ROW_H;
             boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + DESIGN_ROW_H;
-            if (d.equals(active)) g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, 0x6044AA44);
-            if (hovered)          g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, 0x40FFFFFF);
+            if (d.equals(active)) g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, ROW_ACTIVE);
+            if (hovered)          g.fill(ox, ry, sbX, ry + DESIGN_ROW_H, ROW_HOVER);
             label(g, d, ox + 4, ry + 3, 0xDDDDDD);
         }
 
@@ -1247,8 +1292,8 @@ public class GlintEditorScreen extends Screen {
     private void renderImportPicker(GuiGraphics g, int mx, int my, float dt) {
         int ox = ipX(), oy = ipY();
 
-        g.fill(ox - 1, oy - 1, ox + IPW + 1, oy + IPH + 1, 0xFF666666);
-        g.fill(ox, oy, ox + IPW, oy + IPH, 0xEE111111);
+        g.fill(ox - 1, oy - 1, ox + IPW + 1, oy + IPH + 1, PICKER_BORDER);
+        g.fill(ox, oy, ox + IPW, oy + IPH, PICKER_BG);
 
         if (importSearchBox == null) {
             importSearchBox = new EditBox(font, ox + 2, oy + 3, IPW - 4, 12, Component.translatable("screen.customglint.glint_editor.search_glints"));
@@ -1274,7 +1319,7 @@ public class GlintEditorScreen extends Screen {
             String glint = availableGlints.get(importScroll + i);
             int ry = listY + i * IMPORT_ROW_H;
             boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
-            if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, 0x40FFFFFF);
+            if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, ROW_HOVER);
             label(g, glint, ox + 4, ry + 2, 0xDDDDDD);
             // Trash icon on the far right of a hovered row.
             if (hovered) {
@@ -1294,7 +1339,7 @@ public class GlintEditorScreen extends Screen {
         availableGlints = lq.isEmpty() ? new ArrayList<>(allGlints) : allGlints.stream()
                 .filter(d -> d.toLowerCase().contains(lq))
                 .collect(Collectors.toList());
-        importScroll = Math.max(0, Math.min(importScroll, Math.max(0, availableGlints.size() - IMPORT_ROWS)));
+        importScroll = clampScroll(importScroll, availableGlints.size(), IMPORT_ROWS);
     }
 
     /** Tiny 7×8 trash-can glyph drawn with fills (the font has no trash glyph). Origin = top-left. */
@@ -1302,44 +1347,46 @@ public class GlintEditorScreen extends Screen {
         g.fill(x + 2, y, x + 5, y + 1, color);          // handle nub
         g.fill(x, y + 1, x + 7, y + 2, color);          // lid
         g.fill(x + 1, y + 3, x + 6, y + 8, color);      // can body
-        int slot = 0xEE111111;                          // stripes cut back to the panel colour
+        int slot = PICKER_BG;                           // stripes cut back to the panel colour
         g.fill(x + 2, y + 4, x + 3, y + 7, slot);
         g.fill(x + 4, y + 4, x + 5, y + 7, slot);
     }
 
     // ── Item picker rendering ─────────────────────────────────────────────────
 
-    private static final int OW = 200, OH = VISIBLE_ROWS * ROW_H + 20;
+    // 20 = the search-box strip above the rows, same as the other two pickers.
+    private static final int ITW = 200, ITH = ITEM_ROWS * ITEM_ROW_H + 20;
 
-    private int pickerOX() { return Math.max(2, Math.min(width - OW - 2, px + 8)); }
-    private int pickerOY() { return Math.max(2, Math.min(height - OH - 2, py + 159)); }
+    // Anchored under the left column, but clamped so a short window can't push the overlay off-screen.
+    private int itX() { return Math.max(2, Math.min(width - ITW - 2, px + 8)); }
+    private int itY() { return Math.max(2, Math.min(height - ITH - 2, py + 159)); }
 
-    private void renderPicker(GuiGraphics g, int mx, int my, float dt) {
-        int ox = pickerOX(), oy = pickerOY();
+    private void renderItemPicker(GuiGraphics g, int mx, int my, float dt) {
+        int ox = itX(), oy = itY();
 
-        g.fill(ox - 1, oy - 1, ox + OW + 1, oy + OH + 1, 0xFF666666);
-        g.fill(ox, oy, ox + OW, oy + OH, 0xEE111111);
+        g.fill(ox - 1, oy - 1, ox + ITW + 1, oy + ITH + 1, PICKER_BORDER);
+        g.fill(ox, oy, ox + ITW, oy + ITH, PICKER_BG);
 
-        searchBox.setX(ox + 2);
-        searchBox.setY(oy + 3);
-        searchBox.setWidth(OW - 4);
-        searchBox.render(g, mx, my, dt);
+        itemSearchBox.setX(ox + 2);
+        itemSearchBox.setY(oy + 3);
+        itemSearchBox.setWidth(ITW - 4);
+        itemSearchBox.render(g, mx, my, dt);
 
         int listY = oy + 20;
-        int sbX   = ox + OW - 6;
+        int sbX   = ox + ITW - 6;
 
-        for (int i = 0; i < VISIBLE_ROWS && pickerScroll + i < filteredItems.size(); i++) {
-            Item item = filteredItems.get(pickerScroll + i);
-            int ry = listY + i * ROW_H;
-            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + ROW_H;
-            if (hovered) g.fill(ox, ry, sbX, ry + ROW_H, 0x40FFFFFF);
+        for (int i = 0; i < ITEM_ROWS && itemScroll + i < filteredItems.size(); i++) {
+            Item item = filteredItems.get(itemScroll + i);
+            int ry = listY + i * ITEM_ROW_H;
+            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + ITEM_ROW_H;
+            if (hovered) g.fill(ox, ry, sbX, ry + ITEM_ROW_H, ROW_HOVER);
             g.renderItem(itemIcon(item), ox + 2, ry + 1);
-            label(g, font.plainSubstrByWidth(itemName(item), OW - 30), ox + 20, ry + 5, 0xDDDDDD);
+            label(g, font.plainSubstrByWidth(itemName(item), ITW - 30), ox + 20, ry + 5, 0xDDDDDD);
         }
 
-        if (filteredItems.size() > VISIBLE_ROWS) {
-            int trackH = VISIBLE_ROWS * ROW_H;
-            drawScrollbar(g, sbX, listY, trackH, 10, VISIBLE_ROWS, filteredItems.size(), pickerScroll);
+        if (filteredItems.size() > ITEM_ROWS) {
+            int trackH = ITEM_ROWS * ITEM_ROW_H;
+            drawScrollbar(g, sbX, listY, trackH, 10, ITEM_ROWS, filteredItems.size(), itemScroll);
         }
     }
 
@@ -1413,29 +1460,29 @@ public class GlintEditorScreen extends Screen {
         }
 
         // Item picker
-        if (showPicker) {
-            int ox = pickerOX(), oy = pickerOY();
-            if (mx >= ox + 2 && mx < ox + OW - 2 && my >= oy + 3 && my < oy + 17)
-                searchBox.mouseClicked(mx, my, btn);
-            if (mx < ox || mx >= ox + OW || my < oy || my >= oy + OH) {
-                showPicker = false;
+        if (showItemPicker) {
+            int ox = itX(), oy = itY();
+            if (mx >= ox + 2 && mx < ox + ITW - 2 && my >= oy + 3 && my < oy + 17)
+                itemSearchBox.mouseClicked(mx, my, btn);
+            if (mx < ox || mx >= ox + ITW || my < oy || my >= oy + ITH) {
+                showItemPicker = false;
                 return true;
             }
             int listY = oy + 20;
-            int psbX = ox + OW - 6;
-            if (filteredItems.size() > VISIBLE_ROWS && mx >= psbX - 1 && mx < psbX + 6
-                    && my >= listY && my < listY + VISIBLE_ROWS * ROW_H) {
+            int psbX = ox + ITW - 6;
+            if (filteredItems.size() > ITEM_ROWS && mx >= psbX - 1 && mx < psbX + 6
+                    && my >= listY && my < listY + ITEM_ROWS * ITEM_ROW_H) {
                 draggingSb = 3;
-                pickerScroll = scrollFromMouse(my, listY, VISIBLE_ROWS * ROW_H, VISIBLE_ROWS,
+                itemScroll = scrollFromMouse(my, listY, ITEM_ROWS * ITEM_ROW_H, ITEM_ROWS,
                         filteredItems.size());
                 return true;
             }
             if (my >= listY && mx < psbX) {
-                int row = (int)(my - listY) / ROW_H;
-                int idx = pickerScroll + row;
-                if (row < VISIBLE_ROWS && idx < filteredItems.size()) {
+                int row = (int)(my - listY) / ITEM_ROW_H;
+                int idx = itemScroll + row;
+                if (row < ITEM_ROWS && idx < filteredItems.size()) {
                     previewItem = filteredItems.get(idx);
-                    showPicker = false;
+                    showItemPicker = false;
                     refreshPreview();
                     syncWandState();
                 }
@@ -1461,7 +1508,7 @@ public class GlintEditorScreen extends Screen {
                     return true;
                 }
             }
-            if (layerDesigns.size() < 8) {
+            if (layerDesigns.size() < MAX_LAYERS) {
                 int plusX = px + 100 + layerDesigns.size() * 22;
                 if (mx >= plusX && mx < plusX + 20) {
                     addLayerCopy();
@@ -1523,7 +1570,7 @@ public class GlintEditorScreen extends Screen {
     private void addLayerCopy() {
         layerDesigns.add(layerDesigns.get(selectedLayer));
         List<Integer> lc = new ArrayList<>();
-        lc.add(0xFF8844EE);
+        lc.add(DEFAULT_COLOR);
         layerColors.add(lc);
         layerSpeeds.add(layerSpeeds.get(selectedLayer));
         layerInterpolates.add(layerInterpolates.get(selectedLayer));
@@ -1557,8 +1604,8 @@ public class GlintEditorScreen extends Screen {
             importScroll = scrollFromMouse(my, ipY() + 20, IMPORT_ROWS * IMPORT_ROW_H, IMPORT_ROWS, availableGlints.size());
             return true;
         }
-        if (draggingSb == 3 && showPicker) {
-            pickerScroll = scrollFromMouse(my, pickerOY() + 20, VISIBLE_ROWS * ROW_H, VISIBLE_ROWS, filteredItems.size());
+        if (draggingSb == 3 && showItemPicker) {
+            itemScroll = scrollFromMouse(my, itY() + 20, ITEM_ROWS * ITEM_ROW_H, ITEM_ROWS, filteredItems.size());
             return true;
         }
         return super.mouseDragged(mx, my, btn, dx, dy);
@@ -1574,17 +1621,17 @@ public class GlintEditorScreen extends Screen {
     public boolean keyPressed(int key, int scancode, int mods) {
         if (showDesignPicker) {
             if (designSearchBox.keyPressed(key, scancode, mods)) return true;
-            if (key == 256) { showDesignPicker = false; return true; }
+            if (key == KEY_ESCAPE) { showDesignPicker = false; return true; }
             return true;
         }
         if (showImportPicker) {
             if (importSearchBox != null && importSearchBox.keyPressed(key, scancode, mods)) return true;
-            if (key == 256) { showImportPicker = false; return true; }
+            if (key == KEY_ESCAPE) { showImportPicker = false; return true; }
             return true;
         }
-        if (showPicker) {
-            if (searchBox.keyPressed(key, scancode, mods)) return true;
-            if (key == 256) { showPicker = false; return true; }
+        if (showItemPicker) {
+            if (itemSearchBox.keyPressed(key, scancode, mods)) return true;
+            if (key == KEY_ESCAPE) { showItemPicker = false; return true; }
             return true;
         }
         return super.keyPressed(key, scancode, mods);
@@ -1594,7 +1641,7 @@ public class GlintEditorScreen extends Screen {
     public boolean charTyped(char c, int mods) {
         if (showDesignPicker) return designSearchBox.charTyped(c, mods);
         if (showImportPicker) return importSearchBox != null && importSearchBox.charTyped(c, mods);
-        if (showPicker) return searchBox.charTyped(c, mods);
+        if (showItemPicker) return itemSearchBox.charTyped(c, mods);
         return super.charTyped(c, mods);
     }
 
@@ -1603,24 +1650,21 @@ public class GlintEditorScreen extends Screen {
         if (showDesignPicker) {
             int ox = dpX(), oy = dpY();
             if (mx >= ox && mx < ox + DPW && my >= oy && my < oy + DPH) {
-                int maxScroll = Math.max(0, filteredDesigns.size() - DESIGN_ROWS);
-                designScroll = Math.max(0, Math.min(maxScroll, designScroll - (int) Math.signum(delta)));
+                designScroll = clampScroll(designScroll - (int) Math.signum(delta), filteredDesigns.size(), DESIGN_ROWS);
                 return true;
             }
         }
         if (showImportPicker) {
             int ox = ipX(), oy = ipY();
             if (mx >= ox && mx < ox + IPW && my >= oy && my < oy + IPH) {
-                int maxScroll = Math.max(0, availableGlints.size() - IMPORT_ROWS);
-                importScroll = Math.max(0, Math.min(maxScroll, importScroll - (int) Math.signum(delta)));
+                importScroll = clampScroll(importScroll - (int) Math.signum(delta), availableGlints.size(), IMPORT_ROWS);
                 return true;
             }
         }
-        if (showPicker) {
-            int ox = pickerOX(), oy = pickerOY();
-            if (mx >= ox && mx < ox + OW && my >= oy && my < oy + OH) {
-                int maxScroll = Math.max(0, filteredItems.size() - VISIBLE_ROWS);
-                pickerScroll = Math.max(0, Math.min(maxScroll, pickerScroll - (int) Math.signum(delta)));
+        if (showItemPicker) {
+            int ox = itX(), oy = itY();
+            if (mx >= ox && mx < ox + ITW && my >= oy && my < oy + ITH) {
+                itemScroll = clampScroll(itemScroll - (int) Math.signum(delta), filteredItems.size(), ITEM_ROWS);
                 return true;
             }
         }

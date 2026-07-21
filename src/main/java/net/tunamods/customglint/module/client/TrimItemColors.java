@@ -11,6 +11,11 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/**
+ * Item colour handlers for the two trim items. Both tint only tintIndex 0 (the glowing edge layer of the
+ * model) and leave every other tint index white, so the trim's base art is untouched. Client-only,
+ * standalone module code.
+ */
 @EventBusSubscriber(modid = CustomGlintMod.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class TrimItemColors {
     private TrimItemColors() {}

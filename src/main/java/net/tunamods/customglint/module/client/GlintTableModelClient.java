@@ -43,17 +43,20 @@ import net.tunamods.customglint.module.block.ModBlocks;
  * static model rather than crashing.
  */
 public final class GlintTableModelClient {
-    private GlintTableModelClient() {}
-
+    // Skin ids match the model file suffixes and GlintGuiConfig.tableSkin() indexes into this array.
     private static final String[] SKINS = { "default", "dark", "forge" };
     private static final Direction[] FACINGS = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+
+    /** Positions of every Glint Table in a loaded client chunk, so {@link #refresh()} can re-mesh just those
+     *  sections. Written from the chunk-event threads, read on the render thread. */
+    private static final Set<BlockPos> CLIENT_TABLES = ConcurrentHashMap.newKeySet();
+
+    private GlintTableModelClient() {}
 
     private static ModelResourceLocation variant(String skin, Direction d) {
         return ModelResourceLocation.standalone(
                 CustomGlint.res("block/glint_table_" + skin + "_" + d.getSerializedName()));
     }
-
-    private static final Set<BlockPos> CLIENT_TABLES = ConcurrentHashMap.newKeySet();
 
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener(GlintTableModelClient::onRegisterAdditional);
@@ -101,6 +104,7 @@ public final class GlintTableModelClient {
     private static void onChunkUnload(ChunkEvent.Unload e) {
         if (!e.getLevel().isClientSide()) return;
         int cx = e.getChunk().getPos().x, cz = e.getChunk().getPos().z;
+        // >> 4 is block-to-chunk (16 blocks per chunk); the unloading chunk's tables drop out of the set.
         CLIENT_TABLES.removeIf(p -> (p.getX() >> 4) == cx && (p.getZ() >> 4) == cz);
     }
 

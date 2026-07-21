@@ -106,6 +106,8 @@ class GlintTableSkin {
         }
     }
 
+    /** Warm every skin's background PNG so cycling skins in-menu doesn't cold-load one mid-click. Idempotent:
+     *  getTexture caches, so this only does work the first time the table is opened in a session. */
     static void preloadTextures() {
         for (GlintTableSkin s : ALL) Minecraft.getInstance().getTextureManager().getTexture(s.bgTexture);
     }
