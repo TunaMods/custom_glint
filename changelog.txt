@@ -77,6 +77,8 @@ Altered:
 - Epic Knights: armor decorations now show the Chromatic design, with shaders on or off.
 - Sophisticated Backpacks: worn and held backpacks now show the Chromatic design, with shaders
   on or off.
+- Photon: glints keep their colors while the pack is on. They used to drop to plain grey on
+  items, armor and entities alike.
 
 [1.6.0]
 
