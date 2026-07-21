@@ -382,10 +382,27 @@ public final class GlintPipelines {
             .withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES)
             .build();
 
+    /** CLAMP + NEAREST: no wrap past the edges, no interpolation between texels. What every binding read by
+     *  exact texel wants, palette strips, the block-atlas cutout mask, and the scene-depth sample. */
+    private static GpuSampler clampNearest() {
+        return RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+    }
+
     /** CLAMP + NEAREST sampler for the palette strip, colours are read by exact {@code texelFetch}, so no
      *  wrap or interpolation is wanted. */
     public static GpuSampler paletteSampler() {
-        return RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST);
+        return clampNearest();
+    }
+
+    /** REPEAT + LINEAR sampler for the scrolling, tiling grayscale glint texture. LINEAR (not NEAREST):
+     *  the animation scrolls the design via a texture matrix, and with NEAREST a slow scroll only changes
+     *  the sampled texel when it crosses a texel boundary, smooth in the high-res world view (the steps
+     *  spread across many pixels) but visibly CHOPPY at low speed in the small GUI item slot (few pixels,
+     *  synchronized steps). LINEAR interpolates between texels so sub-texel movement is smooth at any
+     *  resolution and speed, matching vanilla's glint (which also filters). Wrap/filter live on the
+     *  per-binding {@link GpuSampler} now (was {@code glTexParameteri} on the texture). */
+    public static GpuSampler glintSampler() {
+        return RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR);
     }
 
     /**
@@ -439,8 +456,7 @@ public final class GlintPipelines {
         RenderSetup setup = RenderSetup.builder(pipeline)
                 .withTexture("Sampler0", modelTex)   // model texture: the cutout alpha-test silhouette
                 .withTexture("Sampler1", paletteTex, GlintPipelines::paletteSampler)
-                .withTexture("DepthSampler", sceneDepth,
-                        () -> RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
+                .withTexture("DepthSampler", sceneDepth, GlintPipelines::clampNearest)
                 .setLayeringTransform(LayeringTransform.NO_LAYERING)
                 .setTextureTransform(new TextureTransform(name + "|tex", animation))
                 .bufferSize(1536)
@@ -483,8 +499,7 @@ public final class GlintPipelines {
         RenderSetup setup = RenderSetup.builder(pipeline)
                 .withTexture("Sampler0", grayDesign, GlintPipelines::glintSampler)
                 .withTexture("Sampler1", cutoutTex)   // model/atlas texture: the cutout alpha-test silhouette
-                .withTexture("DepthSampler", sceneDepth,
-                        () -> RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
+                .withTexture("DepthSampler", sceneDepth, GlintPipelines::clampNearest)
                 .setLayeringTransform(LayeringTransform.NO_LAYERING)
                 .setTextureTransform(new TextureTransform(name + "|tex", animation))
                 .bufferSize(1536)
@@ -514,7 +529,7 @@ public final class GlintPipelines {
         RenderSetup setup = RenderSetup.builder(CHROMATIC_BLOCK)
                 .withTexture("Sampler0", whiteTex, GlintPipelines::glintSampler)
                 .withTexture("Sampler1", paletteTex, GlintPipelines::paletteSampler)
-                .withTexture("Sampler2", blockAtlas, GlintPipelines::paletteSampler)
+                .withTexture("Sampler2", blockAtlas, GlintPipelines::clampNearest)
                 .setLayeringTransform(layering)
                 .setTextureTransform(new TextureTransform(name + "|tex", animation))
                 .bufferSize(256)
@@ -533,7 +548,7 @@ public final class GlintPipelines {
      * itself need not animate.
      */
     public static Matrix4f chromaticMatrix(double speed, float patternScale, int colorCount, float seedPacked) {
-        float s = Math.max(0.0001f, patternScale);
+        float s = Math.max(0.0001f, patternScale); // floor: a 0 scale collapses the UV transform to a point
         Matrix4f m = new Matrix4f().translation(0.5f, 0.5f, 0.0f);
         m.scale(s, s, 1.0f);
         m.translate(-0.5f, -0.5f, 0.0f);
@@ -541,17 +556,6 @@ public final class GlintPipelines {
         m.m21((float) colorCount);
         m.m23(seedPacked);
         return m;
-    }
-
-    /** REPEAT + LINEAR sampler for the scrolling, tiling grayscale glint texture. LINEAR (not NEAREST):
-     *  the animation scrolls the design via a texture matrix, and with NEAREST a slow scroll only changes
-     *  the sampled texel when it crosses a texel boundary, smooth in the high-res world view (the steps
-     *  spread across many pixels) but visibly CHOPPY at low speed in the small GUI item slot (few pixels,
-     *  synchronized steps). LINEAR interpolates between texels so sub-texel movement is smooth at any
-     *  resolution and speed, matching vanilla's glint (which also filters). Wrap/filter live on the
-     *  per-binding {@link GpuSampler} now (was {@code glTexParameteri} on the texture). */
-    public static GpuSampler glintSampler() {
-        return RenderSystem.getSamplerCache().getRepeat(FilterMode.LINEAR);
     }
 
     /**
@@ -585,7 +589,7 @@ public final class GlintPipelines {
                                             LayeringTransform layering, Supplier<Matrix4f> animation) {
         RenderSetup setup = RenderSetup.builder(GLINT_BLOCK)
                 .withTexture("Sampler0", grayTexture, GlintPipelines::glintSampler)
-                .withTexture("Sampler1", blockAtlas, GlintPipelines::paletteSampler)
+                .withTexture("Sampler1", blockAtlas, GlintPipelines::clampNearest)
                 .setLayeringTransform(layering)
                 .setTextureTransform(new TextureTransform(name + "|tex", animation))
                 .bufferSize(256)
@@ -614,7 +618,8 @@ public final class GlintPipelines {
     }
 
     // Shared immutable unit-drift vectors (callers only read them), avoids a per-draw float[] allocation,
-    // since the animation-matrix suppliers evaluate scrollUnit every frame. d = 1/√2.
+    // since the animation-matrix suppliers evaluate scrollUnit every frame. 0.70710677 = 1/√2, the
+    // diagonal component that keeps the diagonal directions unit length.
     private static final float[] SU_E = {-1f, 0f}, SU_NE = {-0.70710677f, 0.70710677f},
             SU_N = {0f, 1f}, SU_NW = {0.70710677f, 0.70710677f}, SU_W = {1f, 0f},
             SU_SW = {0.70710677f, -0.70710677f}, SU_S = {0f, -1f}, SU_SE = {-0.70710677f, -0.70710677f},
@@ -672,21 +677,6 @@ public final class GlintPipelines {
         return new float[]{(f + f1) * dir[0], (f + f1) * dir[1]};
     }
 
-    /** Combined glow-mask RenderType for {@link #GLOW_MASK_PIPE}: Sampler0 = the entity texture (drives
-     *  the silhouette alpha-discard), DepthSampler = the full-res scene depth (bound by Identifier via a
-     *  per-frame-updated holder, see CustomGlintRenderer.bindSceneDepth) so the shader can do the
-     *  per-fragment occlusion test. Clamp/nearest on the depth so edge UVs don't wrap. */
-    public static RenderType glowMaskType(String name, Identifier texture, Identifier sceneDepth) {
-        RenderSetup setup = RenderSetup.builder(GLOW_MASK_PIPE)
-                .withTexture("Sampler0", texture)
-                .withTexture("DepthSampler", sceneDepth,
-                        () -> RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST))
-                .setOutputTarget(OutputTarget.MAIN_TARGET)
-                .bufferSize(1536)
-                .createRenderSetup();
-        return RenderType.create(name, setup);
-    }
-
     // ── Isolated glow-outline pipeline (parallel framegraph outline target) ──────────────────────
     //
     // Replaces the dead-end per-pixel-depth stencil band ring the 1.20.1/1.21.1 builds used (the stencil
@@ -725,6 +715,20 @@ public final class GlintPipelines {
             .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true, 0.0f, 0.0f))
             .withColorTargetState(ColorTargetState.DEFAULT)
             .build();
+
+    /** Combined glow-mask RenderType for {@link #GLOW_MASK_PIPE}: Sampler0 = the entity texture (drives
+     *  the silhouette alpha-discard), DepthSampler = the full-res scene depth (bound by Identifier via a
+     *  per-frame-updated holder, see CustomGlintRenderer.bindSceneDepth) so the shader can do the
+     *  per-fragment occlusion test. Clamp/nearest on the depth so edge UVs don't wrap. */
+    public static RenderType glowMaskType(String name, Identifier texture, Identifier sceneDepth) {
+        RenderSetup setup = RenderSetup.builder(GLOW_MASK_PIPE)
+                .withTexture("Sampler0", texture)
+                .withTexture("DepthSampler", sceneDepth, GlintPipelines::clampNearest)
+                .setOutputTarget(OutputTarget.MAIN_TARGET)
+                .bufferSize(1536)
+                .createRenderSetup();
+        return RenderType.create(name, setup);
+    }
 
     /** Bilinear upscale of the half-res ring onto the main target (blended). */
     public static final RenderPipeline GLOW_UPSCALE_PIPE = RenderPipeline.builder()

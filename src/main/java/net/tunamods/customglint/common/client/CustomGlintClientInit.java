@@ -31,9 +31,10 @@ public final class CustomGlintClientInit {
 
     /** Invoked from the API mod constructor on client only, with the mod event bus + container. */
     public static void run(IEventBus modEventBus, ModContainer modContainer) {
-        // Client-only rendering settings (outline resolution, per-type outline toggles). CLIENT type:
-        // personal, never synced. Registering the generated config screen makes it editable in-game from
-        // the mod list; both the screen and on-disk edits apply live (the render code re-reads each frame).
+        // Client-only settings (outline resolution and distance caps, per-type outline toggles, GUI skins,
+        // menu button sound). CLIENT type: personal, never synced. Registering the generated config screen
+        // makes it editable in-game from the mod list; both the screen and on-disk edits apply live (the
+        // render code re-reads each frame).
         modContainer.registerConfig(ModConfig.Type.CLIENT, GlintClientConfig.SPEC);
         modContainer.registerExtensionPoint(IConfigScreenFactory.class,
                 (IConfigScreenFactory) (container, parent) -> new ConfigurationScreen(container, parent));
@@ -78,8 +79,8 @@ public final class CustomGlintClientInit {
             // injects that normally clear them, so reset here to keep stale glint/glow state from leaking
             // into the next frame.
             GlintCarrier.resetSubmitState();
-            // Cache the GUI scale once for this frame, the GUI glint/glow overlay reads it per glinted icon,
-            // and it can't change mid-frame.
+            // Cache the GUI scale once for this frame. The GUI glint/glow overlay reads it per glinted
+            // icon and it can't change mid-frame.
             CustomGlintRenderer.refreshFrameGuiScale();
             // Resolve "is a shader pack active" once for this frame (reflective Iris probe, hit many times
             // per frame downstream); a pack can't toggle mid-frame.

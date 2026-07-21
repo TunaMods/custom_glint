@@ -74,7 +74,7 @@ public final class EntityGlintRender {
 
     /**
      * Render-state attachment key. In 26.1 the entity render is decoupled from the entity: by draw
-     * time {@code LivingEntityRenderer.submit} only has a {@link net.minecraft.client.renderer.entity.state.LivingEntityRenderState}.
+     * time {@code LivingEntityRenderer.submit} only has a {@link LivingEntityRenderState}.
      * A NeoForge {@code RegisterRenderStateModifiersEvent} modifier (installed in {@code CustomGlintClientInit})
      * resolves the glint from the entity during extraction and stashes it here via
      * {@code state.setRenderData(RENDER_DATA, ...)}; {@code LivingEntityRendererMixin} reads it back with
@@ -145,8 +145,7 @@ public final class EntityGlintRender {
                                          boolean isLayer, boolean translucentShell) {
         CustomGlint.Layer[] gl = glint.layers();
         for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
-            int[] colors = gl[layerIdx].colors();
-            if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+            int[] colors = layerColors(gl[layerIdx]);
             // Under an active shader pack NOTHING draws in-phase correctly: Iris replaces our program, so
             // chromatic goes flat white and normal glint goes SOLID (opaque gbuffer program). Queue BOTH for
             // the post-Iris overlay drain instead. See queueGlintOverlayModel / drainChromaticOverlays.
@@ -190,6 +189,13 @@ public final class EntityGlintRender {
         }
     }
 
+    /** A layer's colours, or a single white placeholder when the editor never assigned one, so an
+     *  unchosen layer still draws instead of silently vanishing. Every glint loop starts here. */
+    private static int[] layerColors(CustomGlint.Layer layer) {
+        int[] colors = layer.colors();
+        return colors.length == 0 ? new int[]{0xFFFFFFFF} : colors;
+    }
+
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static void submitGlintNode(OrderedSubmitNodeCollector collector, EntityModel model, Object state,
                                         PoseStack pose, RenderType rt, int light, int argb) {
@@ -199,8 +205,8 @@ public final class EntityGlintRender {
     }
 
     /**
-     * Submits the glint for a special-renderer 3D item that draws via a single {@code ModelPart} (trident)
-     *, one {@code submitModelPart} per glint layer/colour into the item glint RenderType ({@code isItem=false}
+     * Submits the glint for a special-renderer 3D item that draws via a single {@code ModelPart} (trident):
+     * one {@code submitModelPart} per glint layer/colour into the item glint RenderType ({@code isItem=false}
      * → 3D scale), so the glint follows the model shape. The submit-node analog of the quad-item
      * {@code getFoilBuffer} replacement: vanilla foil is gated on enchantment, but a glinted item need not
      * be enchanted, so we draw our own glint geometry independently. Called from {@code SubmitNodeStorageMixin}
@@ -211,8 +217,7 @@ public final class EntityGlintRender {
             ModelPart part, PoseStack pose, int light, CustomGlint.Data glint) {
         CustomGlint.Layer[] gl = glint.layers();
         for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
-            int[] colors = gl[layerIdx].colors();
-            if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+            int[] colors = layerColors(gl[layerIdx]);
             // Under a pack, queue for the post-Iris overlay drain (white-dummy cutout = full model shape,
             // like the glow part path): chromatic (else → flat white) AND normal (else → SOLID); first-person
             // hand items route to the hand drain.
@@ -251,7 +256,7 @@ public final class EntityGlintRender {
     }
 
     /**
-     * {@link net.minecraft.client.model.Model} variant of {@link #submitSpecialPartGlint} for special-renderer
+     * {@link Model} variant of {@link #submitSpecialPartGlint} for special-renderer
      * items that draw via a {@code submitModel} (shield). The {@code state} is re-applied at draw via
      * {@code model.setupAnim(state)} (e.g. {@code Unit.INSTANCE} for the shield), exactly as
      * {@code ModelFeatureRenderer.renderModel} does for the base model.
@@ -265,8 +270,7 @@ public final class EntityGlintRender {
         // shield's design far too small; it was removed. patternScale (the wand/menu slider) tunes from here.
         CustomGlint.Layer[] gl = glint.layers();
         for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
-            int[] colors = gl[layerIdx].colors();
-            if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+            int[] colors = layerColors(gl[layerIdx]);
             boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
             if (CustomGlintRenderer.isShaderPackActive()) {
                 if (chroma) {
@@ -349,7 +353,7 @@ public final class EntityGlintRender {
     //   - each held/dropped/special item → its own group (per-item submit token / ItemSubmit identity).
 
     /**
-     * One queued model-based glow outline: a posed {@link net.minecraft.client.model.Model} (worn armor,
+     * One queued model-based glow outline: a posed {@link Model} (worn armor,
      * elytra, barding, or a special-renderer 3D item like a shield) + its render {@code state}, a
      * camera-relative pose snapshot, the silhouette texture, light, and resolved glow colour. Drawn in
      * {@link #drainBodyOutlines()} exactly like an entity body, {@code model.setupAnim(state)} re-poses
@@ -379,7 +383,7 @@ public final class EntityGlintRender {
     }
 
     /** One queued model-part glow outline for special-renderer 3D items that submit a single
-     *  {@link net.minecraft.client.model.geom.ModelPart} (e.g. trident). White.png silhouette. */
+     *  {@link ModelPart} (e.g. trident). White.png silhouette. */
     private static final class PartOutlineJob {
         final ModelPart part;
         final PoseStack.Pose pose;
@@ -468,7 +472,7 @@ public final class EntityGlintRender {
         (inFirstPersonHand ? HELD_FP_MODEL_OUTLINES : MODEL_OUTLINES).add(job);
     }
 
-    /** {@link net.minecraft.client.model.geom.ModelPart} variant of {@link #queueSpecialModelOutline}
+    /** {@link ModelPart} variant of {@link #queueSpecialModelOutline}
      *  for special items that submit a single part (e.g. trident). White.png silhouette. */
     public static void queueSpecialPartOutline(ModelPart part,
             PoseStack.Pose pose, int light, @Nullable CustomGlint.Data glint, boolean glowing, int[] glowColors,
@@ -513,19 +517,17 @@ public final class EntityGlintRender {
         (heldFirstPerson ? HELD_FP_OUTLINES : ITEM_OUTLINES).add(job);
     }
 
+    /** Shared group key for every glowing entity body + its worn armor, so they all draw into one mask
+     *  and one composite (O(1) instead of one composite per entity). */
+    private static final Object ENTITY_GROUP = new Object();
+
     /** Our own isolated outline targets (never touch vanilla's entity_outline target), all at 1/DOWNSCALE
      *  resolution for ~DOWNSCALE² less fill + composite cost. {@code maskTarget} holds the single combined
      *  mask (shape + per-fragment visibility encoded in alpha, see core/glow_silhouette); {@code ringTarget}
      *  holds the composed ring before it's bilinear-upscaled onto the main target. Lazily created and
-     *  resized. The mask target keeps a depth attachment only so its size matches the colour attachment for
-     *  the ALWAYS_PASS mask pipeline, the depth content is never read or written. */
-    // The outline resolution divisor is the client config's outlineRenderScale (1 = full res; higher =
-    // softer outline, less GPU fill, the weak-GPU lever). Read fresh each drain so the in-game config
-    // screen / on-disk edits apply live (the targets resize on the next frame). DOWNSCALE=1 keeps the
-    // silhouette at the SAME res as the scene depth it tests against, so the occlusion epsilon stays tight.
-    /** Shared group key for every glowing entity body + its worn armor, so they all draw into one mask
-     *  and one composite (O(1) instead of one composite per entity). */
-    private static final Object ENTITY_GROUP = new Object();
+     *  resized. The mask target's depth attachment carries real content: {@code GlintPipelines.GLOW_MASK_PIPE}
+     *  LEQUAL-tests and writes it for inter-mob early-Z, and the composite samples it as MaskDepthSampler to
+     *  thin each source's ring with distance. */
     private static TextureTarget maskTarget;
     private static TextureTarget ringTarget;
     /** First-person hand projection matrix (captured by GameRendererMixin at renderItemInHand HEAD).
@@ -814,8 +816,8 @@ public final class EntityGlintRender {
      * LevelRendererMixin} (renderLevel TAIL) under an active Iris pack
      * (all solid bodies committed to depth, no open render pass).
      *
-     * Per entity, ONE un-dilated silhouette render into {@code maskTarget} (always-pass depth → whole
-     * outer shape). core/glow_silhouette decides occlusion per-fragment by sampling the full-res scene
+     * Per entity, ONE un-dilated silhouette render into {@code maskTarget}, marking its whole outer
+     * shape. core/glow_silhouette decides occlusion per-fragment by sampling the full-res scene
      * depth and encodes shape + visibility + distance thickness into alpha (replacing the earlier separate
      * full-shape + visible passes and the depth-downsample pass). The composite then rings a pixel only
      * when it is OUTSIDE the full shape (so internal gap edges from occluders like leaves are never traced)
@@ -854,11 +856,12 @@ public final class EntityGlintRender {
         Minecraft mc = Minecraft.getInstance();
         RenderTarget main = mc.getMainRenderTarget();
         if (main == null) { clearBodyOutlineQueue(); return; }
-        // Read the client outline-resolution divisor fresh each frame so config changes apply live.
+        // Outline resolution divisor: the client config's outlineRenderScale (1 = full res; higher = softer
+        // outline, less GPU fill, the weak-GPU lever). Read fresh each drain so the in-game config screen and
+        // on-disk edits apply live (the targets resize on the next frame). DOWNSCALE=1 keeps the silhouette at
+        // the SAME res as the scene depth it tests against, so the occlusion epsilon stays tight.
         final int DOWNSCALE = GlintClientConfig.outlineRenderScale();
         int w = Math.max(1, main.width / DOWNSCALE), h = Math.max(1, main.height / DOWNSCALE);
-        // maskTarget (single combined mask): keeps a depth attachment only to match the colour attachment
-        // size for the ALWAYS_PASS mask pipeline, its depth content is never read or written.
         if (maskTarget == null) {
             maskTarget = new TextureTarget("customglint glow mask", w, h, true);
         } else if (maskTarget.width != w || maskTarget.height != h) {
@@ -1063,9 +1066,10 @@ public final class EntityGlintRender {
         }
     }
 
-    /** Pixel margin around a group's projected box: covers the composite's outer-ring dilation
-     *  (MAX_THICKNESS/SEARCH in post/glow_dilate_h/v) plus a safety band so the ring never clips the
-     *  scissor edge. Also the minimum gap between disjoint clusters, so a ring never crosses a seam. */
+    /** Pixel margin around a group's projected box: covers the composite's outer-ring dilation (SEARCH in
+     *  post/glow_outline_id, currently 7) plus a safety band so the ring never clips the scissor edge. Also
+     *  the minimum gap between disjoint clusters, so a ring never crosses a seam. Raise it alongside SEARCH
+     *  if that shader's THICKNESS values grow. */
     private static final int SCISSOR_PAD = 12;
     /** Extra pixels the per-group mask clear extends beyond the composite scissor rect, so the composite's
      *  ±SEARCH sample neighbourhood (post/glow_outline_id, SEARCH=7) never reads another group's leftover
@@ -1103,29 +1107,7 @@ public final class EntityGlintRender {
             maxX = Math.max(maxX, extraBox[3]); maxY = Math.max(maxY, extraBox[4]); maxZ = Math.max(maxZ, extraBox[5]);
         }
         if (minX > maxX) return null; // empty group → full screen (shouldn't happen)
-
-        float sMinX = Float.POSITIVE_INFINITY, sMinY = Float.POSITIVE_INFINITY;
-        float sMaxX = Float.NEGATIVE_INFINITY, sMaxY = Float.NEGATIVE_INFINITY;
-        Vector4f v = new Vector4f();
-        for (int i = 0; i < 8; i++) {
-            float x = (i & 1) == 0 ? minX : maxX;
-            float y = (i & 2) == 0 ? minY : maxY;
-            float z = (i & 4) == 0 ? minZ : maxZ;
-            v.set(x, y, z, 1.0f).mul(vrp);
-            if (v.w <= 1.0e-4f) return null; // corner at/behind the near plane → full-screen fallback
-            float ndcX = v.x / v.w, ndcY = v.y / v.w;
-            float px = (ndcX * 0.5f + 0.5f) * mainW;
-            float py = (ndcY * 0.5f + 0.5f) * mainH; // bottom-left origin: ndcY -1 → 0, +1 → H
-            sMinX = Math.min(sMinX, px); sMaxX = Math.max(sMaxX, px);
-            sMinY = Math.min(sMinY, py); sMaxY = Math.max(sMaxY, py);
-        }
-        int x0 = clampPx((int) Math.floor(sMinX) - SCISSOR_PAD, mainW);
-        int y0 = clampPx((int) Math.floor(sMinY) - SCISSOR_PAD, mainH);
-        int x1 = clampPx((int) Math.ceil(sMaxX) + SCISSOR_PAD, mainW);
-        int y1 = clampPx((int) Math.ceil(sMaxY) + SCISSOR_PAD, mainH);
-        int rw = x1 - x0, rh = y1 - y0;
-        if (rw <= 0 || rh <= 0) return null; // clamped off-screen → full screen (degenerate, very rare)
-        return new int[]{x0, y0, rw, rh};
+        return projectBoxToRect(minX, minY, minZ, maxX, maxY, maxZ, vrp, mainW, mainH);
     }
 
     private static int clampPx(int v, int max) {
@@ -1177,22 +1159,23 @@ public final class EntityGlintRender {
     }
 
     /** Projects a camera-relative AABB to a padded screen scissor rect (bottom-left origin, full-res px),
-     *  or null if any corner is at/behind the near plane or it clamps to nothing. Mirrors the projection in
-     *  {@link #computeGroupScissor} for a single box. */
+     *  or null if any corner is at/behind the near plane or it clamps to nothing. The single projection
+     *  used by every scissor rect here, {@link #computeGroupScissor} unions its jobs into one box and hands
+     *  it here. */
     @Nullable
     private static int[] projectBoxToRect(float minX, float minY, float minZ, float maxX, float maxY, float maxZ,
                                           Matrix4f vrp, int mainW, int mainH) {
         float sMinX = Float.POSITIVE_INFINITY, sMinY = Float.POSITIVE_INFINITY;
         float sMaxX = Float.NEGATIVE_INFINITY, sMaxY = Float.NEGATIVE_INFINITY;
         Vector4f v = new Vector4f();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 8; i++) {   // the box's 8 corners, bit 0/1/2 picking min or max per axis
             float x = (i & 1) == 0 ? minX : maxX;
             float y = (i & 2) == 0 ? minY : maxY;
             float z = (i & 4) == 0 ? minZ : maxZ;
             v.set(x, y, z, 1.0f).mul(vrp);
-            if (v.w <= 1.0e-4f) return null;
+            if (v.w <= 1.0e-4f) return null; // corner at/behind the near plane → full-screen fallback
             float px = (v.x / v.w * 0.5f + 0.5f) * mainW;
-            float py = (v.y / v.w * 0.5f + 0.5f) * mainH;
+            float py = (v.y / v.w * 0.5f + 0.5f) * mainH; // bottom-left origin: ndcY -1 → 0, +1 → H
             sMinX = Math.min(sMinX, px); sMaxX = Math.max(sMaxX, px);
             sMinY = Math.min(sMinY, py); sMaxY = Math.max(sMaxY, py);
         }
@@ -1201,7 +1184,7 @@ public final class EntityGlintRender {
         int x1 = clampPx((int) Math.ceil(sMaxX) + SCISSOR_PAD, mainW);
         int y1 = clampPx((int) Math.ceil(sMaxY) + SCISSOR_PAD, mainH);
         int rw = x1 - x0, rh = y1 - y0;
-        if (rw <= 0 || rh <= 0) return null;
+        if (rw <= 0 || rh <= 0) return null; // clamped off-screen → full screen (degenerate, very rare)
         return new int[]{x0, y0, rw, rh};
     }
 
@@ -1359,8 +1342,7 @@ public final class EntityGlintRender {
                 setupAnim(job.model, job.state);
                 CustomGlint.Layer[] gl = job.glint.layers();
                 for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
-                    int[] colors = gl[layerIdx].colors();
-                    if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+                    int[] colors = layerColors(gl[layerIdx]);
                     boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
                     if (chroma) {
                         // Chromatic: one draw, palette carries every colour, occlude against the opaque snapshot.
@@ -1422,7 +1404,7 @@ public final class EntityGlintRender {
         CustomGlintRenderer.resetBodyGlow();
     }
 
-    /** Raw {@code setupAnim} on a {@link net.minecraft.client.model.Model} of unknown render-state type
+    /** Raw {@code setupAnim} on a {@link Model} of unknown render-state type
      *  (armor/special-item models carry an {@code Object} state captured at submit). Mirrors what
      *  {@code ModelFeatureRenderer.renderModel} does before each deferred model draw. */
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -1430,32 +1412,17 @@ public final class EntityGlintRender {
         if (state != null) model.setupAnim(state);
     }
 
-
     /**
-     * Cheap-gate version of glow lookup. Returns true iff the entity has a glow/glowColors signal that
-     * would trigger an outline.
-     */
-    private static boolean entityHasGlow(LivingEntity entity) {
-        Resolution r = instanceResolver.resolve(entity);
-        if (r == null) return false;
-        return r.glowing || r.glowColors.length > 0;
-    }
-
-    /**
-     * True iff this entity carries our glow outline (per-instance glowing flag or glow colours). Used by
+     * True iff this entity carries our glow outline (per-instance glowing flag or glow colours). A cheap
+     * gate, it skips the type-registry fallback {@link #resolveResolution} does. Used by
      * {@code EntityRendererMixin} to CONSUME vanilla's outline (the glowing effect / team glow) when ours
      * is present, so the two never stack on one entity.
      */
     public static boolean hasGlow(LivingEntity entity) {
-        return entityHasGlow(entity);
+        Resolution r = instanceResolver.resolve(entity);
+        return r != null && (r.glowing || r.glowColors.length > 0);
     }
 
-    /**
-     * True for a vanilla entity body / {@code RenderLayer} surface RenderType (entity_cutout,
-     * entity_solid, entity_translucent, entity_cutout_no_cull, …). Excludes armor (armor_*), our own
-     * glint/mask RTs, eyes, and any non-surface type, so the per-layer glint ({@code SubmitNodeStorageMixin})
-     * and per-layer outline tee ({@code ModelFeatureRendererMixin}) only augment real entity geometry.
-     */
     /** Identity cache for {@link #isEntitySurface}: RenderTypes are interned singletons drawn every frame,
      *  so the {@code toString()} + prefix scan is computed once per distinct RenderType, not per submit. */
     private static final Map<RenderType, Boolean> SURFACE_CACHE = new IdentityHashMap<>();
@@ -1463,6 +1430,12 @@ public final class EntityGlintRender {
     /** Drops the entity-surface identity cache on resource reload (called from {@code clearTextures}). */
     public static void clearSurfaceCache() { SURFACE_CACHE.clear(); }
 
+    /**
+     * True for a vanilla entity body / {@code RenderLayer} surface RenderType (entity_cutout,
+     * entity_solid, entity_translucent, entity_cutout_no_cull, …). Excludes armor (armor_*), our own
+     * glint/mask RTs, eyes, and any non-surface type, so the per-layer glint ({@code SubmitNodeStorageMixin})
+     * and per-layer outline tee ({@code ModelFeatureRendererMixin}) only augment real entity geometry.
+     */
     public static boolean isEntitySurface(RenderType rt) {
         Boolean cached = SURFACE_CACHE.get(rt);
         if (cached != null) return cached;
@@ -1505,7 +1478,7 @@ public final class EntityGlintRender {
     /**
      * Glint + glow for a block-model entity layer (mooshroom mushrooms, snow-golem pumpkin, anything an
      * entity submits via {@code BlockModelRenderState.submit} → {@code submitBlockModel}). These are not
-     * {@code EntityModel}s, so the {@link SubmitNodeCollectionMixin} model-layer hook misses them; this is
+     * {@code EntityModel}s, so the {@code SubmitNodeCollectionMixin} model-layer hook misses them; this is
      * called from a separate {@code submitBlockModel} hook. Block parts expose {@link BakedQuad}s with
      * block-atlas UVs, exactly like flat item sprites.
      *
@@ -1536,8 +1509,7 @@ public final class EntityGlintRender {
         if (r.data != null) {
             CustomGlint.Layer[] gl = r.data.layers();
             for (int layerIdx = 0; layerIdx < gl.length; layerIdx++) {
-                int[] colors = gl[layerIdx].colors();
-                if (colors.length == 0) colors = new int[]{0xFFFFFFFF}; // unchosen layer → white placeholder
+                int[] colors = layerColors(gl[layerIdx]);
                 boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
                 if (CustomGlintRenderer.isShaderPackActive()) {
                     // Under a pack, queue the block parts' quads for the post-Iris overlay drain (block atlas

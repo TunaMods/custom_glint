@@ -68,15 +68,21 @@ import net.tunamods.customglint.common.CustomGlint.Layer;
  * model. Per-RenderType color rides the vertex color (callers inject it via a color-overriding
  * VertexConsumer); animation rides a {@link net.minecraft.client.renderer.rendertype.TextureTransform}
  * supplier.
+ *
+ * <p>Naming convention: {@code forXxx} mints (and caches) a RenderType for a draw path, {@code getXxx}
+ * resolves a cached texture, {@code computeXxx} derives a per-frame value, and {@code fanXxx} tees an
+ * existing draw into a second buffer.
  */
 public final class CustomGlintRenderer {
+
+    private CustomGlintRenderer() {}
 
     // ── Texture cache ─────────────────────────────────────────────────────────
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<Identifier, Identifier> textureCache = new HashMap<>();
     /** Procedural-chromatic palette strips (1px-tall RGBA), keyed by the color-array CONTENTS (see
-     *  {@link #colorsKey}). Keying on {@code Arrays.hashCode} alone collides, distinct equal-length color
+     *  {@link #colorsKey}). Keying on {@code Arrays.hashCode} alone collides: distinct equal-length color
      *  arrays can hash equal (the 31*r+e formula), which would silently hand a trim the wrong cached strip.
      *  Access-order LRU capped like the RenderType caches: one tiny DynamicTexture is registered per distinct
      *  color-array ever seen, and without a bound they accumulate for the whole session (freed only on resource
@@ -93,7 +99,8 @@ public final class CustomGlintRenderer {
                 return true;
             }
         };
-    /** 1×1 opaque-white dummy bound to the chromatic pipeline's unused Sampler0 (lazily built). */
+    /** 1×1 opaque-white dummy (lazily built), bound to the chromatic pipeline's unused Sampler0 and, on the
+     *  overlay paths, as the no-cutout fallback: alpha 1 discards nothing, so the whole mesh draws. */
     private static Identifier whiteTexture;
     /** Cached block-atlas dimensions feeding the item-glint scale. The atlas size only changes on resource
      *  reload, so resolving it once (vs every {@link #forGlint} call) avoids a per-item-draw TextureManager
@@ -117,6 +124,7 @@ public final class CustomGlintRenderer {
      *  every frame for an absent design would stall the GUI. The null entry is cleared on the next resource
      *  reload ({@link #clearTextures}), so a design that appears later recovers. Callers MUST null-check both
      *  this result AND the subsequent {@code TextureManager.getTexture} before dereferencing. */
+    @Nullable
     public static Identifier getTexture(Identifier design) {
         if (textureCache.containsKey(design)) return textureCache.get(design);
         Identifier result = generateTexture(design);
@@ -152,8 +160,8 @@ public final class CustomGlintRenderer {
 
     /** Removes {@code rt} from both the captured registry and the live BufferSource's fixedBuffers, closing
      *  each native {@link ByteBufferBuilder}. Mirrors {@link #dropFixed} but also covers the live map, which
-     *  Iris/Sodium may swap for an immutable one (its {@code remove} throws, swallowed). The RT re-mints
-     *  lazily on its next access. */
+     *  Iris/Sodium may swap for an immutable one (its {@code remove} throws, and that is swallowed). The RT
+     *  re-mints lazily on its next access. */
     private static void evictRenderType(RenderType rt) {
         if (rt == null) return;
         if (fixedBufferRegistry != null) {
@@ -201,7 +209,7 @@ public final class CustomGlintRenderer {
             }
         }
         if (fixedBufferRegistry != null) {
-            // Close each removed builder, its ByteBufferBuilders hold raw native allocations with no Cleaner,
+            // Close each removed builder: ByteBufferBuilders hold raw native allocations with no Cleaner,
             // so remove() alone leaks them every reload (mirrors the GLOW_BODY_FIXED close loop below). They're
             // re-minted lazily on the next draw. (fixedBufferRegistry is the live bufferSource.fixedBuffers in
             // the vanilla path; under an Iris/Sodium-swapped source it can be a different instance, which
@@ -372,7 +380,7 @@ public final class CustomGlintRenderer {
 
     /**
      * Wraps a glowing entity body's draw buffer so its SINGLE model walk fans into both the normal body
-     * buffer AND our glow-mask buffer, the silhouette is captured for the cost of a few extra vertex
+     * buffer AND our glow-mask buffer. The silhouette is captured for the cost of a few extra vertex
      * writes, with no second model traversal and no second setupAnim (strictly cheaper than vanilla's
      * outline, which re-renders the model). Called from {@code ModelFeatureRendererMixin}'s redirect of
      * the body {@code renderToBuffer}. Also records the camera-relative bbox for the composite scissor.
@@ -385,18 +393,18 @@ public final class CustomGlintRenderer {
 
     /** Full-opaque silhouette for layer/special models: alpha never discards, so the whole model shape
      *  outlines (the 1.21.1 BEWLR "white.png full fill" approach). RenderLayer models (sheep wool, slime
-     *  outer cube, saddle, mushrooms) are 3D geometry whose hull IS the visible shape, so this is correct
-     *, and it sidesteps recovering each layer's bound texture from the immutable RenderType. */
+     *  outer cube, saddle, mushrooms) are 3D geometry whose hull IS the visible shape, so this is correct.
+     *  It also sidesteps recovering each layer's bound texture from the immutable RenderType. */
     private static final Identifier WHITE_SILHOUETTE = Identifier.fromNamespaceAndPath("neoforge", "textures/white.png");
 
     /**
      * Fans a glowing entity's secondary-model draw (a {@code RenderLayer} surface, wool, slime outer
      * cube, saddle, stray clothing, …) into the SAME glow mask the body uses, sharing the entity's outline
      * id ({@link #glowKeyFor}, CAT_ENTITY) so the whole mob composites as ONE ring with no doubled seam.
-     * Like {@link #fanBodyGlow} this is in-phase (no second model walk, no second setupAnim), the layer is
+     * Like {@link #fanBodyGlow} this is in-phase (no second model walk, no second setupAnim); the layer is
      * already posed when {@code ModelFeatureRenderer.renderModel} draws it. Uses white.png (full geometry)
      * so the silhouette follows the layer's real shape, and does NOT touch the entity cap / loose bbox
-     * bookkeeping, the body already accounts the entity; only the tight silhouette box is extended so the
+     * bookkeeping (the body already accounts the entity); only the tight silhouette box is extended so the
      * composite scissor covers a layer that sticks out past the body (mushrooms, wool).
      */
     public static VertexConsumer fanLayerGlow(VertexConsumer layerBuffer, PoseStack.Pose pose,
@@ -422,7 +430,7 @@ public final class CustomGlintRenderer {
         RenderType rt = glowMaskRT(texture);
         GLOW_BODY_FIXED.computeIfAbsent(rt, k -> new ByteBufferBuilder(k.bufferSize()));
         if (glowBodyBuffer == null) {
-            glowBodySpare = new ByteBufferBuilder(256);
+            glowBodySpare = new ByteBufferBuilder(256); // fallback only; every mask RT gets its own sized builder above
             glowBodyBuffer = MultiBufferSource.immediateWithBuffers(GLOW_BODY_FIXED, glowBodySpare);
         }
         int r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
@@ -458,6 +466,7 @@ public final class CustomGlintRenderer {
     public static boolean hasBodyGlow() { return bodyGlowPresent; }
 
     /** Camera-relative AABB {minX,minY,minZ,maxX,maxY,maxZ} of this frame's body glows (union), or null. */
+    @Nullable
     public static float[] bodyGlowBox() {
         return bodyGlowPresent ? new float[]{bgMinX, bgMinY, bgMinZ, bgMaxX, bgMaxY, bgMaxZ} : null;
     }
@@ -468,6 +477,7 @@ public final class CustomGlintRenderer {
 
     /** Union of this frame's TIGHT per-body silhouette AABBs (real geometry, not the loose pose box), or
      *  null if none were captured, used to scissor a glowing entity's composite to its actual size. */
+    @Nullable
     public static float[] bodyGlowTightUnion() {
         float[] u = null;
         for (float[] bx : bgTightBoxes) {
@@ -503,6 +513,7 @@ public final class CustomGlintRenderer {
     /** The tight silhouette AABB {minX,minY,minZ,maxX,maxY,maxZ} accumulated since the last
      *  {@link #resetGlowMaskBox}, or null when nothing was emitted (degenerate → caller keeps the loose
      *  pose-origin scissor = prior behaviour). */
+    @Nullable
     public static float[] glowMaskBox() {
         return glowMaskBox[0] <= glowMaskBox[3] ? glowMaskBox.clone() : null;
     }
@@ -525,7 +536,7 @@ public final class CustomGlintRenderer {
     /** Accumulates one held/dropped item's silhouette into the combined glow mask, the item analog of
      *  {@link #accumulateGlowMask}. Items are a list of {@link BakedQuad}s rather than an {@link EntityModel},
      *  so each quad is re-emitted into the {@link #glowMaskRT} for its sprite's atlas (so the mask shader's
-     *  Sampler0 alpha-discard follows the real item shape, flat sprites trace the sprite, 3D models trace
+     *  Sampler0 alpha-discard follows the real item shape: flat sprites trace the sprite, 3D models trace
      *  the model). The quad's vertex colour is forced to the resolved glow colour via
      *  {@link FullColorOverrideConsumer}; the pose is the camera-relative {@code ItemSubmit} pose, the same
      *  space the entity bodies drew in, so the silhouette lands at the right screen position. Each distinct
@@ -769,6 +780,7 @@ public final class CustomGlintRenderer {
     /** The active shaderpack's name, or null with no shader mod / no pack. Reads Iris's private
      *  {@code currentPackName}: neither IrisApi nor Iris exposes a public accessor, and an access transformer
      *  only reaches Minecraft classes, so there is no cleaner route to it. */
+    @Nullable
     public static String currentPackName() {
         if (!PACK_NAME_LOOKUP_DONE) {
             synchronized (CustomGlintRenderer.class) {
@@ -1038,7 +1050,7 @@ public final class CustomGlintRenderer {
         return CHROMATIC_FLAT_ITEM_MATCH;
     }
 
-    /** Single-draw chromatic RenderType for {@code layer}, the palette carries every color, so unlike the
+    /** Single-draw chromatic RenderType for {@code layer}. The palette carries every color, so unlike the
      *  normal glint factories this is never looped per-color. {@code tag} keeps the item / armor / entity
      *  layering variants in separate cache buckets. {@code uvScale} multiplies the noise UV so the on-item
      *  density matches the GUI overlay: flat items sample the BLOCK ATLAS, where a 16px sprite spans only
@@ -1078,7 +1090,7 @@ public final class CustomGlintRenderer {
      * {@link GlintPipelines#CHROMATIC_OVERLAY} (ALWAYS depth + an in-shader scene-depth occlusion test).
      * Same palette / seed / speed / count / pattern-scale payload, so the slick matches the in-phase look;
      * it just survives an active shader pack by being re-rendered after the framegraph (see
-     * {@code EntityGlintRender.drainChromaticOverlays}). Only meaningful for chromatic layers, callers gate
+     * {@code EntityGlintRender.drainChromaticOverlays}). Only meaningful for chromatic layers; callers gate
      * on {@code CustomGlint.isChromatic} and {@link #isShaderPackActive()}.
      */
     private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture) {
@@ -1188,7 +1200,7 @@ public final class CustomGlintRenderer {
 
     /** Post-Iris chromatic overlay RT for a flat/quad item, cut out against the quad's OWN sprite atlas.
      *  {@code atlas} must be the quad's {@code materialInfo().sprite().atlasLocation()} (item sprites can live
-     *  on different atlases, binding a fixed atlas samples the wrong texels, so the slick either fills the
+     *  on different atlases; binding a fixed atlas samples the wrong texels, so the slick either fills the
      *  whole quad or vanishes). Sampler0 = that atlas drives the cutout; the noise scale stays
      *  {@code atlasW/16}, matching {@link #forGlint}'s flat-item calibration. */
     public static RenderType forItemGlintOverlay(Data glint, int layerIdx, Identifier atlas) {
@@ -1353,14 +1365,14 @@ public final class CustomGlintRenderer {
     private static final Map<String, RenderType> BY_BLOCK_GLINT        = newRtCache();
     private static final Map<String, RenderType> BY_CHROMATIC          = newRtCache();
     private static final Map<String, RenderType> BY_CHROMATIC_OVERLAY  = newRtCache();
-    private static final Map<String, RenderType> BY_GLINT_OVERLAY       = newRtCache();
-    private static final Map<String, RenderType> BY_ENTITY_LAYER_GLINT  = newRtCache();
+    private static final Map<String, RenderType> BY_GLINT_OVERLAY      = newRtCache();
+    private static final Map<String, RenderType> BY_ENTITY_LAYER_GLINT = newRtCache();
 
     /** Lazily resolves the block-atlas dimensions feeding the item/block glint scale. Atlas size only
      *  changes on resource reload, so this runs once until {@link #clearTextures} resets the cache. */
     private static void ensureAtlasDims() {
         if (cachedAtlasW != 0) return;
-        cachedAtlasW = 2048; cachedAtlasH = 2048;
+        cachedAtlasW = 2048; cachedAtlasH = 2048; // 26.1 default block-atlas size, used if the atlas isn't stitched yet
         if (Minecraft.getInstance().getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS)
                 instanceof TextureAtlas atlas) {
             cachedAtlasW = atlas.width;
@@ -1371,7 +1383,7 @@ public final class CustomGlintRenderer {
     /**
      * Registers {@code rt}'s persistent buffer into the live BufferSource's {@code fixedBuffers}
      * when absent. Iris and Sodium swap the vanilla BufferSource for one whose {@code fixedBuffers}
-     * is an IMMUTABLE fastutil map, its {@code put} throws {@link UnsupportedOperationException}
+     * is an IMMUTABLE fastutil map whose {@code put} throws {@link UnsupportedOperationException}
      * (the inline {@code live.put(...)} this replaced crashed armor/entity/item/outline glint the
      * instant Iris was installed: {@code Object2ObjectFunction.put} → UOE). Swallow that: under an
      * active shader pack our RTs render through the forward/shader path, which never pulls from this
@@ -1415,8 +1427,8 @@ public final class CustomGlintRenderer {
 
     /**
      * Glint for a block-model entity layer (mooshroom mushrooms, snow-golem pumpkin). Mirrors
-     * {@link #forGlint}'s flat-item path, block parts carry block-atlas UVs, so the same atlas-calibrated
-     * scale applies, but builds on {@link GlintPipelines#GLINT_BLOCK} (LEQUAL depth) + VIEW_OFFSET_Z. The
+     * {@link #forGlint}'s flat-item path (block parts carry block-atlas UVs, so the same atlas-calibrated
+     * scale applies), but builds on {@link GlintPipelines#GLINT_BLOCK} (LEQUAL depth) + VIEW_OFFSET_Z. The
      * block is drawn by a DIFFERENT pipeline, so EQUAL would flicker against its depth; LEQUAL + a toward-camera
      * bias sits the glint just in front instead. Emitted via {@code submitCustomGeometry} by
      * {@link EntityGlintRender#submitBlockLayerGlintGlow}.
@@ -1739,10 +1751,10 @@ public final class CustomGlintRenderer {
     /**
      * Shared base for the mod's wrapping {@link VertexConsumer}s. 26.1.2 added two abstract methods to
      * the interface that every wrapper would otherwise have to implement: the single-arg
-     * {@code setColor(int packedARGB)} and {@code setLineWidth(float)}. This base implements both once
-     *, {@code setColor(int)} unpacks to the subclass's own {@code setColor(r,g,b,a)} (so each
-     * wrapper's color policy, no-op, force-override, pass-through, is honored), and
-     * {@code setLineWidth} is a no-op (these wrappers never drive line geometry).
+     * {@code setColor(int packedARGB)} and {@code setLineWidth(float)}. This base implements both once.
+     * {@code setColor(int)} unpacks to the subclass's own {@code setColor(r,g,b,a)}, so each wrapper's
+     * color policy (no-op, force-override, pass-through) is honored, and {@code setLineWidth} is a
+     * no-op (these wrappers never drive line geometry).
      */
     private abstract static class WrappingConsumer implements VertexConsumer {
         @Override public VertexConsumer setColor(int argb) {
@@ -1753,7 +1765,7 @@ public final class CustomGlintRenderer {
 
     /** Wraps a VertexConsumer and overrides vertex colors with a fixed RGBA value, forwarding
      *  uv/overlay/uv2/normal to the wrapped buffer. Forwarding those is required when the underlying
-     *  buffer uses a full entity vertex format (POSITION_COLOR_TEX_OVERLAY_LIGHTMAP_NORMAL), dropping
+     *  buffer uses a full entity vertex format (POSITION_COLOR_TEX_OVERLAY_LIGHTMAP_NORMAL); dropping
      *  them leaves the BufferBuilder with unfilled elements and crashes on endVertex. This is the color
      *  injector for the glint layers (ItemRendererMixin) and the glow-mask silhouettes. */
     public static final class FullColorOverrideConsumer extends WrappingConsumer {
@@ -1776,7 +1788,8 @@ public final class CustomGlintRenderer {
      *  foil-buffer hook under an active shader pack: the item glint is drawn by the post-Iris overlay, so
      *  nothing should draw in-phase (an in-phase glint goes SOLID under a pack), and vanilla's enchant foil
      *  (for an enchanted item) is written here and swallowed, so our glint always EATS the vanilla foil
-     *  instead of the two stacking, the same result the in-phase buffer replacement gives off the pack. */
+     *  instead of the two stacking. That is the same result the in-phase buffer replacement gives off the
+     *  pack. */
     public static final VertexConsumer NO_OP_CONSUMER = new WrappingConsumer() {
         @Override public VertexConsumer addVertex(float x, float y, float z) { return this; }
         @Override public VertexConsumer addVertex(Matrix4fc m, float x, float y, float z) { return this; }
@@ -1806,7 +1819,7 @@ public final class CustomGlintRenderer {
             if (z > minMax[5]) minMax[5] = z;
         }
         @Override public VertexConsumer addVertex(float x, float y, float z) {
-            track((float) x, (float) y, (float) z);
+            track(x, y, z);
             wrapped.addVertex(x, y, z);
             return this;
         }
@@ -1826,11 +1839,9 @@ public final class CustomGlintRenderer {
         @Override public VertexConsumer setNormal(float x, float y, float z) { return wrapped.setNormal(x, y, z); }
     }
 
-    private CustomGlintRenderer() {}
-
     // ── Shader-mod detection ──────────────────────────────────────────────────
-    // Reflective (via IrisApi) so we don't need a compileOnly dep on Iris. The two Methods are resolved
-    // once and cached. Used as a timing switch: under an active pack the glow drain happens mid-framegraph
+    // Reflective (via IrisApi) so we don't need a compileOnly dep on Iris. The three Method handles are
+    // resolved once and cached. Used as a timing switch: under an active pack the glow drain happens mid-framegraph
     // (where Iris hijacks our framebuffer into its gbuffer → black screen), so the drain is relocated to
     // LevelRendererMixin (renderLevel TAIL, post-Iris) and the AfterWeather drain in CustomGlintClientInit
     // skips itself here. The actual pipeline→program wiring under a pack is handled by IrisCompat, not here.

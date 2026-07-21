@@ -14,8 +14,8 @@ import org.jspecify.annotations.Nullable;
  * it draws on top of the opaque cached icon. The shader ({@link GlintPipelines#GUI_ITEM_CHROMATIC}) samples
  * {@code Sampler0} (the cached slot) for the silhouette mask and {@code Sampler1} (the palette strip) for the
  * colours; the per-trim seed and colour count ride the {@code UV1} payload (see
- * {@code core/gui_chromatic.{vsh,fsh}}). Unlike the texture-design overlay there is no per-colour loop, one
- * glyph composites the whole palette.
+ * {@code core/gui_chromatic.{vsh,fsh}}). Unlike the texture-design overlay there is no per-colour loop:
+ * one glyph composites the whole palette.
  */
 public final class GuiItemChromaticRenderState implements GuiElementRenderState {
 

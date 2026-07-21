@@ -12,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  * One live glint-overlay quad over a glinted item's cached GUI icon, the GUI analog of one glint layer
  * (one colour) in the world {@code applyGlint}. {@code GuiRendererMixin} emits one of these per layer/colour
  * as a GLYPH on the item's node, so it draws on top of the opaque cached icon (glyphs draw after the node's
- * sorted elements). The base icon therefore no longer needs to re-bake every frame to animate the glint,
+ * sorted elements). The base icon therefore no longer needs to re-bake every frame to animate the glint:
  * {@code CuboidItemModelWrapperMixin} stops forcing the foil/animated flag for flat GUI items, and this
  * overlay scrolls the glint live instead.
  *

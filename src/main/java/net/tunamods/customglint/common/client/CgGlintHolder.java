@@ -1,6 +1,7 @@
 package net.tunamods.customglint.common.client;
 
 import net.tunamods.customglint.common.CustomGlint;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Carrier interface mixed onto {@code ItemStackRenderState} and {@code SubmitNodeStorage$ItemSubmit}
@@ -13,14 +14,15 @@ import net.tunamods.customglint.common.CustomGlint;
  * direct references to non-mixin classes within it.
  */
 public interface CgGlintHolder {
-    CustomGlint.Data customglint$getGlint();
+    /** Null when the item carries no glint, which is the common case. */
+    CustomGlint.@Nullable Data customglint$getGlint();
 
-    void customglint$setGlint(CustomGlint.Data glint);
+    void customglint$setGlint(CustomGlint.@Nullable Data glint);
 
     /**
      * The item's glow state, carried alongside the glint so the deferred item draw can decide whether
      * to emit a glow outline (see {@code ItemRendererMixin}). Glow is independent of the glint
-     * ({@link CustomGlint#isGlowing}/{@link CustomGlint#getGlowColors}), a Glow-Trimmed item with no
+     * ({@link CustomGlint#isGlowing}/{@link CustomGlint#getGlowColors}): a Glow-Trimmed item with no
      * glint still outlines, so it can't be derived from the glint {@link CustomGlint.Data}.
      */
     default boolean customglint$isGlowing() { return false; }
