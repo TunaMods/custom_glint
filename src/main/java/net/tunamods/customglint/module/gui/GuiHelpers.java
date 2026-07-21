@@ -2,6 +2,8 @@ package net.tunamods.customglint.module.gui;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
+import java.util.Locale;
+
 /** Drawing and value-formatting helpers shared by the Glint Table and wand editor screens. */
 final class GuiHelpers {
     private GuiHelpers() {}
@@ -18,9 +20,13 @@ final class GuiHelpers {
         return Math.max(0.10f, Math.round(nv * 100f) / 100f);
     }
 
-    /** Trailing-zero-trimmed value: whole numbers show as ints, fractions to two places. */
+    /** Value for a stepper caption: whole numbers show as ints, fractions to at most two places with any
+     *  trailing zero trimmed, so 2.0 reads "2" and 1.50 reads "1.5". */
     static String fmtVal(float v) {
-        return v == Math.rint(v) ? String.valueOf((int) v) : String.format("%.2f", v).replaceAll("0+$", "");
+        // Locale.ROOT: a comma-decimal locale would render 1.5 as "1,5" and the trailing-zero trim below
+        // (and the GUI's fixed-width value fields) both assume a '.' separator.
+        return v == Math.rint(v) ? String.valueOf((int) v)
+                : String.format(Locale.ROOT, "%.2f", v).replaceAll("0+$", "");
     }
 
     /** Tiny 7×8 trash-can glyph drawn with fills (the font has no trash glyph). Origin = top-left. */

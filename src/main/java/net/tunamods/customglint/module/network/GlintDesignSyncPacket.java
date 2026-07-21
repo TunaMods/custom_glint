@@ -4,6 +4,8 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
@@ -27,9 +29,10 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
     public static void clearClient() {
         GlintTrimItem.PATTERNS.removeAll(clientSyncedDesigns);
         clientSyncedDesigns.clear();
-        // The GUI glint atlas is stitched from the (now-shrunk) design list, so force a re-stitch. Client-only
-        // path (logout), so touching the renderer is safe.
-        CustomGlintRenderer.invalidateGuiDesignAtlas();
+        // The GUI glint atlas is stitched from the (now-shrunk) design list, so force a re-stitch. This class
+        // is server-reachable (the payload is registered on both sides), so the renderer call sits behind the
+        // dist guard and a dedicated server never resolves the client class.
+        if (FMLEnvironment.getDist() == Dist.CLIENT) CustomGlintRenderer.invalidateGuiDesignAtlas();
     }
 
     @Override
@@ -49,7 +52,8 @@ public record GlintDesignSyncPacket(List<String> designs) implements CustomPacke
             }
             // Data-pack designs just changed on the client, so re-stitch the shared GUI glint atlas so they
             // batch too. enqueueWork runs on the client render thread, so releasing the texture here is safe.
-            CustomGlintRenderer.invalidateGuiDesignAtlas();
+            // Dist-guarded for the same reason as clearClient above.
+            if (FMLEnvironment.getDist() == Dist.CLIENT) CustomGlintRenderer.invalidateGuiDesignAtlas();
         });
     }
 }
