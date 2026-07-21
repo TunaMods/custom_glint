@@ -1,65 +1,70 @@
 package net.tunamods.customglint;
 
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
-import net.tunamods.customglint.module.advancement.ModTriggers;
-import net.tunamods.customglint.module.command.GlintCommand;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.ModCreativeTabs;
-import net.tunamods.customglint.module.item.ModItems;
-import net.tunamods.customglint.module.loot.ModLootModifiers;
-import net.tunamods.customglint.module.recipe.ModRecipes;
-import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
-import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
-import net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat;
-import net.tunamods.customglint.module.client.PhotonGlintNotice;
-import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
-import net.tunamods.customglint.module.network.ModNetworking;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
-import net.minecraftforge.event.AddReloadListenerEvent;
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.server.ServerLifecycleHooks;
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.capabilities.ForgeCapabilities;
+import net.minecraftforge.event.AddReloadListenerEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.ItemHandlerHelper;
+import net.minecraftforge.network.PacketDistributor;
+import net.minecraftforge.server.ServerLifecycleHooks;
+
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
+import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
+import net.tunamods.customglint.module.advancement.ModTriggers;
+import net.tunamods.customglint.module.block.ModBlockEntities;
+import net.tunamods.customglint.module.block.ModBlocks;
+import net.tunamods.customglint.module.client.GlintTableClientInit;
+import net.tunamods.customglint.module.client.PhotonGlintNotice;
+import net.tunamods.customglint.module.command.GlintCommand;
+import net.tunamods.customglint.module.compat.artifacts.ArtifactsCompat;
+import net.tunamods.customglint.module.compat.epicknights.EpicKnightsCompat;
+import net.tunamods.customglint.module.compat.firstperson.FirstPersonCompat;
+import net.tunamods.customglint.module.compat.geckolib.GeckoLibArmorCompat;
+import net.tunamods.customglint.module.compat.iceandfire.IceAndFireCompat;
+import net.tunamods.customglint.module.compat.immersivearmors.ImmersiveArmorsCompat;
+import net.tunamods.customglint.module.compat.mekanism.MekanismArmorCompat;
+import net.tunamods.customglint.module.item.GlintBagItem;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModCreativeTabs;
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.loot.ModLootModifiers;
+import net.tunamods.customglint.module.menu.ModMenuTypes;
+import net.tunamods.customglint.module.network.GlintDesignSyncPacket;
+import net.tunamods.customglint.module.network.ModNetworking;
+import net.tunamods.customglint.module.recipe.ModRecipes;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.capabilities.ForgeCapabilities;
-import net.minecraftforge.event.entity.player.EntityItemPickupEvent;
-import net.minecraftforge.items.IItemHandler;
-import net.minecraftforge.items.ItemHandlerHelper;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.player.Inventory;
-import net.tunamods.customglint.module.block.ModBlocks;
-import net.tunamods.customglint.module.block.ModBlockEntities;
-import net.tunamods.customglint.module.menu.ModMenuTypes;
-import net.tunamods.customglint.module.item.GlintBagItem;
-import net.tunamods.customglint.module.compat.geckolib.GeckoLibArmorCompat;
-import net.tunamods.customglint.module.compat.immersivearmors.ImmersiveArmorsCompat;
-import net.tunamods.customglint.module.compat.mekanism.MekanismArmorCompat;
-import net.tunamods.customglint.module.compat.artifacts.ArtifactsCompat;
 
 /**
  * Full standalone mod entry. Registry content (items, creative tab, recipes, loot modifiers, blocks, block
- * entities, menus) lives in the {@code Mod*} holder classes under the matching module packages - see
+ * entities, menus) lives in the {@code Mod*} holder classes under the matching module packages; see
  * {@link ModItems}, {@link ModCreativeTabs}, {@link ModRecipes}, {@link ModLootModifiers}, etc. This class
  * only wires their {@code register(bus)} hooks and owns the data-pack design reload/sync.
  */
@@ -85,7 +90,7 @@ public class CustomGlintMod {
 
         // Client-only: bind the Glint Table menu to its screen. Class-loaded on the client only.
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
-                () -> () -> net.tunamods.customglint.module.client.GlintTableClientInit.register(modEventBus));
+                () -> () -> GlintTableClientInit.register(modEventBus));
 
         // Client-only: warn Photon users that their pack is collapsing multi-layer glints to one. The nested
         // supplier is load-bearing. Its body is a second invokedynamic, so PhotonGlintNotice only links on the
@@ -102,7 +107,7 @@ public class CustomGlintMod {
         ArtifactsCompat.register();
 
         // Entity-glint sync (EntityGlintEvents, ApiNetworking, EntityGlintClientInit) is now
-        // registered by CustomGlintApiMod - the api jar ships with the full jar via jarJar, so
+        // registered by CustomGlintApiMod: the api jar ships with the full jar via jarJar, so
         // those registrations always happen exactly once regardless of which jar a player has.
 
         MinecraftForge.EVENT_BUS.register(this);
@@ -137,7 +142,7 @@ public class CustomGlintMod {
         }
 
         int inserted = before - remaining.getCount();
-        if (inserted <= 0) return; // no bag / no room - let vanilla handle it
+        if (inserted <= 0) return; // no bag, or no room: let vanilla handle it
 
         player.take(itemEntity, inserted); // pickup animation + sound for the portion the bag took
         if (remaining.isEmpty()) {
@@ -155,7 +160,7 @@ public class CustomGlintMod {
             ModTriggers.register();
             // Rename the pre-1.7.0 config/customglint/ folder to config/glint-and-glamour/ before anything
             // reads it (blueprint scans, gui.properties). No-op after the first migrated launch.
-            net.tunamods.customglint.module.ModConfigPaths.migrateLegacy();
+            ModConfigPaths.migrateLegacy();
         });
     }
 
@@ -214,5 +219,4 @@ public class CustomGlintMod {
                 new GlintDesignSyncPacket(new ArrayList<>(dataPackDesigns)));
         }
     }
-
 }

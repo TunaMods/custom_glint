@@ -12,11 +12,11 @@ import java.nio.file.Paths;
  * Single source of truth for the mod's on-disk config directory. Both the dedicated/integrated server
  * (shared blueprints in {@link ServerBlueprints}, {@code /glint export}) and the client GUI (wand editor +
  * Glint Table import lists, {@code GlintGuiConfig}) resolve every path through here so the two can never
- * drift apart - if they pointed at different folders the import lists would silently go empty.
+ * drift apart: if they pointed at different folders the import lists would silently go empty.
  *
  * <p>The folder is {@code config/glint-and-glamour/} (the display-name brand). The mod id stays
  * {@code customglint} everywhere else; only this player-visible folder and the jar/maven names carry the
- * new name. Pre-1.7.0 installs kept everything under {@code config/customglint/} - {@link #migrateLegacy()}
+ * new name. Pre-1.7.0 installs kept everything under {@code config/customglint/}; {@link #migrateLegacy()}
  * renames that folder in place on first launch so nobody loses saved trims.
  *
  * <p>Server-safe: pure {@code java.nio}, no client imports, lives in the top-level {@code module} package.
