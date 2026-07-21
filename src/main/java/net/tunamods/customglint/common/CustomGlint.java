@@ -24,13 +24,17 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 /**
  * Server-safe data API for Custom Glints. NBT read/write, color and design constants, and the
  * auto-apply registries live here. The rendering pipeline lives in
- * {@link net.tunamods.customglint.common.client.CustomGlintRenderer} (client-only - referenced by
+ * {@link net.tunamods.customglint.common.client.CustomGlintRenderer} (client-only: referenced by
  * fully-qualified name here so this server-safe class carries no client import), which references
  * this class for {@link Layer}/{@link Data} types and NBT.
  *
  * Split was required because the previous unified class extended {@code RenderStateShard} (a
  * client-only base class) and imported {@code Minecraft}/{@code RenderType}/etc., so any
  * server-reachable reference triggered {@code ClassNotFoundException} on dedicated servers.
+ *
+ * <p>Naming follows what each pair of methods actually does, not one convention throughout:
+ * read/write for plain value transfer, get/set for mutable stored state, from/to for NBT
+ * serialization.
  */
 public final class CustomGlint {
 
@@ -48,13 +52,17 @@ public final class CustomGlint {
      *  and loops); every input path enforces it, and readInner clamps hand-authored NBT to it. */
     public static final int MAX_COLORS_PER_LAYER = 8;
 
+    /** Cap on the number of glint layers read from NBT. Every input path (editor, Glint Table, layer-tear
+     *  merge recipe) caps at this, and readInner clamps hand-authored NBT to it. */
+    public static final int MAX_LAYERS = 8;
+
     /** Most-translucent glint alpha (at the 8th glass); 0 glass = fully opaque (255). Shared so the Glint
      *  Table's opacity↔alpha↔glass mapping matches on both the client (preview/cost) and the server (print). */
     public static final int GLINT_ALPHA_MIN = 32;
 
     /** Glint-Table material cost of a speed / scale value: the number of ± stepper clicks it sits from the 1×
-     *  default (0.10 per click below 1×, 0.5 per click above). Each click costs one redstone / slime, so a
-     *  fully-tuned layer is a real material sink. Both sides tally this per layer. */
+     *  default (0.10 per click below 1×, 0.5 per click above), one redstone / slime each. Both sides tally
+     *  this per layer. */
     public static int stepCost(float value) {
         if (value >= 1.0f) return Math.round((value - 1.0f) / 0.5f);
         return Math.round((1.0f - value) / 0.10f);
@@ -65,10 +73,6 @@ public final class CustomGlint {
     public static int glassCost(int alpha) {
         return Math.round((255f - alpha) * 8f / (255f - GLINT_ALPHA_MIN));
     }
-
-    /** Cap on the number of glint layers read from NBT. Every input path (editor, Glint Table, layer-tear
-     *  merge recipe) caps at this, and readInner clamps hand-authored NBT to it. */
-    public static final int MAX_LAYERS = 8;
 
     // ── Layer ─────────────────────────────────────────────────────────────────
 
@@ -88,7 +92,7 @@ public final class CustomGlint {
         }
 
         // Value equality (the record default compares the int[] by identity, which would break
-        // renderer cache keys / recipe matching - every other field is value-equal).
+        // renderer cache keys / recipe matching; every other field is value-equal).
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (!(o instanceof Layer l)) return false;
@@ -130,9 +134,10 @@ public final class CustomGlint {
         }
     }
 
-    /** The 16 named glint colors ARE Minecraft's dye colors, sourced from {@link DyeColor#getTextColor()}
+    /** The named glint colors ARE Minecraft's dye colors, sourced from {@link DyeColor#getTextColor()}
      *  (the vivid per-dye colour) so they track vanilla instead of drifting. 1.20.1's {@code getTextColor()}
-     *  returns {@code 0x00RRGGBB} with no alpha byte, so OR in opaque alpha (1.21.1+ already returns ARGB). */
+     *  returns {@code 0x00RRGGBB} with no alpha byte, so OR in opaque alpha (1.21.1+ already returns ARGB).
+     *  {@link #BLACK} is the one exception, see below. */
     private static int dye(DyeColor c) { return 0xFF000000 | c.getTextColor(); }
 
     public static final int RED        = dye(DyeColor.RED);
@@ -150,6 +155,8 @@ public final class CustomGlint {
     public static final int WHITE      = dye(DyeColor.WHITE);
     public static final int LIGHT_GRAY = dye(DyeColor.LIGHT_GRAY);
     public static final int GRAY       = dye(DyeColor.GRAY);
+    // Pure black, not DyeColor.BLACK's 0x1D1D21: the glint blend is additive, so black draws nothing.
+    // That is the point of the swatch, it leaves a deliberate gap in a multi-colour cycle.
     public static final int BLACK      = 0xFF000000;
 
     // ── Designs ───────────────────────────────────────────────────────────────
@@ -262,7 +269,7 @@ public final class CustomGlint {
 
     /** Re-uses the seed already stored on {@code existing} for any incoming unseeded chromatic layer at the
      *  same index, so re-writing an item (a trim colour/speed edit, a no-op refresh) keeps its oil-slick
-     *  pattern instead of dropping the seed. Does NOT roll fresh seeds - that happens once at commit
+     *  pattern instead of dropping the seed. Does NOT roll fresh seeds: that happens once at commit
      *  ({@link #ensureChromaticSeeds}) so editor/table PREVIEWS (which re-build their stack every frame from
      *  unseeded layers) stay seed-stable and don't flicker. */
     private static Layer[] carryChromaticSeeds(Layer[] layers, @Nullable Data existing) {
@@ -297,12 +304,12 @@ public final class CustomGlint {
         return out;
     }
 
-    /** Saturated colors only - used by JEI plugin and trim creative tab for preset display. */
+    /** Saturated colors only, no neutrals: the preset palette for downstream mod use. */
     public static final int[] VIBRANT_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK
     };
 
-    /** All 16 named colors including neutrals - full palette for downstream mod use. */
+    /** All 16 named colors including neutrals: full palette for downstream mod use. */
     public static final int[] ALL_COLORS = {
             RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE, PURPLE, MAGENTA, PINK,
             BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
@@ -351,7 +358,7 @@ public final class CustomGlint {
         if (!stack.hasTag()) return null;
         CompoundTag root = stack.getTag();
         if (!root.contains(TAG)) return null;
-        CompoundTag sub = root.getCompound(TAG); // existing nested instance - no allocation when present
+        CompoundTag sub = root.getCompound(TAG); // existing nested instance, no allocation when present
         WeakHashMap<CompoundTag, Data> cache = DATA_CACHE.get();
         Data hit = cache.get(sub);
         if (hit != null) return hit;
@@ -385,7 +392,7 @@ public final class CustomGlint {
                 String design = lt.getString(DESIGN_KEY);
                 if (design.isEmpty()) return null;
                 ResourceLocation designRl = ResourceLocation.tryParse(design);
-                if (designRl == null) return null; // malformed design in NBT - don't crash the render loop
+                if (designRl == null) return null; // malformed design in NBT: don't crash the render loop
                 boolean chromatic = isChromatic(designRl);
                 int[] colors = lt.getIntArray(COLORS_KEY);
                 // Chromatic layers are allowed to carry an empty palette (the shader falls back to a
@@ -413,7 +420,7 @@ public final class CustomGlint {
             if (colors.length == 0) return null;
             if (colors.length > MAX_COLORS_PER_LAYER) colors = Arrays.copyOf(colors, MAX_COLORS_PER_LAYER);
             ResourceLocation designRl = ResourceLocation.tryParse(design);
-            if (designRl == null) return null; // malformed design in NBT - don't crash the render loop
+            if (designRl == null) return null; // malformed design in NBT: don't crash the render loop
             layers = new Layer[]{ new Layer(designRl, colors, globalSpeed, globalInterpolate, globalScale, globalSimultaneous) };
         }
 
@@ -430,17 +437,19 @@ public final class CustomGlint {
         if (layers == null || layers.length == 0) { remove(stack); return; }
         layers = carryChromaticSeeds(layers, read(stack));
         CompoundTag tag = new CompoundTag();
-        CompoundTag existing = stack.hasTag() ? stack.getTag().getCompound(TAG) : null;
-        if (existing != null && existing.contains(GLOWING_KEY))
-            tag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
-        if (existing != null && existing.contains(GLOW_COLORS_KEY))
-            tag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
-        if (existing != null && existing.contains(GLOW_SPEED_KEY))
-            tag.putFloat(GLOW_SPEED_KEY, existing.getFloat(GLOW_SPEED_KEY));
-        if (existing != null && existing.contains(GLOW_INTERP_KEY))
-            tag.putBoolean(GLOW_INTERP_KEY, existing.getBoolean(GLOW_INTERP_KEY));
+        carryGlow(stack.hasTag() ? stack.getTag().getCompound(TAG) : null, tag);
         tag.put(LAYERS_KEY, layersToList(layers));
         stack.getOrCreateTag().put(TAG, tag);
+    }
+
+    /** Copies the glow fields onto a freshly built glint tag. They share the sub-tag with the layers but are
+     *  edited on their own, so replacing the layers must not drop them. No-op when there is nothing to carry. */
+    private static void carryGlow(@Nullable CompoundTag from, CompoundTag to) {
+        if (from == null) return;
+        if (from.contains(GLOWING_KEY))     to.putBoolean(GLOWING_KEY, from.getBoolean(GLOWING_KEY));
+        if (from.contains(GLOW_COLORS_KEY)) to.putIntArray(GLOW_COLORS_KEY, from.getIntArray(GLOW_COLORS_KEY));
+        if (from.contains(GLOW_SPEED_KEY))  to.putFloat(GLOW_SPEED_KEY, from.getFloat(GLOW_SPEED_KEY));
+        if (from.contains(GLOW_INTERP_KEY)) to.putBoolean(GLOW_INTERP_KEY, from.getBoolean(GLOW_INTERP_KEY));
     }
 
     /** Serializes a Layer[] into the {@code layers} ListTag stored under {@link #TAG}. */
@@ -479,9 +488,9 @@ public final class CustomGlint {
     }
 
     /** The stack's {@code customglint} sub-tag if present, else null. Read side of the glow accessors. This does
-     *  NOT go through the {@link #readCached} Data cache - glow fields live in the same sub-tag but are read
+     *  NOT go through the {@link #readCached} Data cache: glow fields live in the same sub-tag but are read
      *  directly, so the cache-invalidation rule on the glint Data write path doesn't apply here. */
-    @javax.annotation.Nullable
+    @Nullable
     private static CompoundTag glowSubTag(ItemStack stack) {
         if (stack.isEmpty() || !stack.hasTag()) return null;
         CompoundTag root = stack.getTag();
@@ -507,10 +516,10 @@ public final class CustomGlint {
     }
 
     /** Shared empty result for the no-glow-colours path (the common case for a glint-only glowing item),
-     *  read per glowing surface per frame - avoids a fresh {@code new int[0]} each call. Never mutated. */
+     *  read per glowing surface per frame, avoids a fresh {@code new int[0]} each call. Never mutated. */
     private static final int[] EMPTY_INT_ARRAY = new int[0];
 
-    /** Glow Trim colors - drive the outline color animation independently of any glint Data. */
+    /** Glow Trim colors: drive the outline color animation independently of any glint Data. */
     public static int[] getGlowColors(ItemStack stack) {
         CompoundTag tag = glowSubTag(stack);
         return tag != null && tag.contains(GLOW_COLORS_KEY) ? tag.getIntArray(GLOW_COLORS_KEY) : EMPTY_INT_ARRAY;
@@ -635,6 +644,18 @@ public final class CustomGlint {
         applyGlint(MOB_DROP_GLINTS, stack);
     }
 
+    /** Loot is keyed by table first, then item: GlintLootModifier looks up the rolled table and applies any
+     *  registered glint to the matching drops. */
+    public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
+
+    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        putGlint(LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()), item, design, colors, speed, interpolate, patternScale, simultaneous);
+    }
+
+    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
+        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
     // ── Entity glint API ──────────────────────────────────────────────────────
     //
     // Per-instance: NBT lives in the LivingEntity's persistent data under TAG (same schema as
@@ -660,7 +681,8 @@ public final class CustomGlint {
         return ENTITY_GLINTS.get(type);
     }
 
-    /** Reads the per-instance entity glint tag (server: from persistentData; client: caller passes the synced tag). */
+    /** Reads the per-instance entity glint tag from persistentData. The sync packet writes the same tag
+     *  client-side, so both sides read through here. */
     @Nullable
     public static Data readEntity(LivingEntity entity) {
         CompoundTag pd = entity.getPersistentData();
@@ -674,12 +696,8 @@ public final class CustomGlint {
 
     public static void writeEntity(LivingEntity entity, Layer[] layers) {
         CompoundTag pd = entity.getPersistentData();
-        CompoundTag existing = pd.contains(TAG) ? pd.getCompound(TAG) : null;
         CompoundTag glintTag = toTag(layers);
-        if (existing != null && existing.contains(GLOWING_KEY))
-            glintTag.putBoolean(GLOWING_KEY, existing.getBoolean(GLOWING_KEY));
-        if (existing != null && existing.contains(GLOW_COLORS_KEY))
-            glintTag.putIntArray(GLOW_COLORS_KEY, existing.getIntArray(GLOW_COLORS_KEY));
+        carryGlow(pd.contains(TAG) ? pd.getCompound(TAG) : null, glintTag);
         pd.put(TAG, glintTag);
     }
 
@@ -700,7 +718,7 @@ public final class CustomGlint {
         pd.put(TAG, glintTag);
     }
 
-    /** Per-entity Glow Trim colors - drive the outline color animation independently of any
+    /** Per-entity Glow Trim colors: drive the outline color animation independently of any
      *  glint Data, identical semantics to {@link #getGlowColors(ItemStack)} but on a mob. */
     public static int[] getEntityGlowColors(LivingEntity entity) {
         CompoundTag pd = entity.getPersistentData();
@@ -716,7 +734,7 @@ public final class CustomGlint {
 
     /** Sets glowColors AND glowing=true on the entity. Call
      *  {@code EntityGlintEvents.broadcast(entity)} afterwards to push the change to tracking
-     *  clients (the api jar registers the sync channel - no extra wiring needed). */
+     *  clients (the api jar registers the sync channel, no extra wiring needed). */
     public static void setEntityGlowColors(LivingEntity entity, int[] colors) {
         if (colors != null && colors.length > MAX_COLORS_PER_LAYER) colors = Arrays.copyOf(colors, MAX_COLORS_PER_LAYER);
         CompoundTag pd = entity.getPersistentData();
@@ -745,13 +763,14 @@ public final class CustomGlint {
         return pd.contains(TAG) ? pd.getCompound(TAG).copy() : new CompoundTag();
     }
 
-    /** Replaces the per-instance entity glint tag in one shot (used by the sync packet handler on the server side and by full overwrites). */
+    /** Replaces the per-instance entity glint tag in one shot: the S→C sync handler and any full overwrite
+     *  (the wand writing its build onto a mob) go through here. Empty/null tag clears the glint. */
     public static void writeEntityTag(LivingEntity entity, CompoundTag glintTag) {
         if (glintTag == null || glintTag.isEmpty()) entity.getPersistentData().remove(TAG);
         else entity.getPersistentData().put(TAG, glintTag.copy());
     }
 
-    /** Replaces the per-item glint tag in one shot. Symmetric with {@link #writeEntityTag} -
+    /** Replaces the per-item glint tag in one shot. Symmetric with {@link #writeEntityTag}:
      *  useful for transferring glint state between item and entity (e.g. capturing a mob's
      *  glint onto an item via {@code writeItemTag(stack, entityGlintTag(entity))}) or
      *  restoring from a stored tag in bulk. Empty/null tag clears the glint. */
@@ -778,7 +797,7 @@ public final class CustomGlint {
 
     /** Returns the glowColors int[] from the inner glint tag (empty if absent). */
     public static int[] tagGlowColors(@Nullable CompoundTag glintTag) {
-        if (glintTag == null || !glintTag.contains(GLOW_COLORS_KEY)) return new int[0];
+        if (glintTag == null || !glintTag.contains(GLOW_COLORS_KEY)) return EMPTY_INT_ARRAY;
         return glintTag.getIntArray(GLOW_COLORS_KEY);
     }
 
@@ -787,15 +806,5 @@ public final class CustomGlint {
         CompoundTag tag = new CompoundTag();
         tag.put(LAYERS_KEY, layersToList(layers));
         return tag;
-    }
-
-    public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
-
-    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        putGlint(LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()), item, design, colors, speed, interpolate, patternScale, simultaneous);
-    }
-
-    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
-        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
     }
 }

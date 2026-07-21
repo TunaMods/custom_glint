@@ -14,12 +14,14 @@ import net.tunamods.customglint.common.network.GlintEntitySyncPacket;
 /**
  * Server-side wiring for per-instance entity glints.
  *
- *  - On start-tracking: push the entity's current glint tag to the new viewer so the client
- *    cache is seeded before the next render.
- *  - {@link #broadcast(LivingEntity)}: invoked after any server-side mutation; sends to all
- *    players tracking the entity.
+ * <ul>
+ *   <li>On start-tracking: push the entity's current glint tag to the new viewer so the client
+ *   cache is seeded before the next render.</li>
+ *   <li>{@link #broadcast(LivingEntity)}: invoked after any server-side mutation; sends to all
+ *   players tracking the entity.</li>
+ * </ul>
  *
- * Server-safe - no client classes referenced.
+ * Server-safe: no client classes referenced.
  */
 public final class EntityGlintEvents {
     private EntityGlintEvents() {}
