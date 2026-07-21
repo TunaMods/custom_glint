@@ -240,7 +240,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         registration.addRecipes(RecipeTypes.SMITHING, smithing);
     }
 
-    // ---- builders -------------------------------------------------------------------------------
+    // Glint Trim example builders.
 
     private void addTear(List<RecipeHolder<CraftingRecipe>> out, IVanillaRecipeFactory f, String id,
                          boolean simultaneous, Identifier design, int[] colors) {
@@ -282,7 +282,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         ItemStack trim2 = trim(d2, new int[]{c2});
         CustomGlint.Data data1 = CustomGlint.read(trim1);
         CustomGlint.Data data2 = CustomGlint.read(trim2);
-        int total = Math.min(data1.layers().length + data2.layers().length, 8);
+        int total = Math.min(data1.layers().length + data2.layers().length, 8); // 8 = the cap GlintLayerTearRecipe enforces
         CustomGlint.Layer[] combined = new CustomGlint.Layer[total];
         int fromD1 = Math.min(data1.layers().length, total);
         System.arraycopy(data1.layers(), 0, combined, 0, fromD1);
@@ -355,7 +355,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         out.add(new RecipeHolder<SmithingRecipe>(key(id), new GlintSmithingDisplay(trim, ModItems.GLINT_TRIM.get(), base, result)));
     }
 
-    // ---- glow trim recipes ----------------------------------------------------------------------
+    // Glow Trim example builders.
 
     /** A Glow Trim stack carrying the given colors (renders its glowing outline preview via setColors). */
     private static ItemStack glowTrim(int[] colors) {
@@ -465,7 +465,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         }
     }
 
-    // ---- helpers --------------------------------------------------------------------------------
+    // Shared stack / display helpers.
 
     /** A glinted Glint Trim stack for previews (pattern then colors so the preview glint is rewritten). */
     private static ItemStack trim(Identifier design, int[] colors) {

@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
@@ -32,6 +33,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.component.CustomModelData;
 
+import javax.annotation.Nullable;
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -110,46 +112,18 @@ public class GlintCommand {
                     .suggests(SUGGEST_DESIGNS)
                     .then(Commands.argument("colors", StringArgumentType.string())
                         .suggests(SUGGEST_COLORS)
-                        .executes(ctx -> apply(ctx.getSource(),
-                            StringArgumentType.getString(ctx, "design"),
-                            StringArgumentType.getString(ctx, "colors"),
-                            1.0f, true, 1.0f, false))
+                        .executes(applyAt(0))
                         .then(Commands.argument("speed", FloatArgumentType.floatArg(0.25f, 8.0f))
-                            .executes(ctx -> apply(ctx.getSource(),
-                                StringArgumentType.getString(ctx, "design"),
-                                StringArgumentType.getString(ctx, "colors"),
-                                FloatArgumentType.getFloat(ctx, "speed"), true, 1.0f, false))
+                            .executes(applyAt(1))
                             .then(Commands.argument("smooth", BoolArgumentType.bool())
-                                .executes(ctx -> apply(ctx.getSource(),
-                                    StringArgumentType.getString(ctx, "design"),
-                                    StringArgumentType.getString(ctx, "colors"),
-                                    FloatArgumentType.getFloat(ctx, "speed"),
-                                    BoolArgumentType.getBool(ctx, "smooth"), 1.0f, false))
+                                .executes(applyAt(2))
                                 .then(Commands.argument("scale", FloatArgumentType.floatArg(0.25f, 4.0f))
-                                    .executes(ctx -> apply(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "design"),
-                                        StringArgumentType.getString(ctx, "colors"),
-                                        FloatArgumentType.getFloat(ctx, "speed"),
-                                        BoolArgumentType.getBool(ctx, "smooth"),
-                                        FloatArgumentType.getFloat(ctx, "scale"), false))
+                                    .executes(applyAt(3))
                                     .then(Commands.argument("simultaneous", BoolArgumentType.bool())
-                                        .executes(ctx -> apply(ctx.getSource(),
-                                            StringArgumentType.getString(ctx, "design"),
-                                            StringArgumentType.getString(ctx, "colors"),
-                                            FloatArgumentType.getFloat(ctx, "speed"),
-                                            BoolArgumentType.getBool(ctx, "smooth"),
-                                            FloatArgumentType.getFloat(ctx, "scale"),
-                                            BoolArgumentType.getBool(ctx, "simultaneous")))
+                                        .executes(applyAt(4))
                                         .then(Commands.argument("direction", StringArgumentType.word())
                                             .suggests(SUGGEST_SCROLL)
-                                            .executes(ctx -> apply(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "design"),
-                                                StringArgumentType.getString(ctx, "colors"),
-                                                FloatArgumentType.getFloat(ctx, "speed"),
-                                                BoolArgumentType.getBool(ctx, "smooth"),
-                                                FloatArgumentType.getFloat(ctx, "scale"),
-                                                BoolArgumentType.getBool(ctx, "simultaneous"),
-                                                GlintTrimItem.scrollFromName(StringArgumentType.getString(ctx, "direction"))))))))))))
+                                            .executes(applyAt(5))))))))))
             .then(Commands.literal("remove")
                 .executes(ctx -> remove(ctx.getSource())))
             .then(Commands.literal("glow")
@@ -171,64 +145,20 @@ public class GlintCommand {
                             .suggests(SUGGEST_DESIGNS)
                             .then(Commands.argument("colors", StringArgumentType.string())
                                 .suggests(SUGGEST_COLORS)
-                                .executes(ctx -> applyEntity(ctx.getSource(),
-                                    EntityArgument.getEntities(ctx, "targets"),
-                                    StringArgumentType.getString(ctx, "design"),
-                                    StringArgumentType.getString(ctx, "colors"),
-                                    1.0f, true, 1.0f, false, false))
+                                .executes(applyEntityAt(0))
                                 .then(Commands.argument("glowing", BoolArgumentType.bool())
-                                    .executes(ctx -> applyEntity(ctx.getSource(),
-                                        EntityArgument.getEntities(ctx, "targets"),
-                                        StringArgumentType.getString(ctx, "design"),
-                                        StringArgumentType.getString(ctx, "colors"),
-                                        1.0f, true, 1.0f, false,
-                                        BoolArgumentType.getBool(ctx, "glowing")))
+                                    .executes(applyEntityAt(1))
                                     .then(Commands.argument("speed", FloatArgumentType.floatArg(0.25f, 8.0f))
-                                        .executes(ctx -> applyEntity(ctx.getSource(),
-                                            EntityArgument.getEntities(ctx, "targets"),
-                                            StringArgumentType.getString(ctx, "design"),
-                                            StringArgumentType.getString(ctx, "colors"),
-                                            FloatArgumentType.getFloat(ctx, "speed"), true, 1.0f, false,
-                                            BoolArgumentType.getBool(ctx, "glowing")))
+                                        .executes(applyEntityAt(2))
                                         .then(Commands.argument("smooth", BoolArgumentType.bool())
-                                            .executes(ctx -> applyEntity(ctx.getSource(),
-                                                EntityArgument.getEntities(ctx, "targets"),
-                                                StringArgumentType.getString(ctx, "design"),
-                                                StringArgumentType.getString(ctx, "colors"),
-                                                FloatArgumentType.getFloat(ctx, "speed"),
-                                                BoolArgumentType.getBool(ctx, "smooth"), 1.0f, false,
-                                                BoolArgumentType.getBool(ctx, "glowing")))
+                                            .executes(applyEntityAt(3))
                                             .then(Commands.argument("scale", FloatArgumentType.floatArg(0.25f, 4.0f))
-                                                .executes(ctx -> applyEntity(ctx.getSource(),
-                                                    EntityArgument.getEntities(ctx, "targets"),
-                                                    StringArgumentType.getString(ctx, "design"),
-                                                    StringArgumentType.getString(ctx, "colors"),
-                                                    FloatArgumentType.getFloat(ctx, "speed"),
-                                                    BoolArgumentType.getBool(ctx, "smooth"),
-                                                    FloatArgumentType.getFloat(ctx, "scale"), false,
-                                                    BoolArgumentType.getBool(ctx, "glowing")))
+                                                .executes(applyEntityAt(4))
                                                 .then(Commands.argument("simultaneous", BoolArgumentType.bool())
-                                                    .executes(ctx -> applyEntity(ctx.getSource(),
-                                                        EntityArgument.getEntities(ctx, "targets"),
-                                                        StringArgumentType.getString(ctx, "design"),
-                                                        StringArgumentType.getString(ctx, "colors"),
-                                                        FloatArgumentType.getFloat(ctx, "speed"),
-                                                        BoolArgumentType.getBool(ctx, "smooth"),
-                                                        FloatArgumentType.getFloat(ctx, "scale"),
-                                                        BoolArgumentType.getBool(ctx, "simultaneous"),
-                                                        BoolArgumentType.getBool(ctx, "glowing")))
+                                                    .executes(applyEntityAt(5))
                                                     .then(Commands.argument("direction", StringArgumentType.word())
                                                         .suggests(SUGGEST_SCROLL)
-                                                        .executes(ctx -> applyEntity(ctx.getSource(),
-                                                            EntityArgument.getEntities(ctx, "targets"),
-                                                            StringArgumentType.getString(ctx, "design"),
-                                                            StringArgumentType.getString(ctx, "colors"),
-                                                            FloatArgumentType.getFloat(ctx, "speed"),
-                                                            BoolArgumentType.getBool(ctx, "smooth"),
-                                                            FloatArgumentType.getFloat(ctx, "scale"),
-                                                            BoolArgumentType.getBool(ctx, "simultaneous"),
-                                                            BoolArgumentType.getBool(ctx, "glowing"),
-                                                            GlintTrimItem.scrollFromName(StringArgumentType.getString(ctx, "direction")))))))))))))
+                                                        .executes(applyEntityAt(6)))))))))))
                     .then(Commands.literal("remove")
                         .executes(ctx -> removeEntity(ctx.getSource(),
                             EntityArgument.getEntities(ctx, "targets"))))
@@ -239,7 +169,41 @@ public class GlintCommand {
                                 BoolArgumentType.getBool(ctx, "enabled"))))))));
     }
 
+    // Both apply chains take their optional arguments in a fixed order, so the node at depth N has exactly
+    // the first N of them parsed. One executor factory per chain therefore covers every depth: read an
+    // argument once the depth reaches it, otherwise substitute the default.
+
+    /** Executor for the {@code /glint apply} node at the given depth (0 = design + colors only). */
+    private static Command<CommandSourceStack> applyAt(int level) {
+        return ctx -> apply(ctx.getSource(),
+            StringArgumentType.getString(ctx, "design"),
+            StringArgumentType.getString(ctx, "colors"),
+            level >= 1 ? FloatArgumentType.getFloat(ctx, "speed") : 1.0f,
+            level >= 2 ? BoolArgumentType.getBool(ctx, "smooth") : true,
+            level >= 3 ? FloatArgumentType.getFloat(ctx, "scale") : 1.0f,
+            level >= 4 && BoolArgumentType.getBool(ctx, "simultaneous"),
+            level >= 5 ? GlintTrimItem.scrollFromName(StringArgumentType.getString(ctx, "direction"))
+                       : CustomGlint.SCROLL_E);
+    }
+
+    /** Executor for the {@code /glint entity <targets> apply} node at the given depth. The entity chain takes
+     *  {@code glowing} first, so its depths do not line up with {@link #applyAt}'s. */
+    private static Command<CommandSourceStack> applyEntityAt(int level) {
+        return ctx -> applyEntity(ctx.getSource(),
+            EntityArgument.getEntities(ctx, "targets"),
+            StringArgumentType.getString(ctx, "design"),
+            StringArgumentType.getString(ctx, "colors"),
+            level >= 2 ? FloatArgumentType.getFloat(ctx, "speed") : 1.0f,
+            level >= 3 ? BoolArgumentType.getBool(ctx, "smooth") : true,
+            level >= 4 ? FloatArgumentType.getFloat(ctx, "scale") : 1.0f,
+            level >= 5 && BoolArgumentType.getBool(ctx, "simultaneous"),
+            level >= 1 && BoolArgumentType.getBool(ctx, "glowing"),
+            level >= 6 ? GlintTrimItem.scrollFromName(StringArgumentType.getString(ctx, "direction"))
+                       : CustomGlint.SCROLL_E);
+    }
+
     /** Resolves a design name to its texture Identifier, or null (after sending a failure) if unknown. */
+    @Nullable
     private static Identifier resolveDesign(CommandSourceStack source, String designName) {
         String key = designName.toLowerCase();
         if (!GlintTrimItem.PATTERNS.contains(key)) {
@@ -252,10 +216,12 @@ public class GlintCommand {
 
     /** Parses a comma-separated color-name list into ARGB ints, or null (after sending a failure) on
      *  the first unknown color. */
+    @Nullable
     private static int[] parseColors(CommandSourceStack source, String colorsArg) {
         String[] parts = colorsArg.split(",");
-        if (parts.length > 8) {
-            source.sendFailure(Component.literal("Too many colors (max 8); got " + parts.length + "."));
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER) {
+            source.sendFailure(Component.literal(
+                "Too many colors (max " + CustomGlint.MAX_COLORS_PER_LAYER + "); got " + parts.length + "."));
             return null;
         }
         int[] colors = new int[parts.length];
@@ -272,35 +238,25 @@ public class GlintCommand {
         return colors;
     }
 
-    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
-                                   String designName, String colorsArg,
-                                   float speed, boolean smooth, float scale, boolean simultaneous,
-                                   boolean glowing) {
-        return applyEntity(source, targets, designName, colorsArg, speed, smooth, scale, simultaneous,
-                glowing, CustomGlint.SCROLL_E);
+    /** The commanding player, or null after sending the failure (console / command block). */
+    @Nullable
+    private static ServerPlayer requirePlayer(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) source.sendFailure(Component.literal("Must be a player"));
+        return player;
     }
 
-    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
-                                   String designName, String colorsArg,
-                                   float speed, boolean smooth, float scale, boolean simultaneous,
-                                   boolean glowing, int scrollDir) {
-        Identifier design = resolveDesign(source, designName);
-        if (design == null) return 0;
-        int[] colors = parseColors(source, colorsArg);
-        if (colors == null) return 0;
-
-        int seed = CustomGlint.isChromatic(design) ? CustomGlint.randomChromaticSeed() : 0;
-        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous, scrollDir, 0.0f, seed);
-        CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
-
-        int count = 0;
-        for (Entity e : targets) {
-            if (!(e instanceof LivingEntity le)) continue;
-            CustomGlint.writeEntity(le, layers);
-            CustomGlint.setEntityGlowing(le, glowing);
-            count++;
+    /** The source's main-hand stack, or null after sending the failure (not a player, or empty hand). */
+    @Nullable
+    private static ItemStack requireHeldStack(CommandSourceStack source) {
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return null;
+        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (stack.isEmpty()) {
+            source.sendFailure(Component.literal("Hold an item in your main hand"));
+            return null;
         }
-        return reportEntityResult(source, count, "No matching living entities", "Glint applied to");
+        return stack;
     }
 
     /** Report a per-entity command result: failure text on a zero count, else a success line with the
@@ -314,42 +270,10 @@ public class GlintCommand {
         return count;
     }
 
-    private static int removeEntity(CommandSourceStack source, Collection<? extends Entity> targets) {
-        int count = 0;
-        for (Entity e : targets) {
-            if (!(e instanceof LivingEntity le)) continue;
-            if (!CustomGlint.hasEntity(le)) continue;
-            CustomGlint.removeEntity(le);
-            count++;
-        }
-        return reportEntityResult(source, count, "No matching living entities had a glint", "Glint removed from");
-    }
-
-    private static int glowEntity(CommandSourceStack source, Collection<? extends Entity> targets, boolean enabled) {
-        int count = 0;
-        for (Entity e : targets) {
-            if (!(e instanceof LivingEntity le)) continue;
-            // Glow is independent of the glint: an entity can glow with no custom glint (the outline
-            // defaults to white when there are no glow colors or glint to draw its color from).
-            CustomGlint.setEntityGlowing(le, enabled);
-            count++;
-        }
-        return reportEntityResult(source, count, "No matching living entities",
-                enabled ? "Glowing enabled on" : "Glowing disabled on");
-    }
-
-    private static int apply(CommandSourceStack source, String designName, String colorsArg,
-                              float speed, boolean smooth, float scale, boolean simultaneous) {
-        return apply(source, designName, colorsArg, speed, smooth, scale, simultaneous, CustomGlint.SCROLL_E);
-    }
-
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
                               float speed, boolean smooth, float scale, boolean simultaneous, int scrollDir) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
         Identifier design = resolveDesign(source, designName);
         if (design == null) return 0;
@@ -366,21 +290,6 @@ public class GlintCommand {
         CustomGlint.write(stack, design, colors, speed, smooth, scale, simultaneous, scrollDir, 0.0f, seed);
         source.sendSuccess(() -> Component.literal("Glint applied"), false);
         return 1;
-    }
-
-    /** The source's main-hand stack, or null after sending the failure (not a player, or empty hand). */
-    private static ItemStack requireHeldStack(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return null;
-        }
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return null;
-        }
-        return stack;
     }
 
     private static int glow(CommandSourceStack source, boolean enabled) {
@@ -411,11 +320,8 @@ public class GlintCommand {
      *  player's design library so the whole left palette is usable, instead of depositing each trim one by
      *  one from creative. */
     private static int cheat(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
         // Copy before mutating; the decoded attachment list is immutable (see GlintTableMenu#slotsChanged).
         List<String> stored = new ArrayList<>(player.getData(ModAttachments.STORED_DESIGNS.get()));
@@ -543,11 +449,58 @@ public class GlintCommand {
                 writer.write(json);
             }
 
-            source.sendSuccess(() -> Component.literal("Glint trim exported to: " + file.toString()), false);
+            source.sendSuccess(() -> Component.literal("Glint trim exported to: " + file), false);
             return 1;
         } catch (Exception e) {
             source.sendFailure(Component.literal("Failed to export: " + e.getMessage()));
             return 0;
         }
+    }
+
+    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
+                                   String designName, String colorsArg,
+                                   float speed, boolean smooth, float scale, boolean simultaneous,
+                                   boolean glowing, int scrollDir) {
+        Identifier design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
+
+        int seed = CustomGlint.isChromatic(design) ? CustomGlint.randomChromaticSeed() : 0;
+        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous, scrollDir, 0.0f, seed);
+        CustomGlint.Layer[] layers = new CustomGlint.Layer[]{ layer };
+
+        int count = 0;
+        for (Entity e : targets) {
+            if (!(e instanceof LivingEntity le)) continue;
+            CustomGlint.writeEntity(le, layers);
+            CustomGlint.setEntityGlowing(le, glowing);
+            count++;
+        }
+        return reportEntityResult(source, count, "No matching living entities", "Glint applied to");
+    }
+
+    private static int removeEntity(CommandSourceStack source, Collection<? extends Entity> targets) {
+        int count = 0;
+        for (Entity e : targets) {
+            if (!(e instanceof LivingEntity le)) continue;
+            if (!CustomGlint.hasEntity(le)) continue;
+            CustomGlint.removeEntity(le);
+            count++;
+        }
+        return reportEntityResult(source, count, "No matching living entities had a glint", "Glint removed from");
+    }
+
+    private static int glowEntity(CommandSourceStack source, Collection<? extends Entity> targets, boolean enabled) {
+        int count = 0;
+        for (Entity e : targets) {
+            if (!(e instanceof LivingEntity le)) continue;
+            // Glow is independent of the glint: an entity can glow with no custom glint (the outline
+            // defaults to white when there are no glow colors or glint to draw its color from).
+            CustomGlint.setEntityGlowing(le, enabled);
+            count++;
+        }
+        return reportEntityResult(source, count, "No matching living entities",
+                enabled ? "Glowing enabled on" : "Glowing disabled on");
     }
 }
