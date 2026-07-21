@@ -9,11 +9,14 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 
 /**
- * S→C: the player's "printed" trim library - the finished, painted (colored / glow) trims shown in the Glint
+ * S→C: the player's "printed" trim library: the finished, painted (colored / glow) trims shown in the Glint
  * Table's right panel. Sent when the table opens and whenever a trim is deposited. The client mirror
  * {@link #CLIENT_PRINTED} drives the right grid.
  */
 public class GlintPrintedSyncPacket {
+
+    /** Client-side mirror of the local player's printed-trim library. Read by the Glint Table screen. */
+    public static final List<ItemStack> CLIENT_PRINTED = new ArrayList<>();
 
     public final List<ItemStack> trims;
 
@@ -37,16 +40,13 @@ public class GlintPrintedSyncPacket {
         return new GlintPrintedSyncPacket(trims);
     }
 
-    /** Client-side mirror of the local player's printed-trim library. Read by the Glint Table screen. */
-    public static final List<ItemStack> CLIENT_PRINTED = new ArrayList<>();
-
-    public static void clearClient() { CLIENT_PRINTED.clear(); }
-
     public static void handle(GlintPrintedSyncPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+        NetHandlers.work(ctx, () -> {
             CLIENT_PRINTED.clear();
             CLIENT_PRINTED.addAll(pkt.trims);
         });
-        ctx.get().setPacketHandled(true);
     }
+
+    /** Drops the mirror on disconnect so a later session can't read the previous server's library. */
+    public static void clearClient() { CLIENT_PRINTED.clear(); }
 }

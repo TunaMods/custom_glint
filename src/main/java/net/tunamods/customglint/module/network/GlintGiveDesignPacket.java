@@ -9,7 +9,8 @@ import java.util.function.Supplier;
 
 /**
  * C→S: shift-left-click an empty design in the Glint Table's left palette. The server hands the player a free
- * blank trim of that design (it carries no colors, so it's just a template). No-op if the inventory is full.
+ * blank trim of that design (it carries no colors, so it's just a template). The server only hands out a
+ * design the player has already stored, and drops the trim at their feet if their inventory is full.
  */
 public class GlintGiveDesignPacket {
 

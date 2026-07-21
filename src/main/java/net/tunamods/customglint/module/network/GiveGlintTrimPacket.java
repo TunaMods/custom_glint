@@ -1,20 +1,23 @@
 package net.tunamods.customglint.module.network;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlintWandItem;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlintWandItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 import java.util.function.Supplier;
 
+/**
+ * C→S: the wand editor's "give a trim" button. Mints a Glint Trim carrying the editor's current build and
+ * puts it in the sender's inventory. Holding a wand is the gate.
+ */
 public class GiveGlintTrimPacket {
 
     public final CustomGlint.Layer[] layers;
@@ -49,9 +52,7 @@ public class GiveGlintTrimPacket {
     }
 
     public static void handle(GiveGlintTrimPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+        NetHandlers.withSender(ctx, player -> {
             // Require the sender to actually hold a wand.
             boolean holdsWand = player.getItemInHand(InteractionHand.MAIN_HAND).getItem() instanceof GlintWandItem
                     || player.getItemInHand(InteractionHand.OFF_HAND).getItem() instanceof GlintWandItem;
@@ -88,6 +89,5 @@ public class GiveGlintTrimPacket {
 
             player.addItem(trim);
         });
-        ctx.get().setPacketHandled(true);
     }
 }

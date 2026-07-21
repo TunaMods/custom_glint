@@ -16,8 +16,12 @@ import java.util.function.Supplier;
  */
 public class GlintPrintPacket {
 
-    /** Anti-DoS cap on each of the below/above extra-layer arrays. */
+    /** Cap on each of the below/above extra-layer arrays. Printing trims to MAX_LAYERS anyway; this only
+     *  bounds what decode will allocate. */
     private static final int MAX_EXTRA_LAYERS = 16;
+
+    /** Per-shard and per-colour cap, matching {@link CustomGlint#MAX_COLORS_PER_LAYER}. */
+    private static final int MAX_SHARDS = 8;
 
     public final String design;
     public final float speed, scale, scrollOffset;
@@ -81,7 +85,7 @@ public class GlintPrintPacket {
                 buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readUtf(32767), buf.readBoolean(),
                 buf.readVarInt(), buf.readFloat(), buf.readBoolean(),
                 buf.readInt(), buf.readInt(),
-                readShardDyes(buf), readCappedVarIntArray(buf, 8),
+                readShardDyes(buf), readCappedVarIntArray(buf, MAX_SHARDS),
                 GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
                 GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(), buf.readBoolean(),
                 readShardDyes(buf));
@@ -90,10 +94,10 @@ public class GlintPrintPacket {
     private static int[][] readShardDyes(FriendlyByteBuf buf) {
         int sent = buf.readVarInt();
         if (sent < 0 || sent > GlintApplyPacket.MAX_WIRE_COUNT) throw new DecoderException("Bad shard count: " + sent);
-        int keep = Math.max(0, Math.min(sent, 8));
+        int keep = Math.min(sent, MAX_SHARDS);
         int[][] shards = new int[keep][];
         for (int i = 0; i < sent; i++) {
-            int[] shard = readCappedVarIntArray(buf, 8);
+            int[] shard = readCappedVarIntArray(buf, MAX_SHARDS);
             if (i < keep) shards[i] = shard;
         }
         return shards;
@@ -108,19 +112,15 @@ public class GlintPrintPacket {
     }
 
     public static void handle(GlintPrintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) {
-                if (pkt.glowBase) {
-                    m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
-                } else {
-                    m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name,
-                            pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex,
-                            pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous,
-                            pkt.glowShardDyes);
-                }
+        NetHandlers.withTableMenu(ctx, (sp, m) -> {
+            if (pkt.glowBase) {
+                m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
+            } else {
+                m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name,
+                        pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex,
+                        pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous,
+                        pkt.glowShardDyes);
             }
         });
-        ctx.get().setPacketHandled(true);
     }
 }

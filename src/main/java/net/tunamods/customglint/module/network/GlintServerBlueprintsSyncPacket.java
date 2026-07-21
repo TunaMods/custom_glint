@@ -13,14 +13,16 @@ import java.util.function.Supplier;
  * import but only ops can delete; they are distinct from the player's personal client-side blueprints (which
  * live in the client's own config dir and never round-trip through the server). Sent as name → raw JSON so the
  * client reuses the same parser it uses for local files. The integrated (single-player) server never sends
- * this - there the client's local scan already covers the same directory.
+ * this: there the client's local scan already covers the same directory.
  */
 public class GlintServerBlueprintsSyncPacket {
 
-    /** Match the save path's JSON cap ({@code GlintWandSaveBlueprintPacket.MAX_JSON}). The default writeUtf/readUtf
-     *  limit is 32767, so a blueprint larger than that (permitted on save, or dropped in by an admin) would throw
-     *  EncoderException here and break sync for everyone opening a table. */
+    /** Matches the save path's cap ({@code GlintWandSaveBlueprintPacket.MAX_JSON}). The default writeUtf limit of
+     *  32767 would throw on a larger blueprint and break sync for everyone opening a table. */
     private static final int MAX_JSON = 64 * 1024;
+
+    /** Client-side mirror of the connected server's shared blueprints (name → raw JSON). Empty in single-player. */
+    public static final Map<String, String> CLIENT_SERVER_BLUEPRINTS = new LinkedHashMap<>();
 
     public final Map<String, String> blueprints;
 
@@ -48,17 +50,13 @@ public class GlintServerBlueprintsSyncPacket {
         return new GlintServerBlueprintsSyncPacket(map);
     }
 
-    /** Client-side mirror of the connected server's shared blueprints (name → raw JSON). Empty in single-player. */
-    public static final Map<String, String> CLIENT_SERVER_BLUEPRINTS = new LinkedHashMap<>();
-
-    /** Drops the mirror on disconnect so a later session can't read the previous server's blueprints. */
-    public static void clearClient() { CLIENT_SERVER_BLUEPRINTS.clear(); }
-
     public static void handle(GlintServerBlueprintsSyncPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+        NetHandlers.work(ctx, () -> {
             CLIENT_SERVER_BLUEPRINTS.clear();
             CLIENT_SERVER_BLUEPRINTS.putAll(pkt.blueprints);
         });
-        ctx.get().setPacketHandled(true);
     }
+
+    /** Drops the mirror on disconnect so a later session can't read the previous server's blueprints. */
+    public static void clearClient() { CLIENT_SERVER_BLUEPRINTS.clear(); }
 }

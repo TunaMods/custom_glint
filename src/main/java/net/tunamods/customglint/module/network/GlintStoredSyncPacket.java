@@ -16,6 +16,9 @@ import net.minecraftforge.network.NetworkEvent;
  */
 public class GlintStoredSyncPacket {
 
+    /** Client-side mirror of the local player's stored design set. Read by the Glint Table screen. */
+    public static final Set<String> CLIENT_STORED = new HashSet<>();
+
     public final List<String> designs;
 
     public GlintStoredSyncPacket(List<String> designs) {
@@ -35,16 +38,13 @@ public class GlintStoredSyncPacket {
         return new GlintStoredSyncPacket(designs);
     }
 
-    /** Client-side mirror of the local player's stored design set. Read by the Glint Table screen. */
-    public static final Set<String> CLIENT_STORED = new HashSet<>();
-
-    public static void clearClient() { CLIENT_STORED.clear(); }
-
     public static void handle(GlintStoredSyncPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+        NetHandlers.work(ctx, () -> {
             CLIENT_STORED.clear();
             CLIENT_STORED.addAll(pkt.designs);
         });
-        ctx.get().setPacketHandled(true);
     }
+
+    /** Drops the mirror on disconnect so a later session can't read the previous server's set. */
+    public static void clearClient() { CLIENT_STORED.clear(); }
 }

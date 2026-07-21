@@ -9,7 +9,7 @@ import java.util.function.Supplier;
 
 /**
  * C→S: the player dropped a trim held on the cursor onto one of the Glint Table's scrollable grids. The
- * server deposits one into the player's design / printed-trim library. No payload - the carried item is read
+ * server deposits one into the player's design / printed-trim library. No payload: the carried item is read
  * from the open menu.
  */
 public class GlintDepositPacket {

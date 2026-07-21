@@ -10,7 +10,7 @@ import java.util.function.Supplier;
 
 /**
  * C→S: the wand editor's Import trash icon deletes a shared blueprint from the server's pool
- * ({@link ServerBlueprints}). No op check - the wand is the gate (matching the save path). The server
+ * ({@link ServerBlueprints}). No op check: the wand is the gate (matching the save path). The server
  * removes the file and re-syncs so the sender's Import list updates.
  */
 public class GlintWandDeleteBlueprintPacket {
@@ -31,7 +31,7 @@ public class GlintWandDeleteBlueprintPacket {
 
     public static void handle(GlintWandDeleteBlueprintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
         NetHandlers.withSender(ctx, sp -> {
-            // The wand is the gate (it is creative-only); enforce it server-side (matching the save path).
+            // Holding a wand is the only gate, so enforce it server-side (matching the save path).
             if (!GlintWandItem.isHeld(sp)) return;
             ServerBlueprints.delete(pkt.name);
             ServerBlueprints.syncTo(sp);
