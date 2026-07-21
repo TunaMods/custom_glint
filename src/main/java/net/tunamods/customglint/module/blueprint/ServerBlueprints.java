@@ -68,6 +68,7 @@ public final class ServerBlueprints {
 
     /** Write {@code json} to a unique {@code <base>.json} ({@code base}, {@code base_2}, …). Returns the final
      *  name, or null if writing failed. {@code baseName} is sanitized to a filesystem-safe slug first. */
+    @Nullable
     public static String saveUnique(String baseName, String json) {
         String base = sanitize(baseName);
         try {

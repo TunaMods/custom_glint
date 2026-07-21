@@ -1,15 +1,60 @@
 package net.tunamods.customglint.module.network;
 
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import net.tunamods.customglint.module.item.GlintWandItem;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 
+import java.util.function.BiConsumer;
+
+/**
+ * Registers every {@link net.minecraft.network.protocol.common.custom.CustomPacketPayload} the mod sends, and
+ * holds the plumbing the payload classes share: the decode-side capacity clamp, the wand authorization check,
+ * and the "run this against the open Glint Table" handler wrapper.
+ */
 public class ModNetworking {
 
     private static final String PROTOCOL = "1";
 
+    /** Upper bound on the pre-sized capacity a sync packet may allocate from a wire-declared count. */
+    private static final int MAX_SYNC_ENTRIES = 1024;
+
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener(ModNetworking::onRegisterPayloads);
+    }
+
+    /**
+     * Capacity to pre-size a sync packet's list with. A crafted server sending count≈MAX_VALUE would
+     * otherwise allocate a multi-GB backing array before a single element is read. Callers still loop the
+     * real count, so a faked one underflows the buffer and throws cleanly.
+     */
+    static int syncListCapacity(int count) {
+        return Math.max(0, Math.min(count, MAX_SYNC_ENTRIES));
+    }
+
+    /**
+     * Whether the player is holding a Glint Wand. The wand has no recipe (creative/command only), so holding
+     * one is the authorization for everything the wand editor asks the server to do. Those packets are all
+     * client-sent, so each handler re-checks this before minting items or writing shared files; without it a
+     * modified client could ask with no wand at all. No game-mode check, so it works in survival too.
+     */
+    static boolean holdsWand(Player player) {
+        return player.getMainHandItem().getItem() instanceof GlintWandItem
+                || player.getOffhandItem().getItem() instanceof GlintWandItem;
+    }
+
+    /** Runs {@code action} on the server thread when the sender has a Glint Table open, the shape every
+     *  table packet's handler needs. Silently drops the packet otherwise. */
+    static void withGlintTable(IPayloadContext ctx, BiConsumer<ServerPlayer, GlintTableMenu> action) {
+        ctx.enqueueWork(() -> {
+            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu menu) {
+                action.accept(sp, menu);
+            }
+        });
     }
 
     private static void onRegisterPayloads(RegisterPayloadHandlersEvent event) {

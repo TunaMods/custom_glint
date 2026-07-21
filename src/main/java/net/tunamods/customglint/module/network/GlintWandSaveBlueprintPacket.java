@@ -41,10 +41,8 @@ public record GlintWandSaveBlueprintPacket(String baseName, String json) impleme
     public static void handle(GlintWandSaveBlueprintPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
-            // The packet is client-sent, so re-verify the sender holds the wand (the stated gate) before
-            // writing a shared file. Mirrors GiveGlintTrimPacket / GlintApplyPacket.
-            if (!(sp.getMainHandItem().getItem() instanceof GlintWandItem
-                    || sp.getOffhandItem().getItem() instanceof GlintWandItem)) return;
+            // Holding the wand is the gate; see ModNetworking.holdsWand.
+            if (!ModNetworking.holdsWand(sp)) return;
             if (pkt.json == null || pkt.json.length() > MAX_JSON) return;
             if (ServerBlueprints.count() >= ServerBlueprints.MAX_BLUEPRINTS) return;
             // Validate + normalize the (untrusted) JSON: only a well-formed object carrying at least one

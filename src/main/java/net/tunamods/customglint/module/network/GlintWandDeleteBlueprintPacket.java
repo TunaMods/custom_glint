@@ -31,10 +31,9 @@ public record GlintWandDeleteBlueprintPacket(String name) implements CustomPacke
     public static void handle(GlintWandDeleteBlueprintPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
-            // Client-sent: re-verify the sender holds the wand (the stated gate) before removing a shared
-            // file, else a scripted client could wipe every server blueprint. Mirrors the save path.
-            if (!(sp.getMainHandItem().getItem() instanceof GlintWandItem
-                    || sp.getOffhandItem().getItem() instanceof GlintWandItem)) return;
+            // Holding the wand is the gate (see ModNetworking.holdsWand), else a scripted client could wipe
+            // every server blueprint.
+            if (!ModNetworking.holdsWand(sp)) return;
             ServerBlueprints.delete(pkt.name());
             ServerBlueprints.syncTo(sp);
         });

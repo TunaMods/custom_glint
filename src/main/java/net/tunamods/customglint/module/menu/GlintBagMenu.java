@@ -20,9 +20,7 @@ import net.tunamods.customglint.module.item.GlintBagItem;
  */
 public class GlintBagMenu extends AbstractContainerMenu {
 
-    private final Player player;
     private final ItemStack bag;
-    private final IItemHandler handler;
 
     /** Client constructor; the hand is sent as a boolean in the open packet. */
     public GlintBagMenu(int containerId, Inventory inventory, RegistryFriendlyByteBuf extraData) {
@@ -31,10 +29,9 @@ public class GlintBagMenu extends AbstractContainerMenu {
 
     public GlintBagMenu(int containerId, Inventory inventory, InteractionHand hand) {
         super(ModMenuTypes.GLINT_BAG_MENU.get(), containerId);
-        this.player = inventory.player;
-        this.bag = player.getItemInHand(hand);
+        this.bag = inventory.player.getItemInHand(hand);
         IItemHandler cap = bag.getCapability(Capabilities.ItemHandler.ITEM);
-        this.handler = cap != null ? cap : new ItemStackHandler(GlintBagItem.SIZE);
+        IItemHandler handler = cap != null ? cap : new ItemStackHandler(GlintBagItem.SIZE);
 
         // The player-inventory slot the bag lives in. Off-hand (index 40) isn't shown in this menu, so it
         // can't be moved anyway; only a hotbar/main-inventory bag needs locking.
@@ -74,7 +71,7 @@ public class GlintBagMenu extends AbstractContainerMenu {
         ItemStack stack = slot.getItem();
         ItemStack original = stack.copy();
         int bagEnd = GlintBagItem.SIZE;
-        int invEnd = bagEnd + 36;
+        int invEnd = bagEnd + 36; // 36 = the player inventory slots added after the bag grid
 
         if (index < bagEnd) {
             // Bag → player inventory.

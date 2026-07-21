@@ -14,6 +14,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+/**
+ * C→S: the wand editor's "give trim" button mints a finished {@link GlintTrimItem} carrying the current build.
+ * Shares {@link GlintApplyPacket}'s layer + glow-and-name wire format.
+ */
 public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static final Type<GiveGlintTrimPacket> TYPE =
@@ -47,7 +51,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
     }
 
     public static GiveGlintTrimPacket decode(FriendlyByteBuf buf) {
-        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
+        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, GlintApplyPacket.MAX_LAYERS);
         GlintApplyPacket.GlowName gn = GlintApplyPacket.readGlowAndName(buf);
         return new GiveGlintTrimPacket(layers, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor());
     }
@@ -55,15 +59,9 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
     public static void handle(GiveGlintTrimPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer player)) return;
-            // Server-authoritative gate. The give-trim button is reached only through the wand editor, and
-            // the wand is creative/command-only (no recipe), so holding one is the authorization. The packet
-            // is client-sent, so re-verify the player actually holds the wand before minting a finished trim;
-            // without this a modified client could send the packet with no wand and get free painted trims.
-            // (Mirrors GlintApplyPacket's gate: hold-the-wand only, no game-mode check, so it works in
-            // survival too.)
-            boolean holdingWand = player.getMainHandItem().getItem() instanceof GlintWandItem
-                    || player.getOffhandItem().getItem() instanceof GlintWandItem;
-            if (!holdingWand) return;
+            // Holding the wand is the gate (see ModNetworking.holdsWand); without it a modified client could
+            // send this with no wand and get free painted trims.
+            if (!ModNetworking.holdsWand(player)) return;
 
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
@@ -90,13 +88,7 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
                 GlintTrimItem.setSeed(trim, layer0.seed());
             }
 
-            // Apply custom name and color if provided
-            if (!pkt.trimName.isEmpty()) {
-                Component displayName = Component.literal(pkt.trimName)
-                    .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
-                trim.set(DataComponents.CUSTOM_NAME, displayName);
-            }
-
+            GlintApplyPacket.applyCustomName(trim, pkt.trimName, pkt.trimNameColor);
             player.addItem(trim);
         });
     }

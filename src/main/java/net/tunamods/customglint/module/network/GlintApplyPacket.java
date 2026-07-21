@@ -17,6 +17,11 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintWandItem;
 
+/**
+ * C→S: the wand editor applied or removed a custom glint. Carries the built layers plus the glow / custom-name
+ * block, and optionally an item id to spawn the result onto. Also the home of the layer + glow-and-name wire
+ * format, which {@link GiveGlintTrimPacket}, {@link GlintImportPacket} and {@link GlintPrintPacket} reuse.
+ */
 public class GlintApplyPacket implements CustomPacketPayload {
 
     public static final Type<GlintApplyPacket> TYPE =
@@ -24,6 +29,13 @@ public class GlintApplyPacket implements CustomPacketPayload {
 
     public static final StreamCodec<FriendlyByteBuf, GlintApplyPacket> STREAM_CODEC =
             StreamCodec.of(GlintApplyPacket::encode, GlintApplyPacket::decode);
+
+    /** Cap on a wire-declared array size (colors / layers), shared by the layer helpers below. Well above any
+     *  real build, low enough that a crafted count can't drive a huge allocation. */
+    static final int MAX_WIRE_COUNT = 256;
+
+    /** Layers kept from an editor-built glint: 8 is the wand and Glint Table maximum. */
+    static final int MAX_LAYERS = 8;
 
     public final InteractionHand wandHand;
     public final boolean remove;
@@ -78,25 +90,21 @@ public class GlintApplyPacket implements CustomPacketPayload {
             boolean wandOnly = buf.readBoolean();
             return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0], "", 0xFFFFFFFF, wandOnly);
         }
-        // Use the hardened wire readers: they reject negative/oversized counts (a crafted client
-        // could otherwise send a negative VarInt → NegativeArraySizeException) and fully drain the
-        // sender's bytes so the trailing fields stay aligned. Empty colours stay valid.
-        CustomGlint.Layer[] layers = readLayers(buf, 8);
+        // readLayers/readGlowAndName reject a bad count and drain the sender's bytes, so the trailing
+        // fields below stay aligned. An empty colour array is still valid.
+        CustomGlint.Layer[] layers = readLayers(buf, MAX_LAYERS);
         String itemId = buf.readUtf();
         GlowName gn = readGlowAndName(buf);
         boolean wandOnly = buf.readBoolean();
         return new GlintApplyPacket(hand, false, layers, itemId, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor(), wandOnly);
     }
 
-    /** Defensive cap on wire-declared array sizes (colors / layers), shared by the layer helpers below. */
-    static final int MAX_WIRE_COUNT = 256;
-
     /** Reads a color array, draining every int the sender wrote (so the buffer stays aligned) while keeping
-     *  at most the first 8. */
+     *  at most the first {@link CustomGlint#MAX_COLORS_PER_LAYER}. */
     static int[] readCappedColors(FriendlyByteBuf buf) {
         int sent = buf.readVarInt();
         if (sent < 0 || sent > MAX_WIRE_COUNT) throw new DecoderException("Bad color count: " + sent);
-        int len = Math.min(sent, 8);
+        int len = Math.min(sent, CustomGlint.MAX_COLORS_PER_LAYER);
         int[] colors = new int[len];
         for (int j = 0; j < sent; j++) {
             int c = buf.readInt();
@@ -213,7 +221,7 @@ public class GlintApplyPacket implements CustomPacketPayload {
     private static void applyAll(GlintApplyPacket pkt, ItemStack stack, CustomGlint.Layer[] seeded) {
         CustomGlint.write(stack, seeded);
         applyGlow(pkt, stack);
-        applyName(pkt, stack);
+        applyCustomName(stack, pkt.trimName, pkt.trimNameColor);
     }
 
     private static void applyGlow(GlintApplyPacket pkt, ItemStack stack) {
@@ -222,11 +230,12 @@ public class GlintApplyPacket implements CustomPacketPayload {
         if (pkt.glowColors.length > 0) CustomGlint.setGlowColors(stack, pkt.glowColors);
     }
 
-    private static void applyName(GlintApplyPacket pkt, ItemStack stack) {
-        if (!pkt.trimName.isEmpty()) {
-            Component displayName = Component.literal(pkt.trimName)
-                .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
-            stack.set(DataComponents.CUSTOM_NAME, displayName);
-        }
+    /** Names a stack from the editor's name field. An empty name leaves the stack unnamed. The editor packs
+     *  the colour as {@code (rgb << 8) | alpha}, so shift the alpha back off before building the style. */
+    static void applyCustomName(ItemStack stack, String name, int packedColor) {
+        if (name.isEmpty()) return;
+        Component displayName = Component.literal(name)
+                .withStyle(s -> s.withColor(TextColor.fromRgb((packedColor >>> 8) & 0xFFFFFF)));
+        stack.set(DataComponents.CUSTOM_NAME, displayName);
     }
 }

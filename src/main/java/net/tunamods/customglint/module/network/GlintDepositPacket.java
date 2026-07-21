@@ -26,10 +26,6 @@ public record GlintDepositPacket() implements CustomPacketPayload {
     }
 
     public static void handle(GlintDepositPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.depositCarried();
-            }
-        });
+        ModNetworking.withGlintTable(ctx, (sp, menu) -> menu.depositCarried());
     }
 }

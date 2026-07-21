@@ -29,10 +29,6 @@ public record GlintDeleteServerBlueprintPacket(String name) implements CustomPac
     }
 
     public static void handle(GlintDeleteServerBlueprintPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.deleteServerBlueprint(sp, pkt.name());
-            }
-        });
+        ModNetworking.withGlintTable(ctx, (sp, menu) -> menu.deleteServerBlueprint(sp, pkt.name()));
     }
 }

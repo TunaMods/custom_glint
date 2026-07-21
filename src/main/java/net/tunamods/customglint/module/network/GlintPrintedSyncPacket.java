@@ -28,9 +28,7 @@ public record GlintPrintedSyncPacket(List<ItemStack> trims) implements CustomPac
                     },
                     buf -> {
                         int count = buf.readVarInt();
-                        // Clamp the pre-sized capacity so a crafted server can't trigger a huge eager
-                        // allocation; the loop drains the real count and underflows cleanly if it's fake.
-                        List<ItemStack> trims = new ArrayList<>(Math.max(0, Math.min(count, 1024)));
+                        List<ItemStack> trims = new ArrayList<>(ModNetworking.syncListCapacity(count));
                         for (int i = 0; i < count; i++) {
                             ItemStack s = ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);
                             if (!s.isEmpty()) trims.add(s);

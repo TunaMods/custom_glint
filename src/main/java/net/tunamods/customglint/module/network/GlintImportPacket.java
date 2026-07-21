@@ -29,7 +29,7 @@ public record GlintImportPacket(CustomGlint.Layer[] layers, boolean glowing, int
     }
 
     private static GlintImportPacket decode(FriendlyByteBuf buf) {
-        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
+        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, GlintApplyPacket.MAX_LAYERS);
         GlintApplyPacket.GlowName gn = GlintApplyPacket.readGlowAndName(buf);
         return new GlintImportPacket(layers, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor());
     }
@@ -40,10 +40,7 @@ public record GlintImportPacket(CustomGlint.Layer[] layers, boolean glowing, int
     }
 
     public static void handle(GlintImportPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.importTrim(pkt.layers, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor);
-            }
-        });
+        ModNetworking.withGlintTable(ctx, (sp, menu) ->
+                menu.importTrim(pkt.layers, pkt.glowing, pkt.glowColors, pkt.name, pkt.nameColor));
     }
 }
