@@ -240,6 +240,22 @@ public final class GlintPipelines {
             .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
             .build();
 
+    /** LOOSE-occlusion fragment shader for the chromatic overlay: shares {@link #CHROMATIC_OVERLAY_SHADER}'s
+     *  vertex stage, swaps only the fragment for a flat generous bias (no fwidth slope). File at
+     *  {@code assets/customglint/shaders/core/chromatic_overlay_loose.fsh}. */
+    public static final Identifier CHROMATIC_OVERLAY_LOOSE_SHADER = CustomGlint.res("core/chromatic_overlay_loose");
+
+    /** {@link #CHROMATIC_OVERLAY} with the loose fragment shader, for TRANSLUCENT entity-layer shells (slime
+     *  outer cube) whose committed scene depth is re-sorted every frame under Iris. The chromatic twin of
+     *  {@link #GLINT_OVERLAY_LOOSE}: the standard variant's slope-scaled bias self-occludes that wobble and
+     *  drops the slick out per-face, this flat 0.10-block bias absorbs it while still occluding against
+     *  clearly nearer opaque geometry. Same samplers/blend/depth as {@link #CHROMATIC_OVERLAY}; only the
+     *  fragment program differs. */
+    public static final RenderPipeline CHROMATIC_OVERLAY_LOOSE = CHROMATIC_OVERLAY.toBuilder()
+            .withLocation(CustomGlint.res("pipeline/chromatic_overlay_loose"))
+            .withFragmentShader(CHROMATIC_OVERLAY_LOOSE_SHADER)
+            .build();
+
     /** {@link #CHROMATIC_OVERLAY} for thin double-sided equipment (elytra wings, capes) drawn post-Iris:
      *  depth test {@link CompareOp#LESS_THAN_OR_EQUAL} (still no write) against the isolated target's OWN
      *  depth. The two folded wings overlap along the spine at near-coincident depth, which the in-shader
@@ -406,7 +422,21 @@ public final class GlintPipelines {
      *  wings), so the additive slick doesn't double where the two wing faces overlap. */
     public static RenderType chromaticOverlayType(String name, Identifier modelTex, Identifier paletteTex,
                                                   Identifier sceneDepth, Supplier<Matrix4f> animation, boolean wing) {
-        RenderSetup setup = RenderSetup.builder(wing ? CHROMATIC_OVERLAY_WING : CHROMATIC_OVERLAY)
+        return chromaticOverlayType(wing ? CHROMATIC_OVERLAY_WING : CHROMATIC_OVERLAY, name, modelTex, paletteTex,
+                sceneDepth, animation);
+    }
+
+    /** LOOSE-occlusion counterpart of {@link #chromaticOverlayType} on {@link #CHROMATIC_OVERLAY_LOOSE}, for
+     *  translucent entity-layer shells (slime outer cube). Identical payload; only the fragment shader's bias
+     *  differs. */
+    public static RenderType chromaticOverlayLooseType(String name, Identifier modelTex, Identifier paletteTex,
+                                                       Identifier sceneDepth, Supplier<Matrix4f> animation) {
+        return chromaticOverlayType(CHROMATIC_OVERLAY_LOOSE, name, modelTex, paletteTex, sceneDepth, animation);
+    }
+
+    private static RenderType chromaticOverlayType(RenderPipeline pipeline, String name, Identifier modelTex,
+                                                   Identifier paletteTex, Identifier sceneDepth, Supplier<Matrix4f> animation) {
+        RenderSetup setup = RenderSetup.builder(pipeline)
                 .withTexture("Sampler0", modelTex)   // model texture: the cutout alpha-test silhouette
                 .withTexture("Sampler1", paletteTex, GlintPipelines::paletteSampler)
                 .withTexture("DepthSampler", sceneDepth,

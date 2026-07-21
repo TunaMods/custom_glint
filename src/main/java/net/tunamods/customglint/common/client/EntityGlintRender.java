@@ -155,7 +155,9 @@ public final class EntityGlintRender {
             boolean chroma = CustomGlint.isChromatic(gl[layerIdx]);
             if (CustomGlintRenderer.isShaderPackActive()) {
                 if (chroma) {
-                    RenderType rt = CustomGlintRenderer.forEntityGlintOverlay(glint, layerIdx, texture);
+                    RenderType rt = translucentShell
+                            ? CustomGlintRenderer.forEntityGlintOverlayLoose(glint, layerIdx, texture)
+                            : CustomGlintRenderer.forEntityGlintOverlay(glint, layerIdx, texture);
                     if (rt != null) queueChromaticModel(model, state, pose.last(), rt, light, false);
                 } else if (gl[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {

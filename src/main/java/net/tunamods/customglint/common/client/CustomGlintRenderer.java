@@ -985,6 +985,14 @@ public final class CustomGlintRenderer {
      *  double-sided equipment (elytra wings), so the additive slick doesn't double where the wings overlap. */
     private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture,
                                                  Identifier depthId, boolean wing) {
+        return chromaticOverlayRT(layer, tag, uvScale, texture, depthId, false, wing);
+    }
+
+    /** @param loose true routes onto {@link GlintPipelines#CHROMATIC_OVERLAY_LOOSE} (flat generous occlusion)
+     *      for a translucent shell; false is the standard slope-scaled {@link GlintPipelines#CHROMATIC_OVERLAY}.
+     *      Mutually exclusive with {@code wing} (a thin wing is never a translucent shell). */
+    private static RenderType chromaticOverlayRT(Layer layer, String tag, float uvScale, @Nullable Identifier texture,
+                                                 Identifier depthId, boolean loose, boolean wing) {
         int[] colors = chromaticColors(layer.colors());
         final double speed = layer.speed();
         final float effScale = layer.patternScale() * uvScale;
@@ -995,11 +1003,13 @@ public final class CustomGlintRenderer {
         // dummy (alpha 1 → no discard, full mesh) when the caller has no texture (e.g. an opaque body).
         final Identifier sampler0 = texture != null ? texture : getWhiteTexture();
         Identifier palette = getPaletteTexture(colors);
-        String key = tag + "|" + (wing ? "wing|" : "") + depthId + "|" + sampler0 + "|" + colorsKey(colors) + "|" + speed + "|" + effScale + "|" + layer.seed();
+        String key = tag + "|" + (wing ? "wing|" : "") + (loose ? "loose|" : "") + depthId + "|" + sampler0 + "|" + colorsKey(colors) + "|" + speed + "|" + effScale + "|" + layer.seed();
         RenderType cached = BY_CHROMATIC_OVERLAY.computeIfAbsent(key, k -> {
             String name = MOD_ID + ":custom_chromatic_overlay|" + k.hashCode();
             Supplier<Matrix4f> anim = () -> GlintPipelines.chromaticMatrix(speed, effScale, cc, seedPacked);
-            RenderType rt = GlintPipelines.chromaticOverlayType(name, sampler0, palette, depthId, anim, wing);
+            RenderType rt = loose
+                    ? GlintPipelines.chromaticOverlayLooseType(name, sampler0, palette, depthId, anim)
+                    : GlintPipelines.chromaticOverlayType(name, sampler0, palette, depthId, anim, wing);
             registerFixed(rt);
             return rt;
         });
@@ -1035,6 +1045,14 @@ public final class CustomGlintRenderer {
      *  (its alpha cuts the slick to the entity shape); null for an opaque body draws the whole mesh. */
     public static RenderType forEntityGlintOverlay(Data glint, int layerIdx, @Nullable Identifier texture) {
         return chromaticOverlayRT(glint.layers()[layerIdx], "entity_ov", CHROMATIC_MODEL_UV_SCALE, texture);
+    }
+
+    /** LOOSE-occlusion chromatic overlay RT for a TRANSLUCENT shell (slime outer cube), the chromatic twin of
+     *  {@link #forEntityGlintOverlayNormalLoose}. The shell's committed depth is re-sorted every frame under
+     *  Iris, so the standard slope-scaled occlusion self-culls the slick on some faces at some angles. */
+    public static RenderType forEntityGlintOverlayLoose(Data glint, int layerIdx, @Nullable Identifier texture) {
+        return chromaticOverlayRT(glint.layers()[layerIdx], "entity_ov_loose", CHROMATIC_MODEL_UV_SCALE, texture,
+                SCENE_DEPTH_ID, true, false);
     }
 
     /** Post-Iris chromatic overlay RT for SPECIAL 3D items (shield/trident): the standardized special-item
