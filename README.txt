@@ -1,5 +1,5 @@
-Glint & Glamour - developer documentation
-Minecraft 1.20.1 / Forge 47.x - MIT license (attribution required)
+Glint & Glamour: developer documentation
+Minecraft 1.20.1 / Forge 47.x, MIT license (attribution required)
 ================================================================================
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
