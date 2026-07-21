@@ -612,18 +612,22 @@ public final class CustomGlintRenderer {
      * bottom-left origin, full-res pixels) confines the pass to a group's screen bbox; null draws full
      * screen. MaskSampler is NEAREST (the alpha is a packed classifier, not a continuous value).
      */
-    public static void compositeGlowOutline(GpuTextureView maskColorView, GpuTextureView outColorView,
-                                            int[] scissor) {
+    public static void compositeGlowOutline(GpuTextureView maskColorView, GpuTextureView maskDepthView,
+                                            GpuTextureView outColorView, int[] scissor) {
         try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder()
                 .createRenderPass(() -> "customglint glow outline composite", outColorView, OptionalInt.empty())) {
             pass.setPipeline(GlintPipelines.GLOW_COMPOSITE_ID_PIPE);
             RenderSystem.bindDefaultUniforms(pass);
             pass.bindTexture("MaskSampler", maskColorView,
                     RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
-            // Scene depth for the per-source distance reconstruction (distance-proportional ring thinning).
+            // Scene depth, for the ring-occlusion test at the RING pixel (what world geometry stands there).
             // bindSceneDepth(main depth) runs each frame before any composite (EntityGlintRender), so the
             // holder's view is live here. NEAREST + clamp: a depth read needs the exact texel, not a blend.
             pass.bindTexture("DepthSampler", sceneDepthTex.view,
+                    RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
+            // The mask target's OWN depth, written by GLOW_MASK_PIPE at exactly the silhouette texels, which
+            // is where the SOURCE's distance has to come from. See the srcDist note in post/glow_outline_id.
+            pass.bindTexture("MaskDepthSampler", maskDepthView,
                     RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
             if (scissor != null) pass.enableScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
             pass.draw(0, 3);

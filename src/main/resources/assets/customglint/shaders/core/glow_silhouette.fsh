@@ -31,11 +31,9 @@ in vec4 screenPos;
 
 out vec4 fragColor;
 
-// Distance thickness. Full width only within NEAR_FULL blocks, then thins with distance, FLOORED so it
-// never drops below a ~1px hairline. Must match the composite's MAX_THICKNESS budget (see glow_outline.fsh).
-// FLOOR * MAX_THICKNESS must stay >= ~1 texel: full-res MAX_THICKNESS=3.5, FLOOR=0.30 → ~1.05px.
-const float NEAR_FULL = 4.0;
-const float FLOOR = 0.05;
+// Ring thickness is NOT decided here. Alpha carries visibility + object id only. The composite
+// (post/glow_outline_id) owns the per-category width, the distance thinning and the edge feather, where
+// it has the source depth to scale by.
 
 // Occlusion bias, in BLOCKS of linear view-space distance. The test compares the fragment's eye distance
 // (viewDist) against the scene's eye distance reconstructed from the sampled depth — NOT raw window depth.

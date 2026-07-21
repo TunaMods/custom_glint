@@ -695,7 +695,7 @@ public final class GlintPipelines {
     //  1. GLOW_MASK_PIPE, ONE render of each glowing model into our own isolated half-res mask target,
     //     depth test ALWAYS_PASS (marks the whole outer shape). core/glow_silhouette decides occlusion
     //     per-fragment by sampling the full-res scene depth (DepthSampler) and encodes shape + visibility
-    //     + distance thickness into alpha. Collapses the earlier two passes (full-shape + visible) and
+    //     + object id into alpha. Collapses the earlier two passes (full-shape + visible) and
     //     the separate depth-downsample pass into one, halving per-mob CPU emit and GPU silhouette fill.
     //  2. GLOW_COMPOSITE_ID_PIPE, one fullscreen pass that turns the mask into rings (post/glow_outline_id),
     //     per-object id-aware so adjacent/overlapping glows keep separate outlines instead of merging. The
@@ -746,7 +746,8 @@ public final class GlintPipelines {
             .withVertexShader(CustomGlint.res("core/screenquad"))
             .withFragmentShader(CustomGlint.res("post/glow_outline_id"))
             .withSampler("MaskSampler")
-            .withSampler("DepthSampler")   // full-res scene depth, distance-proportional ring thinning
+            .withSampler("DepthSampler")       // scene depth at the RING pixel, for the ring-occlusion test
+            .withSampler("MaskDepthSampler")   // the mask target's OWN depth, for the source's distance
             .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
             .withVertexFormat(DefaultVertexFormat.EMPTY, VertexFormat.Mode.TRIANGLES)
             .build();

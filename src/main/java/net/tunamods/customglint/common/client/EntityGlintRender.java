@@ -1031,6 +1031,7 @@ public final class EntityGlintRender {
             if (DOWNSCALE == 1) {
                 // Full-res: composite the ring straight onto the main target, no ring buffer + upscale.
                 var maskV = maskTarget.getColorTextureView();
+                var maskD = maskTarget.getDepthTextureView();
                 var mainV = main.getColorTextureView();
                 // For the shared entity group, split into disjoint per-cluster rects so each cluster's
                 // composite pays for its own screen area, not the empty gaps the union bbox spans between
@@ -1040,14 +1041,14 @@ public final class EntityGlintRender {
                 List<int[]> clusters = (isEntityGroup && rect != null)
                         ? entityClusterRects(g, vrp, main.width, main.height) : null;
                 if (clusters != null) {
-                    for (int[] cr : clusters) CustomGlintRenderer.compositeGlowOutline(maskV, mainV, cr);
+                    for (int[] cr : clusters) CustomGlintRenderer.compositeGlowOutline(maskV, maskD, mainV, cr);
                 } else {
-                    CustomGlintRenderer.compositeGlowOutline(maskV, mainV, compRect);
+                    CustomGlintRenderer.compositeGlowOutline(maskV, maskD, mainV, compRect);
                 }
             } else {
                 // Reduced-res: compose into ringTarget, then bilinear-upscale onto the main target.
                 CustomGlintRenderer.compositeGlowOutline(maskTarget.getColorTextureView(),
-                        ringTarget.getColorTextureView(), null);
+                        maskTarget.getDepthTextureView(), ringTarget.getColorTextureView(), null);
                 CustomGlintRenderer.upscaleGlowRing(ringTarget.getColorTextureView(), main.getColorTextureView());
             }
         }
