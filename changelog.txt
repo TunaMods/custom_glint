@@ -53,6 +53,8 @@ Altered:
 - With a shader pack on, entity glints on slimes and sheep no longer flicker off at some angles or bleed through the model
 - Improved JEI compatibility
 - With a shader pack on, a slime with a Chromatic glint no longer loses it on some faces as you move around it
+- Photon: glints keep their colors instead of washing out to black and white. Dense designs were being amplified past what the pack can display, so every color saturated to white
+- With a shader pack on, glow outlines no longer warp, break up, or stair-step when you move away from what they are on
 
 [1.6.0]
 
