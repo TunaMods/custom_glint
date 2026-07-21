@@ -486,6 +486,46 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final ThreadLocal<Boolean> CURRENT_IS_SPECIAL = ThreadLocal.withInitial(() -> Boolean.FALSE);
     public static final ThreadLocal<float[]> COLOR_BUF = ThreadLocal.withInitial(() -> new float[4]);
 
+    /** ARGB int into {@code buf} as premultiplied RGB plus alpha 1, the form every glint RenderType factory
+     *  reads its colour holder in. */
+    public static void premultiply(float[] buf, int argb) {
+        float a = ((argb >> 24) & 0xFF) / 255.0f;
+        buf[0] = ((argb >> 16) & 0xFF) / 255.0f * a;
+        buf[1] = ((argb >>  8) & 0xFF) / 255.0f * a;
+        buf[2] = ( argb        & 0xFF) / 255.0f * a;
+        buf[3] = 1.0f;
+    }
+
+    /** Picks the glint {@link RenderType} for one (layer, colour) pair. The colour arrives premultiplied in
+     *  the shared {@link #COLOR_BUF} scratch array, so an implementation must hand it straight to a factory
+     *  rather than keep the reference. */
+    @FunctionalInterface
+    public interface LayerRenderType {
+        @Nullable RenderType get(int layerIdx, float[] color, int colorIdx);
+    }
+
+    /** Appends one TEXTURED (non-chromatic) layer's draw buffers to {@code out}: one buffer per colour when
+     *  the layer shows all of them at once, else one for the current animated colour. Every worn/held render
+     *  path fans a layer the same way and differs only in which factory it calls, so they share this and keep
+     *  their own chromatic branch, which does differ per path. */
+    public static void fanLayerBuffers(List<VertexConsumer> out, MultiBufferSource source, Data glint,
+                                       int layerIdx, LayerRenderType factory) {
+        Layer layer = glint.layers()[layerIdx];
+        int[] colors = layer.colors().length == 0 ? WHITE_COLOR : layer.colors();
+        float[] buf = COLOR_BUF.get();
+        if (layer.simultaneous()) {
+            for (int i = 0; i < colors.length; i++) {
+                premultiply(buf, colors[i]);
+                RenderType rt = factory.get(layerIdx, buf, i);
+                if (rt != null) out.add(source.getBuffer(rt));
+            }
+        } else {
+            premultiply(buf, computeAnimatedColor(glint, layerIdx));
+            RenderType rt = factory.get(layerIdx, buf, 0);
+            if (rt != null) out.add(source.getBuffer(rt));
+        }
+    }
+
     // ── Deferred GUI glint batching ──────────────────────────────────────────────
     // A many-icon screen (the creative tab, the Glint Table palettes) draws each icon through
     // GuiGraphics.renderItem, which calls GuiGraphics.flush() after EVERY icon, so inline glint pays one flush

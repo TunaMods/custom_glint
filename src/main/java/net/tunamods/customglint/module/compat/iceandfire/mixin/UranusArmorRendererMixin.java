@@ -80,30 +80,10 @@ public interface UranusArmorRendererMixin {
 
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
-                int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
-                if (layers[li].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
-                    }
-                } else {
-                    int c = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                    float a = ((c >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((c >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((c >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( c        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
-                }
+                CustomGlintRenderer.fanLayerBuffers(list, buffer, glint, li,
+                        (l, c, i) -> CustomGlintRenderer.forArmorGlint(glint, l, c, i));
             }
             if (!list.isEmpty()) {
                 VertexConsumer combined = list.size() == 1 ? list.get(0)

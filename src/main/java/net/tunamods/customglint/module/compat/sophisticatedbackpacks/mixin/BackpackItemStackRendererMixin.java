@@ -68,8 +68,7 @@ public class BackpackItemStackRendererMixin {
             layers[i] = new CustomGlint.Layer(l.design(), l.colors(), l.speed(), l.interpolate(),
                     l.patternScale() * CG_BACKPACK_PATTERN_SCALE, l.simultaneous());
         }
-        glint = new CustomGlint.Data(layers);
-        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+        CustomGlint.Data scaled = new CustomGlint.Data(layers);
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
             if (CustomGlint.isChromatic(layers[li])) {
@@ -78,32 +77,13 @@ public class BackpackItemStackRendererMixin {
                 // that program is hijacked and ItemRendererMixin's special-item capture (the backpack is an
                 // isCustomRenderer BEWLR item) drains it post-pass, the same path that traces the glow ring.
                 if (!CustomGlintRenderer.isShaderPackActive()) {
-                    RenderType rt = CustomGlintRenderer.forChromaticSpecialGlint(glint, li);
+                    RenderType rt = CustomGlintRenderer.forChromaticSpecialGlint(scaled, li);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
                 continue;
             }
-            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
-            if (layers[li].simultaneous()) {
-                for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, i);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
-                }
-            } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
-            }
+            CustomGlintRenderer.fanLayerBuffers(list, buffer, scaled, li,
+                    (l, c, i) -> CustomGlintRenderer.forGlint(scaled, l, c, false, i));
         }
         if (list.isEmpty()) return;
         VertexConsumer combined = list.size() == 1 ? list.get(0)

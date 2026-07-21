@@ -102,7 +102,6 @@ public class ElytraSlotLayerMixin {
         List<Integer> chromaPackLayers = new ArrayList<>();
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
                     // Under a shader pack chromatic can't draw in-phase; capture the elytra for the post-Iris
@@ -117,31 +116,9 @@ public class ElytraSlotLayerMixin {
                     }
                     continue;
                 }
-                int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
-                if (layers[layerIdx].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt = cutout
-                                ? CustomGlintRenderer.forElytraGlint(glint, layerIdx, buf, i)
-                                : CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
-                    }
-                } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = cutout
-                            ? CustomGlintRenderer.forElytraGlint(glint, layerIdx, buf, 0)
-                            : CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
-                }
+                CustomGlintRenderer.fanLayerBuffers(list, buffer, glint, layerIdx, (l, c, i) -> cutout
+                        ? CustomGlintRenderer.forElytraGlint(glint, l, c, i)
+                        : CustomGlintRenderer.forArmorGlint(glint, l, c, i));
             }
             if (!list.isEmpty() && !(cutout && SODIUM_PRESENT)) {
                 combined = list.size() == 1 ? list.get(0)
