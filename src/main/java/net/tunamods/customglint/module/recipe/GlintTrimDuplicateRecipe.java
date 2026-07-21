@@ -82,7 +82,8 @@ public class GlintTrimDuplicateRecipe extends CustomRecipe {
 
     @Override
     public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth * pHeight >= 9;
+        // Both dimensions, not the area: matches() needs a real 3x3, so a 9x1 grid can never craft this.
+        return pWidth >= 3 && pHeight >= 3;
     }
 
     @Override
