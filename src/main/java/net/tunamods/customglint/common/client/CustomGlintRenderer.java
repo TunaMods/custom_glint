@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,6 +42,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -174,6 +176,7 @@ public final class CustomGlintRenderer {
         for (Identifier loc : textureCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
         textureCache.clear();
+        designDim.clear(); // re-measured by loadGrayscale when a design is next read
         // The stitched GUI design atlas is a DynamicTexture too; release it and force a lazy rebuild so a
         // resource reload (or a data pack that adds designs) re-stitches the current design set.
         invalidateGuiDesignAtlas();
@@ -674,6 +677,7 @@ public final class CustomGlintRenderer {
         // the try the already-read `source` would leak its native buffer on every retry. If the copy
         // throws after gray is allocated, close gray too before propagating.
         NativeImage gray = null;
+        long lumSum = 0; // Σ lum×alpha over the design, 0..255*255 per texel; feeds envelopeDim
         try {
             gray = new NativeImage(source.getWidth(), source.getHeight(), false);
             for (int y = 0; y < source.getHeight(); y++) {
@@ -687,8 +691,12 @@ public final class CustomGlintRenderer {
                     int a = (pixel >> 24) & 0xFF;
                     int lum = (r + g + b) / 3;
                     gray.setPixel(x, y, (a << 24) | (lum << 16) | (lum << 8) | lum);
+                    lumSum += (long) lum * a;
                 }
             }
+            // long divisor: a 256×256 data-pack design overflows this product in int arithmetic.
+            float mean = lumSum / (float) ((long) source.getWidth() * source.getHeight() * 255 * 255);
+            designDim.put(design, envelopeDim(mean));
         } catch (Throwable t) {
             if (gray != null) gray.close();
             throw t;
@@ -696,6 +704,107 @@ public final class CustomGlintRenderer {
             source.close();
         }
         return gray;
+    }
+
+    // ── Vanilla's glint envelope (shader-pack brightness compat) ─────────────────────────────────
+    //
+    // Mean luminance of vanilla's enchanted_glint_item.png. Its peak is 0.66, so it never goes near white.
+    // Packs that treat the glint as emissive and amplify it are calibrated against that texture, which makes
+    // it the only contract they all share.
+    //
+    // Our designs don't respect it: solid is mean 1.00, grid 0.63, crosshatch 0.54, and a dozen more sit
+    // above vanilla with peaks pinned at 1.0. A pack tuned for vanilla is then handed up to 3x the energy it
+    // expects, amplifies it as designed, and every channel saturates. The colour is gone and the glint reads
+    // as a white-on-black print of the design. The pack is not wrong. So scale each design under such a pack
+    // until its mean energy lands inside vanilla's envelope.
+    private static final float VANILLA_GLINT_MEAN = 0.36f;
+
+    /** Per-design brightness scalar for the pack path, measured in {@link #loadGrayscale}. */
+    private static final Map<Identifier, Float> designDim = new HashMap<>();
+
+    /** Under-pack brightness for a design of this mean energy: enough to bring it into vanilla's envelope,
+     *  never more than 1.0. The clamp matters as much as the scale: sparse designs (sparkle at 0.05, ember
+     *  at 0.01) already sit far below vanilla, and scaling those up would blow a few scattered specks into
+     *  something the design never meant to be. */
+    private static float envelopeDim(float mean) {
+        if (mean <= 0.0f) return 1.0f; // fully transparent or fully black design; nothing to scale
+        return Math.min(1.0f, VANILLA_GLINT_MEAN / mean);
+    }
+
+    // ── Photon compat ────────────────────────────────────────────────────────────────────────────
+    //
+    // The one pack that drives our glint into the saturation described above. Its gbuffers_armor_glint runs
+    // the texture through a raw power law and scales by ENCHANTMENT_GLINT_BRIGHTNESS:
+    //     frag_color.rgb = (srgb_eotf_inv(armor_glint) * rec709_to_working_color) * ENCHANTMENT_GLINT_BRIGHTNESS;
+    // and its tonemapper bleaches what comes out of that. Sparse designs never reach the ceiling and keep
+    // their colour, which is the whole "some designs still have colour" split, ordered by design density.
+    // BSL, Bliss and Complementary stay inside their range at the same input, so they take no envelope.
+    //
+    // This is a pack-NAME gate feeding one scalar derived from a vanilla asset, not a table of tuned
+    // per-pack numbers. Do not grow it into one: every new pack would be a new entry and it decays the
+    // moment one ships. If another pack looks like it needs an entry, first check that it really does
+    // amplify past saturation rather than just looking bright.
+    private static volatile String PACK_DIM_LAST_NAME = null;
+    private static volatile boolean PACK_DIM_LAST_RESULT = false;
+
+    /** True while the active pack pushes our glint past its own ceiling and needs the envelope. */
+    private static boolean packNeedsGlintDim() {
+        if (!frameShaderActive) return false;
+        String name = currentPackName();
+        if (name == null) return false;
+        if (!name.equals(PACK_DIM_LAST_NAME)) { // recomputed only when the pack actually changes
+            PACK_DIM_LAST_NAME = name;
+            PACK_DIM_LAST_RESULT = name.toLowerCase(Locale.ROOT).contains("photon");
+        }
+        return PACK_DIM_LAST_RESULT;
+    }
+
+    private static volatile boolean PACK_NAME_LOOKUP_DONE = false;
+    private static volatile Field IRIS_PACK_NAME = null;
+
+    /** The active shaderpack's name, or null with no shader mod / no pack. Reads Iris's private
+     *  {@code currentPackName}: neither IrisApi nor Iris exposes a public accessor, and an access transformer
+     *  only reaches Minecraft classes, so there is no cleaner route to it. */
+    public static String currentPackName() {
+        if (!PACK_NAME_LOOKUP_DONE) {
+            synchronized (CustomGlintRenderer.class) {
+                if (!PACK_NAME_LOOKUP_DONE) {
+                    try {
+                        Field f = Class.forName("net.irisshaders.iris.Iris").getDeclaredField("currentPackName");
+                        f.setAccessible(true);
+                        IRIS_PACK_NAME = f;
+                    } catch (Throwable ignored) {
+                        IRIS_PACK_NAME = null;
+                    }
+                    PACK_NAME_LOOKUP_DONE = true;
+                }
+            }
+        }
+        if (IRIS_PACK_NAME == null) return null;
+        try {
+            return (String) IRIS_PACK_NAME.get(null);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * One glint layer's draw colour, with the active pack's brightness envelope applied. Every world glint
+     * colour goes through here (the animated single colour via {@link #computeAnimatedColor}, each colour of
+     * a simultaneous layer at the call site), so a pack that needs the envelope gets it on every surface.
+     * Returns {@code argb} untouched off a pack and on every pack that doesn't need one. The GUI path
+     * ({@link #computeAnimatedColorGui}) is excluded on purpose: no pack program ever touches it.
+     */
+    public static int packAdjustedColor(Data glint, int layerIdx, int argb) {
+        if (!packNeedsGlintDim()) return argb;
+        Layer[] layers = glint.layers();
+        if (layerIdx < 0 || layerIdx >= layers.length) return argb;
+        Float d = designDim.get(layers[layerIdx].design());
+        if (d == null || d >= 1.0f) return argb;   // chromatic, unloaded, or already inside the envelope
+        return (argb & 0xFF000000)
+                | (Math.round(((argb >> 16) & 0xFF) * d) << 16)
+                | (Math.round(((argb >>  8) & 0xFF) * d) <<  8)
+                |  Math.round(( argb        & 0xFF) * d);
     }
 
     // ── GUI design atlas (inventory glint-overlay batching) ──────────────────────────────────────
@@ -1524,7 +1633,7 @@ public final class CustomGlintRenderer {
     public static int computeAnimatedColor(Data glint, int layerIdx, float phaseFraction) {
         Minecraft mc = Minecraft.getInstance();
         long gameTime = mc.level != null ? mc.level.getGameTime() : 0;
-        return computeAnimatedColorAt(glint, layerIdx, gameTime, phaseFraction);
+        return packAdjustedColor(glint, layerIdx, computeAnimatedColorAt(glint, layerIdx, gameTime, phaseFraction));
     }
 
     /** GUI variant of {@link #computeAnimatedColor}: animates off wall-clock ticks ({@code Util.getMillis()/50})

@@ -113,7 +113,8 @@ public class ItemRendererMixin {
                 if (gl[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++)
                         EntityGlintRender.queueGlintOverlayItem(submit.quads(), submit.pose(),
-                                glint, layerIdx, i, colors[i], submit.lightCoords(), heldFp);
+                                glint, layerIdx, i, CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]),
+                                submit.lightCoords(), heldFp);
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
                     EntityGlintRender.queueGlintOverlayItem(submit.quads(), submit.pose(),
@@ -172,7 +173,8 @@ public class ItemRendererMixin {
             if (layers[layerIdx].simultaneous() && !CustomGlint.isChromatic(layers[layerIdx])) {
                 for (int i = 0; i < colors.length; i++) {
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, true, i);
-                    if (rt != null) list.add(cg_colored(cg_buffer(buffer, rt), colors[i]));
+                    if (rt != null) list.add(cg_colored(cg_buffer(buffer, rt),
+                            CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i])));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);

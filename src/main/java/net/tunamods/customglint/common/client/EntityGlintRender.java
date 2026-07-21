@@ -164,7 +164,8 @@ public final class EntityGlintRender {
                         RenderType rt = translucentShell
                                 ? CustomGlintRenderer.forEntityGlintOverlayNormalLoose(glint, layerIdx, i, texture)
                                 : CustomGlintRenderer.forEntityGlintOverlayNormal(glint, layerIdx, i, texture);
-                        if (rt != null) queueGlintOverlayModel(model, state, pose.last(), rt, light, colors[i], false);
+                        if (rt != null) queueGlintOverlayModel(model, state, pose.last(), rt, light,
+                                CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), false);
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -177,7 +178,8 @@ public final class EntityGlintRender {
                 for (int i = 0; i < colors.length; i++) {
                     RenderType rt = isLayer ? CustomGlintRenderer.forEntityLayerGlint(glint, layerIdx, i)
                                             : CustomGlintRenderer.forEntityGlint(glint, layerIdx, i);
-                    if (rt != null) submitGlintNode(collector, model, state, pose, rt, light, colors[i]);
+                    if (rt != null) submitGlintNode(collector, model, state, pose, rt, light,
+                            CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -222,7 +224,8 @@ public final class EntityGlintRender {
                 } else if (gl[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         RenderType rt = CustomGlintRenderer.forSpecialItemGlintOverlayNormal(glint, layerIdx, i);
-                        if (rt != null) queueGlintOverlayPart(part, pose.last(), rt, light, colors[i], inFirstPersonHand());
+                        if (rt != null) queueGlintOverlayPart(part, pose.last(), rt, light,
+                                CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), inFirstPersonHand());
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -233,7 +236,7 @@ public final class EntityGlintRender {
                 for (int i = 0; i < colors.length; i++) {
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, false, i);
                     if (rt != null) collector.submitModelPart(part, pose, rt, light, OverlayTexture.NO_OVERLAY,
-                            null, false, false, colors[i], null, 0);
+                            null, false, false, CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), null, 0);
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -272,7 +275,8 @@ public final class EntityGlintRender {
                 } else if (gl[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
                         RenderType rt = CustomGlintRenderer.forSpecialItemGlintOverlayNormal(glint, layerIdx, i);
-                        if (rt != null) queueGlintOverlayModel(model, state, pose.last(), rt, light, colors[i], inFirstPersonHand());
+                        if (rt != null) queueGlintOverlayModel(model, state, pose.last(), rt, light,
+                                CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), inFirstPersonHand());
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -283,7 +287,7 @@ public final class EntityGlintRender {
                 for (int i = 0; i < colors.length; i++) {
                     RenderType rt = CustomGlintRenderer.forGlint(glint, layerIdx, false, i);
                     if (rt != null) collector.submitModel(model, state, pose, rt, light, OverlayTexture.NO_OVERLAY,
-                            colors[i], null, 0, null);
+                            CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), null, 0, null);
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -1368,7 +1372,8 @@ public final class EntityGlintRender {
                         for (int i = 0; i < colors.length; i++) {
                             RenderType rt = CustomGlintRenderer.forEntityTranslucentLayerGlint(job.glint, layerIdx, i);
                             if (rt != null) {
-                                job.model.renderToBuffer(scratch, bs.getBuffer(rt), job.light, OverlayTexture.NO_OVERLAY, colors[i]);
+                                job.model.renderToBuffer(scratch, bs.getBuffer(rt), job.light, OverlayTexture.NO_OVERLAY,
+                                        CustomGlintRenderer.packAdjustedColor(job.glint, layerIdx, colors[i]));
                                 used.add(rt);
                             }
                         }
@@ -1541,7 +1546,8 @@ public final class EntityGlintRender {
                         queueChromaticItem(quads, poseStack.last(), r.data, layerIdx, light, false);
                     } else if (gl[layerIdx].simultaneous()) {
                         for (int i = 0; i < colors.length; i++)
-                            queueGlintOverlayItem(quads, poseStack.last(), r.data, layerIdx, i, colors[i], light, false);
+                            queueGlintOverlayItem(quads, poseStack.last(), r.data, layerIdx, i,
+                                    CustomGlintRenderer.packAdjustedColor(r.data, layerIdx, colors[i]), light, false);
                     } else {
                         int color = CustomGlintRenderer.computeAnimatedColor(r.data, layerIdx);
                         queueGlintOverlayItem(quads, poseStack.last(), r.data, layerIdx, 0, color, light, false);
@@ -1550,7 +1556,8 @@ public final class EntityGlintRender {
                     blockGlint(collector, poseStack, quads, light, overlay, r.data, layerIdx, 0, 0xFFFFFFFF);
                 } else if (gl[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++)
-                        blockGlint(collector, poseStack, quads, light, overlay, r.data, layerIdx, i, colors[i]);
+                        blockGlint(collector, poseStack, quads, light, overlay, r.data, layerIdx, i,
+                                CustomGlintRenderer.packAdjustedColor(r.data, layerIdx, colors[i]));
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(r.data, layerIdx);
                     blockGlint(collector, poseStack, quads, light, overlay, r.data, layerIdx, 0, color);

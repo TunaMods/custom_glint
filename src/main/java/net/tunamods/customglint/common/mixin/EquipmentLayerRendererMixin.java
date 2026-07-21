@@ -109,7 +109,8 @@ public class EquipmentLayerRendererMixin {
                     } else if (gl[layerIdx].simultaneous()) {
                         for (int i = 0; i < colors.length; i++) {
                             RenderType rt = tex == null ? null : CustomGlintRenderer.forArmorGlintOverlayNormal(glint, layerIdx, i, tex, isWings);
-                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords, colors[i], false, wingDepth);
+                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, poseStack.last(), rt, lightCoords,
+                                    CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), false, wingDepth);
                         }
                     } else {
                         int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -119,7 +120,8 @@ public class EquipmentLayerRendererMixin {
                 } else if (gl[layerIdx].simultaneous() && !chroma) {
                     for (int i = 0; i < colors.length; i++) {
                         RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i);
-                        if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);
+                        if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords,
+                                CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);

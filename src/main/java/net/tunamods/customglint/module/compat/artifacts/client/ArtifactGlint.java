@@ -94,7 +94,8 @@ public final class ArtifactGlint {
                         for (int i = 0; i < colors.length; i++) {
                             RenderType rt = texture == null ? null
                                     : CustomGlintRenderer.forEntityGlintOverlayNormal(glint, layerIdx, i, texture);
-                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, pose.last(), rt, light, colors[i], false);
+                            if (rt != null) EntityGlintRender.queueGlintOverlayModel(model, state, pose.last(), rt, light,
+                                    CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]), false);
                         }
                     } else {
                         int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
@@ -105,7 +106,8 @@ public final class ArtifactGlint {
                 } else if (gl[layerIdx].simultaneous() && !chroma) {
                     for (int i = 0; i < colors.length; i++) {
                         RenderType rt = CustomGlintRenderer.forEntityBodyGlint(glint, layerIdx, i);
-                        if (rt != null) submit(collector, model, state, pose, rt, light, colors[i]);
+                        if (rt != null) submit(collector, model, state, pose, rt, light,
+                                CustomGlintRenderer.packAdjustedColor(glint, layerIdx, colors[i]));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
