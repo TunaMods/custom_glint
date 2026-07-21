@@ -493,14 +493,20 @@ public final class GlintPipelines {
     }
 
     /**
-     * The chromatic animation matrix: a plain pattern-scale on the noise UV, with the per-layer payload the
-     * immutable pipeline can't pass as a uniform packed into spare matrix slots the 2D UV transform never
-     * touches, {@code m20}=morph speed, {@code m21}=colour count, {@code m23}=per-trim seed. The visible
-     * flow is driven by {@code GameTime} in the shader, so this matrix itself need not animate.
+     * The chromatic animation matrix: the pattern-scale on the noise UV, taken about the UV CENTRE exactly
+     * like {@link #itemAnimationMatrix} / {@link #armorAnimationMatrix} do for the texture designs. Scaling
+     * from the raw origin instead pins the noise to the (0,0) corner of the surface, so turning the scale
+     * knob looked like the slick was growing out of the item's top-left corner rather than getting denser in
+     * place. The per-layer payload the immutable pipeline can't pass as a uniform is packed into spare matrix
+     * slots the 2D UV transform never touches, {@code m20}=morph speed, {@code m21}=colour count,
+     * {@code m23}=per-trim seed. The visible flow is driven by {@code GameTime} in the shader, so this matrix
+     * itself need not animate.
      */
     public static Matrix4f chromaticMatrix(double speed, float patternScale, int colorCount, float seedPacked) {
         float s = Math.max(0.0001f, patternScale);
-        Matrix4f m = new Matrix4f().scaling(s, s, 1.0f);
+        Matrix4f m = new Matrix4f().translation(0.5f, 0.5f, 0.0f);
+        m.scale(s, s, 1.0f);
+        m.translate(-0.5f, -0.5f, 0.0f);
         m.m20((float) speed);
         m.m21((float) colorCount);
         m.m23(seedPacked);

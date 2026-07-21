@@ -888,10 +888,15 @@ public final class CustomGlintRenderer {
     }
 
     /** Noise UV scale for chromatic on MODEL surfaces (armor, entity bodies, horse armor). These sample their
-     *  own 0..1 model UV, which already spans a large area, so the slick wants a SMALL scale to read as an
-     *  oil-slick rather than a tiny tiled grid. 1.21.1 parity (its {@code CHROMATIC_MODEL_UV_SCALE}); the old
-     *  8.0 here tiled the field ~16× too dense on armor. Tunable: higher = smaller/more colour cells. */
-    private static final float CHROMATIC_MODEL_UV_SCALE = 0.5f;
+     *  own 0..1 model UV. Tunable: higher = smaller/more colour cells.
+     *
+     *  <p>4.0 against the shaders' {@code DENSITY} of 14 puts 56 colour cells across a model's 0..1 UV at
+     *  scale 1, which is the 1.20.1 look ({@code CHROMATIC_MODEL_UV_SCALE} 8.0 against a baked field of 7
+     *  cells per repeat). TRIED 0.5, carried over from the 1.21.1 port on the theory that 8.0 was tiling the
+     *  field too densely: that is 8× coarser than 1.20.1 and reads as a few big smears on a chestplate
+     *  instead of an oil-slick. 1.20.1 is the reference; do not lower this again without comparing side by
+     *  side against it. */
+    private static final float CHROMATIC_MODEL_UV_SCALE = 4.0f;
 
     /** Standardized noise UV scale for chromatic on SPECIAL 3D BEWLR items (shield, trident). 1.21.1 parity:
      *  a special item is small on screen, so the plain 3D scale (1.0) reads as one coarse blob rather than a
@@ -907,8 +912,11 @@ public final class CustomGlintRenderer {
      *  measured ~16× finer than the armor. This divisor cancels that: the same trim at the same scale now reads
      *  at the same density on a held item and on worn armor. Tunable: raise the denominator for a coarser item,
      *  lower it for finer; {@code 1.0} = the old GUI-icon-matched density (~16× finer than armor). NOTE: this
-     *  decouples the in-world item from the inventory icon. */
-    private static final float CHROMATIC_FLAT_ITEM_MATCH = 1.0f / 16.0f;
+     *  decouples the in-world item from the inventory icon.
+     *
+     *  <p>1/2 against {@code DENSITY} 14 puts 7 colour cells across a 16px sprite at scale 1, the 1.20.1
+     *  density. The earlier 1/16 was paired with the 0.5 model scale and left the icon 8× coarser. */
+    private static final float CHROMATIC_FLAT_ITEM_MATCH = 1.0f / 2.0f;
 
     /** The flat-item chromatic-density match factor (see {@link #CHROMATIC_FLAT_ITEM_MATCH}), for the GUI
      *  overlay path to apply to its packed patternScale so the inventory icon reads at the same cell scale as

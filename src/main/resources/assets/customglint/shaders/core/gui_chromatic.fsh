@@ -98,9 +98,11 @@ void main() {
     }
 
     float t = GameTime * 5000.0 * max(0.05, vSpeed); // matches core/chromatic.fsh (× speed)
-    // vPS arrives pre-scaled by the flat-item match factor (~1/16, see GuiRendererMixin), so the low-scale
-    // floor is scaled to match (0.05/16 ≈ 0.003) — keeps sub-1 patternScales from collapsing to one cell.
-    vec2 uv = itemLocal * (DENSITY * max(0.003, vPS));
+    // vPS arrives pre-scaled by the flat-item match factor (1/2, see GuiRendererMixin), so the low-scale
+    // floor is scaled to match (0.05/2). Keeps sub-1 patternScales from collapsing to one cell.
+    // Scale about the icon CENTRE, matching GlintPipelines.chromaticMatrix. Scaling raw itemLocal pins the
+    // noise to the icon's corner, so the scale knob grew the slick out of that corner instead of in place.
+    vec2 uv = ((itemLocal - 0.5) * max(0.025, vPS) + 0.5) * DENSITY;
     vec2 so = vec2(vSeed * 3.1, vSeed * 6.7);
 
     int n = int(vCount + 0.5);
