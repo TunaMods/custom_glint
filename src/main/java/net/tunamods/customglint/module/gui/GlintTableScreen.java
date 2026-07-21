@@ -68,7 +68,8 @@ import java.util.stream.Collectors;
  * The Glint Table screen: a slot-based, multi-layer trim builder. A scrollable design palette (left) and the
  * player's printed-trim library (right) flank a center column with the live preview, layer strip, color
  * shards, modifier controls and the Print button. The container slots (trim, dyes, materials, tears, rainbow
- * dye) are real menu slots drawn over the skin's PNG window. Faithful 1.21.1 port of the 26.1.2 screen.
+ * dye) are real menu slots drawn over the skin's PNG window. Client-only: the menu owns the authoritative
+ * state, this class only builds and previews.
  */
 public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
@@ -146,7 +147,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private final List<CustomGlint.Layer> lowerLayers = new ArrayList<>();
     private final List<CustomGlint.Layer> upperLayers = new ArrayList<>();
-    private static final int MAX_LAYERS = 8;
+    private static final int MAX_LAYERS = CustomGlint.MAX_LAYERS; // same cap the NBT format and the print path enforce
 
     private static final int LAYER_STRIP_X = 122, LAYER_CELL = 12, LAYER_ICON = 12;
     private static final int LAYER_STRIP_Y = PREVIEW_Y - LAYER_ICON;
@@ -382,7 +383,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     /** True when the trim being built is a Glow Trim (main slot / selected printed / the palette Glow entry).
-     *  Computed from the RAW selection - never via {@link #activeTrim()} or {@link #donorStack()} - so it is
+     *  Computed from the RAW selection, never via {@link #activeTrim()} or {@link #donorStack()}, so it is
      *  safe to call from those without recursion. */
     private boolean glowMainSelected() {
         ItemStack main = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
@@ -392,7 +393,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private ItemStack donorStack() {
-        if (glowMainSelected()) return ItemStack.EMPTY; // a Glow Trim can't merge - no donor at all
+        if (glowMainSelected()) return ItemStack.EMPTY; // a Glow Trim can't merge: no donor at all
         ItemStack phys = menu.slots.get(GlintTableMenu.SLOT_TRIM_B).getItem();
         if (phys.getItem() instanceof GlintTrimItem) return phys;
         return selectedDonor;
@@ -410,7 +411,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return name != null && GlintStoredSyncPacket.CLIENT_STORED.contains(name);
     }
 
-    /** The active base trim - main slot, else the selected/printed trim with the modifier build state applied.
+    /** The active base trim: main slot, else the selected/printed trim with the modifier build state applied.
      *  The merge-slot donor is NEVER folded in: an uncommitted donor is a live preview only (its own stacked
      *  layer in the preview box), costing / counting nothing against the active layer until {@code +} commits it. */
     private ItemStack activeBase() {
@@ -436,14 +437,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private ItemStack computePreviewSource() { return buildStack(true); }
 
-    /** The trim as it is currently COMMITTED - the active layer (with its mods) plus every committed lower /
+    /** The trim as it is currently COMMITTED: the active layer (with its mods) plus every committed lower /
      *  upper layer, but WITHOUT the uncommitted merge donor. This is what the main slot shows: a placed 4-layer
      *  trim shows its 4 layers, and a merge donor only joins once {@code +} commits it into the layer stack. */
     private ItemStack committedTrim() { return buildStack(false); }
 
     /** Assemble the multi-layer trim. With {@code includeDonor} the merge donor is shown STACKED on top as its
      *  own layer(s) (the live preview); without it, only the committed layers (the main slot). The donor is
-     *  never colour-folded into the active layer. No layer tear / ownership needed to preview - printing an
+     *  never colour-folded into the active layer. No layer tear / ownership is needed to preview: printing an
      *  unowned or tear-less stack is still blocked. */
     private ItemStack buildStack(boolean includeDonor) {
         CustomGlint.Layer[] pending = includeDonor ? donorLayers() : new CustomGlint.Layer[0];
@@ -478,8 +479,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         ResourceLocation design = GlintTrimItem.getPattern(a);
         if (design == null) return null;
         // White-fill an empty (colorless) layer so it stays readable: CustomGlint.read() rejects a non-chromatic
-        // layer with zero colors (returns null), which would blank the active layer's chip and - once this layer
-        // is committed to lower/upperLayers via a swap/edit - break the whole multi-layer preview. writeColors
+        // layer with zero colors (returns null), which would blank the active layer's chip and, once this layer
+        // is committed to lower/upperLayers via a swap/edit, break the whole multi-layer preview. writeColors
         // leaves a chromatic layer's empty palette untouched (read() accepts that).
         int[] colors = GlintTrimItem.writeColors(design, GlintTrimItem.getColors(a));
         boolean sim = false;
@@ -518,7 +519,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     /** The synthetic fill writeColors() stamps on an otherwise-colorless layer so it stays renderable (read()
      *  rejects a non-chromatic layer with zero colors). It is NOT a player-chosen colour, so the editor loads
-     *  it as an EMPTY shard. Matched EXACTLY against {@link GlintTrimItem#EMPTY_FILL}, never by RGB - a real
+     *  it as an EMPTY shard. Matched EXACTLY against {@link GlintTrimItem#EMPTY_FILL}, never by RGB: a real
      *  white (0xFFFFFFFF via hex, or the 0xFFF9FFFE white dye) on a printed/imported trim must survive. */
     private static boolean isFillWhite(int color) {
         return color == GlintTrimItem.EMPTY_FILL;
@@ -529,7 +530,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     /** Append a shard for a stored colour to {@code shards} (up to 8): a dye shard when the rgb matches a dye,
      *  else a custom-hex shard. Shared by the layer strip and the glow strip. */
     private void addShardTo(List<List<Integer>> shards, int rgb) {
-        if (shards.size() >= 8) return;
+        if (shards.size() >= CustomGlint.MAX_COLORS_PER_LAYER) return;
         for (int i = 0; i < 16; i++) if (dyeRgb(i) == rgb) { shards.add(newShard(i)); return; }
         List<Integer> custom = new ArrayList<>();
         custom.add(CUSTOM_FLAG | (rgb & 0xFFFFFF));
@@ -570,7 +571,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private boolean layerValid(CustomGlint.Layer l) {
-        if (l.colors().length == 0 || l.colors().length > 8) return false;
+        if (l.colors().length == 0 || l.colors().length > CustomGlint.MAX_COLORS_PER_LAYER) return false;
         return GlintStoredSyncPacket.CLIENT_STORED.contains(gridNameFor(l.design()));
     }
 
@@ -582,7 +583,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return true;
     }
 
-    /** True when any layer of the build - the active one or a committed one - still lacks a colour. */
+    /** True when any layer of the build, the active one or a committed one, still lacks a colour. */
     private boolean anyLayerColorless(int baseColorCount) {
         if (baseColorCount == 0 && countSelectedDyes() == 0) return true;
         for (CustomGlint.Layer l : lowerLayers) if (layerColorless(l)) return true;
@@ -597,7 +598,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private ItemStack applyMods(ItemStack base) {
-        // A Glow Trim carries no glint design - it can only take colors, applied as its glow colors. It is a
+        // A Glow Trim carries no glint design. It can only take colors, applied as its glow colors. It is a
         // single, non-layerable trim, so the color-shard strip drives its glow colours and nothing else.
         if (base.getItem() instanceof GlowTrimItem) {
             ItemStack s = base.copy();
@@ -647,7 +648,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return Math.round(255f - modOpacity * (255f - ALPHA_MIN) / 8f);
     }
 
-    /** Whether the ACTIVE layer is simultaneous. It follows the tear toggle directly - the preview reflects the
+    /** Whether the ACTIVE layer is simultaneous. It follows the tear toggle directly: the preview reflects the
      *  chosen mode whether or not a tear is in the slot; the tear is only required (and consumed) at print. */
     private boolean activeSim() {
         return tearSimultaneous;
@@ -666,7 +667,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     /** Picked colours from a shard list as OPAQUE colours (glow has no opacity dimension, so the glass/opacity
-     *  control doesn't apply - every glow colour is full-alpha). */
+     *  control doesn't apply: every glow colour is full-alpha). */
     private int[] opaqueColors(List<List<Integer>> shards) {
         List<Integer> cols = new ArrayList<>();
         for (List<Integer> shard : shards) {
@@ -692,7 +693,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
      *  through this so the one strip serves both. */
     private List<List<Integer>> editShards() { return glowFocused ? glowShards : colorShards; }
 
-    /** True when the manual-glow colour shards are in play (glow enabled, manual, on a glint trim - not a Glow
+    /** True when the manual-glow colour shards are in play (glow enabled, manual, on a glint trim, not a Glow
      *  Trim, whose colours ARE the main strip). */
     private boolean glowShardsActive() { return modGlow && !glowAuto && !glowMainSelected(); }
 
@@ -707,7 +708,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private int[] glowManualColors() { return opaqueColors(glowShards); }
 
     /** Cumulative dye cost across the whole trim: a per-shade count (dye index 0..15) plus a rainbow-dye count.
-     *  Every colour shard on the active layer and every colour on each committed layer charges its own dye -
+     *  Every colour shard on the active layer and every colour on each committed layer charges its own dye:
      *  a shade reused across shards / layers costs one dye each time (no de-duplication), mirroring
      *  {@link GlintTableMenu#print}. Colours already on a placed base trim are free (already paid for). */
     private record DyeReq(int[] counts, int rainbow) {}
@@ -717,7 +718,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         int rainbow = 0;
         ItemStack base = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         int[] baseColors = base.getItem() instanceof GlintTrimItem ? GlintTrimItem.getColors(base) : new int[0];
-        int budget = Math.max(0, 8 - baseColors.length);
+        int budget = Math.max(0, CustomGlint.MAX_COLORS_PER_LAYER - baseColors.length);
         int added = 0;
         // Active layer: driven by the colour shards. A mix charges each of its component dyes; a rainbow /
         // custom-hex shard charges one rainbow dye.
@@ -732,13 +733,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // Committed layers below/above the active one add their colours on top (no de-dup with the active layer).
         for (CustomGlint.Layer l : lowerLayers) rainbow += layerDyeReq(l, counts);
         for (CustomGlint.Layer l : upperLayers) rainbow += layerDyeReq(l, counts);
-        // Manual glow colours charge dyes too, cumulative with everything above (their own budget of 8, separate
-        // from the glint colour count).
+        // Manual glow colours charge dyes too, cumulative with everything above (their own colour budget,
+        // separate from the glint colour count).
         if (glowShardsActive()) {
             int gadded = 0;
             for (List<Integer> shard : glowShards) {
                 int rgb = mixRgb(shard);
-                if (rgb < 0 || gadded >= 8) continue;
+                if (rgb < 0 || gadded >= CustomGlint.MAX_COLORS_PER_LAYER) continue;
                 gadded++;
                 if (isCustomShard(shard)) { rainbow++; continue; }
                 for (int d : shard) if (d >= 0 && d < 16) counts[d]++;
@@ -859,12 +860,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-    private static float stepUp(float v) { return GlintGuiWidgets.stepUp(v); }
-
-    private static float stepDown(float v) { return GlintGuiWidgets.stepDown(v); }
-
-    private static String fmtVal(float v) { return GlintGuiWidgets.fmtVal(v); }
-
     // ── Render ──────────────────────────────────────────────────────────────────
 
     @Override
@@ -911,13 +906,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             if (hexBox != null && hexBox.isVisible()) hexBox.render(g, mx, my, dt);
             // The custom panels above (trim/printed grids, previews) are drawn AFTER super.render, so any glowing
             // icons among them queue their glint/glow rings too late for the container Foreground drain (which
-            // already fired inside super.render). Drain them here - BEFORE the modal import picker and our own
-            // tooltips - so the rings stay under both. These overlays draw with depth test off, so a later drain
+            // already fired inside super.render). Drain them here, BEFORE the modal import picker and our own
+            // tooltips, so the rings stay under both. These overlays draw with depth test off, so a later drain
             // would composite them over the modal (the picker background is otherwise opaque and covers them).
             GlowOutlineRenderer.drainGui();
             // The import picker is modal, drawn on top of everything else in the window. The custom item draws
             // (preview, color shards, layer strip via drawScaledIcon) translate to Z 200 and then renderItem
-            // adds its own +150, so their icons + glint foil land at Z≈350 - above a naive Z-300 push. Vanilla
+            // adds its own +150, so their icons + glint foil land at Z≈350: above a naive Z-300 push. Vanilla
             // tooltips sit at Z 400. Push the panel above both so nothing (icons, counts, glint rings, tooltips)
             // pierces it.
             if (showImportPicker) {
@@ -933,8 +928,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         renderTableTooltip(g, mx, my);
     }
 
-    /** Pre-draw state settling (was the head of 26.1.2's extractContents): runs before super.render so the
-     *  conditional dye-slot flags + button states are correct for the slot/widget draw. */
+    /** Pre-draw state settling: runs before super.render so the conditional dye-slot flags + button states are
+     *  correct for the slot/widget draw. */
     private void prologue() {
         ItemStack curMain = menu.slots.get(GlintTableMenu.SLOT_TRIM).getItem();
         if (!ItemStack.matches(curMain, lastMain)) {
@@ -948,7 +943,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (edit.isEmpty()) edit.add(new ArrayList<>());
         if (edit.size() == 1) selectedColorIdx = 0;
 
-        // A Glow Trim can't merge - drop any donor carried over from a previous glint build so no merge
+        // A Glow Trim can't merge. Drop any donor carried over from a previous glint build so no merge
         // preview / donor ring lingers.
         if (glowMainSelected() && !selectedDonor.isEmpty()) {
             selectedDonor = ItemStack.EMPTY;
@@ -1074,7 +1069,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (colorShardsVisible()) {
             List<List<Integer>> shards = editShards();
             int csy = topPos + COLOR_STRIP_Y;
-            int n = Math.min(shards.size(), 8);
+            int n = Math.min(shards.size(), CustomGlint.MAX_COLORS_PER_LAYER);
             for (int k = 0; k < n; k++) {
                 int cx = leftPos + COLOR_STRIP_X + k * COLOR_CELL;
                 if (mx < cx || mx >= cx + COLOR_ICON || my < csy || my >= csy + COLOR_ICON) continue;
@@ -1092,7 +1087,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 g.renderComponentTooltip(font, lines, mx, my);
                 return;
             }
-            if (n < 8 && !hexOpen) {
+            if (n < CustomGlint.MAX_COLORS_PER_LAYER && !hexOpen) {
                 int cx = leftPos + COLOR_STRIP_X + n * COLOR_CELL;
                 if (mx >= cx && mx < cx + COLOR_ICON && my >= csy && my < csy + COLOR_ICON) {
                     g.renderTooltip(font, Component.translatable("screen.customglint.glint_table.hint.add_color"), mx, my);
@@ -1248,6 +1243,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         drawScrollbar(g, gx, gy, total, gridScroll);
     }
 
+    /** Cells the printed grid scrolls over: the filled rows plus one spare row, never below one screenful and
+     *  never past 128, the library cap the server enforces. */
     private int printedCapacity() {
         int size = GlintPrintedSyncPacket.CLIENT_PRINTED.size();
         int cells = ((size / GRID_COLS) + 2) * GRID_COLS;
@@ -1309,8 +1306,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return Math.round(Math.max(0f, Math.min(1f, f)) * maxRow);
     }
 
-    /** The main slot shows the trim as currently COMMITTED - all its committed layers with the active layer's
-     *  mods - but not the uncommitted merge donor (that joins only in the preview box until {@code +} commits
+    /** The main slot shows the trim as currently COMMITTED: all its committed layers with the active layer's
+     *  mods, but not the uncommitted merge donor (that joins only in the preview box until {@code +} commits
      *  it). Dimmed while the base design isn't owned. */
     private void drawMainPreview(GuiGraphics g) {
         Slot main = menu.slots.get(GlintTableMenu.SLOT_TRIM);
@@ -1412,7 +1409,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                     : activeLayerIcon();
             drawScaledIcon(g, icon, x, y, LAYER_ICON);
             shardBevel(g, x, y, LAYER_ICON);
-            // While glow is focused the colour strip edits the glow colours, not this layer - drop the active
+            // While glow is focused the colour strip edits the glow colours, not this layer. Drop the active
             // layer's selection ring so it reads as unfocused (the glow mode button carries the highlight).
             if (c.kind() == 1 && !glowFocused) border(g, x, y, LAYER_ICON, LAYER_ICON, RING_MAIN);
             if (mx >= x && mx < x + LAYER_ICON && my >= y && my < y + LAYER_ICON)
@@ -1424,7 +1421,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private void drawColorStrip(GuiGraphics g, int mx, int my) {
         List<List<Integer>> shards = editShards();
-        int n = colorShardsVisible() ? Math.min(shards.size(), 8) : 0;
+        int n = colorShardsVisible() ? Math.min(shards.size(), CustomGlint.MAX_COLORS_PER_LAYER) : 0;
         for (int k = 0; k < n; k++) {
             int x = leftPos + COLOR_STRIP_X + k * COLOR_CELL, y = topPos + COLOR_STRIP_Y;
             List<Integer> shard = shards.get(k);
@@ -1440,7 +1437,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             if (mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON)
                 overlay(g, x, y, x + COLOR_ICON, y + COLOR_ICON, HOVER_TINT);
         }
-        if (n < 8 && !hexOpen) {
+        if (n < CustomGlint.MAX_COLORS_PER_LAYER && !hexOpen) {
             int x = leftPos + COLOR_STRIP_X + n * COLOR_CELL, y = topPos + COLOR_STRIP_Y;
             boolean on = colorShardsVisible();
             boolean hover = on && mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON;
@@ -1453,7 +1450,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (!colorShardsVisible()) return false; // no preview: the strip is just an inert "+", nothing to click
         List<List<Integer>> shards = editShards();
         int y = topPos + COLOR_STRIP_Y;
-        int n = Math.min(shards.size(), 8);
+        int n = Math.min(shards.size(), CustomGlint.MAX_COLORS_PER_LAYER);
         for (int k = 0; k < n; k++) {
             int x = leftPos + COLOR_STRIP_X + k * COLOR_CELL;
             if (mx < x || mx >= x + COLOR_ICON || my < y || my >= y + COLOR_ICON) continue;
@@ -1474,7 +1471,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             }
             return true;
         }
-        if (n < 8 && !hexOpen) {
+        if (n < CustomGlint.MAX_COLORS_PER_LAYER && !hexOpen) {
             int x = leftPos + COLOR_STRIP_X + n * COLOR_CELL;
             if (mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON) {
                 if (button == 0) { shards.add(new ArrayList<>()); selectedColorIdx = n; closeHex(); }
@@ -1534,7 +1531,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     /** The {@code +} layer shard is addable (white) whenever a trim is in the merge slot AND stacking it would
-     *  not push past {@link #MAX_LAYERS}. Ownership and layer-tear cost are NOT gated here - they are preview-
+     *  not push past {@link #MAX_LAYERS}. Ownership and layer-tear cost are NOT gated here: they are preview-
      *  free like {@link #computePreviewSource()}, and an unowned / tear-short stack is still blocked at print. */
     private boolean canAddLayer() {
         if (activeTrim().getItem() instanceof GlowTrimItem) return false; // a Glow Trim can never be layered
@@ -1667,11 +1664,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-
     /** Material costs {redstone, slime, glass} for the whole trim, mirroring {@code GlintTableMenu.print}:
      *  one redstone / slime per ± speed / scale step off 1×, one glass per opacity level, tallied across the
      *  active + every committed layer. A Glow Trim has no pattern scale or opacity, so those cost nothing for
-     *  it - only its glow-cycle speed (redstone) counts. */
+     *  it: only its glow-cycle speed (redstone) counts. */
     private int[] layerCosts() {
         boolean glow = glowMainSelected();
         int red = CustomGlint.stepCost(modSpeed);
@@ -1765,13 +1761,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     /** Structural blockers only (bad config, ownership, color count, plus the name-tag gate and manual-glow
-     *  colour choice) - shown red in the print tooltip. The consumed material shortfalls (redstone/slime/glass/
+     *  colour choice), shown red in the print tooltip. The consumed material shortfalls (redstone/slime/glass/
      *  glowstone/tears) are NOT listed here: they render as the always-visible cost breakdown that turns green
      *  per-line as each is satisfied. */
     private List<Component> printIssues() {
         List<Component> out = new ArrayList<>();
         ItemStack src = activeTrim();
-        // A Glow Trim has no design/layers - its only requirement is at least one glow colour, so it never
+        // A Glow Trim has no design/layers. Its only requirement is at least one glow colour, so it never
         // shows "pick a design".
         if (src.getItem() instanceof GlowTrimItem) {
             if (countSelectedDyes() == 0) out.add(Component.translatable("screen.customglint.glint_table.issue.add_color"));
@@ -1796,7 +1792,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
         int baseColorCount = fromBase ? GlintTrimItem.getColors(base).length : 0;
         // Flag a missing colour on ANY layer (active or a committed one), so the hint shows no matter which
-        // layer is currently open - not just when the colourless layer happens to be the one being edited.
+        // layer is currently open, even when the colourless one isn't the layer being edited.
         if (anyLayerColorless(baseColorCount)) out.add(Component.translatable("screen.customglint.glint_table.issue.layer_missing_color"));
 
         ItemStack repro = reproSource();
@@ -1823,7 +1819,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private List<Component> printTooltip() {
         List<Component> lines = new ArrayList<>();
         lines.add(Component.translatable("screen.customglint.glint_table.print").withStyle(ChatFormatting.WHITE));
-        // Structural blockers (config/ownership) - always red. These don't gate the cost list below: the
+        // Structural blockers (config/ownership): always red. These don't gate the cost list below: the
         // material costs stay visible so a fulfilled cost turns green instead of vanishing.
         List<Component> issues = printIssues();
         for (Component s : issues) lines.add(Component.literal("• ").append(s).withStyle(ChatFormatting.RED));
@@ -1832,7 +1828,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
         boolean any = false;
-        // Dyes for every colour across all layers (cumulative - a shade reused costs a dye each time), plus one
+        // Dyes for every colour across all layers (cumulative: a shade reused costs a dye each time), plus one
         // rainbow dye per custom / non-dye colour.
         DyeReq req = dyeReq();
         for (int i = 0; i < 16; i++)
@@ -1889,7 +1885,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     /** Rebuild the import list: this client's personal blueprints ({@code config/glint-and-glamour/trims/*.json})
      *  plus, on a dedicated server, the shared server blueprints synced from the server. Single-player skips
-     *  the server source (the integrated server reads the very directory this scan does - listing both would
+     *  the server source (the integrated server reads the very directory this scan does: listing both would
      *  double every entry). */
     private void scanImportConfigs() {
         importAll.clear();
@@ -2142,7 +2138,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             g.drawString(font, Component.literal(e.name()), textX, ry + 2, e.server() ? 0xFFE0C060 : 0xFFDDDDDD, false);
             if (hovered && (!e.server() || canManageServer)) {
                 boolean onTrash = mx >= sbX - IMP_TRASH_W && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
-                drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
+                GlintGuiWidgets.drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
             }
         }
 
@@ -2153,10 +2149,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             int thumbY = listY + (int) ((trackH - thumbH) * (float) importScroll / (importFiltered.size() - IMPORT_ROWS));
             g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
         }
-    }
-
-    private void drawTrashIcon(GuiGraphics g, int x, int y, int color) {
-        GlintGuiWidgets.drawTrashIcon(g, x, y, color);
     }
 
     /** Tiny padlock glyph marking a shared server blueprint. Origin = top-left. */
@@ -2246,6 +2238,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
         addRenderableWidget(new BevelButton(leftPos + SCROLL_X, topPos + SCROLL_Y, SCROLL_W, SCROLL_H, 2, false,
                 () -> Component.translatable("screen.customglint.glint_table.scroll", GlintTrimItem.scrollLabel(modScrollDir)).getString(),
+                // 9 scroll modes: the 8 compass directions plus Static.
                 () -> LABEL_HDR, () -> GUI_FACE, b -> modScrollDir = (modScrollDir + 1) % 9)
                 .tip(() -> modScrollDir == CustomGlint.SCROLL_STATIC
                         ? tipLines("screen.customglint.glint_table.tip.scroll", "screen.customglint.glint_table.tip.scroll_static")
@@ -2287,9 +2280,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 () -> GUI_FACE, b -> modNamed = !modNamed)
                 .tip(() -> tipLines("screen.customglint.glint_table.tip.name")));
 
-        addStepperPair(GlintTableMenu.SLOT_REDSTONE, () -> modSpeed = stepDown(modSpeed), () -> modSpeed = stepUp(modSpeed), "screen.customglint.glint_table.tip.speed");
+        addStepperPair(GlintTableMenu.SLOT_REDSTONE, () -> modSpeed = GlintGuiWidgets.stepDown(modSpeed), () -> modSpeed = GlintGuiWidgets.stepUp(modSpeed), "screen.customglint.glint_table.tip.speed");
         addStepperPair(GlintTableMenu.SLOT_GLASS, () -> modOpacity = Math.max(0, modOpacity - 1), () -> modOpacity = Math.min(8, modOpacity + 1), "screen.customglint.glint_table.tip.opacity");
-        addStepperPair(GlintTableMenu.SLOT_SLIME, () -> modScale = stepDown(modScale), () -> modScale = stepUp(modScale), "screen.customglint.glint_table.tip.scale");
+        addStepperPair(GlintTableMenu.SLOT_SLIME, () -> modScale = GlintGuiWidgets.stepDown(modScale), () -> modScale = GlintGuiWidgets.stepUp(modScale), "screen.customglint.glint_table.tip.scale");
 
         int ox = leftPos + SCROLL_X + SCROLL_W / 2, oy = topPos + SCROLL_OFF_Y;
         offsetMinus = stepper(ox - 15, oy, "-", () -> modScrollOffset = Math.max(0.0f, Math.round((modScrollOffset - 0.05f) * 20) / 20.0f), "screen.customglint.glint_table.tip.offset");
@@ -2393,7 +2386,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     /** Render an item icon scaled to fit a {@code size}px cell at (x, y), mirroring the (working) preview's
-     *  render structure - centered translate at a raised z, then {@code scale}, then {@code renderItem(-8,-8)}
+     *  render structure: centered translate at a raised z, then {@code scale}, then {@code renderItem(-8,-8)}
      *  so the item centers on the cell. (The corner-translate form did not honour the pose scale here.)
      *  A 1px inset keeps the icon clear of the shard bevel so it doesn't read as spilling past the frame. */
     private void drawScaledIcon(GuiGraphics g, ItemStack icon, int x, int y, int size) {
@@ -2438,9 +2431,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private String modValue(int slotConst) {
         return switch (slotConst) {
-            case GlintTableMenu.SLOT_REDSTONE -> fmtVal(modSpeed) + "×";
+            case GlintTableMenu.SLOT_REDSTONE -> GlintGuiWidgets.fmtVal(modSpeed) + "×";
             case GlintTableMenu.SLOT_GLASS    -> Math.round(modOpacity * 100f / 8f) + "%";
-            case GlintTableMenu.SLOT_SLIME    -> fmtVal(modScale) + "×";
+            case GlintTableMenu.SLOT_SLIME    -> GlintGuiWidgets.fmtVal(modScale) + "×";
             default -> "";
         };
     }
@@ -2694,7 +2687,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 return true;
             }
             if (button == 1) {
-                if (glowMainSelected()) return true; // a Glow Trim can't merge - ignore the right-click donor pick
+                if (glowMainSelected()) return true; // a Glow Trim can't merge, so ignore the right-click donor pick
                 boolean same = !selectedDonorPrinted && name.equals(trimDesignName(selectedDonor));
                 selectedDonor = same ? ItemStack.EMPTY : trimCache.getOrDefault(name, ItemStack.EMPTY).copy();
                 selectedDonorPrinted = false;
@@ -2719,7 +2712,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             }
             ItemStack picked = GlintPrintedSyncPacket.CLIENT_PRINTED.get(ri).copy();
             if (button == 1) {
-                if (glowMainSelected()) return true; // a Glow Trim can't merge - ignore the right-click donor pick
+                if (glowMainSelected()) return true; // a Glow Trim can't merge, so ignore the right-click donor pick
                 boolean same = selectedDonorPrinted && ItemStack.isSameItemSameTags(picked, selectedDonor);
                 selectedDonor = same ? ItemStack.EMPTY : picked;
                 selectedDonorPrinted = !same;

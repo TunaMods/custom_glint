@@ -12,8 +12,9 @@ import net.tunamods.customglint.module.network.GlintPrintedSyncPacket;
 import net.tunamods.customglint.module.network.GlintServerBlueprintsSyncPacket;
 import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 
-/** Client-only wiring for the Glint Table: binds the menu type to its screen + drops the sync mirrors on
- *  disconnect so a later session can't read stale data from the previous server. */
+/** Client-only wiring for the Glint Table and Glint Bag: binds each menu type to its screen, registers the
+ *  table's skin-swapping block model, and drops the sync mirrors on disconnect so a later session can't read
+ *  stale data from the previous server. */
 public final class GlintTableClientInit {
     private GlintTableClientInit() {}
 

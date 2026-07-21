@@ -7,11 +7,13 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
+import net.tunamods.customglint.module.recipe.TrimPowderRecipe;
+
 import javax.annotation.Nullable;
 import java.util.List;
 
 /** Recycled Glint Trim dust. Smelt an unwanted trim to get it; craft 4 + 2 glowstone dust into a fresh random
- *  trim. See {@link net.tunamods.customglint.module.recipe.TrimPowderRecipe}. */
+ *  trim. See {@link TrimPowderRecipe}. */
 public class TrimPowderItem extends Item {
     public TrimPowderItem(Properties properties) {
         super(properties);

@@ -20,6 +20,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+/**
+ * The craftable transfer item: it carries a glint config in its own NBT (design, colors, speed, scale, scroll)
+ * and hands it to a target item at a smithing table. Naming convention: {@code getX}/{@code setX} read and write
+ * that NBT, and every setter re-emits the single-layer preview glint through {@link #rewritePreview} so the item
+ * in hand looks like what it will apply.
+ */
 public class GlintTrimItem extends Item {
     public static final String PATTERN_TAG  = "pattern";
     public static final String COLORS_TAG   = "colors";
@@ -38,8 +44,15 @@ public class GlintTrimItem extends Item {
         0xFFFF0000, 0xFF000000
     };
 
+    /** Synthetic colour a non-chromatic empty layer carries so it stays renderable (read() rejects a
+     *  zero-colour non-chromatic layer). It is NOT a player-chosen colour: alpha 0xFE sits outside the
+     *  discrete opacity-step alphas any real colour carries, so it stays distinguishable from a genuine
+     *  full-opacity white (0xFFFFFFFF) the player picks via hex, which must survive on printed/imported
+     *  trims. Renders as plain white (254/255 brightness). Tested exactly, never by RGB alone. */
+    public static final int EMPTY_FILL = 0xFEFFFFFF;
+
     // CopyOnWriteArrayList: the datapack reload listener (CustomGlintMod) mutates this on the server
-    // thread while the client thread iterates it (creative-tab build) in single-player/LAN - a plain
+    // thread while the client thread iterates it (creative-tab build) in single-player/LAN. A plain
     // ArrayList would throw ConcurrentModificationException on the timing overlap.
     public static final List<String> PATTERNS = new CopyOnWriteArrayList<>(List.of(
         "arcs", "aurora", "blobs", "cascade", "checker", "chevron", "coral", "cracks",
@@ -60,13 +73,6 @@ public class GlintTrimItem extends Item {
         if (!stack.hasTag() || !stack.getTag().contains(PATTERN_TAG)) return null;
         return ResourceLocation.tryParse(stack.getTag().getString(PATTERN_TAG));
     }
-
-    /** Synthetic colour a non-chromatic empty layer carries so it stays renderable (read() rejects a
-     *  zero-colour non-chromatic layer). It is NOT a player-chosen colour: alpha 0xFE sits outside the
-     *  discrete opacity-step alphas any real colour carries, so it stays distinguishable from a genuine
-     *  full-opacity white (0xFFFFFFFF) the player picks via hex - which must survive on printed/imported
-     *  trims. Renders as plain white (254/255 brightness). Tested exactly, never by RGB alone. */
-    public static final int EMPTY_FILL = 0xFEFFFFFF;
 
     /** The color array to bake into the preview glint: chromatic passes the raw list (an empty list renders
      *  with the white/grey/dark-grey "empty" palette), every other design needs at least one color. */
@@ -102,13 +108,14 @@ public class GlintTrimItem extends Item {
 
     /** Replaces the whole color set (Glint Table build / dye recipe), re-emitting the preview glint. */
     public static void setColors(ItemStack stack, int[] colors) {
-        // Cap at 8 colors (design limit); addColor/mergeColors already cap on their paths.
-        if (colors.length > 8) colors = Arrays.copyOf(colors, 8);
+        // addColor/mergeColors already cap on their own paths.
+        if (colors.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            colors = Arrays.copyOf(colors, CustomGlint.MAX_COLORS_PER_LAYER);
         stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(colors));
         rewritePreview(stack);
     }
 
-    /** A preview/display trim with the given pattern and colors - for recipe {@code getResultItem}/{@code
+    /** A preview/display trim with the given pattern and colors: for recipe {@code getResultItem}/{@code
      *  getIngredients} and JEI sample stacks. Not a gameplay item. */
     public static ItemStack example(ResourceLocation pattern, int... colors) {
         ItemStack stack = new ItemStack(ModItems.GLINT_TRIM.get());
@@ -177,7 +184,7 @@ public class GlintTrimItem extends Item {
 
     /** Colours of the first glint layer (layer 1 in the editor's 1-indexed terms), read from the
      *  authoritative multi-layer preview Data. The flat {@link #getColors} array tracks whichever layer is
-     *  focused in the editor, so the auto-glow tint must not use it - the glow always follows layer 1.
+     *  focused in the editor, so the auto-glow tint must not use it: the glow always follows layer 1.
      *  Falls back to the flat colours for a bare trim that has no preview Data yet. */
     public static int[] getBaseLayerColors(ItemStack stack) {
         CustomGlint.Data data = CustomGlint.read(stack);
@@ -187,7 +194,7 @@ public class GlintTrimItem extends Item {
 
     public static boolean addColor(ItemStack stack, int color) {
         int[] current = getColors(stack);
-        if (current.length >= 8) return false;
+        if (current.length >= CustomGlint.MAX_COLORS_PER_LAYER) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
         stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(next));
@@ -198,16 +205,20 @@ public class GlintTrimItem extends Item {
     public static ItemStack mergeColors(ItemStack first, ItemStack second) {
         ItemStack result = first.copy();
         result.setCount(1);
-        int[] a = getColors(first);
-        int[] b = getColors(second);
-        int total = Math.min(8, a.length + b.length);
+        result.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(mergedColors(getColors(first), getColors(second))));
+        rewritePreview(result);
+        return result;
+    }
+
+    /** {@code a} then as much of {@code b} as fits under the per-layer colour cap. Shared with
+     *  {@link GlowTrimItem#mergeColors}, which merges the same way into its own tag. */
+    static int[] mergedColors(int[] a, int[] b) {
+        int total = Math.min(CustomGlint.MAX_COLORS_PER_LAYER, a.length + b.length);
         int[] merged = new int[total];
         System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
         int bCount = total - a.length;
         if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
-        result.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(merged));
-        rewritePreview(result);
-        return result;
+        return merged;
     }
 
     public static float getSpeed(ItemStack stack) {

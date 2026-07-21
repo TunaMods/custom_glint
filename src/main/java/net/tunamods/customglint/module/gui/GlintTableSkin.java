@@ -81,6 +81,7 @@ class GlintTableSkin extends SkinBase {
         }
     }
 
+    /** Warm every skin's background PNG so cycling skins in-menu doesn't cold-load one mid-click. */
     static void preloadTextures() {
         for (GlintTableSkin s : ALL) Minecraft.getInstance().getTextureManager().getTexture(s.bgTexture);
     }

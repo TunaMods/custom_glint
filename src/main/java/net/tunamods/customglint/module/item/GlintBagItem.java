@@ -1,6 +1,7 @@
 package net.tunamods.customglint.module.item;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -22,6 +23,7 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.block.ModBlocks;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
@@ -41,10 +43,10 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
 /**
- * A portable container that holds only Custom Glint items (trims, glow trims, tears, rainbow dye). Right-click
- * opens it; storable items are auto-picked into it while it sits in the inventory (see the pickup hook in
- * {@link net.tunamods.customglint.CustomGlintMod}). Contents live in the stack's own {@code Inventory} NBT via
- * an item-handler capability, so they travel with the bag.
+ * A portable container for the mod's own loot (trims, glow trims, tears, rainbow dye) and the Glint Table
+ * materials it takes to print them. Right-click opens it; storable items are auto-picked into it while it sits
+ * in the inventory (see the pickup hook in {@link CustomGlintMod}). Contents live in the stack's own
+ * {@code Inventory} NBT via an item-handler capability, so they travel with the bag.
  */
 public class GlintBagItem extends Item {
     public static final int ROWS = 6;
@@ -55,7 +57,7 @@ public class GlintBagItem extends Item {
     private static final String INVENTORY_TAG = "Inventory";
     /** NBT flag: whether the bag pulls loose Glint items into itself. Absent = on. */
     private static final String AUTO_COLLECT_TAG = "AutoCollect";
-    /** Auto-collect only scans the inventory this often (ticks) - the pickup hook handles instant collection. */
+    /** Auto-collect only scans the inventory this often (ticks); the pickup hook handles instant collection. */
     private static final int SCAN_INTERVAL = 10;
 
     public GlintBagItem(Properties properties) {
@@ -81,7 +83,7 @@ public class GlintBagItem extends Item {
         }
     }
 
-    /** The bag's signature look: the "Golden" glow trim - a slow golden solid layer under a faster shimmer,
+    /** The bag's signature look: the "Golden" glow trim, a slow golden solid layer under a faster shimmer,
      *  with the glowing outline on. Mirrors config/glint-and-glamour/trims/Golden.json. */
     public static void applyGoldenGlint(ItemStack stack) {
         CustomGlint.write(stack, new CustomGlint.Layer[]{
@@ -99,7 +101,7 @@ public class GlintBagItem extends Item {
         return stack;
     }
 
-    /** The mod's own loot items - trims, tears, rainbow dye. The base set of {@link #canStore}; auto-collect
+    /** The mod's own loot items: trims, tears, rainbow dye. The base set of {@link #canStore}; auto-collect
      *  pulls in everything {@code canStore} accepts (this plus every Glint Table material). */
     public static boolean isGlintLoot(ItemStack stack) {
         Item item = stack.getItem();
@@ -123,7 +125,7 @@ public class GlintBagItem extends Item {
 
     /** Shift-right-click on a Glint Table dumps the bag's trims into the player's table libraries (empty trims
      *  teach their design, painted trims join the printed library). A normal click is intercepted by the block
-     *  first - it opens the table - so this only fires while sneaking. */
+     *  first (it opens the table), so this only fires while sneaking. */
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
@@ -161,7 +163,7 @@ public class GlintBagItem extends Item {
 
     /** Auto-move: while carried with auto-collect on, periodically sweep the player inventory and pull any loose
      *  storable Glint items into the bag. The ground-pickup hook catches items before they land; this catches
-     *  the rest - dragged out of a loot chest, shift-clicked in, given, etc. */
+     *  the rest: dragged out of a loot chest, shift-clicked in, given, etc. */
     @Override
     public void inventoryTick(ItemStack stack, Level level, Entity entity, int slotId, boolean isSelected) {
         if (level.isClientSide || !(entity instanceof Player player)) return;
@@ -204,7 +206,7 @@ public class GlintBagItem extends Item {
 
         @NotNull
         @Override
-        public <T> LazyOptional<T> getCapability(@NotNull Capability<T> cap, @Nullable net.minecraft.core.Direction side) {
+        public <T> LazyOptional<T> getCapability(@NotNull Capability<T> cap, @Nullable Direction side) {
             return ForgeCapabilities.ITEM_HANDLER.orEmpty(cap, optional);
         }
     }

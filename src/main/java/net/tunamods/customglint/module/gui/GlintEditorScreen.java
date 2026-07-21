@@ -51,6 +51,12 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+/**
+ * The Glint Wand editor: a free-standing (non-container) client screen that builds a multi-layer glint in
+ * memory and pushes it to the server as packets. Left column holds the item preview and the action buttons,
+ * right column the per-layer controls; three modal overlays (design / import / item pickers) draw on top.
+ * Client-only: nothing here is reachable from the server side.
+ */
 @OnlyIn(Dist.CLIENT)
 public class GlintEditorScreen extends Screen {
 
@@ -93,7 +99,7 @@ public class GlintEditorScreen extends Screen {
 
     // Item display names resolve a Component + format a String; the picker draws them every frame for every
     // visible row and the filter walks them on each search. Items are registry singletons, so the resolved
-    // name is stable - cache it. Icon ItemStacks are cached the same way to skip the per-row allocation.
+    // name is stable, so cache it. Icon ItemStacks are cached the same way to skip the per-row allocation.
     private static final Map<Item, String> ITEM_NAME_CACHE = new IdentityHashMap<>();
     private static final Map<Item, ItemStack> ITEM_ICON_CACHE = new IdentityHashMap<>();
 
@@ -523,21 +529,21 @@ public class GlintEditorScreen extends Screen {
 
         // Speed [−] / [+], 0.10×..8.0× (0.10 steps below 1×, 0.5 above)
         tip(bevel(px + 148, py + 152, 14, 14, () -> "−", () -> {
-            layerSpeeds.set(selectedLayer, stepDown(layerSpeeds.get(selectedLayer)));
+            layerSpeeds.set(selectedLayer, GlintGuiWidgets.stepDown(layerSpeeds.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.speed");
         tip(bevel(px + 196, py + 152, 14, 14, () -> "+", () -> {
-            layerSpeeds.set(selectedLayer, stepUp(layerSpeeds.get(selectedLayer)));
+            layerSpeeds.set(selectedLayer, GlintGuiWidgets.stepUp(layerSpeeds.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.speed");
 
         // Pattern Scale [−] / [+]
         tip(bevel(px + 148, py + 168, 14, 14, () -> "−", () -> {
-            layerScales.set(selectedLayer, stepDown(layerScales.get(selectedLayer)));
+            layerScales.set(selectedLayer, GlintGuiWidgets.stepDown(layerScales.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.scale");
         tip(bevel(px + 196, py + 168, 14, 14, () -> "+", () -> {
-            layerScales.set(selectedLayer, stepUp(layerScales.get(selectedLayer)));
+            layerScales.set(selectedLayer, GlintGuiWidgets.stepUp(layerScales.get(selectedLayer)));
             refreshPreview();
         }), "screen.customglint.glint_editor.tip.scale");
 
@@ -558,7 +564,7 @@ public class GlintEditorScreen extends Screen {
                 () -> { layerSimultaneous.set(selectedLayer, !layerSimultaneous.get(selectedLayer)); refreshPreview(); }),
                 "screen.customglint.glint_editor.tip.type");
 
-        // Scroll direction - cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
+        // Scroll direction: cycles the 8 compass presets + Static. Rebuilds widgets so the static-offset
         // stepper appears/disappears with the mode.
         int sd = layerScrollDirs.get(selectedLayer);
         tip(bevel(px + 100, py + 202, 90, 14,
@@ -568,7 +574,7 @@ public class GlintEditorScreen extends Screen {
                 sd == CustomGlint.SCROLL_STATIC ? "screen.customglint.glint_editor.tip.scroll_static"
                                                 : "screen.customglint.glint_editor.tip.scroll");
 
-        // Static UV offset stepper - only shown (and only meaningful) when the layer is STATIC.
+        // Static UV offset stepper: only shown (and only meaningful) when the layer is STATIC.
         if (sd == CustomGlint.SCROLL_STATIC) {
             tip(bevel(px + 196, py + 202, 14, 14, () -> "−", () -> {
                 layerScrollOffsets.set(selectedLayer, Math.max(0.0f, Math.round((layerScrollOffsets.get(selectedLayer) - 0.05f) * 20) / 20.0f));
@@ -594,14 +600,13 @@ public class GlintEditorScreen extends Screen {
         // Change preview item
         tip(bevel(px + 8, py + 116, 80, 14,
                 () -> Component.translatable("screen.customglint.glint_editor.change_item").getString(), () -> {
-            // Iterate the vanilla registry in id order (matches 1.21.1 / 26.1) rather than
-            // ForgeRegistries.ITEMS.getValues(), whose iteration isn't id-ordered and shuffles the
-            // picker into a seemingly-random order.
+            // Iterate the vanilla registry in id order rather than ForgeRegistries.ITEMS.getValues(),
+            // whose iteration isn't id-ordered and shuffles the picker into a seemingly-random order.
             if (allItems == null) allItems = BuiltInRegistries.ITEM.stream()
                     .filter(item -> { ResourceLocation k = BuiltInRegistries.ITEM.getKey(item); return k == null || !k.getNamespace().equals("customglint"); })
                     .collect(Collectors.toList());
-            // Keep the last scroll position when reopening the picker (matches 26.1.2): filterItems clamps
-            // pickerScroll to the current list, and the search responder still resets it to 0 on a new query.
+            // Keep the last scroll position when reopening the picker: filterItems clamps pickerScroll to the
+            // current list, and the search responder still resets it to 0 on a new query.
             filterItems(searchBox != null ? searchBox.getValue() : "");
             showPicker = true;
             searchBox.setFocused(true);
@@ -743,7 +748,7 @@ public class GlintEditorScreen extends Screen {
 
         // Item picker search box, managed manually. Same preserve-across-init handling as the design box.
         // Re-seed the value with the responder detached so restoring the query across an init()/rebuild does
-        // NOT fire pickerScroll = 0 - only real typing resets the scroll, so reopening keeps your position.
+        // NOT fire pickerScroll = 0: only real typing resets the scroll, so reopening keeps your position.
         String prevItemQuery = searchBox != null ? searchBox.getValue() : "";
         searchBox = new EditBox(font, 0, 0, 180, 12, Component.translatable("screen.customglint.glint_editor.search_items"));
         searchBox.setMaxLength(40);
@@ -774,7 +779,7 @@ public class GlintEditorScreen extends Screen {
     }
 
     /** Open the Import list: scan the player's personal trims off disk, ask the server for the current shared
-     *  blueprint pool (the reply arrives a tick later - {@link #renderImportPicker} rebuilds when it lands),
+     *  blueprint pool (the reply arrives a tick later; {@link #renderImportPicker} rebuilds when it lands),
      *  then build the merged list from whatever is already synced. */
     private void scanGlintConfigs() {
         ModNetworking.CHANNEL.sendToServer(new GlintWandRequestBlueprintsPacket());
@@ -796,7 +801,7 @@ public class GlintEditorScreen extends Screen {
         rebuildImportList();
     }
 
-    /** Rebuild the Import list from both sources - personal local trims and the synced server pool - then
+    /** Rebuild the Import list from both sources, personal local trims and the synced server pool, then
      *  re-apply the search filter. Case-insensitive sort; personal entries win a name collision (see
      *  {@link #localGlints}). */
     private void rebuildImportList() {
@@ -948,7 +953,7 @@ public class GlintEditorScreen extends Screen {
         }
     }
 
-    // ── Text helpers (flat, no drop shadow - crisp on light skins) ─────────────
+    // ── Text helpers (flat, no drop shadow: crisp on light skins) ─────────────
 
     private void label(GuiGraphics g, Component c, int x, int y, int color) {
         g.drawString(this.font, c.getString(), x, y, 0xFF000000 | color, false);
@@ -1036,21 +1041,13 @@ public class GlintEditorScreen extends Screen {
         return b;
     }
 
-    // ── Speed / scale stepping (0.10×..8.0×) ────────────────────────────────────
-
-    private static float stepUp(float v) { return GlintGuiWidgets.stepUp(v); }
-
-    private static float stepDown(float v) { return GlintGuiWidgets.stepDown(v); }
-
-    private static String fmtVal(float v) { return GlintGuiWidgets.fmtVal(v); }
-
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float dt) {
         renderBackground(g);
 
-        // Skinned panel background - frame, divider and preview recess are baked into the skin PNG.
+        // Skinned panel background: frame, divider and preview recess are baked into the skin PNG.
         skin.windowPanel(g, px, py, PANEL_W, PANEL_H);
 
         // Left labels
@@ -1071,7 +1068,7 @@ public class GlintEditorScreen extends Screen {
                 label(g, "x", tx + 14, tabRowY + 1, 0xFFFFFF);
             }
         }
-        if (layerDesigns.size() < 8) {
+        if (layerDesigns.size() < CustomGlint.MAX_LAYERS) {
             int plusX = px + 100 + layerDesigns.size() * 22;
             skin.raised(g, plusX - 1, tabRowY - 1, 22, 16, skin.guiFace);
             centered(g, "+", plusX + 10, tabRowY + 3, skin.costOk);
@@ -1105,7 +1102,7 @@ public class GlintEditorScreen extends Screen {
             pose.translate(bx + PREVIEW_SZ / 2f, by + PREVIEW_SZ / 2f, 200);
             // Flat items stay at 5x (unchanged). 3D BEWLR items (the troll weapons etc.) shrink to 4.4x so the
             // few px of margin inside the 80px recess lets their glow ring show instead of being clipped at the
-            // box edge - flat items don't need it (their ring already clips to the rect the same as before).
+            // box edge; flat items don't need it (their ring already clips to the rect the same as before).
             boolean preview3d = this.minecraft != null && this.minecraft.getItemRenderer()
                     .getModel(previewStack, this.minecraft.level, this.minecraft.player, 0).isCustomRenderer();
             float previewScale = preview3d ? 4.4f : 5.0f;
@@ -1144,8 +1141,8 @@ public class GlintEditorScreen extends Screen {
             }
         }
 
-        centered(g, fmtVal(layerSpeeds.get(selectedLayer)) + "×", px + 175, py + 154, skin.labelHdr);
-        centered(g, fmtVal(layerScales.get(selectedLayer)) + "×", px + 175, py + 170, skin.labelHdr);
+        centered(g, GlintGuiWidgets.fmtVal(layerSpeeds.get(selectedLayer)) + "×", px + 175, py + 154, skin.labelHdr);
+        centered(g, GlintGuiWidgets.fmtVal(layerScales.get(selectedLayer)) + "×", px + 175, py + 170, skin.labelHdr);
         if (layerScrollDirs.get(selectedLayer) == CustomGlint.SCROLL_STATIC) {
             centered(g, String.format("%.2f", layerScrollOffsets.get(selectedLayer)), px + 227, py + 204, skin.labelHdr);
         }
@@ -1252,16 +1249,12 @@ public class GlintEditorScreen extends Screen {
             // Trash icon on the far right of a hovered row.
             if (hovered) {
                 boolean onTrash = mx >= sbX - IMP_TRASH_W && mx < sbX;
-                drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
+                GlintGuiWidgets.drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
             }
         }
 
         if (availableGlints.size() > IMPORT_ROWS)
             drawPickerScrollbar(g, sbX, listY, IMPORT_ROWS, IMPORT_ROW_H, availableGlints.size(), importScroll, 8);
-    }
-
-    private void drawTrashIcon(GuiGraphics g, int x, int y, int color) {
-        GlintGuiWidgets.drawTrashIcon(g, x, y, color);
     }
 
     private void filterGlints(String query) {

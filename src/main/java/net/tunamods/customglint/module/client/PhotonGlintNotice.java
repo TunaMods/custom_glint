@@ -32,15 +32,18 @@ import java.util.Properties;
  * <p>Standalone only, deliberately: a mod that bundles the api jar should not get to write in its users' chat.
  */
 public final class PhotonGlintNotice {
-    private PhotonGlintNotice() {}
-
     private static final String OPTION = "USE_SEPARATE_ENTITY_DRAWS";
+
+    private PhotonGlintNotice() {}
 
     /** The ShaderPack instance behind the last check. Iris builds a NEW one on every pipeline reload, so identity
      *  is what tells us a pack was loaded, swapped or reloaded. Watching it covers an in-game shader reload, which
      *  a resource-reload listener does not see: Iris reloads its own pipeline without touching MC's resources. */
     private static Object lastPack = null;
     private static boolean checked = false;
+
+    private static volatile boolean packLookupDone = false;
+    private static volatile Method irisGetCurrentPack = null;
 
     public static void register() {
         MinecraftForge.EVENT_BUS.addListener(PhotonGlintNotice::onClientTick);
@@ -93,22 +96,19 @@ public final class PhotonGlintNotice {
         return Boolean.parseBoolean(p.getProperty(OPTION, "false"));
     }
 
-    private static volatile boolean PACK_LOOKUP_DONE = false;
-    private static volatile Method IRIS_GET_CURRENT_PACK = null;
-
     /** The live ShaderPack, or null with no shader mod / no pack. Identity only; nothing here reads it. */
     private static Object currentPack() {
-        if (!PACK_LOOKUP_DONE) {
+        if (!packLookupDone) {
             try {
-                IRIS_GET_CURRENT_PACK = Class.forName("net.irisshaders.iris.Iris").getMethod("getCurrentPack");
+                irisGetCurrentPack = Class.forName("net.irisshaders.iris.Iris").getMethod("getCurrentPack");
             } catch (Throwable ignored) {
-                IRIS_GET_CURRENT_PACK = null;
+                irisGetCurrentPack = null;
             }
-            PACK_LOOKUP_DONE = true;
+            packLookupDone = true;
         }
-        if (IRIS_GET_CURRENT_PACK == null) return null;
+        if (irisGetCurrentPack == null) return null;
         try {
-            Object o = IRIS_GET_CURRENT_PACK.invoke(null);
+            Object o = irisGetCurrentPack.invoke(null);
             return o instanceof Optional<?> opt ? opt.orElse(null) : null;
         } catch (Throwable t) {
             return null;

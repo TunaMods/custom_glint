@@ -44,12 +44,11 @@ public final class GlintTableModelClient {
 
     private static final String[] SKINS = { "default", "dark", "forge" };
     private static final Direction[] FACINGS = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+    private static final Set<BlockPos> CLIENT_TABLES = ConcurrentHashMap.newKeySet();
 
     private static ResourceLocation variant(String skin, Direction d) {
         return CustomGlint.res("block/glint_table_" + skin + "_" + d.getSerializedName());
     }
-
-    private static final Set<BlockPos> CLIENT_TABLES = ConcurrentHashMap.newKeySet();
 
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener(GlintTableModelClient::onRegisterAdditional);
@@ -82,7 +81,7 @@ public final class GlintTableModelClient {
             try {
                 models.put(loc, new SkinSwitchModel(fallback, variants.get(d)));
             } catch (UnsupportedOperationException ignored) {
-                // Immutable baking result on some setup - leave the static model in place.
+                // Immutable baking result on some setup: leave the static model in place.
             }
         }
     }

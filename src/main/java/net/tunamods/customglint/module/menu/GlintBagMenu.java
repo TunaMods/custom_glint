@@ -14,9 +14,10 @@ import net.minecraftforge.items.SlotItemHandler;
 import net.tunamods.customglint.module.item.GlintBagItem;
 
 /**
- * Server-side container for the {@link GlintBagItem}. Slots 0..{@link GlintBagItem#SIZE} are the bag's item
- * handler (only storable Glint items); the rest are the player inventory. The slot the open bag occupies is
- * locked so it can't be moved or swapped out from under the menu.
+ * Container for the {@link GlintBagItem}, built on both sides (the client gets the hand through the open
+ * packet). The first {@link GlintBagItem#SIZE} slots are the bag's item handler and take storable Glint items
+ * only; the rest are the player inventory. The slot the open bag occupies is locked so it can't be moved or
+ * swapped out from under the menu.
  */
 public class GlintBagMenu extends AbstractContainerMenu {
 
@@ -24,7 +25,7 @@ public class GlintBagMenu extends AbstractContainerMenu {
     private final ItemStack bag;
     private final IItemHandler handler;
 
-    /** Client constructor - the hand is sent as a boolean in the open packet. */
+    /** Client constructor. The hand is sent as a boolean in the open packet. */
     public GlintBagMenu(int containerId, Inventory inventory, FriendlyByteBuf extraData) {
         this(containerId, inventory, extraData.readBoolean() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND);
     }
@@ -74,7 +75,7 @@ public class GlintBagMenu extends AbstractContainerMenu {
         ItemStack stack = slot.getItem();
         ItemStack original = stack.copy();
         int bagEnd = GlintBagItem.SIZE;
-        int invEnd = bagEnd + 36;
+        int invEnd = bagEnd + 36; // 27 main inventory slots + the 9 hotbar slots added after the bag grid
 
         if (index < bagEnd) {
             // Bag → player inventory.

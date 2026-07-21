@@ -18,15 +18,16 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Glow Trim - applies a colored outline glow only (no glint design).
+ * Glow Trim: applies a colored outline glow only (no glint design).
  * Stores its own colors in the standard COLORS_TAG. When applied via smithing, writes
  * {@code glowColors} + {@code glowing=true} to the target item via CustomGlint.setGlowColors.
- * Mirrors GlintTrimItem's color handling (dye to add, merge to combine, max 8 colors).
+ * Mirrors GlintTrimItem's color handling: dye to add, merge to combine, capped at
+ * {@link CustomGlint#MAX_COLORS_PER_LAYER} colors.
  */
 public class GlowTrimItem extends Item {
     public static final String COLORS_TAG = "colors";
 
-    /** Library key for the Glint Table's design palette - a Glow Trim has no glint pattern, so it stores
+    /** Library key for the Glint Table's design palette: a Glow Trim has no glint pattern, so it stores
      *  under this sentinel name instead of a design name. */
     public static final String STORAGE_KEY = "glow_trim";
 
@@ -41,7 +42,7 @@ public class GlowTrimItem extends Item {
 
     public static boolean addColor(ItemStack stack, int color) {
         int[] current = getColors(stack);
-        if (current.length >= 8) return false;
+        if (current.length >= CustomGlint.MAX_COLORS_PER_LAYER) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
         stack.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(next));
@@ -52,13 +53,7 @@ public class GlowTrimItem extends Item {
     public static ItemStack mergeColors(ItemStack first, ItemStack second) {
         ItemStack result = first.copy();
         result.setCount(1);
-        int[] a = getColors(first);
-        int[] b = getColors(second);
-        int total = Math.min(8, a.length + b.length);
-        int[] merged = new int[total];
-        System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
-        int bCount = total - a.length;
-        if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
+        int[] merged = GlintTrimItem.mergedColors(getColors(first), getColors(second));
         result.getOrCreateTag().put(COLORS_TAG, new IntArrayTag(merged));
         applyPreview(result, merged);
         return result;
@@ -80,5 +75,4 @@ public class GlowTrimItem extends Item {
         pTooltipComponents.add(Component.literal("Applies a colored outline glow. Apply at a smithing table with Glowstone Dust").withStyle(ChatFormatting.YELLOW));
         pTooltipComponents.add(GlintTrimItem.colorLine("Colors: ", colors));
     }
-
 }

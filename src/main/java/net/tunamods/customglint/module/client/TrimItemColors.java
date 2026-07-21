@@ -1,16 +1,15 @@
 package net.tunamods.customglint.module.client;
 
-import net.tunamods.customglint.module.item.ModItems;
-
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RegisterColorHandlersEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import net.tunamods.customglint.CustomGlintMod;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.RegisterColorHandlersEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
+import net.tunamods.customglint.module.item.ModItems;
 
 @Mod.EventBusSubscriber(modid = CustomGlintMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class TrimItemColors {
@@ -18,7 +17,7 @@ public final class TrimItemColors {
 
     @SubscribeEvent
     public static void onRegisterItemColors(RegisterColorHandlersEvent.Item event) {
-        // Only the white outline (layer1 / tintindex 1 - texture glow_glint_trim_edge) is recoloured; the grey
+        // Only the white outline (layer1 / tintindex 1, texture glow_glint_trim_edge) is recoloured; the grey
         // body (layer0 / tintindex 0) stays untinted (returns white = the identity multiply). A single multiply
         // over the whole sprite would darken the grey body toward the glow colour, which is wrong.
         // Colour source = the authoritative glow colour (the `glowColors` tag), which every path writes: the
@@ -34,7 +33,7 @@ public final class TrimItemColors {
         }, ModItems.GLOW_TRIM.get());
 
         event.register((stack, tintIndex) -> {
-            // The glowing trim uses the single-layer glint_trim_glow model (layer0 / tintindex 0 - the combined
+            // The glowing trim uses the single-layer glint_trim_glow model (layer0 / tintindex 0, the combined
             // glow_glint_trim sprite), so tint that layer, NOT tintindex 1. A two-layer body/edge model would
             // double-render the edge under the Glint Table preview (which composites its own glow overlay).
             if (tintIndex != 0) return 0xFFFFFFFF;

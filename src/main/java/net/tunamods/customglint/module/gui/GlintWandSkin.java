@@ -70,9 +70,8 @@ class GlintWandSkin extends SkinBase {
         }
     }
 
-    /** Warm every skin's background PNG so cycling skins in-menu doesn't trigger a first-time cold load
-     *  (disk read + PNG decode + GPU upload) mid-interaction. Idempotent - getTexture caches after the
-     *  first load, so this only does work the first time the wand editor is opened in a session. */
+    /** Warm every skin's background PNG so cycling skins in-menu doesn't cold-load one mid-click. getTexture
+     *  caches, so only the first open of a session does any work. */
     static void preloadTextures() {
         for (GlintWandSkin s : ALL) Minecraft.getInstance().getTextureManager().getTexture(s.bgTexture);
     }
