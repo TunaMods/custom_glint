@@ -1,22 +1,22 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintLayerTearItem;
-import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintLayerTearItem;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
+/** Layer Tear + two colored trims → the first trim carrying both trims' layers stacked, capped at MAX_LAYERS. */
 public class GlintLayerTearRecipe extends CustomRecipe {
 
     public static final SimpleCraftingRecipeSerializer<GlintLayerTearRecipe> SERIALIZER =
@@ -66,7 +66,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
         CustomGlint.Data d1 = CustomGlint.read(glint1);
         CustomGlint.Data d2 = CustomGlint.read(glint2);
         if (d1 == null || d2 == null) return ItemStack.EMPTY;
-        int total = Math.min(d1.layers().length + d2.layers().length, 8);
+        // Overflow past the layer cap is trimmed, not rejected: the first trim's layers win.
+        int total = Math.min(d1.layers().length + d2.layers().length, CustomGlint.MAX_LAYERS);
         CustomGlint.Layer[] combined = new CustomGlint.Layer[total];
         int fromD1 = Math.min(d1.layers().length, total);
         System.arraycopy(d1.layers(), 0, combined, 0, fromD1);

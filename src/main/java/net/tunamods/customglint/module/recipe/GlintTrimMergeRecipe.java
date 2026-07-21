@@ -15,6 +15,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** Two or more colored Glint Trims → one trim with their colors merged (cap 8). Mirrored by GlowTrimMergeRecipe. */
 public class GlintTrimMergeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimMergeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimMergeRecipe::new);

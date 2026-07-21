@@ -13,8 +13,8 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
-/** Crafting (shaped): a GlintTrimItem (with pattern + ≥1 color) in the center, surrounded by 8 Glowstone Dust
- *  → same trim with glowing=true. */
+/** 3x3 crafting: a Glint Trim (pattern + ≥1 color) in the center, surrounded by 8 Glowstone Dust → the same
+ *  trim with glowing=true. */
 public class GlintGlowTrimRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintGlowTrimRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintGlowTrimRecipe::new);

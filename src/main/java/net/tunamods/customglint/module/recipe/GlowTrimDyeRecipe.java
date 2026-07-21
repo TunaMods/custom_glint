@@ -19,7 +19,8 @@ import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
 
-/** Glow Trim + Dye → Glow Trim with one more color appended (cap 8). Mirrors GlintTrimDyeRecipe. */
+/** Glow Trim + Dye → Glow Trim with one more color appended, capped at MAX_COLORS_PER_LAYER. Mirrors
+ *  GlintTrimDyeRecipe. */
 public class GlowTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlowTrimDyeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlowTrimDyeRecipe::new);
@@ -48,7 +49,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlowTrimItem.getColors(trim).length < 8;
+                && GlowTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override
@@ -62,7 +63,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
             else if (s.getItem() instanceof DyeItem d) dye = d;
         }
         if (trim.isEmpty() || dye == null) return ItemStack.EMPTY;
-        // matches() guarantees < 8 colors, so addColor always appends (and writes glowColors for the preview).
+        // matches() already checked the color cap, so addColor always appends (and writes glowColors for the preview).
         ItemStack result = trim.copy();
         result.setCount(1);
         GlowTrimItem.addColor(result, GlintTrimItem.DYE_COLORS[dye.getDyeColor().ordinal()]);

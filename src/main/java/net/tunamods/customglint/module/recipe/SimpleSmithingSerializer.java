@@ -8,7 +8,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 
 import java.util.function.Function;
 
-/** Serializer for the id-only smithing recipes: no JSON fields, no wire payload - just rebuild from the id. */
+/** Serializer for the id-only smithing recipes: no JSON fields, no wire payload, just rebuild from the id. */
 public class SimpleSmithingSerializer<T extends Recipe<?>> implements RecipeSerializer<T> {
     private final Function<ResourceLocation, T> factory;
 

@@ -7,6 +7,10 @@ import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import net.tunamods.customglint.CustomGlintMod;
 
+/**
+ * The 16 recipe serializers, registered under the customglint namespace. Each registry name is referenced by a
+ * JSON file in data/customglint/recipes, so renaming one here breaks that recipe.
+ */
 public final class ModRecipes {
     private ModRecipes() {}
 

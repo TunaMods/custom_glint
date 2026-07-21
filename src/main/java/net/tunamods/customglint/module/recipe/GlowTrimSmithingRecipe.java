@@ -14,7 +14,7 @@ import net.tunamods.customglint.module.item.ModItems;
 
 /**
  * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with glowColors+glowing applied via
- * {@link CustomGlint#setGlowColors}. Does NOT touch any existing glint Data on the base - glow-only.
+ * {@link CustomGlint#setGlowColors}. Does NOT touch any existing glint Data on the base; glow-only.
  */
 public class GlowTrimSmithingRecipe extends AbstractTrimSmithingRecipe {
     public static final RecipeSerializer<GlowTrimSmithingRecipe> SERIALIZER =
@@ -45,13 +45,9 @@ public class GlowTrimSmithingRecipe extends AbstractTrimSmithingRecipe {
 
     @Override
     public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
         ItemStack trimExample = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
-        list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
-        list.add(Ingredient.of(Items.GLOWSTONE_DUST));
-        return list;
+        return ingredientsWithTemplate(trimExample);
     }
 
     @Override

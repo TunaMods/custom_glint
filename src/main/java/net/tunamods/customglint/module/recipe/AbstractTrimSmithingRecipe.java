@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.level.Level;
@@ -46,6 +47,18 @@ public abstract class AbstractTrimSmithingRecipe implements SmithingRecipe {
         return isTemplateIngredient(pContainer.getItem(0))
                 && isBaseIngredient(pContainer.getItem(1))
                 && isAdditionIngredient(pContainer.getItem(2));
+    }
+
+    /**
+     * JEI ingredient list for a trim smithing recipe. The base and addition slots are identical for every
+     * subclass, so they only supply the template sample.
+     */
+    protected NonNullList<Ingredient> ingredientsWithTemplate(ItemStack template) {
+        NonNullList<Ingredient> list = NonNullList.create();
+        list.add(Ingredient.of(template));
+        list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
+        list.add(Ingredient.of(Items.GLOWSTONE_DUST));
+        return list;
     }
 
     @Override

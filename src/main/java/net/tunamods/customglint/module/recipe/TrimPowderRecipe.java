@@ -1,9 +1,5 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.ModItems;
-
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
@@ -17,6 +13,9 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 /**
  * Recycle recipe: 4 Trim Powder + 2 Glowstone Dust → one fresh Glint Trim with a random design and no colors
@@ -35,10 +34,10 @@ public class TrimPowderRecipe extends CustomRecipe {
     }
 
     @Override
-    public boolean matches(CraftingContainer inv, Level level) {
+    public boolean matches(CraftingContainer pInv, Level pLevel) {
         int powder = 0, glowstone = 0, filled = 0;
-        for (int i = 0; i < inv.getContainerSize(); i++) {
-            ItemStack s = inv.getItem(i);
+        for (int i = 0; i < pInv.getContainerSize(); i++) {
+            ItemStack s = pInv.getItem(i);
             if (s.isEmpty()) continue;
             filled++;
             if (s.getItem() == ModItems.TRIM_POWDER.get()) powder++;
@@ -49,10 +48,10 @@ public class TrimPowderRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack assemble(CraftingContainer inv, RegistryAccess registryAccess) {
+    public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
         RandomSource random = RandomSource.create();
         ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
-        // Random design only - always blank (no colors), matching how loot trims drop, so recycled trims stay
+        // Random design only, always blank (no colors), matching how loot trims drop, so recycled trims stay
         // stackable. designFromName handles the vanilla/chromatic sentinels the same way the loot modifier does.
         String name = GlintTrimItem.PATTERNS.get(random.nextInt(GlintTrimItem.PATTERNS.size()));
         GlintTrimItem.setPattern(trim, CustomGlint.designFromName(name));
@@ -60,7 +59,7 @@ public class TrimPowderRecipe extends CustomRecipe {
     }
 
     @Override
-    public ItemStack getResultItem(RegistryAccess registryAccess) {
+    public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
         ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
         GlintTrimItem.setPattern(trim, CustomGlint.WAVE);
         return trim;
@@ -80,8 +79,8 @@ public class TrimPowderRecipe extends CustomRecipe {
     }
 
     @Override
-    public boolean canCraftInDimensions(int width, int height) {
-        return width * height >= POWDER_COUNT + GLOWSTONE_COUNT;
+    public boolean canCraftInDimensions(int pWidth, int pHeight) {
+        return pWidth * pHeight >= POWDER_COUNT + GLOWSTONE_COUNT;
     }
 
     @Override

@@ -17,6 +17,7 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
 
+/** Glint Trim + Dye → the same trim with the dye's color appended, capped at MAX_COLORS_PER_LAYER. */
 public class GlintTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimDyeRecipe::new);
@@ -45,7 +46,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlintTrimItem.getColors(trim).length < 8;
+                && GlintTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override

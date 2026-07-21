@@ -53,11 +53,7 @@ public class GlintTrimSmithingRecipe extends AbstractTrimSmithingRecipe {
 
     @Override
     public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000)));
-        list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
-        list.add(Ingredient.of(Items.GLOWSTONE_DUST));
-        return list;
+        return ingredientsWithTemplate(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000));
     }
 
     @Override

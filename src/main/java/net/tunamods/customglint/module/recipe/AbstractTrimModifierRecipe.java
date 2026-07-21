@@ -14,11 +14,13 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 
 /**
- * Shared shape for the single-property trim modifier recipes: one glint trim plus 1–8 of a modifier item
+ * Shared shape for the single-property trim modifier recipes: one glint trim plus 1-8 of a modifier item
  * ({@link #modifier()}) → the same trim with one property changed by the count. Scale (slime), speed
  * (redstone), and alpha (glass) each supply only the item and the {@link #apply} step.
  */
 public abstract class AbstractTrimModifierRecipe extends CustomRecipe {
+    protected static final int MAX_MODIFIERS = 8;
+
     protected AbstractTrimModifierRecipe(ResourceLocation id, CraftingBookCategory category) {
         super(id, category);
     }
@@ -26,7 +28,7 @@ public abstract class AbstractTrimModifierRecipe extends CustomRecipe {
     /** The loose item counted from the grid (slime ball / redstone / glass). */
     protected abstract Item modifier();
 
-    /** Write the property derived from {@code count} (1–8) onto the result trim. */
+    /** Write the property derived from {@code count} (1-8) onto the result trim. */
     protected abstract void apply(ItemStack result, int count);
 
     /** Alpha needs an existing color to tint; scale/speed don't. */
@@ -51,7 +53,8 @@ public abstract class AbstractTrimModifierRecipe extends CustomRecipe {
                 return false;
             }
         }
-        if (trim.isEmpty() || count < 1 || count > 8) return false;
+        // 8 modifiers max: the trim takes one slot, leaving 8 free in a 3x3 grid.
+        if (trim.isEmpty() || count < 1 || count > MAX_MODIFIERS) return false;
         return !requiresColors() || GlintTrimItem.getColors(trim).length > 0;
     }
 
