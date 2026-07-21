@@ -3,6 +3,6 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <modelVersion>4.0.0</modelVersion>
   <groupId>net.tunamods.customglint</groupId>
-  <artifactId>glint-and-glamour</artifactId>
-  <version>1.7.0</version>
+  <artifactId>custom_glint</artifactId>
+  <version>1.6.0</version>
 </project>
