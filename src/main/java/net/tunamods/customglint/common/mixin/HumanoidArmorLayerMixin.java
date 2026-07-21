@@ -26,6 +26,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -174,7 +175,9 @@ public class HumanoidArmorLayerMixin {
 
     /** The base armor-layer texture for this piece (layer 0 defines the full shape), resolved through the
      *  Forge hook so modded armor textures work. Its alpha drives the silhouette's alpha-discard so the
-     *  ring follows the real armor, not the model's bounding boxes. */
+     *  ring follows the real armor, not the model's bounding boxes. Null when the piece isn't armor or its
+     *  material declares no layers; every caller treats null as "no capture". */
+    @Nullable
     private static ResourceLocation cg_armorTexture(LivingEntity entity, ItemStack stack, EquipmentSlot slot) {
         if (!(stack.getItem() instanceof ArmorItem armorItem)) return null;
         var layers = armorItem.getMaterial().value().layers();

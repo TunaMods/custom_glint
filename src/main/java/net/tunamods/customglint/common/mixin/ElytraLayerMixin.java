@@ -58,6 +58,8 @@ public class ElytraLayerMixin {
         if (!entity.isInvisible() && !stack.isEmpty() && CustomGlint.hasGlowEffect(stack)) {
             ResourceLocation tex = ((ElytraLayer) (Object) this).getElytraTexture(stack, entity);
             if (tex != null) {
+                // Priority 1 (worn armor and the body use 0): the composite sorts low priority first, so the
+                // elytra's ring draws last and stays on top of the body/armor it covers at the seam.
                 spec = new EntityGlintRender.OutlineSpec(stack, tex, CustomGlintRenderer.resolveGlowColor(stack),
                         GlowOutlineRenderer.CAT_ARMOR, 1);
             }

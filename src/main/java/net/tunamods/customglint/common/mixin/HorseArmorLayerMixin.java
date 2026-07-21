@@ -78,7 +78,6 @@ public class HorseArmorLayerMixin {
         }
     }
 
-    /** Injects at RETURN of render. */
     @Inject(
         method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/world/entity/animal/horse/Horse;FFFFFF)V",
         at = @At("RETURN"), require = 0, remap = false

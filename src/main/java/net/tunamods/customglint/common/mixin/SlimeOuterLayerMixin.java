@@ -15,6 +15,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
+import javax.annotation.Nullable;
+
 /**
  * Folds the slime's translucent OUTER shell into the glow outline. {@code SlimeOuterLayer} renders the outer
  * model with a direct {@code model.renderToBuffer(...)}, NOT through {@code renderColoredCutoutModel}, so
@@ -48,6 +50,7 @@ public class SlimeOuterLayerMixin {
     /** The slime's body texture (same UVs as the outer shell), via the entity renderer, avoids shadowing
      *  {@code RenderLayer.getTextureLocation} (a superclass method, which @Shadow can't resolve here). Null on
      *  any failure → {@code surfaceOutlineSpec} returns null → the outer just draws, no ring. */
+    @Nullable
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static ResourceLocation cg_textureFor(LivingEntity entity) {
         try {

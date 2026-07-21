@@ -39,7 +39,6 @@ public class ItemRendererMixin {
 
     // ── Stack capture (HEAD) ──────────────────────────────────────────────────
 
-    /** Captures the stack before render begins. */
     @Inject(
         method = "render(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemDisplayContext;ZLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;IILnet/minecraft/client/resources/model/BakedModel;)V",
         at = @At("HEAD"), require = 0, remap = false
@@ -79,7 +78,6 @@ public class ItemRendererMixin {
     // ── getFoilBuffer intercepts ─────────────────────────────────────────────
     // getFoilBuffer = batched rendering (world items, item frames). @Inject stacks; isCancelled() yields.
 
-    /** Intercepts getFoilBuffer. */
     @Inject(
         method = "getFoilBuffer(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
         at = @At("HEAD"), cancellable = true, require = 0, remap = false
@@ -94,7 +92,6 @@ public class ItemRendererMixin {
     // ── getFoilBufferDirect intercepts ───────────────────────────────────────
     // getFoilBufferDirect = direct/GUI (immediate-mode) rendering.
 
-    /** Intercepts getFoilBufferDirect. */
     @Inject(
         method = "getFoilBufferDirect(Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/renderer/RenderType;ZZ)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
         at = @At("HEAD"), cancellable = true, require = 0, remap = false
@@ -108,8 +105,9 @@ public class ItemRendererMixin {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Buffer for a glint layer RenderType: the batched HUD source when drawing a hotbar icon (so all
-     *  same-config glint accumulates and draws once at Gui.render TAIL), else the normal inline buffer. */
+    /** Buffer for a glint layer RenderType: the batched GUI source when the open screen defers its glint
+     *  (creative menu, or a screen that armed the batch), else the normal inline buffer. See applyGlint for
+     *  which screens defer and where each drains. */
     private static VertexConsumer cg_glintBuf(MultiBufferSource buffer, RenderType rt, boolean guiHud) {
         return guiHud ? CustomGlintRenderer.guiGlintBuffer(rt) : buffer.getBuffer(rt);
     }
@@ -410,6 +408,8 @@ public class ItemRendererMixin {
         List<BakedQuad> out = new ArrayList<>();
         RandomSource random = RandomSource.create();
         for (Direction dir : Direction.values()) {
+            // 42L is vanilla ItemRenderer's fixed getQuads seed. Reusing it means a model that varies its
+            // quads by random (connected textures, weighted variants) hands back the same set it just drew.
             random.setSeed(42L);
             for (BakedQuad q : model.getQuads(null, dir, random)) {
                 if (onlyDir == null || q.getDirection() == onlyDir) out.add(q);
