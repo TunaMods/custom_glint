@@ -10,7 +10,7 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 
 /**
  * C→S: the player picked a premade trim from the Glint Table's Import list (read from
- * {@code config/customglint/trims/*.json} on the client, same source as the wand editor's import). The
+ * {@code config/glint-and-glamour/trims/*.json} on the client, same source as the wand editor's import). The
  * server rebuilds the trim, stores its designs as owned, and drops it into the printed library as a LOCKED
  * (dimmed, non-withdrawable) entry. The lock clears only when the player prints a matching trim, so importing
  * hands out a build target, not a free finished trim.

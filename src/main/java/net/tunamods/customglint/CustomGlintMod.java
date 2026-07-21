@@ -37,6 +37,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.item.GlintBagItem;
 import net.tunamods.customglint.module.advancement.EightByEightTrimTrigger;
 import net.tunamods.customglint.module.advancement.ModTriggers;
@@ -73,6 +74,7 @@ public class CustomGlintMod {
 
     public CustomGlintMod(IEventBus modEventBus) {
         modEventBus.addListener(this::registerCapabilities);
+        modEventBus.addListener(this::commonSetup);
 
         ModItems.register(modEventBus);
         ModComponents.register(modEventBus);
@@ -109,6 +111,12 @@ public class CustomGlintMod {
     private void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerItem(Capabilities.ItemHandler.ITEM,
                 (stack, ctx) -> GlintBagItem.createHandler(stack), ModItems.GLINT_BAG.get());
+    }
+
+    private void commonSetup(FMLCommonSetupEvent event) {
+        // Rename the pre-1.7.0 config/customglint/ folder to config/glint-and-glamour/ before anything
+        // reads it (blueprint scans, gui.properties). No-op after the first migrated launch.
+        event.enqueueWork(ModConfigPaths::migrateLegacy);
     }
 
     /** Route Glint loot items straight into a Glint Bag the player is carrying, so a looting run doesn't fill

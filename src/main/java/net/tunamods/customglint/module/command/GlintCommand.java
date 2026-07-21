@@ -37,6 +37,7 @@ import net.minecraft.world.item.component.CustomModelData;
 
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
@@ -416,7 +417,7 @@ public class GlintCommand {
         }
 
         try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path configDir = ModConfigPaths.TRIMS_DIR;
             Files.createDirectories(configDir);
 
             JsonObject root = new JsonObject();

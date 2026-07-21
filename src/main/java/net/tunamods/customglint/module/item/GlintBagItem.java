@@ -77,7 +77,7 @@ public class GlintBagItem extends Item {
     }
 
     /** The bag's signature look: the "Golden" glow trim, a slow golden solid layer under a faster shimmer,
-     *  with the glowing outline on. Mirrors config/customglint/trims/Golden.json. */
+     *  with the glowing outline on. Mirrors config/glint-and-glamour/trims/Golden.json. */
     public static void applyGoldenGlint(ItemStack stack) {
         CustomGlint.write(stack, new CustomGlint.Layer[]{
                 new CustomGlint.Layer(CustomGlint.SOLID, new int[]{0xFFFFD940}, 0.25f, true, 1.0f, false),
