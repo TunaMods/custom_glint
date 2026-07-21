@@ -1,22 +1,22 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintLayerTearItem;
-import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintLayerTearItem;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
+/** Layer Tear + two colored trims → the first trim carrying both trims' layers stacked, capped at MAX_LAYERS. */
 public class GlintLayerTearRecipe extends CustomRecipe {
 
     public static final SimpleCraftingRecipeSerializer<GlintLayerTearRecipe> SERIALIZER =
@@ -66,7 +66,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
         CustomGlint.Data d1 = CustomGlint.read(glint1);
         CustomGlint.Data d2 = CustomGlint.read(glint2);
         if (d1 == null || d2 == null) return ItemStack.EMPTY;
-        int total = Math.min(d1.layers().length + d2.layers().length, 8);
+        // Overflow past the layer cap is trimmed, not rejected: the first trim's layers win.
+        int total = Math.min(d1.layers().length + d2.layers().length, CustomGlint.MAX_LAYERS);
         CustomGlint.Layer[] combined = new CustomGlint.Layer[total];
         int fromD1 = Math.min(d1.layers().length, total);
         System.arraycopy(d1.layers(), 0, combined, 0, fromD1);
@@ -80,9 +81,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
-        GlintTrimItem.addColor(result, 0xFFFF0000);
+        // Overwrite the preview Data with two layers so the sample shows the layer-tear's effect.
+        ItemStack result = GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000);
         CustomGlint.Layer layer1 = new CustomGlint.Layer(CustomGlint.WAVE, new int[]{0xFFFF0000}, 1.0f, true, 1.0f, false);
         CustomGlint.Layer layer2 = new CustomGlint.Layer(CustomGlint.SPARKLE, new int[]{0xFF00AAFF}, 1.0f, true, 1.0f, false);
         CustomGlint.write(result, new CustomGlint.Layer[]{layer1, layer2});
@@ -96,14 +96,8 @@ public class GlintLayerTearRecipe extends CustomRecipe {
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
         list.add(Ingredient.of(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance()));
-        ItemStack trim1 = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim1, CustomGlint.WAVE);
-        GlintTrimItem.addColor(trim1, 0xFFFF0000);
-        ItemStack trim2 = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trim2, CustomGlint.SPARKLE);
-        GlintTrimItem.addColor(trim2, 0xFF00AAFF);
-        list.add(Ingredient.of(trim1));
-        list.add(Ingredient.of(trim2));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000)));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.SPARKLE, 0xFF00AAFF)));
         return list;
     }
 

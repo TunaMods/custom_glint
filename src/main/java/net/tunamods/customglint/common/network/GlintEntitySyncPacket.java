@@ -34,9 +34,7 @@ public class GlintEntitySyncPacket {
     }
 
     public static GlintEntitySyncPacket decode(FriendlyByteBuf buf) {
-        int id = buf.readVarInt();
-        CompoundTag tag = buf.readNbt();
-        return new GlintEntitySyncPacket(id, tag == null ? new CompoundTag() : tag);
+        return new GlintEntitySyncPacket(buf.readVarInt(), buf.readNbt()); // ctor substitutes an empty tag for null
     }
 
     public static void handle(GlintEntitySyncPacket pkt, Supplier<NetworkEvent.Context> ctx) {

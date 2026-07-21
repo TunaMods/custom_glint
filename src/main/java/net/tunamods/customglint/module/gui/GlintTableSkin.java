@@ -12,42 +12,17 @@ import java.util.Locale;
  * (buttons, the scrolling grid cells, selection rings, labels). The window, recesses and fixed slot wells
  * are part of the PNG; the palette only colours what isn't in the image.
  */
-class GlintTableSkin {
+class GlintTableSkin extends SkinBase {
 
-    final String name;
-
-    // Palette for the code-drawn overlays (copied into the screen by applySkin).
-    int guiFace, guiLight, guiShadow, guiBorder;
+    // Palette for the code-drawn overlays beyond the shared frame colors (copied into the screen by applySkin).
     int slotFace, slotDark;
     int labelHdr, costOk, costBad;
     int ringMain, ringDonor;
     int dimGhost, dimPreview;
     int colorUnset, btnDisabled, hoverTint, btnHover;
 
-    /** Background texture: the window, recesses and fixed slot wells. */
-    ResourceLocation bgTexture;
-
     GlintTableSkin(String name) {
-        this.name = name;
-    }
-
-    void texture(ResourceLocation t) {
-        this.bgTexture = t;
-    }
-
-    /** Blit the background PNG over the full window. */
-    void windowPanel(GuiGraphics g, int x, int y, int w, int h) {
-        g.blit(bgTexture, x, y, 0f, 0f, w, h, w, h);
-    }
-
-    /** A raised button / small panel with the given face color. */
-    void raised(GuiGraphics g, int x, int y, int w, int h, int face) {
-        g.fill(x, y, x + w, y + h, guiBorder);
-        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, face);
-        g.fill(x + 1, y + 1, x + w - 1, y + 2, guiLight);
-        g.fill(x + 1, y + 1, x + 2, y + h - 1, guiLight);
-        g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, guiShadow);
-        g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, guiShadow);
+        super(name);
     }
 
     /** A sunken 18×18 slot well at (sx, sy). */
@@ -106,6 +81,7 @@ class GlintTableSkin {
         }
     }
 
+    /** Warm every skin's background PNG so cycling skins in-menu doesn't cold-load one mid-click. */
     static void preloadTextures() {
         for (GlintTableSkin s : ALL) Minecraft.getInstance().getTextureManager().getTexture(s.bgTexture);
     }

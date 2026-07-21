@@ -22,6 +22,12 @@ public class GlintWandItem extends Item {
         super(props);
     }
 
+    /** True if the player is holding a wand in either hand. Server-side gate for the wand editor's C→S packets. */
+    public static boolean isHeld(Player player) {
+        return player.getMainHandItem().getItem() instanceof GlintWandItem
+                || player.getOffhandItem().getItem() instanceof GlintWandItem;
+    }
+
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         if (level.isClientSide()) {

@@ -28,10 +28,6 @@ public class GlintWithdrawPacket {
     }
 
     public static void handle(GlintWithdrawPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) m.withdrawPrinted(pkt.index);
-        });
-        ctx.get().setPacketHandled(true);
+        NetHandlers.withTableMenu(ctx, (sp, m) -> m.withdrawPrinted(pkt.index));
     }
 }

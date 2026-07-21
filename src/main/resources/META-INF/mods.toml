@@ -18,6 +18,8 @@ config="custom_glint.iceandfire.mixins.json"
 config="custom_glint.epicknights.mixins.json"
 [[mixins]]
 config="custom_glint.sophisticatedbackpacks.mixins.json"
+[[mixins]]
+config="custom_glint.epicfight.mixins.json"
 # A URL to refer people to when problems occur with this mod
 #issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
 # If your mod is purely client-side and has no multiplayer functionality (be it dedicated servers or Open to LAN),
@@ -27,10 +29,11 @@ config="custom_glint.sophisticatedbackpacks.mixins.json"
 [[mods]]
 modId="customglint_api"
 version="${mod_version}"
-displayName="Custom Glints API"
+displayName="Glint & Glamour API"
 logoFile="customglint.png"
+logoBlur=false
 authors="${mod_authors}"
-description='''The rendering pipeline and NBT API for Custom Glints. Other mods bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints — without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
+description='''The rendering pipeline and NBT API for Glint & Glamour. Other mods bundle this jar via jarJar to give their own items animated, color-customizable enchantment glints, without forcing players to install a separate dependency or exposing player-facing content (wand, creative tab, recipes, commands).'''
 
 [[mods]] #mandatory
 # The modid of the mod
@@ -45,6 +48,7 @@ displayName="${mod_name}" #mandatory
 #displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
 # A file name (in the root of the mod JAR) containing a logo for display
 logoFile="customglint.png" #optional
+logoBlur=false #optional
 # A text field displayed in the mod UI
 #credits="" #optional
 # A text field displayed in the mod UI

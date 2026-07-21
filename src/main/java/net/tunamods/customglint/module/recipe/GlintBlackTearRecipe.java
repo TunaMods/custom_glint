@@ -1,22 +1,23 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
-import net.minecraft.core.NonNullList;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
+/** Black Tear + any glinted item → the item with its glint and glow stripped. A Glint Trim keeps its design so
+ *  it stays a usable blank; everything else loses the whole tag. */
 public class GlintBlackTearRecipe extends CustomRecipe {
 
     public static final SimpleCraftingRecipeSerializer<GlintBlackTearRecipe> SERIALIZER =

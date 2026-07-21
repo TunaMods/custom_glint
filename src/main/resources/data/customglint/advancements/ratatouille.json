@@ -1,0 +1,29 @@
+{
+  "parent": "customglint:glint_table",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/prism.png\",colors:[I;-65536,-32768,-256,-16711936,-16711681,-16776961,-8388353,-65281]}]}}"
+    },
+    "title": {
+      "translate": "advancement.customglint.ratatouille.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.ratatouille.description"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "eight_colors": {
+      "trigger": "customglint:eight_color_trim"
+    }
+  },
+  "requirements": [
+    [
+      "eight_colors"
+    ]
+  ]
+}

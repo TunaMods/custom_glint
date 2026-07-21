@@ -1,23 +1,23 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.CraftingContainer;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.DyeItem;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CustomRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
 
+/** Glint Trim + Dye → the same trim with the dye's color appended, capped at MAX_COLORS_PER_LAYER. */
 public class GlintTrimDyeRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimDyeRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimDyeRecipe::new);
@@ -46,7 +46,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlintTrimItem.getColors(trim).length < 8;
+                && GlintTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override
@@ -71,10 +71,7 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(RegistryAccess pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.WAVE);
-        GlintTrimItem.addColor(result, 0xFFFF0000);
-        return result;
+        return GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000);
     }
 
     @Override
@@ -83,16 +80,8 @@ public class GlintTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.WAVE);
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
+        list.add(Ingredient.of(GlintTrimItem.example(CustomGlint.WAVE, 0xFFFF0000)));
+        list.add(Ingredient.of(GlintTableMenu.DYE_ITEMS));
         return list;
     }
 

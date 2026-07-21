@@ -24,14 +24,14 @@ import java.util.List;
 /**
  * Standalone-only compat: BackpackItemStackRenderer (BEWLR) iterates renderPasses from its
  * BakedModel and calls MultiBufferSource.getBuffer(RenderType) directly per pass, bypassing
- * ItemRenderer.getFoilBuffer — so ItemRendererMixin never wraps the consumer with our glint
+ * ItemRenderer.getFoilBuffer, so ItemRendererMixin never wraps the consumer with our glint
  * layers. The outline already works because the glow-silhouette capture is driven from
  * ItemRenderer.render at the BEWLR boundary, independent of getFoilBuffer.
  *
  * At RETURN of renderByItem we re-resolve the baked model the same way SB did and submit it
  * to ItemRenderer.renderModelLists with a VertexMultiConsumer of our glint render types. SB
  * does not push/pop pose inside renderByItem, so the pose state at RETURN matches what the
- * model was rendered in — no extra translate needed.
+ * model was rendered in: no extra translate needed.
  *
  * isItem=false on forGlint (3D BEWLR scale 1.0), same as the troll weapon path.
  */
@@ -78,24 +78,23 @@ public class BackpackItemStackRendererMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            // CHROMATIC has no design PNG, so forGlint returns null and the layer would silently vanish.
+            // chromaticWorldBuffer is a plain getBuffer, kept as the single seam for chromatic surfaces.
+            if (CustomGlint.isChromatic(layers[li])) {
+                RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, li, false);
+                if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, colors[i]);
                     RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
+                CustomGlintRenderer.fillPremul(buf, color);
                 RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, 0);
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }

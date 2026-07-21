@@ -1,0 +1,29 @@
+{
+  "parent": "customglint:like_ogres",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/sparkle.png\",colors:[I;-65536]},{design:\"customglint:textures/glint/swirl.png\",colors:[I;-32768]},{design:\"customglint:textures/glint/stars.png\",colors:[I;-256]},{design:\"customglint:textures/glint/hexagon.png\",colors:[I;-16711936]},{design:\"customglint:textures/glint/aurora.png\",colors:[I;-16711681]},{design:\"customglint:textures/glint/prism.png\",colors:[I;-16776961]},{design:\"customglint:textures/glint/oil.png\",colors:[I;-8388353]},{design:\"customglint:textures/glint/ripple.png\",colors:[I;-65281]}]}}"
+    },
+    "title": {
+      "translate": "advancement.customglint.how_many_cheeses.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.how_many_cheeses.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "eight_layers": {
+      "trigger": "customglint:eight_layer_trim"
+    }
+  },
+  "requirements": [
+    [
+      "eight_layers"
+    ]
+  ]
+}

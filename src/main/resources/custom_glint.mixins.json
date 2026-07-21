@@ -4,10 +4,14 @@
   "package": "net.tunamods.customglint.common.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "custom_glint.mixins.refmap.json",
+  "mixins": [
+    "CraftingMenuMixin"
+  ],
   "client": [
     "CompositeRenderTypeAccessor",
     "CompositeStateAccessor",
     "ElytraLayerMixin",
+    "GameRendererMixin",
     "HorseArmorLayerMixin",
     "HumanoidArmorLayerMixin",
     "ItemInHandRendererMixin",
@@ -16,6 +20,7 @@
     "LivingEntityRendererMixin",
     "RenderBuffersMixin",
     "RenderLayerMixin",
+    "SlimeOuterLayerMixin",
     "TextureStateShardAccessor"
   ],
   "injectors": {

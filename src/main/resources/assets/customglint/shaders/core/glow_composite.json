@@ -5,16 +5,14 @@
         { "name": "Sampler0" },
         { "name": "Sampler1" }
     ],
+    "_comment": "No ModelViewMat/ProjMat: the vsh writes NDC straight from the fullscreen quad and the fsh linearises depth with the ProjA/ProjB scalars, so declaring them only earns a 'could not find uniform' warning at load.",
     "uniforms": [
-        { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
-        { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
         { "name": "SearchRadius", "type": "int", "count": 1, "values": [ 3 ] },
         { "name": "ThicknessScale", "type": "float", "count": 1, "values": [ 1.0 ] },
         { "name": "ProjA", "type": "float", "count": 1, "values": [ 1.0 ] },
         { "name": "ProjB", "type": "float", "count": 1, "values": [ 1.0 ] },
         { "name": "TargetId", "type": "int", "count": 1, "values": [ -1 ] },
         { "name": "GuiMode", "type": "int", "count": 1, "values": [ 0 ] },
-        { "name": "SoloTarget", "type": "int", "count": 1, "values": [ 0 ] },
-        { "name": "EdgeBleed", "type": "int", "count": 1, "values": [ 0 ] }
+        { "name": "SoloTarget", "type": "int", "count": 1, "values": [ 0 ] }
     ]
 }

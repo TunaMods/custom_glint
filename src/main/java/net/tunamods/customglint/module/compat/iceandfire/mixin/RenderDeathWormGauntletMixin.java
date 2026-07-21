@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Standalone-only compat: death worm gauntlet BEWLR (RenderDeathWormGauntlet) — same problem shape
+ * Standalone-only compat: death worm gauntlet BEWLR (RenderDeathWormGauntlet), same problem shape
  * as RenderTrollWeapon. One ModelDeathWormGauntlet, three variants (red/white/yellow) selected by
  * item identity → different textures, same combined geometry. We re-render MODEL with glint render
  * types at RETURN of renderByItem.
@@ -65,7 +65,7 @@ public class RenderDeathWormGauntletMixin {
             int light, int overlay) {
         // See RenderTrollWeaponMixin: during the glow-outline capture re-render (IN_OUTLINE), skip our
         // glint draw so the silhouette traces this variant's real texture (IaF's own per-variant draw)
-        // rather than recording a shared full-model-hull bucket under the design texture — which would
+        // rather than recording a shared full-model-hull bucket under the design texture, which would
         // give all three gauntlet variants the same outline.
         if (CustomGlintRenderer.IN_OUTLINE.get()) return;
 
@@ -79,24 +79,24 @@ public class RenderDeathWormGauntletMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
+            // See RenderTrollWeaponMixin: CHROMATIC is procedural, so forGlint returns null and the layer
+            // would draw nothing. isItem=false (3D BEWLR model); chromaticWorldBuffer defers the draw past
+            // the scene composite under a shaderpack.
+            if (CustomGlint.isChromatic(layers[li])) {
+                RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, li, false);
+                if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));
+                continue;
+            }
             int[] colors = layers[li].colors();
             if (layers[li].simultaneous()) {
                 for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, colors[i]);
                     RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, i);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
             } else {
                 int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
+                CustomGlintRenderer.fillPremul(buf, color);
                 RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, 0);
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }

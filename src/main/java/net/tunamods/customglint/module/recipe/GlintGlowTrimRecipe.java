@@ -13,7 +13,8 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
-/** Crafting: GlintTrimItem (center, with pattern + ≥1 color) + 8 Glowstone Dust → same trim with glowing=true. */
+/** 3x3 crafting: a Glint Trim (pattern + ≥1 color) in the center, surrounded by 8 Glowstone Dust → the same
+ *  trim with glowing=true. */
 public class GlintGlowTrimRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintGlowTrimRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintGlowTrimRecipe::new);
@@ -40,8 +41,12 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
 
     @Override
     public ItemStack assemble(CraftingContainer pInv, RegistryAccess pRegistryAccess) {
-        ItemStack trim = pInv.getItem(4);
-        if (trim.isEmpty() || !(trim.getItem() instanceof GlintTrimItem)) return ItemStack.EMPTY;
+        ItemStack trim = ItemStack.EMPTY;
+        for (int i = 0; i < pInv.getContainerSize(); i++) {
+            ItemStack s = pInv.getItem(i);
+            if (s.getItem() instanceof GlintTrimItem) { trim = s; break; }
+        }
+        if (trim.isEmpty()) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);
         GlintTrimItem.setGlowing(result, true);
@@ -51,7 +56,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
 
     @Override
     public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return pWidth >= 3 && pHeight >= 3;
+        return pWidth * pHeight >= 9;
     }
 
     @Override

@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.tunamods.customglint.module.compat.mekanism.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "custom_glint.mixins.refmap.json",
+  "client": [
+    "MekanismArmorGlintMixin",
+    "FoilBufferMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

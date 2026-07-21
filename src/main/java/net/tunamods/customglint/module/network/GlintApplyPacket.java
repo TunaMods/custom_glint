@@ -1,6 +1,8 @@
 package net.tunamods.customglint.module.network;
 
+import io.netty.handler.codec.DecoderException;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlintWandItem;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -13,9 +15,19 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Supplier;
 
+/**
+ * C→S: the wand editor committed a build. Writes the glint to the held wand and, unless {@code wandOnly},
+ * to the item in the other hand; a non-empty {@code itemId} instead mints a fresh glinted item. Also owns
+ * the Layer/color wire format shared by the other editor packets and the Glint Table print packet.
+ */
 public class GlintApplyPacket {
+
+    /** Wire-length cap for the layer and color arrays, shared with the Glint Table print packet. */
+    public static final int MAX_WIRE_COUNT = 256;
 
     public final InteractionHand wandHand;
     public final boolean remove;
@@ -51,22 +63,10 @@ public class GlintApplyPacket {
         buf.writeEnum(pkt.wandHand);
         buf.writeBoolean(pkt.remove);
         if (!pkt.remove) {
-            buf.writeVarInt(pkt.layers.length);
-            for (CustomGlint.Layer layer : pkt.layers) {
-                buf.writeUtf(layer.design().toString());
-                buf.writeVarInt(layer.colors().length);
-                for (int c : layer.colors()) buf.writeInt(c);
-                buf.writeFloat(layer.speed());
-                buf.writeBoolean(layer.interpolate());
-                buf.writeFloat(layer.patternScale());
-                buf.writeBoolean(layer.simultaneous());
-                buf.writeVarInt(layer.scrollDir());
-                buf.writeFloat(layer.scrollOffset());
-            }
+            writeLayers(buf, pkt.layers);
             buf.writeUtf(pkt.itemId);
             buf.writeBoolean(pkt.glowing);
-            buf.writeVarInt(pkt.glowColors.length);
-            for (int c : pkt.glowColors) buf.writeInt(c);
+            writeColors(buf, pkt.glowColors);
             buf.writeUtf(pkt.trimName);
             buf.writeInt(pkt.trimNameColor);
         }
@@ -74,7 +74,7 @@ public class GlintApplyPacket {
     }
 
     public static GlintApplyPacket decode(FriendlyByteBuf buf) {
-        // readEnum is values()[readVarInt()] with no bounds check — validate so a crafted packet can't AIOOBE.
+        // Bounds-check the hand ordinal ourselves; readEnum() has none.
         int handOrd = buf.readVarInt();
         InteractionHand[] hands = InteractionHand.values();
         InteractionHand hand = (handOrd >= 0 && handOrd < hands.length) ? hands[handOrd] : InteractionHand.MAIN_HAND;
@@ -83,80 +83,18 @@ public class GlintApplyPacket {
             boolean wandOnly = buf.readBoolean();
             return new GlintApplyPacket(hand, true, new CustomGlint.Layer[0], "", false, new int[0], "", 0xFFFFFFFF, wandOnly);
         }
-        CustomGlint.Layer[] layers = readLayers(buf, 8);
+        CustomGlint.Layer[] layers = readLayers(buf, CustomGlint.MAX_LAYERS);
         String itemId = buf.readUtf();
         boolean glowing = buf.readBoolean();
-        int[] glowColors = readCappedColors(buf, 8);
+        int[] glowColors = readCappedColors(buf, CustomGlint.MAX_COLORS_PER_LAYER);
         String trimName = buf.readUtf();
         int trimNameColor = buf.readInt();
         boolean wandOnly = buf.readBoolean();
         return new GlintApplyPacket(hand, false, layers, itemId, glowing, glowColors, trimName, trimNameColor, wandOnly);
     }
 
-    /** Hard cap on a layer-array length on the wire (anti-DoS), shared by the Glint Table print packet. */
-    public static final int MAX_WIRE_COUNT = 256;
-
-    /** Serializes a Layer[] (design, colors, speed, interpolate, scale, simultaneous, scrollDir, scrollOffset)
-     *  — the shared wire format used by the editor packets and the Glint Table print packet. */
-    public static void writeLayers(FriendlyByteBuf buf, CustomGlint.Layer[] layers) {
-        buf.writeVarInt(layers.length);
-        for (CustomGlint.Layer l : layers) {
-            buf.writeUtf(l.design().toString());
-            buf.writeVarInt(l.colors().length);
-            for (int c : l.colors()) buf.writeInt(c);
-            buf.writeFloat(l.speed());
-            buf.writeBoolean(l.interpolate());
-            buf.writeFloat(l.patternScale());
-            buf.writeBoolean(l.simultaneous());
-            buf.writeVarInt(l.scrollDir());
-            buf.writeFloat(l.scrollOffset());
-        }
-    }
-
-    /** Inverse of {@link #writeLayers}. Reads the full sent array (draining the buffer cleanly) but keeps at
-     *  most {@code cap} layers; throws on a bogus count. */
-    public static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
-        int n = buf.readVarInt();
-        if (n < 0 || n > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad layer count: " + n);
-        java.util.List<CustomGlint.Layer> layers = new java.util.ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            String design = buf.readUtf();
-            int sentLen = buf.readVarInt();
-            if (sentLen < 0 || sentLen > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad color count: " + sentLen);
-            int keepLen = Math.min(sentLen, 8);
-            int[] colors = new int[keepLen];
-            for (int j = 0; j < sentLen; j++) { int c = buf.readInt(); if (j < keepLen) colors[j] = c; }
-            float speed = buf.readFloat();
-            if (speed <= 0 || !Float.isFinite(speed)) speed = 1.0f;
-            boolean interp = buf.readBoolean();
-            float scale = buf.readFloat();
-            if (!Float.isFinite(scale)) scale = 1.0f;
-            boolean sim = buf.readBoolean();
-            int scrollDir = buf.readVarInt();
-            float scrollOffset = buf.readFloat();
-            if (!Float.isFinite(scrollOffset)) scrollOffset = 0.0f;
-            ResourceLocation rl = ResourceLocation.tryParse(design);
-            if (rl != null && layers.size() < cap)
-                layers.add(new CustomGlint.Layer(rl, colors, speed, interp, scale, sim, scrollDir, scrollOffset));
-        }
-        return layers.toArray(new CustomGlint.Layer[0]);
-    }
-
-    /** Reads a {@code writeVarInt(len) + len*writeInt} color array, draining the full sent length but
-     *  keeping at most {@code cap} entries; throws on a bogus count. */
-    public static int[] readCappedColors(FriendlyByteBuf buf, int cap) {
-        int n = buf.readVarInt();
-        if (n < 0 || n > MAX_WIRE_COUNT) throw new io.netty.handler.codec.DecoderException("Bad color count: " + n);
-        int keep = Math.min(n, cap);
-        int[] out = new int[keep];
-        for (int i = 0; i < n; i++) { int c = buf.readInt(); if (i < keep) out[i] = c; }
-        return out;
-    }
-
     public static void handle(GlintApplyPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer player = ctx.get().getSender();
-            if (player == null) return;
+        NetHandlers.withSender(ctx, player -> {
             InteractionHand otherHand = pkt.wandHand == InteractionHand.MAIN_HAND
                     ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
             ItemStack wand = player.getItemInHand(pkt.wandHand);
@@ -185,9 +123,7 @@ public class GlintApplyPacket {
                     applyName(pkt, wand);
                 }
             } else {
-                // The give-an-item path is only reachable from the wand editor, which is opened by
-                // right-clicking the wand. Require the sender to actually hold one, so a forged packet can't
-                // spawn arbitrary items (command blocks, bedrock, etc.).
+                // Give-item path: require the sender to actually hold a wand.
                 if (!wandIsWand) return;
                 CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(pkt.layers);
                 ResourceLocation itemRl = ResourceLocation.tryParse(pkt.itemId);
@@ -206,7 +142,6 @@ public class GlintApplyPacket {
                 }
             }
         });
-        ctx.get().setPacketHandled(true);
     }
 
     private static void applyGlow(GlintApplyPacket pkt, ItemStack stack) {
@@ -217,9 +152,73 @@ public class GlintApplyPacket {
 
     private static void applyName(GlintApplyPacket pkt, ItemStack stack) {
         if (!pkt.trimName.isEmpty()) {
-            Component displayName = Component.literal(pkt.trimName)
-                .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
-            stack.setHoverName(displayName);
+            int rgb = (pkt.trimNameColor >>> 8) & 0xFFFFFF; // wire packs the name colour as (rgb << 8) | alpha
+            stack.setHoverName(GlintTrimItem.coloredName(pkt.trimName, rgb));
         }
+    }
+
+    // Shared Layer/color wire format. Used by the editor packets and the Glint Table print packet, so the
+    // read/write pairs below must stay in lockstep.
+
+    /** Serializes a Layer[]: design, colors, speed, interpolate, scale, simultaneous, scrollDir, scrollOffset. */
+    public static void writeLayers(FriendlyByteBuf buf, CustomGlint.Layer[] layers) {
+        buf.writeVarInt(layers.length);
+        for (CustomGlint.Layer l : layers) {
+            buf.writeUtf(l.design().toString());
+            buf.writeVarInt(l.colors().length);
+            for (int c : l.colors()) buf.writeInt(c);
+            buf.writeFloat(l.speed());
+            buf.writeBoolean(l.interpolate());
+            buf.writeFloat(l.patternScale());
+            buf.writeBoolean(l.simultaneous());
+            buf.writeVarInt(l.scrollDir());
+            buf.writeFloat(l.scrollOffset());
+        }
+    }
+
+    /** Inverse of {@link #writeLayers}. Drains the full sent array but keeps at most {@code cap} layers, and
+     *  substitutes a sane default for any non-finite or non-positive float. Throws on a count past the cap. */
+    public static CustomGlint.Layer[] readLayers(FriendlyByteBuf buf, int cap) {
+        int n = buf.readVarInt();
+        if (n < 0 || n > MAX_WIRE_COUNT) throw new DecoderException("Bad layer count: " + n);
+        List<CustomGlint.Layer> layers = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            String design = buf.readUtf();
+            int sentLen = buf.readVarInt();
+            if (sentLen < 0 || sentLen > MAX_WIRE_COUNT) throw new DecoderException("Bad color count: " + sentLen);
+            int keepLen = Math.min(sentLen, CustomGlint.MAX_COLORS_PER_LAYER);
+            int[] colors = new int[keepLen];
+            for (int j = 0; j < sentLen; j++) { int c = buf.readInt(); if (j < keepLen) colors[j] = c; }
+            float speed = buf.readFloat();
+            if (speed <= 0 || !Float.isFinite(speed)) speed = 1.0f;
+            boolean interp = buf.readBoolean();
+            float scale = buf.readFloat();
+            if (!Float.isFinite(scale)) scale = 1.0f;
+            boolean sim = buf.readBoolean();
+            int scrollDir = buf.readVarInt();
+            float scrollOffset = buf.readFloat();
+            if (!Float.isFinite(scrollOffset)) scrollOffset = 0.0f;
+            ResourceLocation rl = ResourceLocation.tryParse(design);
+            if (rl != null && layers.size() < cap)
+                layers.add(new CustomGlint.Layer(rl, colors, speed, interp, scale, sim, scrollDir, scrollOffset));
+        }
+        return layers.toArray(new CustomGlint.Layer[0]);
+    }
+
+    /** Writes a {@code writeVarInt(len) + len*writeInt} color array; the counterpart to {@link #readCappedColors}. */
+    public static void writeColors(FriendlyByteBuf buf, int[] colors) {
+        buf.writeVarInt(colors.length);
+        for (int c : colors) buf.writeInt(c);
+    }
+
+    /** Inverse of {@link #writeColors}. Drains the full sent length but keeps at most {@code cap} entries.
+     *  Throws on a count past the cap. */
+    public static int[] readCappedColors(FriendlyByteBuf buf, int cap) {
+        int n = buf.readVarInt();
+        if (n < 0 || n > MAX_WIRE_COUNT) throw new DecoderException("Bad color count: " + n);
+        int keep = Math.min(n, cap);
+        int[] out = new int[keep];
+        for (int i = 0; i < n; i++) { int c = buf.readInt(); if (i < keep) out[i] = c; }
+        return out;
     }
 }

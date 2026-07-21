@@ -1,66 +1,33 @@
 package net.tunamods.customglint.module.recipe;
 
-import net.tunamods.customglint.module.item.ModItems;
-
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
-import com.google.gson.JsonObject;
+import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.RecipeType;
-import net.minecraft.world.item.crafting.SmithingRecipe;
-import net.minecraft.world.level.Level;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 
 /**
- * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with
- * glowColors+glowing applied via {@link CustomGlint#setGlowColors}. Does NOT touch any
- * existing glint Data on the base — Glow Trim is strictly a glow-only application.
+ * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with glowColors+glowing applied via
+ * {@link CustomGlint#setGlowColors}. Does NOT touch any existing glint Data on the base; glow-only.
  */
-public class GlowTrimSmithingRecipe implements SmithingRecipe {
-    public static final Serializer SERIALIZER = new Serializer();
-
-    private final ResourceLocation id;
+public class GlowTrimSmithingRecipe extends AbstractTrimSmithingRecipe {
+    public static final RecipeSerializer<GlowTrimSmithingRecipe> SERIALIZER =
+            new SimpleSmithingSerializer<>(GlowTrimSmithingRecipe::new);
 
     public GlowTrimSmithingRecipe(ResourceLocation id) {
-        this.id = id;
-    }
-
-    @Override
-    public ResourceLocation getId() {
-        return id;
+        super(id);
     }
 
     @Override
     public boolean isTemplateIngredient(ItemStack stack) {
         return stack.getItem() instanceof GlowTrimItem
                 && GlowTrimItem.getColors(stack).length > 0;
-    }
-
-    @Override
-    public boolean isBaseIngredient(ItemStack stack) {
-        return !stack.isEmpty()
-                && !(stack.getItem() instanceof GlowTrimItem)
-                && !(stack.getItem() instanceof GlintTrimItem);
-    }
-
-    @Override
-    public boolean isAdditionIngredient(ItemStack stack) {
-        return stack.is(Items.GLOWSTONE_DUST);
-    }
-
-    @Override
-    public boolean matches(Container pContainer, Level pLevel) {
-        return isTemplateIngredient(pContainer.getItem(0))
-                && isBaseIngredient(pContainer.getItem(1))
-                && isAdditionIngredient(pContainer.getItem(2));
     }
 
     @Override
@@ -78,18 +45,9 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public NonNullList<Ingredient> getIngredients() {
-        NonNullList<Ingredient> list = NonNullList.create();
         ItemStack trimExample = new ItemStack(ModItems.GLOW_TRIM.get());
         GlowTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
-        list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
-        list.add(Ingredient.of(Items.GLOWSTONE_DUST));
-        return list;
-    }
-
-    @Override
-    public NonNullList<ItemStack> getRemainingItems(Container pContainer) {
-        return NonNullList.withSize(pContainer.getContainerSize(), ItemStack.EMPTY);
+        return ingredientsWithTemplate(trimExample);
     }
 
     @Override
@@ -100,33 +58,7 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
     }
 
     @Override
-    public boolean canCraftInDimensions(int pWidth, int pHeight) {
-        return true;
-    }
-
-    @Override
     public RecipeSerializer<?> getSerializer() {
         return SERIALIZER;
-    }
-
-    @Override
-    public RecipeType<?> getType() {
-        return RecipeType.SMITHING;
-    }
-
-    public static class Serializer implements RecipeSerializer<GlowTrimSmithingRecipe> {
-        @Override
-        public GlowTrimSmithingRecipe fromJson(ResourceLocation pRecipeId, JsonObject pSerializedRecipe) {
-            return new GlowTrimSmithingRecipe(pRecipeId);
-        }
-
-        @Override
-        public GlowTrimSmithingRecipe fromNetwork(ResourceLocation pRecipeId, FriendlyByteBuf pBuffer) {
-            return new GlowTrimSmithingRecipe(pRecipeId);
-        }
-
-        @Override
-        public void toNetwork(FriendlyByteBuf pBuffer, GlowTrimSmithingRecipe pRecipe) {
-        }
     }
 }

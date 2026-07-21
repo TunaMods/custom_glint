@@ -50,14 +50,14 @@ public final class EntityGlintRender {
         }
     }
 
-    /** Default: no per-instance data — the api client init (EntityGlintClientInit) overrides this. */
+    /** Default: no per-instance data. The api client init (EntityGlintClientInit) overrides this. */
     public static InstanceResolver instanceResolver = entity -> null;
 
     /**
      * Force the client glint cache to re-read this entity's current persistent NBT. Call after
      * a client-side mutation (e.g. {@link CustomGlint#writeEntity}, {@link CustomGlint#setEntityGlowing},
      * {@link CustomGlint#setEntityGlowColors}) when you need the change visible immediately
-     * without waiting for a server broadcast — typically preview UIs, replay viewers, or mods
+     * without waiting for a server broadcast, typically preview UIs, replay viewers, or mods
      * that reconstruct entities from stored NBT on the client.
      *
      * Server-side callers should use {@link net.tunamods.customglint.common.entity.EntityGlintEvents#broadcast}
@@ -106,12 +106,12 @@ public final class EntityGlintRender {
         return CustomGlint.getEntityGlint(entity.getType());
     }
 
-    private static void fillPremul(float[] buf, int argb) {
-        float a = ((argb >> 24) & 0xFF) / 255.0f;
-        buf[0] = ((argb >> 16) & 0xFF) / 255.0f * a;
-        buf[1] = ((argb >>  8) & 0xFF) / 255.0f * a;
-        buf[2] = ( argb        & 0xFF) / 255.0f * a;
-        buf[3] = 1.0f;
+    /** Public view of {@link #resolveData}: the entity's glint data (per-instance NBT, else the
+     *  {@link CustomGlint#ENTITY_GLINTS} type registry), or null. Used by render-path compat (Epic Fight)
+     *  that installs its own glint fan-out and needs the same resolution the core buffer wrapper uses. */
+    @Nullable
+    public static CustomGlint.Data glintDataFor(LivingEntity entity) {
+        return resolveData(entity);
     }
 
     // ── Glow outline capture ────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ public final class EntityGlintRender {
     // figure's id (glowKeyFor) so they compose as ONE ring, distinct from other figures. Drained with the
     // world items at AFTER_WEATHER.
 
-    /** Draw the entity body AND, when it glows, capture its silhouette in the SAME model walk — the in-phase
+    /** Draw the entity body AND, when it glows, capture its silhouette in the SAME model walk: the in-phase
      *  tee. Called from {@code LivingEntityRendererMixin}'s {@code @Redirect} on the body {@code renderToBuffer}.
      *
      *  <p>The {@code consumer} is the renderer's real (glint-fanned, if the entity also has glint) body buffer.
@@ -148,7 +148,7 @@ public final class EntityGlintRender {
             cap.delegate = null;
         }
         // Snapshot the live modelview the body is drawn under (camera transform) so the deferred replay
-        // reproduces the exact transform — same scheme as the world-item path in ItemRendererMixin.
+        // reproduces the exact transform, same scheme as the world-item path in ItemRendererMixin.
         Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
         GlowOutlineRenderer.queueModelOutline(cap.data, cap.count, tex, modelView, outlineColorFor(r),
                 GlowOutlineRenderer.glowKeyFor(entity, GlowOutlineRenderer.CAT_ENTITY),
@@ -156,10 +156,13 @@ public final class EntityGlintRender {
     }
 
     /** Outline colour for an entity-glow figure: its glow colours (animated) if set, else its glint
-     *  layer-0 colour, else white. */
+     *  layer-0 colour, else white. Shifted by {@link CustomGlintRenderer#GLOW_RING_PHASE_OFFSET} so the
+     *  ring stays out of phase with the body glint's inner tint. */
     public static int outlineColorFor(@Nullable Resolution r) {
-        if (r != null && r.glowColors.length > 0) return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors);
-        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0);
+        float off = CustomGlintRenderer.GLOW_RING_PHASE_OFFSET;
+        if (r != null && r.glowColors.length > 0)
+            return CustomGlintRenderer.computeAnimatedGlowColor(r.glowColors, 1.0f, true, off);
+        if (r != null && r.data != null) return CustomGlintRenderer.computeAnimatedColor(r.data, 0, off);
         return 0xFFFFFFFF;
     }
 
@@ -205,7 +208,7 @@ public final class EntityGlintRender {
 
     /** Re-render a posed {@code model} into the glow mask, tracing it against {@code texture}. Used for worn
      *  items (humanoid armor, elytra, horse barding) that already draw at the layer's RETURN with the same
-     *  pose — there's no single tee chokepoint, so this records a second (record-only) walk. Silhouettes
+     *  pose; there's no single tee chokepoint, so this records a second (record-only) walk. Silhouettes
      *  sharing an {@code identity} (e.g. the wearer entity) compose as ONE ring with the body. {@code color}
      *  is the item's resolved glow colour; {@code category} picks the ring thickness. */
     public static void captureModelSilhouette(Object identity, Model model, ResourceLocation texture,
@@ -237,18 +240,19 @@ public final class EntityGlintRender {
                 GlowOutlineRenderer.glowKeyFor(identity, category), category);
     }
 
+    /** One recorder per render thread, reused across captures so a model walk allocates nothing. */
+    private static final ThreadLocal<CapturingModelConsumer> CAPTURE_POOL =
+            ThreadLocal.withInitial(CapturingModelConsumer::new);
+
     /** {@link VertexConsumer} for tracing a posed model into a glow silhouette: captures each vertex's
      *  camera-relative position + UV as {@code [x,y,z,u,v]} and drops everything else. The model's big
      *  {@code vertex(Matrix4f, …)} convenience method decomposes into {@code vertex(x,y,z)} then {@code uv(u,v)}
      *  (among others), so we stash the position on {@code vertex} and flush the 5-tuple on {@code uv}.
      *
-     *  <p>When {@link #delegate} is set it ALSO forwards every call to that real buffer, so a single model walk
-     *  both DRAWS the entity and RECORDS its silhouette — the in-phase tee. With {@code delegate == null} it is
-     *  record-only. The forwarded position is already pose-transformed (the convenience method transforms
-     *  before calling {@code vertex(x,y,z)}), so the entity renders identically. */
-    private static final ThreadLocal<CapturingModelConsumer> CAPTURE_POOL =
-            ThreadLocal.withInitial(CapturingModelConsumer::new);
-
+     *  <p>When {@link CapturingModelConsumer#delegate} is set it ALSO forwards every call to that real buffer,
+     *  so a single model walk both DRAWS the entity and RECORDS its silhouette: the in-phase tee. With
+     *  {@code delegate == null} it is record-only. The forwarded position is already pose-transformed (the
+     *  convenience method transforms before calling {@code vertex(x,y,z)}), so the entity renders identically. */
     public static final class CapturingModelConsumer implements VertexConsumer {
         public float[] data = new float[4096];
         public int count = 0;
@@ -287,10 +291,18 @@ public final class EntityGlintRender {
     public static final class GlintWrappingBufferSource implements MultiBufferSource {
         final MultiBufferSource delegate;
         final CustomGlint.Data glint;
+        // TRIANGLES-mode glint RTs instead of QUADS, for renderers whose entity draw is a triangle list
+        // (Epic Fight patched meshes). A quad glint RT fed a triangle stream shatters into facets.
+        final boolean triangles;
 
         GlintWrappingBufferSource(MultiBufferSource delegate, CustomGlint.Data glint) {
+            this(delegate, glint, false);
+        }
+
+        public GlintWrappingBufferSource(MultiBufferSource delegate, CustomGlint.Data glint, boolean triangles) {
             this.delegate = delegate;
             this.glint = glint;
+            this.triangles = triangles;
         }
 
         @Override
@@ -298,7 +310,7 @@ public final class EntityGlintRender {
             if (!shouldApplyGlint(rt)) return delegate.getBuffer(rt);
             // Don't bleed entity glint onto the item the entity is holding. ItemRenderer.render
             // (mixin'd to set CURRENT_ITEM_STACK at HEAD, clear at RETURN) is invoked through
-            // HeldItemLayer / ItemInHandLayer during the entity render — those item draws route
+            // HeldItemLayer / ItemInHandLayer during the entity render: those item draws route
             // through entity_solid / entity_translucent RTs which would otherwise match
             // shouldApplyGlint and fan-out the entity's glint onto the item's vertex stream.
             // The item has its own per-item glint via ItemRendererMixin's getFoilBuffer, which
@@ -310,31 +322,57 @@ public final class EntityGlintRender {
             // registered in fixedBuffers (dedicated builders). If we got `base` first, the first
             // `delegate.getBuffer(grt)` call would see lastState=body_rt (non-fixed) and switch
             // away from it, which in vanilla BufferSource.getBuffer ends the previous non-fixed
-            // builder — i.e. flushes the body builder while it's still empty and leaves it in a
+            // builder, i.e. flushes the body builder while it's still empty and leaves it in a
             // non-building state. Subsequent vertex writes to `base` then drop on the floor and
             // the body renders invisible (the dilated outline ring still appears because its
             // stencil-write pass re-renders the model into its own dedicated fixed builder).
             // Acquiring `base` last leaves it as the current active builder when the model writes.
+            // A translucent base surface (e.g. the slime's outer shell) needs its glint tagged for shader-mod
+            // late render: under an ACTIVE shaderpack the translucent geometry is deferred past the point our
+            // glint would otherwise flush, so the shell paints over the glint and it vanishes. The translucent
+            // variants are distinct RT instances that flush in the LINES bucket, on top of the shell, writing
+            // no depth and lifting toward the camera so LEQUAL clears the shell's own coplanar depth (see
+            // forHorseArmorGlint for why those go together). That ordering only exists inside Iris's
+            // FullyBuffered pipeline, so gate on an active pack: with shaders off (even with Oculus/Embeddium
+            // installed) there is no deferred flush, so use the plain opaque EQUAL-depth glint there and the
+            // shell renders normally with the glint on top.
+            boolean translucent = isTranslucent(rt) && CustomGlintRenderer.isShaderPackActive();
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>(layers.length + 1);
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
-                    RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
-                    if (crt != null) list.add(delegate.getBuffer(crt));
+                    RenderType crt = translucent
+                            ? CustomGlintRenderer.forChromaticEntityGlintTranslucent(glint, layerIdx, triangles)
+                            : triangles
+                                ? CustomGlintRenderer.forChromaticEntityGlintTriangles(glint, layerIdx)
+                                : CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
+                    // Chromatic draws in-pass like every other design: the slick is a texture baked once per
+                    // frame (ChromaticTextureBaker) and sampled through GLINT_SHADER_SHARD, so under a pack it
+                    // resolves to the pack's own GLINT program rather than the private one Iris colour-masks.
+                    // The translucent variant takes the same on-top-of-the-shell path its texture twin does.
+                    if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(delegate, crt));
                     continue;
                 }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        fillPremul(buf, colors[i]);
-                        RenderType grt = CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
+                        RenderType grt = translucent
+                                ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, i, triangles)
+                                : triangles
+                                    ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, i)
+                                    : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, i);
                         if (grt != null) list.add(delegate.getBuffer(grt));
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    fillPremul(buf, color);
-                    RenderType grt = CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
+                    CustomGlintRenderer.fillPremul(buf, color);
+                    RenderType grt = translucent
+                            ? CustomGlintRenderer.forEntityGlintTranslucent(glint, layerIdx, buf, 0, triangles)
+                            : triangles
+                                ? CustomGlintRenderer.forEntityGlintTriangles(glint, layerIdx, buf, 0)
+                                : CustomGlintRenderer.forEntityGlint(glint, layerIdx, buf, 0);
                     if (grt != null) list.add(delegate.getBuffer(grt));
                 }
             }
@@ -348,6 +386,12 @@ public final class EntityGlintRender {
             String name = rt.toString();
             // Cover entity_cutout_no_cull / entity_solid / entity_translucent / etc.
             return name.startsWith("entity_") || name.startsWith("RenderType[entity_");
+        }
+
+        /** entity_translucent / entity_translucent_cull / item_entity_translucent_cull: the shader mod defers
+         *  these to a later pass than our fixed glint buffer, so their glint must be shader-late-tagged. */
+        private static boolean isTranslucent(RenderType rt) {
+            return rt.toString().contains("translucent");
         }
     }
 }

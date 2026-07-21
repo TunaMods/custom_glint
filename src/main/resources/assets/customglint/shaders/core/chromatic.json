@@ -1,24 +1,20 @@
 {
-    "vertex": "customglint:chromatic",
-    "fragment": "customglint:chromatic",
+    "_comment": "ONE/ZERO is a 'replace' blend: result = src*1 + dst*0. The bake WRITES the slick into an empty offscreen target, it does not add to anything. Declared rather than omitted on purpose - omitting the section parses to an OPAQUE BlendMode, and BlendMode.apply() only touches glEnable(BLEND) when opaque-ness CHANGES against a static lastApplied, so an opaque mode here would leave GL's blend enable disagreeing with lastApplied for the rest of the frame (see the LOAD-BEARING note in CustomGlintRenderer above CHROMATIC_MODEL_UV_SCALE). A non-opaque replace keeps that invariant and still writes the slick verbatim.",
     "blend": {
         "func": "add",
-        "srcrgb": "srccolor",
-        "dstrgb": "one"
+        "srcrgb": "one",
+        "dstrgb": "zero",
+        "srcalpha": "one",
+        "dstalpha": "zero"
     },
+    "vertex": "customglint:chromatic",
+    "fragment": "customglint:chromatic",
     "samplers": [
-        { "name": "Sampler0" },
         { "name": "Sampler1" }
     ],
     "uniforms": [
         { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
         { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
-        { "name": "TextureMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
-        { "name": "ColorModulator", "type": "float", "count": 4, "values": [ 1.0, 1.0, 1.0, 1.0 ] },
-        { "name": "GlintAlpha", "type": "float", "count": 1, "values": [ 1.0 ] },
-        { "name": "GameTime", "type": "float", "count": 1, "values": [ 0.0 ] },
-        { "name": "FogStart", "type": "float", "count": 1, "values": [ 0.0 ] },
-        { "name": "FogEnd", "type": "float", "count": 1, "values": [ 1.0 ] },
-        { "name": "FogShape", "type": "int", "count": 1, "values": [ 0 ] }
+        { "name": "TextureMat", "type": "matrix4x4", "count": 16, "values": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] }
     ]
 }

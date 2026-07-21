@@ -16,9 +16,9 @@ import java.util.UUID;
  * logout. Invoked from {@code CustomGlintApiMod} on the client dist.
  *
  * Resolution order on the client:
- *  1. {@link EntityGlintCache} — populated by server broadcasts and start-tracking.
+ *  1. {@link EntityGlintCache}, populated by server broadcasts and start-tracking.
  *  2. Fallback: the entity's persistent NBT directly. Covers client-side mutations, entities
- *     reconstructed from saved NBT (capture/release mods, replay), and previews — anywhere the
+ *     reconstructed from saved NBT (capture/release mods, replay), and previews: anywhere the
  *     server packet path didn't run. On miss-with-NBT we populate the cache so the next frame
  *     hits the fast path; subsequent server broadcasts overwrite as expected.
  */

@@ -1,0 +1,32 @@
+{
+  "parent": "customglint:collect_5",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/swirl.png\",colors:[I;-16711936]}]}}"
+    },
+    "title": {
+      "translate": "advancement.customglint.collect_10.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.collect_10.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "collect": {
+      "trigger": "customglint:designs_collected",
+      "conditions": {
+        "count": 10
+      }
+    }
+  },
+  "requirements": [
+    [
+      "collect"
+    ]
+  ]
+}

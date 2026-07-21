@@ -9,19 +9,19 @@ import net.tunamods.customglint.module.network.GlintMountArmorSyncPacket;
 import net.tunamods.customglint.module.network.ModNetworking;
 
 import java.lang.reflect.Field;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Server-side helpers for syncing IaF mount armor stacks to clients. Reflection-based so we
  * don't need compileOnly on IaF. Field-name lookup is cached per concrete entity class.
  */
 public final class MountArmorSync {
-    private MountArmorSync() {}
-
     private static final Map<Class<?>, Field> INV_FIELD_CACHE = new ConcurrentHashMap<>();
 
-    /** Reflectively reads the armor stack at slot 2 of the entity's inventory field. */
+    private MountArmorSync() {}
+
+    /** Reflectively reads the armor stack from the entity's inventory field (slot 2 is IaF's mount-armor slot). */
     public static ItemStack readArmorStack(Entity entity, String invFieldName) {
         try {
             Field f = INV_FIELD_CACHE.get(entity.getClass());

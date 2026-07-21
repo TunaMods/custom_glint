@@ -16,8 +16,12 @@ import java.util.function.Supplier;
  */
 public class GlintPrintPacket {
 
-    /** Anti-DoS cap on each of the below/above extra-layer arrays. */
+    /** Cap on each of the below/above extra-layer arrays. Printing trims to MAX_LAYERS anyway; this only
+     *  bounds what decode will allocate. */
     private static final int MAX_EXTRA_LAYERS = 16;
+
+    /** Per-shard and per-colour cap, matching {@link CustomGlint#MAX_COLORS_PER_LAYER}. */
+    private static final int MAX_SHARDS = 8;
 
     public final String design;
     public final float speed, scale, scrollOffset;
@@ -25,18 +29,29 @@ public class GlintPrintPacket {
     public final boolean glow, glowAuto, named, simultaneous, interpolate, sourceSimultaneous;
     public final String name;
     public final int[][] shardDyes;
+    /** Manual-glow colour shards for a glint trim (empty when glow is off / auto). Each shard is charged a dye
+     *  exactly like the glint colours. Unused on the {@code glowBase} path (a Glow Trim's colours ride
+     *  {@code shardDyes}). */
+    public final int[][] glowShardDyes;
+    public final int[] donorColors;
     public final CustomGlint.Layer[] belowLayers, aboveLayers;
+    /** True when the trim being printed is a Glow Trim: the server ignores the glint-only fields and builds a
+     *  glow-only trim, treating {@code shardDyes} as its glow colours. */
+    public final boolean glowBase;
 
     public GlintPrintPacket(String design, float speed, float scale, int opacity,
                             boolean glow, boolean glowAuto, boolean named, String name,
                             boolean simultaneous, int scrollDir, float scrollOffset, boolean interpolate,
-                            int glowHex, int nameHex, int[][] shardDyes,
-                            CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous) {
+                            int glowHex, int nameHex, int[][] shardDyes, int[] donorColors,
+                            CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                            boolean glowBase, int[][] glowShardDyes) {
         this.design = design; this.speed = speed; this.scale = scale; this.opacity = opacity;
         this.glow = glow; this.glowAuto = glowAuto; this.named = named; this.name = name;
         this.simultaneous = simultaneous; this.scrollDir = scrollDir; this.scrollOffset = scrollOffset;
         this.interpolate = interpolate; this.glowHex = glowHex; this.nameHex = nameHex; this.shardDyes = shardDyes;
+        this.donorColors = donorColors;
         this.belowLayers = belowLayers; this.aboveLayers = aboveLayers; this.sourceSimultaneous = sourceSimultaneous;
+        this.glowBase = glowBase; this.glowShardDyes = glowShardDyes;
     }
 
     public static void encode(GlintPrintPacket pkt, FriendlyByteBuf buf) {
@@ -56,9 +71,13 @@ public class GlintPrintPacket {
         buf.writeInt(pkt.nameHex);
         buf.writeVarInt(pkt.shardDyes.length);
         for (int[] shard : pkt.shardDyes) buf.writeVarIntArray(shard);
+        buf.writeVarIntArray(pkt.donorColors);
         GlintApplyPacket.writeLayers(buf, pkt.belowLayers);
         GlintApplyPacket.writeLayers(buf, pkt.aboveLayers);
         buf.writeBoolean(pkt.sourceSimultaneous);
+        buf.writeBoolean(pkt.glowBase);
+        buf.writeVarInt(pkt.glowShardDyes.length);
+        for (int[] shard : pkt.glowShardDyes) buf.writeVarIntArray(shard);
     }
 
     public static GlintPrintPacket decode(FriendlyByteBuf buf) {
@@ -66,18 +85,19 @@ public class GlintPrintPacket {
                 buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readUtf(32767), buf.readBoolean(),
                 buf.readVarInt(), buf.readFloat(), buf.readBoolean(),
                 buf.readInt(), buf.readInt(),
-                readShardDyes(buf),
+                readShardDyes(buf), readCappedVarIntArray(buf, MAX_SHARDS),
                 GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
-                GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean());
+                GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(), buf.readBoolean(),
+                readShardDyes(buf));
     }
 
     private static int[][] readShardDyes(FriendlyByteBuf buf) {
         int sent = buf.readVarInt();
         if (sent < 0 || sent > GlintApplyPacket.MAX_WIRE_COUNT) throw new DecoderException("Bad shard count: " + sent);
-        int keep = Math.max(0, Math.min(sent, 8));
+        int keep = Math.min(sent, MAX_SHARDS);
         int[][] shards = new int[keep][];
         for (int i = 0; i < sent; i++) {
-            int[] shard = readCappedVarIntArray(buf, 8);
+            int[] shard = readCappedVarIntArray(buf, MAX_SHARDS);
             if (i < keep) shards[i] = shard;
         }
         return shards;
@@ -92,14 +112,15 @@ public class GlintPrintPacket {
     }
 
     public static void handle(GlintPrintPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) {
+        NetHandlers.withTableMenu(ctx, (sp, m) -> {
+            if (pkt.glowBase) {
+                m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
+            } else {
                 m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name,
                         pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex,
-                        pkt.shardDyes, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous);
+                        pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous,
+                        pkt.glowShardDyes);
             }
         });
-        ctx.get().setPacketHandled(true);
     }
 }

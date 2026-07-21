@@ -16,6 +16,9 @@ import net.minecraftforge.network.NetworkEvent;
  */
 public class GlintStoredSyncPacket {
 
+    /** Client-side mirror of the local player's stored design set. Read by the Glint Table screen. */
+    public static final Set<String> CLIENT_STORED = new HashSet<>();
+
     public final List<String> designs;
 
     public GlintStoredSyncPacket(List<String> designs) {
@@ -28,24 +31,20 @@ public class GlintStoredSyncPacket {
     }
 
     public static GlintStoredSyncPacket decode(FriendlyByteBuf buf) {
-        // Clamp count itself so a crafted server can neither pre-size a huge list nor drive a multi-billion
-        // readUtf loop (the legit set is capped at 128, so 1024 is ample headroom).
+        // Cap the wire count (legit set is ≤128).
         int count = Math.max(0, Math.min(buf.readVarInt(), 1024));
         List<String> designs = new ArrayList<>(count);
         for (int i = 0; i < count; i++) designs.add(buf.readUtf());
         return new GlintStoredSyncPacket(designs);
     }
 
-    /** Client-side mirror of the local player's stored design set. Read by the Glint Table screen. */
-    public static final Set<String> CLIENT_STORED = new HashSet<>();
-
-    public static void clearClient() { CLIENT_STORED.clear(); }
-
     public static void handle(GlintStoredSyncPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
+        NetHandlers.work(ctx, () -> {
             CLIENT_STORED.clear();
             CLIENT_STORED.addAll(pkt.designs);
         });
-        ctx.get().setPacketHandled(true);
     }
+
+    /** Drops the mirror on disconnect so a later session can't read the previous server's set. */
+    public static void clearClient() { CLIENT_STORED.clear(); }
 }

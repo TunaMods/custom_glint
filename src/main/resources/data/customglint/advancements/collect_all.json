@@ -1,0 +1,32 @@
+{
+  "parent": "customglint:collect_50",
+  "display": {
+    "icon": {
+      "item": "customglint:glint_trim",
+      "nbt": "{customglint:{layers:[{design:\"customglint:textures/glint/oil.png\",colors:[I;-65536,-32768,-256,-16711936,-16711681,-16776961,-8388353,-65281]}]}}"
+    },
+    "title": {
+      "translate": "advancement.customglint.collect_all.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.collect_all.description"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "collect": {
+      "trigger": "customglint:designs_collected",
+      "conditions": {
+        "all": true
+      }
+    }
+  },
+  "requirements": [
+    [
+      "collect"
+    ]
+  ]
+}

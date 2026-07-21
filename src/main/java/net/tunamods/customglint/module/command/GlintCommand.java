@@ -1,7 +1,5 @@
 package net.tunamods.customglint.module.command;
 
-import net.tunamods.customglint.module.item.ModItems;
-
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -11,10 +9,6 @@ import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import net.tunamods.customglint.CustomGlintMod;
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.common.entity.EntityGlintEvents;
-import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -26,16 +20,42 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.network.PacketDistributor;
+import net.tunamods.customglint.CustomGlintMod;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.common.entity.EntityGlintEvents;
+import net.tunamods.customglint.module.ModConfigPaths;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
+import net.tunamods.customglint.module.menu.GlintTablePlayerData;
+import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
+import net.tunamods.customglint.module.network.ModNetworking;
 
 import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
+/**
+ * The {@code /glint} command. Held-item subcommands act on the sender's main hand; the {@code entity}
+ * subcommand acts on selector-matched living entities and broadcasts every change through
+ * {@link EntityGlintEvents} so trackers see it. Everything here runs on the server, so no client-only
+ * class may be referenced from this file.
+ */
 public class GlintCommand {
+
+    /** Argument bounds for the animation speed multiplier: below 0.25x the glint reads as static. */
+    private static final float SPEED_MIN = 0.25f, SPEED_MAX = 8.0f;
+    /** Argument bounds for the pattern scale: past 4x the design tiles too finely to read on an item. */
+    private static final float SCALE_MIN = 0.25f, SCALE_MAX = 4.0f;
 
     private static final Map<String, Integer> COLORS = new LinkedHashMap<>();
 
@@ -86,7 +106,7 @@ public class GlintCommand {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("glint")
-            .requires(s -> s.hasPermission(2))
+            .requires(s -> s.hasPermission(2)) // op level 2, the usual bar for world-editing commands
             .then(Commands.literal("apply")
                 .then(Commands.argument("design", StringArgumentType.word())
                     .suggests(SUGGEST_DESIGNS)
@@ -96,7 +116,7 @@ public class GlintCommand {
                             StringArgumentType.getString(ctx, "design"),
                             StringArgumentType.getString(ctx, "colors"),
                             1.0f, true, 1.0f, false))
-                        .then(Commands.argument("speed", FloatArgumentType.floatArg(0.25f, 8.0f))
+                        .then(Commands.argument("speed", FloatArgumentType.floatArg(SPEED_MIN, SPEED_MAX))
                             .executes(ctx -> apply(ctx.getSource(),
                                 StringArgumentType.getString(ctx, "design"),
                                 StringArgumentType.getString(ctx, "colors"),
@@ -107,7 +127,7 @@ public class GlintCommand {
                                     StringArgumentType.getString(ctx, "colors"),
                                     FloatArgumentType.getFloat(ctx, "speed"),
                                     BoolArgumentType.getBool(ctx, "smooth"), 1.0f, false))
-                                .then(Commands.argument("scale", FloatArgumentType.floatArg(0.25f, 4.0f))
+                                .then(Commands.argument("scale", FloatArgumentType.floatArg(SCALE_MIN, SCALE_MAX))
                                     .executes(ctx -> apply(ctx.getSource(),
                                         StringArgumentType.getString(ctx, "design"),
                                         StringArgumentType.getString(ctx, "colors"),
@@ -128,6 +148,8 @@ public class GlintCommand {
                 .then(Commands.argument("enabled", BoolArgumentType.bool())
                     .executes(ctx -> glow(ctx.getSource(),
                         BoolArgumentType.getBool(ctx, "enabled")))))
+            .then(Commands.literal("cheat")
+                .executes(ctx -> cheat(ctx.getSource())))
             .then(Commands.literal("extract")
                 .executes(ctx -> extract(ctx.getSource())))
             .then(Commands.literal("export")
@@ -153,7 +175,7 @@ public class GlintCommand {
                                         StringArgumentType.getString(ctx, "colors"),
                                         1.0f, true, 1.0f, false,
                                         BoolArgumentType.getBool(ctx, "glowing")))
-                                    .then(Commands.argument("speed", FloatArgumentType.floatArg(0.25f, 8.0f))
+                                    .then(Commands.argument("speed", FloatArgumentType.floatArg(SPEED_MIN, SPEED_MAX))
                                         .executes(ctx -> applyEntity(ctx.getSource(),
                                             EntityArgument.getEntities(ctx, "targets"),
                                             StringArgumentType.getString(ctx, "design"),
@@ -168,7 +190,7 @@ public class GlintCommand {
                                                 FloatArgumentType.getFloat(ctx, "speed"),
                                                 BoolArgumentType.getBool(ctx, "smooth"), 1.0f, false,
                                                 BoolArgumentType.getBool(ctx, "glowing")))
-                                            .then(Commands.argument("scale", FloatArgumentType.floatArg(0.25f, 4.0f))
+                                            .then(Commands.argument("scale", FloatArgumentType.floatArg(SCALE_MIN, SCALE_MAX))
                                                 .executes(ctx -> applyEntity(ctx.getSource(),
                                                     EntityArgument.getEntities(ctx, "targets"),
                                                     StringArgumentType.getString(ctx, "design"),
@@ -197,126 +219,20 @@ public class GlintCommand {
                                 BoolArgumentType.getBool(ctx, "enabled"))))))));
     }
 
-    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
-                                   String designName, String colorsArg,
-                                   float speed, boolean smooth, float scale, boolean simultaneous,
-                                   boolean glowing) {
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
-        }
-        ResourceLocation design = CustomGlint.designFromName(key);
-
-        String[] parts = colorsArg.split(",");
-        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
-        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
-            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
-            }
-            colors[i] = c;
-        }
-
-        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
-        CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
-
-        int count = 0;
-        for (Entity e : targets) {
-            if (!(e instanceof LivingEntity le)) continue;
-            CustomGlint.writeEntity(le, layers);
-            CustomGlint.setEntityGlowing(le, glowing);
-            EntityGlintEvents.broadcast(le);
-            count++;
-        }
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching living entities"));
-            return 0;
-        }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal("Glint applied to " + n + " entit" + (n == 1 ? "y" : "ies")), false);
-        return count;
-    }
-
-    private static int removeEntity(CommandSourceStack source, Collection<? extends Entity> targets) {
-        int count = 0;
-        for (Entity e : targets) {
-            if (!(e instanceof LivingEntity le)) continue;
-            if (!CustomGlint.hasEntity(le)) continue;
-            CustomGlint.removeEntity(le);
-            EntityGlintEvents.broadcast(le);
-            count++;
-        }
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching living entities had a glint"));
-            return 0;
-        }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal("Glint removed from " + n + " entit" + (n == 1 ? "y" : "ies")), false);
-        return count;
-    }
-
-    private static int glowEntity(CommandSourceStack source, Collection<? extends Entity> targets, boolean enabled) {
-        int count = 0;
-        for (Entity e : targets) {
-            if (!(e instanceof LivingEntity le)) continue;
-            CustomGlint.setEntityGlowing(le, enabled);
-            EntityGlintEvents.broadcast(le);
-            count++;
-        }
-        if (count == 0) {
-            source.sendFailure(Component.literal("No matching living entities"));
-            return 0;
-        }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal((enabled ? "Glowing enabled on " : "Glowing disabled on ") + n + " entit" + (n == 1 ? "y" : "ies")), false);
-        return count;
-    }
+    // Held-item subcommands.
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
                               float speed, boolean smooth, float scale, boolean simultaneous) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
-        }
-        ResourceLocation design = CustomGlint.designFromName(key);
+        ResourceLocation design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
 
-        String[] parts = colorsArg.split(",");
-        // Enforce the 8-color cap every other write path holds (the renderer fans out one draw per color).
-        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
-            parts = java.util.Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
-            }
-            colors[i] = c;
-        }
-
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
         CustomGlint.write(stack, CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer }));
@@ -325,17 +241,11 @@ public class GlintCommand {
     }
 
     private static int glow(CommandSourceStack source, boolean enabled) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         CustomGlint.setGlowing(stack, enabled);
         source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
@@ -343,17 +253,11 @@ public class GlintCommand {
     }
 
     private static int remove(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         if (!CustomGlint.has(stack)) {
             source.sendFailure(Component.literal("Item has no custom glint"));
@@ -365,18 +269,37 @@ public class GlintCommand {
         return 1;
     }
 
-    private static int extract(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+    /** Unlocks every Glint Table design at once: stores all built-in designs (+ the Glow Trim) into the
+     *  player's design library so the whole left palette is usable, instead of depositing each trim one by
+     *  one from creative. */
+    private static int cheat(CommandSourceStack source) {
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        List<String> stored = new ArrayList<>(GlintTablePlayerData.storedDesigns(player));
+        int before = stored.size();
+        if (!stored.contains(GlowTrimItem.STORAGE_KEY)) stored.add(GlowTrimItem.STORAGE_KEY);
+        for (String name : GlintTrimItem.PATTERNS) if (!stored.contains(name)) stored.add(name);
+
+        int added = stored.size() - before;
+        GlintTablePlayerData.setStoredDesigns(player, stored);
+        ModNetworking.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new GlintStoredSyncPacket(new ArrayList<>(stored)));
+        GlintTableMenu.checkDesignAdvancements(player);
+
+        final int n = added;
+        source.sendSuccess(() -> Component.literal(n == 0
+                ? "All Glint Table designs were already unlocked"
+                : "Unlocked " + n + " Glint Table design" + (n == 1 ? "" : "s")), false);
+        return 1;
+    }
+
+    private static int extract(CommandSourceStack source) {
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
+
+        ItemStack held = requireHeldItem(source, player);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
@@ -404,7 +327,8 @@ public class GlintCommand {
             if (held.hasTag() && held.getTag().contains(CustomGlintMod.MOD_ID)) {
                 trim.getOrCreateTag().put(CustomGlintMod.MOD_ID, held.getTag().get(CustomGlintMod.MOD_ID).copy());
             }
-            // Set glowing and CustomModelData without calling setGlowing (which would clobber the multi-layer tag)
+            // Set glowing and CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
+            // Glowing variants sit in the +1000 CustomModelData band; +1 keeps 0 meaning "no override".
             boolean glowing = CustomGlint.isGlowing(held);
             trim.getOrCreateTag().putBoolean(GlintTrimItem.GLOWING_TAG, glowing);
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
@@ -418,17 +342,11 @@ public class GlintCommand {
     }
 
     private static int export(CommandSourceStack source, String name) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack held = requireHeldItem(source, player);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
@@ -437,7 +355,7 @@ public class GlintCommand {
         }
 
         try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path configDir = ModConfigPaths.TRIMS_DIR;
             Files.createDirectories(configDir);
 
             JsonObject root = new JsonObject();
@@ -487,5 +405,120 @@ public class GlintCommand {
             source.sendFailure(Component.literal("Failed to export: " + e.getMessage()));
             return 0;
         }
+    }
+
+    // Entity subcommands. Every mutation runs server-side and is broadcast to the entity's trackers.
+
+    private static int applyEntity(CommandSourceStack source, Collection<? extends Entity> targets,
+                                   String designName, String colorsArg,
+                                   float speed, boolean smooth, float scale, boolean simultaneous,
+                                   boolean glowing) {
+        ResourceLocation design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
+
+        CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
+        CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
+
+        int count = forEachLiving(source, targets, "No matching living entities", le -> {
+            CustomGlint.writeEntity(le, layers);
+            CustomGlint.setEntityGlowing(le, glowing);
+            EntityGlintEvents.broadcast(le);
+            return true;
+        });
+        if (count == 0) return 0;
+        source.sendSuccess(() -> Component.literal("Glint applied to " + entityCount(count)), false);
+        return count;
+    }
+
+    private static int removeEntity(CommandSourceStack source, Collection<? extends Entity> targets) {
+        int count = forEachLiving(source, targets, "No matching living entities had a glint", le -> {
+            if (!CustomGlint.hasEntity(le)) return false;
+            CustomGlint.removeEntity(le);
+            EntityGlintEvents.broadcast(le);
+            return true;
+        });
+        if (count == 0) return 0;
+        source.sendSuccess(() -> Component.literal("Glint removed from " + entityCount(count)), false);
+        return count;
+    }
+
+    private static int glowEntity(CommandSourceStack source, Collection<? extends Entity> targets, boolean enabled) {
+        int count = forEachLiving(source, targets, "No matching living entities", le -> {
+            CustomGlint.setEntityGlowing(le, enabled);
+            EntityGlintEvents.broadcast(le);
+            return true;
+        });
+        if (count == 0) return 0;
+        source.sendSuccess(() -> Component.literal(
+                (enabled ? "Glowing enabled on " : "Glowing disabled on ") + entityCount(count)), false);
+        return count;
+    }
+
+    // Shared helpers.
+
+    /** Runs {@code action} on each living target and counts the ones it reports as changed; sends
+     *  {@code emptyMessage} as a failure when nothing matched. */
+    private static int forEachLiving(CommandSourceStack source, Collection<? extends Entity> targets,
+                                     String emptyMessage, Predicate<LivingEntity> action) {
+        int count = 0;
+        for (Entity e : targets) {
+            if (e instanceof LivingEntity le && action.test(le)) count++;
+        }
+        if (count == 0) source.sendFailure(Component.literal(emptyMessage));
+        return count;
+    }
+
+    private static String entityCount(int n) {
+        return n + (n == 1 ? " entity" : " entities");
+    }
+
+    /** Resolves a design name to its ResourceLocation, or reports the valid names and returns null. */
+    private static ResourceLocation resolveDesign(CommandSourceStack source, String designName) {
+        String key = designName.toLowerCase();
+        if (!GlintTrimItem.PATTERNS.contains(key)) {
+            source.sendFailure(Component.literal(
+                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
+            return null;
+        }
+        return CustomGlint.designFromName(key);
+    }
+
+    /** Parses a comma-separated color-name list to ARGB (capped at MAX_COLORS_PER_LAYER, since the renderer
+     *  fans out one draw per color), or reports the offending name and returns null. */
+    private static int[] parseColors(CommandSourceStack source, String colorsArg) {
+        String[] parts = colorsArg.split(",");
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
+        int[] colors = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            String name = parts[i].trim().toLowerCase();
+            Integer c = COLORS.get(name);
+            if (c == null) {
+                source.sendFailure(Component.literal(
+                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
+                return null;
+            }
+            colors[i] = c;
+        }
+        return colors;
+    }
+
+    /** The command sender as a player, or null (after sending "Must be a player") when the source isn't one. */
+    private static ServerPlayer requirePlayer(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) source.sendFailure(Component.literal("Must be a player"));
+        return player;
+    }
+
+    /** The player's main-hand item, or null (after sending "Hold an item...") when the hand is empty. */
+    private static ItemStack requireHeldItem(CommandSourceStack source, ServerPlayer player) {
+        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (stack.isEmpty()) {
+            source.sendFailure(Component.literal("Hold an item in your main hand"));
+            return null;
+        }
+        return stack;
     }
 }

@@ -1,25 +1,28 @@
-Custom Glints - developer documentation
-Minecraft 1.20.1 / Forge 47.x - MIT license (attribution required)
+Glint & Glamour: developer documentation
+Minecraft 1.20.1 / Forge 47.x, MIT license (attribution required)
 ================================================================================
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
 on held items, armor, elytra, horse armor, and any LivingEntity. Glints can also
-project a colored stencil outline through the "glowing" flag. NBT-driven; 55
-built-in designs, extensible via data packs.
+project an independently-animated colored outline through the "glowing" flag.
+NBT-driven; 56 built-in designs (54 texture PNGs, vanilla, and the procedural
+Chromatic), extensible via data packs.
 
 
 ================================================================================
   Two artifacts
 ================================================================================
 
-  custom-glint-api-<ver>.jar   (modid: customglint_api)
+  glint-and-glamour-api-<ver>.jar   (modid: customglint_api)
       Rendering pipeline + Java API. No wand, recipes, or /glint command.
       Bundle this via jarJar.
 
-  custom_glint-<ver>.jar       (modid: customglint + customglint_api)
-      Full standalone download. Adds wand, Glint Trim / Glow Trim / Tear
-      items, recipes, /glint command, loot modifiers, JEI integration.
-      The api jar is nested inside via META-INF/jarjar/.
+  Glint-and-Glamour-<ver>.jar       (modid: customglint + customglint_api)
+      Full standalone download. Adds the Glint Wand, the Glint Table block,
+      Glint Trim / Glow Trim / Tear items, Glint Bag, Trim Powder, Rainbow
+      Dye, recipes, advancements, shared server blueprints, the /glint
+      command, loot modifiers, and JEI integration. The api jar is nested
+      inside via META-INF/jarjar/.
 
 Mod developers depend on the api coord. The full jar is the user-facing
 Modrinth / CurseForge download.
@@ -33,18 +36,18 @@ In build.gradle:
 
     repositories {
         maven {
-            name = "TunaMods Custom Glints"
+            name = "TunaMods Glint & Glamour"
             url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.20.1/mcmodsrepo"
         }
     }
 
     dependencies {
-        compileOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.6.0")
-        runtimeOnly fg.deobf("net.tunamods.customglint:custom-glint-api:1.6.0")
+        compileOnly fg.deobf("net.tunamods.customglint:glint-and-glamour-api:1.7.0")
+        runtimeOnly fg.deobf("net.tunamods.customglint:glint-and-glamour-api:1.7.0")
 
-        jarJar(group: 'net.tunamods.customglint', name: 'custom-glint-api',
-               version: '[1.6.0,2.0)') {
-            jarJar.ranged(it, '[1.6.0,2.0)')
+        jarJar(group: 'net.tunamods.customglint', name: 'glint-and-glamour-api',
+               version: '[1.7.0,2.0)') {
+            jarJar.ranged(it, '[1.7.0,2.0)')
         }
     }
 
@@ -72,7 +75,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
     [[dependencies.yourmodid]]
         modId="customglint_api"
         mandatory=true
-        versionRange="[1.4,)"
+        versionRange="[1.7,)"
         ordering="NONE"
         side="BOTH"
 
@@ -100,9 +103,17 @@ or loaded from the standalone.
 All on net.tunamods.customglint.common.CustomGlint.
 
   CustomGlint.write(stack, design, colors, speed, interpolate, scale, simultaneous);
+  CustomGlint.write(stack, design, colors, speed, interpolate, scale, simultaneous,
+                    scrollDir, scrollOffset);                  // + scroll animation
   CustomGlint.write(stack, new CustomGlint.Layer[]{ ... });   // multi-layer
   CustomGlint.write(stack, design, colors);                   // shorthand
   CustomGlint.write(stack, design, color);                    // single-color shorthand
+
+Each Layer carries design, colors, speed, interpolate, patternScale,
+simultaneous, and a scroll direction + offset (CustomGlint.SCROLL_STATIC,
+SCROLL_E, SCROLL_NE, ...). MAX_LAYERS and MAX_COLORS_PER_LAYER are both 8.
+The CHROMATIC design is procedural; use CustomGlint.ensureChromaticSeeds(layers)
+so each chromatic layer gets a stable random seed.
 
   boolean has = CustomGlint.has(stack);
   CustomGlint.Data data = CustomGlint.read(stack);
@@ -122,6 +133,11 @@ All on net.tunamods.customglint.common.CustomGlint.
   CustomGlint.getGlowColors(stack);
   CustomGlint.hasGlowColors(stack);
   CustomGlint.clearGlowColors(stack);
+
+  // Glow animation, independent of the glint's own speed/interpolate.
+  CustomGlint.setGlowAnim(stack, 1.0f, true);   // speed, smooth-blend
+  CustomGlint.getGlowSpeed(stack);
+  CustomGlint.getGlowInterpolate(stack);
 
 
 Auto-apply registries
@@ -184,7 +200,7 @@ Tag-level helpers for packets, NBT files, and snapshot / restore:
   CompoundTag      fresh    = CustomGlint.toTag(layers);
 
 Client-side mutations (writeEntity / setEntityGlowing / setEntityGlowColors called
-on the client — preview UIs, replay viewers, entities reconstructed from stored
+on the client: preview UIs, replay viewers, entities reconstructed from stored
 NBT) render immediately without waiting for a server broadcast. If you need to
 force a re-sync after manually editing the entity's persistent NBT, call the
 client-only helper:
@@ -197,14 +213,17 @@ client-only helper:
 ================================================================================
 
 Colors: CustomGlint.RED, ORANGE, YELLOW, LIME, GREEN, CYAN, LIGHT_BLUE, BLUE,
-PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK. Custom hex via
-CustomGlint.color("FFD700"). The alpha byte is a brightness multiplier
-(0xFF full, 0x00 invisible); blend mode is additive.
+PURPLE, MAGENTA, PINK, BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK (these match
+Minecraft's dye colors). Custom hex via CustomGlint.color("FFD700"). The alpha
+byte is a brightness multiplier (0xFF full, 0x00 invisible); blend mode is
+additive. Near-black (RGB below ~0x18) renders invisible, so a black slot
+leaves a deliberate gap in a design.
 
-Designs: 55 ResourceLocation constants on CustomGlint (e.g. WAVE, SPARKLE,
-AURORA). Iterate with CustomGlint.PATTERNS.
+Designs: 56 ResourceLocation constants on CustomGlint (e.g. WAVE, SPARKLE,
+AURORA), including VANILLA and the procedural CHROMATIC. Iterate with
+CustomGlint.PATTERNS.
 
-Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (55).
+Iteration arrays: CustomGlint.ALL_COLORS (16), VIBRANT_COLORS (11), PATTERNS (56).
 
 
 ================================================================================
@@ -229,6 +248,53 @@ directly via the hooks below if your mod ships one.
 
 
 ================================================================================
+  Specifically supported mods
+================================================================================
+
+These integrations ship in the FULL standalone jar only, NOT in the bundled
+api jar. Each targets the other mod by class name with a soft mixin (no hard
+dependency) and no-ops when the mod is absent, so they never affect a modpack
+that lacks them.
+
+  Ice and Fire          - troll weapons, death worm gauntlets, dragon armor,
+                          hippogryph armor, and hippocampus armor take glints
+                          and glow outlines.
+  Epic Knights          - armor decoration overlays (capes, tabards, trims)
+  (magistuarmory)         glint; chestplate outlines trace the visible armor.
+  Epic Fight            - glowing entities keep their glow outline while Epic
+                          Fight renders them with its own animated meshes.
+  Iron's Spells         - GeckoLib-rendered armor takes glints and glow
+  ('n Spellbooks)         outlines while worn; also covers other mods whose
+                          armor draws through GeckoLib's GeoArmorRenderer.
+  Immersive Armors      - the mod's layered armor takes glints and glow
+                          outlines while worn, even though it draws each piece
+                          with its own model instead of the vanilla armor layer.
+  Mekanism              - the MekaSuit, Jetpacks, Free Runners and their armored
+                          variants, and the Scuba tank and mask take glints and
+                          glow outlines while worn.
+  Artifacts             - belts, necklaces, gloves, boots and other artifacts
+                          worn in Curios slots take glints and glow outlines.
+  Sophisticated          - backpacks glint across all of their render passes.
+  Backpacks
+  ElytraSlot            - elytra worn in the dedicated Curios slot glint like
+                          a chestplate elytra.
+  First-Person Model    - held-item glow outlines stay aligned in the 3.5D
+                          body view.
+  Punchy                - held-item glow outlines render with its first-person
+                          animations.
+  Gnetum                - animated glints and glow outlines don't freeze on the
+                          hotbar under its HUD caching.
+  Enhanced Visuals      - a glowing item no longer blacks out the screen; blood
+                          and damage overlays draw correctly.
+  Iris / Oculus         - glow outlines render consistently under shader packs.
+  JEI                   - all Glint Trim, Glow Trim, Tear, smithing, powder,
+                          and Rainbow Dye recipes/pages show in the recipe view.
+
+Modded armor and held items that go through the normal ItemRenderer / armor
+layer flow are handled automatically without a per-mod integration.
+
+
+================================================================================
   Advanced rendering hooks
 ================================================================================
 
@@ -236,28 +302,29 @@ Client-only. Gate any reference with FMLEnvironment / DistExecutor.
 
   import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
-  int argb = CustomGlintRenderer.outlineColor(stack);
+  // Glow color for an item, from its glow-color or glint NBT (white if neither)
+  int argb  = CustomGlintRenderer.resolveGlowColor(stack);
+  int frame = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
 
-  // RenderType factories (cached, self-register into fixedBuffers)
+  // Glint RenderType factories (cached, self-register into fixedBuffers). Pick the
+  // one whose depth matches the base draw, or the EQUAL-depth glint z-fights:
+  //   forGlint           - held items and BEWLR models
+  //   forArmorGlint      - armorCutoutNoCull surfaces (view-offset depth)
+  //   forHorseArmorGlint - entityCutoutNoCull surfaces (no polygon offset)
   RenderType rt  = CustomGlintRenderer.forGlint(glint, layerIdx, frameColor, isItem, colorIdx);
   RenderType rtA = CustomGlintRenderer.forArmorGlint(glint, layerIdx, frameColor, colorIdx);
   RenderType rtH = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
 
-  // Two-pass stencil outline for entity / armor models
-  CustomGlintRenderer.doModelOutline(poseStack, bufferSource, packedLight,
-      model, modelTexture, glint, equipmentSlot);
-
-  // Stencil outline for an item (BEWLR + flat-sprite paths)
-  CustomGlintRenderer.doItemOutline(stack, displayContext, poseStack,
-      bufferSource, packedLight, overlay);
-
   // Public ThreadLocals
-  CustomGlintRenderer.CURRENT_ITEM_STACK
-  CustomGlintRenderer.IN_OUTLINE
-  CustomGlintRenderer.COLOR_BUF
+  CustomGlintRenderer.CURRENT_ITEM_STACK   // set while an item is rendering
+  CustomGlintRenderer.IN_OUTLINE           // recursion guard during outline capture
+  CustomGlintRenderer.COLOR_BUF            // scratch float[4] for a frame color
 
-  // Optional gate to suppress outlines (true = skip)
-  CustomGlintRenderer.outlineSuppressor = () -> shouldSuppress();
+The glow outline is a post-process pass, captured automatically from the vanilla
+item, armor, and entity draws. There is no per-call outline draw method. A
+custom renderer that bypasses the item-foil buffer drives it the way the bundled
+mod compat does: fan the glint through a RenderType factory above, and route the
+same mesh into GlowOutlineRenderer to capture its silhouette.
 
 
 ================================================================================
@@ -284,7 +351,9 @@ list on join and /reload.
 
 Tag key: "customglint".
 speed: 1.0 = 20 ticks / color. interpolate: 1b = smooth. simultaneous: 1b = all
-colors at once. Alpha byte of each color int = brightness.
+colors at once. Alpha byte of each color int = brightness. Optional per-layer
+scrollDir (int, 0 = static) and scrollOffset (float) drive the scroll animation;
+chromatic layers also store a seed (int).
 
 Colors in [I;...] are signed 32-bit ints. Any color with alpha >= 0x80 (i.e.
 every full-brightness color) is negative in this form; the leading 0xFF makes

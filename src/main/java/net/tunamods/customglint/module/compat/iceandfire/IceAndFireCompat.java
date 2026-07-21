@@ -8,29 +8,30 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.fml.DistExecutor;
+import net.tunamods.customglint.module.compat.CompatGate;
 
 /**
- * Standalone-only Ice & Fire compat. Renderer-touching configuration (BEWLR outline offsets /
- * textures) is registered from a client-only side class via {@code DistExecutor}; event listeners
- * for the mount-armor sync (hippogryph/hippocampus) are registered unconditionally because the
- * server side initiates the sync packet when a player begins tracking the mount.
- *
- * Split was required for dedicated-server compatibility: the renderer maps live on
- * {@code CustomGlintRenderer}, which extends {@code RenderStateShard} (client-only) and so
- * cannot load on a dedicated server. {@code DistExecutor.safeRunWhenOn} only invokes the
- * supplier on the matching dist, so the client side-class is never resolved on the server.
+ * Standalone-only Ice & Fire compat. Client-side setup goes through {@link IceAndFireClientCompat}
+ * behind {@code DistExecutor.safeRunWhenOn}, which only invokes the supplier on the matching dist,
+ * so nothing client-only is resolved on a dedicated server. The mount-armor sync listeners
+ * (hippogryph/hippocampus) register unconditionally: the server initiates the sync packet when a
+ * player begins tracking the mount.
  */
 public final class IceAndFireCompat {
     private IceAndFireCompat() {}
 
+    static final String MOD_ID = "iceandfire";
     static final String HIPPOGRYPH_CLASS  = "com.github.alexthe666.iceandfire.entity.EntityHippogryph";
     static final String HIPPOCAMPUS_CLASS = "com.github.alexthe666.iceandfire.entity.EntityHippocampus";
 
     public static void register() {
-        // Renderer overrides — client-only.
+        // Log only. The listeners below register unconditionally (the server initiates the mount-armor sync).
+        CompatGate.enable(MOD_ID, "Ice and Fire compat enabled");
+
+        // Client-only setup (mount-armor cache eviction on logout).
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> IceAndFireClientCompat::run);
 
-        // Mount armor sync (hippogryph / hippocampus) — needed on the server to push armor stacks
+        // Mount armor sync (hippogryph / hippocampus): needed on the server to push armor stacks
         // to tracking clients via MountArmorSync. onEntityLeave's `isClientSide` guard makes it a
         // no-op on the server, so a single addListener works for both sides.
         MinecraftForge.EVENT_BUS.addListener(IceAndFireCompat::onStartTracking);

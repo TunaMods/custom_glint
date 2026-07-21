@@ -9,7 +9,8 @@ import java.util.function.Supplier;
 
 /**
  * C→S: shift-left-click an empty design in the Glint Table's left palette. The server hands the player a free
- * blank trim of that design (it carries no colors, so it's just a template). No-op if the inventory is full.
+ * blank trim of that design (it carries no colors, so it's just a template). The server only hands out a
+ * design the player has already stored, and drops the trim at their feet if their inventory is full.
  */
 public class GlintGiveDesignPacket {
 
@@ -28,10 +29,6 @@ public class GlintGiveDesignPacket {
     }
 
     public static void handle(GlintGiveDesignPacket pkt, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            ServerPlayer sp = ctx.get().getSender();
-            if (sp != null && sp.containerMenu instanceof GlintTableMenu m) m.giveDesignCopy(pkt.design);
-        });
-        ctx.get().setPacketHandled(true);
+        NetHandlers.withTableMenu(ctx, (sp, m) -> m.giveDesignCopy(pkt.design));
     }
 }

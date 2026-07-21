@@ -37,19 +37,18 @@ import net.tunamods.customglint.module.block.ModBlocks;
  * purely client-side cosmetic tied to {@link GlintGuiConfig#tableSkin()}. Each (skin, facing) pair has its
  * own variant model; the block's baked model for every facing is replaced by a delegate that forwards to the
  * variant for the current skin. Cycling the skin calls {@link #refresh()} so the sections holding a table
- * re-mesh. Robust: any baking-API hiccup falls back to the static (Forge) model rather than crashing.
+ * re-mesh. Any baking-API failure falls back to the static (Forge) model rather than crashing.
  */
 public final class GlintTableModelClient {
     private GlintTableModelClient() {}
 
     private static final String[] SKINS = { "default", "dark", "forge" };
     private static final Direction[] FACINGS = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+    private static final Set<BlockPos> CLIENT_TABLES = ConcurrentHashMap.newKeySet();
 
     private static ResourceLocation variant(String skin, Direction d) {
         return CustomGlint.res("block/glint_table_" + skin + "_" + d.getSerializedName());
     }
-
-    private static final Set<BlockPos> CLIENT_TABLES = ConcurrentHashMap.newKeySet();
 
     public static void register(IEventBus modEventBus) {
         modEventBus.addListener(GlintTableModelClient::onRegisterAdditional);
@@ -82,7 +81,7 @@ public final class GlintTableModelClient {
             try {
                 models.put(loc, new SkinSwitchModel(fallback, variants.get(d)));
             } catch (UnsupportedOperationException ignored) {
-                // Immutable baking result on some setup — leave the static model in place.
+                // Immutable baking result on some setup: leave the static model in place.
             }
         }
     }

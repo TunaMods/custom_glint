@@ -70,7 +70,7 @@ public class HorseArmorLayerMixin {
             // ── Stencil mask pass ───────────────────────────────────────────
             // forHorseArmorGlint draws on every face of the armor model regardless of armor
             // texture alpha (the glint shader samples a glint design, not the armor texture).
-            // For vanilla iron/gold/diamond barding this is fine — the texture is full-coverage
+            // For vanilla iron/gold/diamond barding this is fine: the texture is full-coverage
             // opaque so visible glint == armor coverage. But Epic Knights barding (chainmail,
             // mail variants, etc.) has transparent gaps where the horse body shows through, and
             // the unmasked glint bleeds across those gaps onto the body silhouette. Stencil-mask
@@ -86,24 +86,23 @@ public class HorseArmorLayerMixin {
             List<VertexConsumer> list = new ArrayList<>();
             List<RenderType> glintTypes = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    // chromaticWorldBuffer is a straight getBuffer; kept as the seam every chromatic fan-out
+                    // routes through (see CustomGlintRenderer.chromaticWorldBuffer).
+                    RenderType crt = CustomGlintRenderer.forChromaticMountArmorGlint(glint, layerIdx, tex);
+                    if (crt != null) { list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt)); glintTypes.add(crt); }
+                    continue;
+                }
                 int[] colors = layers[layerIdx].colors();
                 if (layers[layerIdx].simultaneous()) {
                     for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
+                        CustomGlintRenderer.fillPremul(buf, colors[i]);
                         RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, layerIdx, buf, i);
                         if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
+                    CustomGlintRenderer.fillPremul(buf, color);
                     RenderType rt = CustomGlintRenderer.forMountArmorGlint(glint, layerIdx, buf, 0);
                     if (rt != null) { list.add(buffer.getBuffer(rt)); glintTypes.add(rt); }
                 }

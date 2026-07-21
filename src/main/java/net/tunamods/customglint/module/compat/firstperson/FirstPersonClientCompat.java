@@ -11,8 +11,7 @@ public final class FirstPersonClientCompat {
     private FirstPersonClientCompat() {}
 
     public static void wireRenderer() {
-        // The stencil outline system this compat suppressed in FPM 3.5D has been removed.
-        // Left as a no-op placeholder; the post-process glow-outline port will reinstall an
-        // FPM suppressor here.
+        // No-op: the stencil outline this compat once suppressed in FPM 3.5D was removed. Kept as a wired
+        // DistExecutor entrypoint so an FPM suppressor can be reinstalled here without re-plumbing the dist split.
     }
 }

@@ -7,6 +7,10 @@ import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import net.tunamods.customglint.CustomGlintMod;
 
+/**
+ * The 16 recipe serializers, registered under the customglint namespace. Each registry name is referenced by a
+ * JSON file in data/customglint/recipes, so renaming one here breaks that recipe.
+ */
 public final class ModRecipes {
     private ModRecipes() {}
 
@@ -43,6 +47,8 @@ public final class ModRecipes {
             RECIPE_SERIALIZERS.register("glow_trim_merge", () -> GlowTrimMergeRecipe.SERIALIZER);
     public static final RegistryObject<RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
             RECIPE_SERIALIZERS.register("glow_trim_smithing", () -> GlowTrimSmithingRecipe.SERIALIZER);
+    public static final RegistryObject<RecipeSerializer<TrimPowderRecipe>> TRIM_POWDER_SERIALIZER =
+            RECIPE_SERIALIZERS.register("trim_powder_craft", () -> TrimPowderRecipe.SERIALIZER);
 
     public static void register(IEventBus bus) {
         RECIPE_SERIALIZERS.register(bus);

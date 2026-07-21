@@ -31,12 +31,8 @@ public class GlintBlackTearItem extends Item {
     }
 
     /**
-     * Right-click on a mob: strip the entity's own glint + glowing + glowColors (the per-instance
-     * data set via {@link CustomGlint#writeEntity}/{@link CustomGlint#setEntityGlowColors}/
-     * {@link CustomGlint#setEntityGlowing}). Does not touch the mob's equipment. Consumes one tear
-     * per successful cleanup. Returns PASS when nothing was changed so the tear isn't wasted and
-     * other interaction handlers can run. Server-side mutates and broadcasts; client returns
-     * SUCCESS for the swing animation.
+     * Right-click a mob to strip its per-instance glint + glow (never its equipment), consuming one
+     * tear. PASS when there was nothing to clear so the tear survives and other handlers still run.
      */
     @Override
     public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity entity, InteractionHand hand) {

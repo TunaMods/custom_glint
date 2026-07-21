@@ -1,17 +1,18 @@
 package net.tunamods.customglint.module.client;
 
+import net.tunamods.customglint.module.ModConfigPaths;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Properties;
 
 /**
  * Tiny client-side persistence for the Glint GUI preferences (wand / table skin index and the button-click
- * sound toggle). Backed by {@code config/customglint/gui.properties} so the choice survives restarts; loaded
- * lazily on first read and written on menu close ({@link #flush()}). Standalone-only — not in the api jar.
+ * sound toggle). Backed by {@code config/glint-and-glamour/gui.properties} so the choice survives restarts; loaded
+ * lazily on first read and written on menu close ({@link #flush()}). Standalone-only: not in the api jar.
  *
  * <p>Kept as a plain properties file rather than a {@code ModConfigSpec} so it needs no mod-container
  * registration wiring; these are cosmetic, client-local toggles that never sync.
@@ -19,7 +20,7 @@ import java.util.Properties;
 public final class GlintGuiConfig {
     private GlintGuiConfig() {}
 
-    private static final Path FILE = Paths.get("config", "customglint", "gui.properties");
+    private static final Path FILE = ModConfigPaths.guiProperties();
     private static Properties props;
     private static boolean dirty;
 
@@ -29,7 +30,7 @@ public final class GlintGuiConfig {
             try (InputStream in = Files.newInputStream(FILE)) {
                 props.load(in);
             } catch (IOException ignored) {
-                // First run / file absent — defaults apply.
+                // First run / file absent: defaults apply.
             }
         }
         return props;
@@ -63,7 +64,7 @@ public final class GlintGuiConfig {
         try {
             Files.createDirectories(FILE.getParent());
             try (OutputStream out = Files.newOutputStream(FILE)) {
-                props().store(out, "Custom Glints client GUI preferences");
+                props().store(out, "Glint & Glamour client GUI preferences");
             }
             dirty = false;
         } catch (IOException ignored) {
