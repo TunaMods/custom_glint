@@ -1293,8 +1293,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
         String k = LAYER_KEY_CACHE.get(l);
         if (k == null) {
             if (LAYER_KEY_CACHE.size() > 4096) LAYER_KEY_CACHE.clear();
+            // interpolate + simultaneous belong here even though they touch no render state: the model RTs
+            // read their tint from a per-key float[] holder at FLUSH time (bindGlintTexture), and both fields
+            // change which colour a caller writes into it. Two layers (or two entities' layers) alike in
+            // everything else but one of these would otherwise share a key, share the holder, and both draw
+            // with whichever wrote last.
             k = l.design() + "|" + Arrays.toString(l.colors()) + "|" + l.speed()
-                    + "|" + l.patternScale() + "|" + l.scrollDir() + "|" + l.scrollOffset();
+                    + "|" + l.patternScale() + "|" + l.scrollDir() + "|" + l.scrollOffset()
+                    + "|" + l.interpolate() + "|" + l.simultaneous();
             LAYER_KEY_CACHE.put(l, k);
         }
         return k;
