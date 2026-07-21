@@ -72,6 +72,20 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+/**
+ * The Glint Table editor screen (client-only). Everything the player builds lives in transient fields here
+ * and is sent to the server as one print packet; the block entity only owns the physical slots.
+ *
+ * <p>Conventions used throughout:
+ * <ul>
+ *   <li>Layout constants are window-relative pixels. Add {@code leftPos} / {@code topPos} to reach screen
+ *       coordinates. Every hit test must use the same constants the matching draw uses.</li>
+ *   <li>{@code mod*} fields are the build state of the ACTIVE layer; committed layers live in
+ *       {@code lowerLayers} / {@code upperLayers}.</li>
+ *   <li>{@code extract*} methods are vanilla render hooks; {@code draw*} methods are this screen's own
+ *       painting, called from {@link #extractContents}.</li>
+ * </ul>
+ */
 public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     // ── Layout (mockup): two scrollable grids flank a center column ───────────
@@ -124,7 +138,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         GlintTableModelClient.refresh();
     }
 
-    // Skin-cycle button (top-right corner of the window, above the right grid).
+    // Skin-cycle button (top-right corner of the window, above the right grid); 342 = the window width, so the
+    // button sits 4px in from the right edge.
     private static final int SKIN_BTN_W = 50, SKIN_BTN_H = 12;
     private static final int SKIN_BTN_X = 342 - SKIN_BTN_W - 4;
     private static final int SKIN_BTN_Y = 5;
@@ -198,6 +213,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private int selectedColorIdx = -1;
     // Custom-color encoding inside a shard's list: RAINBOW marks a shard whose colour comes from the rainbow
     // dye (a custom hex, entered in the hex box) instead of dye indices; CUSTOM_FLAG | rgb stores the hex.
+    // RAINBOW sits one past the 16 vanilla dye indices, so it can share a shard list with them; CUSTOM_FLAG is
+    // set well clear of the 24 colour bits it is OR'd with.
     private static final int RAINBOW = 16, CUSTOM_FLAG = 0x40000000;
     private EditBox hexBox;          // custom-hex entry, shown beside a rainbow/custom shard or color slot
     private boolean hexOpen = false; // whether the hex box is open
@@ -210,14 +227,18 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private EditBox nameBox;
     private static final int ALPHA_MIN = 32; // most-translucent alpha (at 8 glass)
 
-    // The clickable buttons (created in init()). Labels/colours are pulled live each frame; clickability is
-    // refreshed in syncButtons(). Their labels/values and slot dimming are still drawn by the screen.
-    // Only buttons whose label/colour is refreshed in syncButtons() need a field; the rest are stateless
-    // (their label/colour suppliers read the build state live) and are added as bare widgets in addButtons().
+    // The clickable buttons (created in init()). Labels and colours are pulled live each frame from their
+    // suppliers, so only the buttons whose ENABLED/VISIBLE state syncButtons() flips need a field here; the
+    // rest are added as bare widgets in addButtons(). Slot captions and values are still drawn by the screen.
     private BevelButton printBtn, glowModeBtn, glowToggleBtn, nameToggleBtn;
     private BevelButton offsetMinus, offsetPlus; // shown only while the scroll button is on Static
     private static final int SND_BTN_W = 12; // square toggle just left of the skin button
     private static final int IMP_BTN_W = 12; // square Import toggle just left of the sound button
+
+    // Screen x of the two square header toggles. addButtons() places them here and extractTooltip() hit-tests
+    // them here, so the 2px gaps between the three header buttons are written down once.
+    private int sndBtnX() { return leftPos + SKIN_BTN_X - SND_BTN_W - 2; }
+    private int impBtnX() { return sndBtnX() - IMP_BTN_W - 2; }
 
     // ── Import picker overlay ─────────────────────────────────────────────────
     // Lists two blueprint sources: the player's PERSONAL client trims (config/glint-and-glamour/trims/*.json on this
@@ -232,6 +253,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private List<ImpEntry> importFiltered = new ArrayList<>();   // the search-filtered view shown in the list
     private int importScroll = 0;
     private EditBox importSearchBox;
+    // 10 rows of 13px plus the search bar keeps the panel inside the window's upper half, clear of the
+    // player inventory; 160px wide fits a long file name without covering both grids.
     private static final int IMPORT_ROWS = 10, IMPORT_ROW_H = 13, IMP_PW = 160;
     private static final int IMP_TRASH_W = 11; // hover-only delete hotzone at the right edge of an import row
 
@@ -290,7 +313,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
         nameBox = new EditBox(font, leftPos + NAME_BOX_X, topPos + NAME_BOX_Y, NAME_BOX_W, 12,
                 Component.translatable("screen.customglint.glint_table.name"));
-        nameBox.setMaxLength(32);
+        nameBox.setMaxLength(32); // matches vanilla's anvil rename limit
         nameBox.setValue(trimName);
         nameBox.setResponder(s -> trimName = s);
         nameBox.setVisible(modNamed);
@@ -301,7 +324,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // Wide enough to show the full 6-digit hex. Added as an event-only widget (not a renderable) so it can
         // be drawn manually at the very end of extractContents, on top of the modifier buttons it may overlap.
         hexBox = new EditBox(font, leftPos, topPos, 56, COLOR_ICON, Component.translatable("screen.customglint.glint_table.hex"));
-        hexBox.setMaxLength(6);
+        hexBox.setMaxLength(6); // RRGGBB
         hexBox.setResponder(this::applyHex);
         hexBox.setVisible(false);
         addWidget(hexBox);
@@ -641,8 +664,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         tearSimultaneous = l.simultaneous();
         activeSourceSim = l.simultaneous();
         int[] c = l.colors();
-        int alpha = c.length > 0 ? (c[0] >>> 24) & 0xFF : 255;
-        modOpacity = Math.max(0, Math.min(8, Math.round((255 - alpha) * 8f / (255f - ALPHA_MIN))));
+        modOpacity = opacityFromColors(c);
         colorShards.clear();
         selectedColorIdx = -1;
         for (int col : c) if (!isFillWhite(col)) addColorShard(col & 0xFFFFFF);
@@ -693,7 +715,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
     }
 
-    /** The left-grid / design name for a layer's design identifier (matches {@link #trimDesignName}). */
+    /** The left-grid / design name for a design identifier: a bare pattern name for this mod's own designs,
+     *  {@code namespace:name} for another mod's. Matches the keys in {@code GlintTrimItem.PATTERNS}. */
     private static String gridNameFor(Identifier p) {
         if (p.equals(CustomGlint.VANILLA)) return "vanilla";
         String name = GlintTrimItem.extractPatternName(p);
@@ -746,15 +769,11 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (base.getItem() instanceof GlowTrimItem) {
             ItemStack s = base.copy();
             s.setCount(1);
-            int[] cols = glowShardColors();
+            int[] cols = glowTrimColors();
             if (cols.length > 0) { CustomGlint.setGlowColors(s, cols); CustomGlint.setGlowing(s, true); }
             else { CustomGlint.clearGlowColors(s); CustomGlint.setGlowing(s, false); }
             CustomGlint.setGlowAnim(s, modSpeed, modInterpolate); // speed + interpolation drive the glow cycle
-            if (modNamed && !trimName.isEmpty()) {
-                int nc = slotColor(GlintTableMenu.SLOT_NAME_DYE, nameHex);
-                int rgb = nc >= 0 ? nc : 0xFFFFFF;
-                s.set(DataComponents.CUSTOM_NAME, Component.literal(trimName).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
-            }
+            applyCustomName(s);
             return s;
         }
         if (!(base.getItem() instanceof GlintTrimItem)) return base;
@@ -774,12 +793,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         } else {
             CustomGlint.clearGlowColors(s);
         }
-        // Custom name + name color from the name dye (or a custom hex when a rainbow dye is in the slot).
-        if (modNamed && !trimName.isEmpty()) {
-            int nc = slotColor(GlintTableMenu.SLOT_NAME_DYE, nameHex);
-            int rgb = nc >= 0 ? nc : 0xFFFFFF;
-            s.set(DataComponents.CUSTOM_NAME, Component.literal(trimName).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
-        }
+        applyCustomName(s);
         // Final glint Data write carrying the chosen interpolation and the active layer's simultaneous state.
         Identifier pat = GlintTrimItem.getPattern(s);
         if (pat != null) {
@@ -790,9 +804,25 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return s;
     }
 
+    /** Stamp the typed name onto a preview stack when naming is on, coloured by the name dye slot (or its
+     *  custom hex when a rainbow dye sits there), falling back to white when the slot is empty. */
+    private void applyCustomName(ItemStack s) {
+        if (!modNamed || trimName.isEmpty()) return;
+        int nc = slotColor(GlintTableMenu.SLOT_NAME_DYE, nameHex);
+        int rgb = nc >= 0 ? nc : 0xFFFFFF;
+        s.set(DataComponents.CUSTOM_NAME, Component.literal(trimName).withStyle(st -> st.withColor(TextColor.fromRgb(rgb))));
+    }
+
     /** Glass-count → glint alpha. 0 glass = fully opaque (255); each +1 fades toward {@link #ALPHA_MIN}. */
     private int modAlpha() {
         return Math.round(255f - modOpacity * (255f - ALPHA_MIN) / 8f);
+    }
+
+    /** The inverse of {@link #modAlpha}: recover the glass count from a stored layer's baked-in alpha (taken
+     *  from its first colour, which all its colours share). A colourless layer reads as fully opaque. */
+    private static int opacityFromColors(int[] colors) {
+        int alpha = colors.length > 0 ? (colors[0] >>> 24) & 0xFF : 255;
+        return Math.max(0, Math.min(8, Math.round((255 - alpha) * 8f / (255f - ALPHA_MIN))));
     }
 
     /** The layer's colors, from the dye slots the player has *selected* (up to 8). Empty when nothing is
@@ -818,9 +848,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return arr;
     }
 
-    /** Shard colours as OPAQUE glow colours (glow has no opacity dimension, so the glass/opacity control and
-     *  its alpha don't apply; every glow colour is full-alpha). Mirrors {@link #buildColors} otherwise. */
-    private int[] glowShardColors() {
+    /** A Glow Trim's colours, taken from the MAIN shard strip (a Glow Trim has no glint layer, so the strip
+     *  edits its glow colours directly). Opaque: glow has no opacity dimension, so the glass control's alpha
+     *  never applies. Contrast {@link #glowManualColors}, which reads the separate manual-glow strip. */
+    private int[] glowTrimColors() {
         return packShardColors(colorShards, 0xFF);
     }
 
@@ -980,8 +1011,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             modScrollDir = GlintTrimItem.getScrollDir(trim);
             modScrollOffset = GlintTrimItem.getScrollOffset(trim);
             int[] c = GlintTrimItem.getColors(trim);
-            int alpha = c.length > 0 ? (c[0] >>> 24) & 0xFF : 255;
-            modOpacity = Math.max(0, Math.min(8, Math.round((255 - alpha) * 8f / (255f - ALPHA_MIN))));
+            modOpacity = opacityFromColors(c);
             // Rebuild the color shards from the trim's colors: a colour matching a dye becomes that dye
             // shard, anything else (a mix or rainbow custom hex) becomes a custom-hex shard.
             for (int col : c) if (!isFillWhite(col)) addColorShard(col & 0xFFFFFF);
@@ -1139,29 +1169,25 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (showImportPicker) return; // the modal import picker owns the screen; suppress slot/grid tooltips under it
         super.extractTooltip(g, mx, my);
         if (!menu.getCarried().isEmpty()) return; // don't tooltip while a stack is on the cursor
-        int impBtnX = leftPos + SKIN_BTN_X - SND_BTN_W - 2 - IMP_BTN_W - 2;
-        if (mx >= impBtnX && mx < impBtnX + IMP_BTN_W
-                && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
+        int btnY = topPos + SKIN_BTN_Y;
+        if (inBox(mx, my, impBtnX(), btnY, IMP_BTN_W, SKIN_BTN_H)) {
             g.setTooltipForNextFrame(font, List.of(
                     Component.translatable("screen.customglint.glint_table.import"),
                     Component.translatable("screen.customglint.glint_table.import_rclick").withStyle(ChatFormatting.GRAY)),
                     Optional.empty(), mx, my);
             return;
         }
-        if (mx >= leftPos + SKIN_BTN_X && mx < leftPos + SKIN_BTN_X + SKIN_BTN_W
-                && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
+        if (inBox(mx, my, leftPos + SKIN_BTN_X, btnY, SKIN_BTN_W, SKIN_BTN_H)) {
             g.setTooltipForNextFrame(font, Component.translatable("screen.customglint.glint_table.skin_tooltip"), mx, my);
             return;
         }
-        if (mx >= leftPos + SKIN_BTN_X - SND_BTN_W - 2 && mx < leftPos + SKIN_BTN_X - 2
-                && my >= topPos + SKIN_BTN_Y && my < topPos + SKIN_BTN_Y + SKIN_BTN_H) {
+        if (inBox(mx, my, sndBtnX(), btnY, SND_BTN_W, SKIN_BTN_H)) {
             g.setTooltipForNextFrame(font, Component.translatable("screen.customglint.glint_table.sound",
                     Component.translatable(GlintClientConfig.glintTableSound()
                             ? "screen.customglint.glint_table.on" : "screen.customglint.glint_table.off")), mx, my);
             return;
         }
-        if (mx >= leftPos + PRINT_X && mx < leftPos + PRINT_X + PRINT_W
-                && my >= topPos + PRINT_Y && my < topPos + PRINT_Y + PRINT_H) {
+        if (inBox(mx, my, leftPos + PRINT_X, topPos + PRINT_Y, PRINT_W, PRINT_H)) {
             g.setTooltipForNextFrame(font, printTooltip(), Optional.empty(), mx, my);
             return;
         }
@@ -1169,7 +1195,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // the ± steppers); show whichever one the mouse is over.
         for (var child : this.children()) {
             if (!(child instanceof BevelButton bb) || bb.tooltip == null || !bb.visible) continue;
-            if (mx < bb.getX() || mx >= bb.getX() + bb.getWidth() || my < bb.getY() || my >= bb.getY() + bb.getHeight()) continue;
+            if (!inBox(mx, my, bb.getX(), bb.getY(), bb.getWidth(), bb.getHeight())) continue;
             List<Component> lines = bb.tooltip.get();
             if (!lines.isEmpty()) { g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my); return; }
         }
@@ -1188,35 +1214,32 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
 
         // Layer strip: explain each chip's click behaviour (custom-drawn, not real slots).
-        if (layerStripVisible()) {
-            int cy = topPos + LAYER_STRIP_Y;
-            CustomGlint.Layer[] dl = donorLayers();
-            for (Chip c : layerChips()) {
-                int cx = leftPos + c.x();
-                if (mx < cx || mx >= cx + LAYER_ICON || my < cy || my >= cy + LAYER_ICON) continue;
-                if (c.kind() == 3) { // [+] add chip: cap message when disabled, otherwise the add hint
-                    if (dl.length > 0 && totalLayers() + dl.length > MAX_LAYERS)
-                        g.setTooltipForNextFrame(font, Component.translatable(
-                                "screen.customglint.glint_table.add_layer_cap", MAX_LAYERS), mx, my);
-                    else
-                        g.setTooltipForNextFrame(font, Component.translatable(
-                                "screen.customglint.glint_table.hint.add_layer"), mx, my);
-                    return;
-                }
-                // A layer chip: name its trim design, then the click hint (active = remove, else edit).
-                Identifier design = c.kind() == 0 ? lowerLayers.get(c.index()).design()
-                        : c.kind() == 2 ? upperLayers.get(c.index()).design()
-                        : activeLayerDesign();
-                List<Component> lines = new ArrayList<>();
-                if (design != null) lines.add(designDisplayName(design));
-                lines.add(Component.translatable(c.kind() == 1
-                        ? "screen.customglint.glint_table.hint.remove_layer"
-                        : "screen.customglint.glint_table.hint.edit_layer").withStyle(ChatFormatting.GRAY));
-                if (c.kind() != 1 && captureActive() != null)
-                    lines.add(Component.translatable("screen.customglint.glint_table.hint.layer_swap").withStyle(ChatFormatting.GRAY));
-                g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
+        int cy = topPos + LAYER_STRIP_Y;
+        CustomGlint.Layer[] dl = donorLayers();
+        for (Chip c : layerChips()) {
+            if (!inBox(mx, my, leftPos + c.x(), cy, LAYER_ICON, LAYER_ICON)) continue;
+            if (c.kind() == 3) { // [+] add chip: cap message when disabled, otherwise the add hint
+                if (dl.length > 0 && totalLayers() + dl.length > MAX_LAYERS)
+                    g.setTooltipForNextFrame(font, Component.translatable(
+                            "screen.customglint.glint_table.add_layer_cap", MAX_LAYERS), mx, my);
+                else
+                    g.setTooltipForNextFrame(font, Component.translatable(
+                            "screen.customglint.glint_table.hint.add_layer"), mx, my);
                 return;
             }
+            // A layer chip: name its trim design, then the click hint (active = remove, else edit).
+            Identifier design = c.kind() == 0 ? lowerLayers.get(c.index()).design()
+                    : c.kind() == 2 ? upperLayers.get(c.index()).design()
+                    : activeLayerDesign();
+            List<Component> lines = new ArrayList<>();
+            if (design != null) lines.add(designDisplayName(design));
+            lines.add(Component.translatable(c.kind() == 1
+                    ? "screen.customglint.glint_table.hint.remove_layer"
+                    : "screen.customglint.glint_table.hint.edit_layer").withStyle(ChatFormatting.GRAY));
+            if (c.kind() != 1 && captureActive() != null)
+                lines.add(Component.translatable("screen.customglint.glint_table.hint.layer_swap").withStyle(ChatFormatting.GRAY));
+            g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
+            return;
         }
 
         // Color-shard strip: select / remove the active layer's colours (and edit a rainbow shard's hex).
@@ -1226,8 +1249,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             int csy = topPos + COLOR_STRIP_Y;
             int n = Math.min(shards.size(), 8);
             for (int k = 0; k < n; k++) {
-                int cx = leftPos + COLOR_STRIP_X + k * COLOR_CELL;
-                if (mx < cx || mx >= cx + COLOR_ICON || my < csy || my >= csy + COLOR_ICON) continue;
+                if (!inBox(mx, my, leftPos + COLOR_STRIP_X + k * COLOR_CELL, csy, COLOR_ICON, COLOR_ICON)) continue;
                 List<Component> lines = new ArrayList<>();
                 lines.add(shardColorLabel(shards.get(k))); // header: the shard's actual colour
                 if (selectedColorIdx == k) {
@@ -1242,22 +1264,18 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
                 return;
             }
-            if (n < 8 && !hexOpen) { // trailing "+" box
-                int cx = leftPos + COLOR_STRIP_X + n * COLOR_CELL;
-                if (mx >= cx && mx < cx + COLOR_ICON && my >= csy && my < csy + COLOR_ICON) {
-                    g.setTooltipForNextFrame(font, Component.translatable(
-                            "screen.customglint.glint_table.hint.add_color"), mx, my);
-                    return;
-                }
+            if (n < 8 && !hexOpen // trailing "+" box
+                    && inBox(mx, my, leftPos + COLOR_STRIP_X + n * COLOR_CELL, csy, COLOR_ICON, COLOR_ICON)) {
+                g.setTooltipForNextFrame(font, Component.translatable(
+                        "screen.customglint.glint_table.hint.add_color"), mx, my);
+                return;
             }
         }
 
         // Dye bar: the 16 shade slots + the rainbow slot recolour the SELECTED shard and work even when empty
         // (the dye is only charged at print), which isn't obvious from looking, so spell out the click actions.
         for (int i = 0; i < 16; i++) {
-            Slot s = menu.slots.get(GlintTableMenu.SLOT_DYE_START + i);
-            int sx = leftPos + s.x, sy = topPos + s.y;
-            if (mx < sx || mx >= sx + 16 || my < sy || my >= sy + 16) continue;
+            if (!overSlot(mx, my, GlintTableMenu.SLOT_DYE_START + i)) continue;
             g.setTooltipForNextFrame(font, List.of(
                     Component.translatable("color.minecraft." + DyeColor.byId(i).getName()),
                     Component.translatable("screen.customglint.glint_table.hint.dye_set").withStyle(ChatFormatting.GRAY),
@@ -1265,16 +1283,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                     Optional.empty(), mx, my);
             return;
         }
-        {
+        if (overSlot(mx, my, GlintTableMenu.SLOT_RAINBOW_DYE)) {
             Slot rs = menu.slots.get(GlintTableMenu.SLOT_RAINBOW_DYE);
-            int rx = leftPos + rs.x, ry = topPos + rs.y;
-            if (mx >= rx && mx < rx + 16 && my >= ry && my < ry + 16) {
-                ItemStack rstack = rs.hasItem() ? rs.getItem() : ModItems.RAINBOW_DYE.get().getDefaultInstance();
-                List<Component> lines = new ArrayList<>(getTooltipFromItem(minecraft, rstack));
-                lines.add(Component.translatable("screen.customglint.glint_table.hint.rainbow_hex").withStyle(ChatFormatting.GRAY));
-                g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
-                return;
-            }
+            ItemStack rstack = rs.hasItem() ? rs.getItem() : ModItems.RAINBOW_DYE.get().getDefaultInstance();
+            List<Component> lines = new ArrayList<>(getTooltipFromItem(minecraft, rstack));
+            lines.add(Component.translatable("screen.customglint.glint_table.hint.rainbow_hex").withStyle(ChatFormatting.GRAY));
+            g.setTooltipForNextFrame(font, lines, Optional.empty(), mx, my);
+            return;
         }
 
         // Right grid (printed library): item tooltip + how the mouse buttons act on it.
@@ -1369,7 +1384,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         };
     }
 
-
     private void drawGhostItem(GuiGraphicsExtractor g, Slot slot, ItemStack ghost) {
         if (slot.hasItem()) return;
         int x = leftPos + slot.x, y = topPos + slot.y;
@@ -1381,10 +1395,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private static String trimDesignName(ItemStack stack) {
         if (stack.getItem() instanceof GlowTrimItem) return GlowTrimItem.STORAGE_KEY;
         Identifier p = GlintTrimItem.getPattern(stack);
-        if (p == null) return null;
-        if (p.equals(CustomGlint.VANILLA)) return "vanilla";
-        String name = GlintTrimItem.extractPatternName(p);
-        return p.getNamespace().equals("customglint") ? name : p.getNamespace() + ":" + name;
+        return p == null ? null : gridNameFor(p);
     }
 
     /** Design highlighted as "main": the trim physically in the main slot wins, else the grid click. */
@@ -1421,7 +1432,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 if (name.equals(mainName))       border(g, cx - 1, cy - 1, 18, 18, RING_MAIN);
                 else if (name.equals(donorName)) border(g, cx - 1, cy - 1, 18, 18, RING_DONOR);
 
-                if (mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16) g.fill(cx, cy, cx + 16, cy + 16, HOVER_TINT);
+                if (inBox(mx, my, cx, cy, 16, 16)) g.fill(cx, cy, cx + 16, cy + 16, HOVER_TINT);
             }
         }
         drawScrollbar(g, gx, gy, total, gridScroll);
@@ -1458,7 +1469,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                     else if (selectedDonorPrinted && ItemStack.isSameItemSameComponents(s, selectedDonor))
                         border(g, cx - 1, cy - 1, 18, 18, RING_DONOR);
                 }
-                if (mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16) g.fill(cx, cy, cx + 16, cy + 16, HOVER_TINT);
+                if (inBox(mx, my, cx, cy, 16, 16)) g.fill(cx, cy, cx + 16, cy + 16, HOVER_TINT);
             }
         }
         drawScrollbar(g, gx, gy, cap, printScroll);
@@ -1471,9 +1482,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     // ── Import picker ─────────────────────────────────────────────────────────
 
+    // Picker geometry, shared by the draw and the click handling. The panel is horizontally centred and starts
+    // below the window title; its height is the row list plus the search bar strip above it (20) and 2px of
+    // bottom padding. impListY() is where the first row's top edge sits.
     private int impPickerX() { return leftPos + (imageWidth - IMP_PW) / 2; }
     private int impPickerY() { return topPos + 24; }
     private int impPickerH() { return IMPORT_ROWS * IMPORT_ROW_H + 22; }
+    private int impListY() { return impPickerY() + 20; }
 
     /** Toggle the import picker; on open, (re)scan the config dir and focus the search box. */
     private void toggleImportPicker() {
@@ -1699,10 +1714,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return nm == null ? "trim" : nm;
     }
 
+    // The picker is a modal overlay, so it keeps its own fixed dark palette rather than the active skin's: it
+    // has to stay legible on top of whichever background the skin painted underneath.
     private void renderImportPicker(GuiGraphicsExtractor g, int mx, int my, float dt) {
         int ox = impPickerX(), oy = impPickerY(), h = impPickerH();
-        g.fill(ox - 1, oy - 1, ox + IMP_PW + 1, oy + h + 1, 0xFF666666);
-        g.fill(ox, oy, ox + IMP_PW, oy + h, 0xEE111111);
+        g.fill(ox - 1, oy - 1, ox + IMP_PW + 1, oy + h + 1, 0xFF666666); // 1px border
+        g.fill(ox, oy, ox + IMP_PW, oy + h, 0xEE111111);                 // near-opaque panel
 
         if (importSearchBox != null) {
             importSearchBox.setX(ox + 2);
@@ -1712,7 +1729,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             importSearchBox.extractRenderState(g, mx, my, dt);
         }
 
-        int listY = oy + 20, sbX = ox + IMP_PW - 5;
+        int listY = impListY(), sbX = ox + IMP_PW - 5;
         if (importFiltered.isEmpty()) {
             g.text(font, Component.translatable("screen.customglint.glint_table.import_empty"), ox + 4, listY + 2, 0xFF888888, false);
         }
@@ -1720,7 +1737,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         for (int i = 0; i < IMPORT_ROWS && importScroll + i < importFiltered.size(); i++) {
             ImpEntry e = importFiltered.get(importScroll + i);
             int ry = listY + i * IMPORT_ROW_H;
-            boolean hovered = mx >= ox && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
+            boolean hovered = inBox(mx, my, ox, ry, sbX - ox, IMPORT_ROW_H);
             if (hovered) g.fill(ox, ry, sbX, ry + IMPORT_ROW_H, 0x40FFFFFF);
             // Server (shared) blueprints get a small padlock and a gold tint; personal client ones stay plain.
             int textX = ox + 4;
@@ -1731,22 +1748,22 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             g.text(font, Component.literal(e.name()), textX, ry + 2, e.server() ? 0xFFE0C060 : 0xFFDDDDDD, false);
             // Trash on the far right of the hovered row: personal rows always; server rows only for ops/single-player.
             if (hovered && (!e.server() || canManageServer)) {
-                boolean onTrash = mx >= sbX - IMP_TRASH_W && mx < sbX && my >= ry && my < ry + IMPORT_ROW_H;
+                boolean onTrash = inBox(mx, my, sbX - IMP_TRASH_W, ry, IMP_TRASH_W, IMPORT_ROW_H);
                 GuiHelpers.drawTrashIcon(g, sbX - IMP_TRASH_W + 2, ry + 3, onTrash ? 0xFFFF5555 : 0xFFB05050);
             }
         }
 
         if (importFiltered.size() > IMPORT_ROWS) {
             int trackH = IMPORT_ROWS * IMPORT_ROW_H;
-            g.fill(sbX, listY, sbX + 4, listY + trackH, 0xFF2A2A2A);
-            int thumbH = Math.max(8, trackH * IMPORT_ROWS / importFiltered.size());
+            g.fill(sbX, listY, sbX + SCROLLBAR_W, listY + trackH, 0xFF2A2A2A);
+            int thumbH = Math.max(SCROLLBAR_MIN_THUMB, trackH * IMPORT_ROWS / importFiltered.size());
             int thumbY = listY + (int) ((trackH - thumbH) * (float) importScroll / (importFiltered.size() - IMPORT_ROWS));
-            g.fill(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF888888);
+            g.fill(sbX, thumbY, sbX + SCROLLBAR_W, thumbY + thumbH, 0xFF888888);
         }
     }
 
     /** Tiny 5×7 padlock glyph marking a shared server blueprint. Origin = top-left. */
-    private void drawLockIcon(GuiGraphicsExtractor g, int x, int y, int color) {
+    private static void drawLockIcon(GuiGraphicsExtractor g, int x, int y, int color) {
         g.fill(x + 1, y, x + 4, y + 1, color);         // shackle top
         g.fill(x + 1, y + 1, x + 2, y + 3, color);     // shackle left
         g.fill(x + 3, y + 1, x + 4, y + 3, color);     // shackle right
@@ -1771,46 +1788,61 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         scanImportConfigs();
     }
 
-    private void drawScrollbar(GuiGraphicsExtractor g, int gx, int gy, int total, int scroll) {
-        int rows = (total + GRID_COLS - 1) / GRID_COLS;
-        int maxRow = Math.max(0, rows - GRID_ROWS);
-        if (maxRow <= 0) return;
-        int trackX = gx + GRID_COLS * CELL + 1, trackH = GRID_ROWS * CELL;
-        g.fill(trackX, gy, trackX + 4, gy + trackH, SLOT_DARK);
-        int thumbH = Math.max(8, trackH * GRID_ROWS / rows);
-        int thumbY = gy + (int) ((trackH - thumbH) * (float) scroll / maxRow);
-        g.fill(trackX, thumbY, trackX + 4, thumbY + thumbH, GUI_SHADOW);
-        g.fill(trackX, thumbY, trackX + 3, thumbY + thumbH - 1, GUI_FACE);
+    // Scrollbar geometry, shared by the draw, the hit test and the drag-to-row mapping so they can't drift
+    // apart. The thumb floors at 8px because a proportional thumb on a long list gets too small to grab.
+    private static final int SCROLLBAR_W = 4, SCROLLBAR_MIN_THUMB = 8;
+
+    /** How many grid rows {@code total} entries fill. */
+    private static int gridRowCount(int total) {
+        return (total + GRID_COLS - 1) / GRID_COLS;
     }
 
-    /** True if (mx,my) is on a grid's 4px scrollbar track. gx/gy are the grid's top-left. */
-    private boolean onScrollbar(double mx, double my, int gx, int gy, int total) {
-        int rows = (total + GRID_COLS - 1) / GRID_COLS;
-        if (rows - GRID_ROWS <= 0) return false; // nothing to scroll
+    /** The highest scroll row for {@code total} entries (0 when everything already fits). */
+    private static int maxScrollRow(int total) {
+        return Math.max(0, gridRowCount(total) - GRID_ROWS);
+    }
+
+    private void drawScrollbar(GuiGraphicsExtractor g, int gx, int gy, int total, int scroll) {
+        int maxRow = maxScrollRow(total);
+        if (maxRow <= 0) return;
         int trackX = gx + GRID_COLS * CELL + 1, trackH = GRID_ROWS * CELL;
-        return mx >= trackX && mx < trackX + 4 && my >= gy && my < gy + trackH;
+        g.fill(trackX, gy, trackX + SCROLLBAR_W, gy + trackH, SLOT_DARK);
+        int thumbH = Math.max(SCROLLBAR_MIN_THUMB, trackH * GRID_ROWS / gridRowCount(total));
+        int thumbY = gy + (int) ((trackH - thumbH) * (float) scroll / maxRow);
+        g.fill(trackX, thumbY, trackX + SCROLLBAR_W, thumbY + thumbH, GUI_SHADOW);
+        g.fill(trackX, thumbY, trackX + SCROLLBAR_W - 1, thumbY + thumbH - 1, GUI_FACE); // lit top-left bevel
+    }
+
+    /** True if (mx,my) is on a grid's scrollbar track. gx/gy are the grid's top-left. */
+    private static boolean onScrollbar(double mx, double my, int gx, int gy, int total) {
+        if (maxScrollRow(total) <= 0) return false; // nothing to scroll
+        return inBox(mx, my, gx + GRID_COLS * CELL + 1, gy, SCROLLBAR_W, GRID_ROWS * CELL);
     }
 
     /** Map a mouse Y on the track to a scroll row (thumb-centred, clamped), matching drawScrollbar's geometry. */
-    private int scrollFromMouse(double my, int gy, int total) {
-        int rows = (total + GRID_COLS - 1) / GRID_COLS;
-        int maxRow = Math.max(0, rows - GRID_ROWS);
+    private static int scrollFromMouse(double my, int gy, int total) {
+        int maxRow = maxScrollRow(total);
         if (maxRow <= 0) return 0;
         int trackH = GRID_ROWS * CELL;
-        int thumbH = Math.max(8, trackH * GRID_ROWS / rows);
-        float f = (float) ((my - gy - thumbH / 2.0) / (trackH - thumbH));
-        return Math.round(Math.max(0f, Math.min(1f, f)) * maxRow);
+        int thumbH = Math.max(SCROLLBAR_MIN_THUMB, trackH * GRID_ROWS / gridRowCount(total));
+        return rowFromTrack(my, gy, trackH, thumbH, maxRow);
     }
 
     /** Import-picker equivalent of {@link #scrollFromMouse}: map a mouse Y on the Import scrollbar track to a
      *  row, matching renderImportPicker's thumb geometry. */
     private int importScrollFromMouse(double my) {
-        int listY = impPickerY() + 20, trackH = IMPORT_ROWS * IMPORT_ROW_H;
+        int listY = impListY(), trackH = IMPORT_ROWS * IMPORT_ROW_H;
         int total = importFiltered.size(), max = Math.max(0, total - IMPORT_ROWS);
         if (max <= 0) return 0;
-        int thumbH = Math.max(8, trackH * IMPORT_ROWS / total);
-        float f = (float) ((my - listY - thumbH / 2.0) / (trackH - thumbH));
-        return Math.round(Math.max(0f, Math.min(1f, f)) * max);
+        int thumbH = Math.max(SCROLLBAR_MIN_THUMB, trackH * IMPORT_ROWS / total);
+        return rowFromTrack(my, listY, trackH, thumbH, max);
+    }
+
+    /** Mouse Y → row for a scrollbar drag: the grab point is the thumb's centre, and the travel is the track
+     *  minus the thumb, so the last row lands exactly when the thumb bottoms out. */
+    private static int rowFromTrack(double my, int trackY, int trackH, int thumbH, int maxRow) {
+        float f = (float) ((my - trackY - thumbH / 2.0) / (trackH - thumbH));
+        return Math.round(Math.max(0f, Math.min(1f, f)) * maxRow);
     }
 
     /** Selected-but-not-placed preview ghosted into the empty main slot. Drawn solid when the
@@ -1897,22 +1929,14 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return result;
     }
 
-    /** The layer strip is always shown; chips render only for layers that exist (active layer plus committed
-     *  ones), and the [+] add chip is always present. Layer tears are required only at print, not to preview. */
-    private boolean layerStripVisible() {
-        return true;
-    }
-
-    /** Draw the layer chips above the preview: a design icon per layer (active ringed) plus a [+] add. */
+    /** Draw the layer chips above the preview: a design icon per layer (active ringed) plus a [+] add. The
+     *  strip is always shown; chips render only for layers that exist (active layer plus committed ones), and
+     *  the [+] add chip is always present. Layer tears are required only at print, not to preview. */
     private void drawLayerStrip(GuiGraphicsExtractor g, int mx, int my) {
-        if (!layerStripVisible()) return;
         for (Chip c : layerChips()) {
             int x = leftPos + c.x(), y = topPos + LAYER_STRIP_Y;
             if (c.kind() == 3) { // add chip
-                boolean ok = canAddLayer();
-                boolean hover = ok && mx >= x && mx < x + LAYER_ICON && my >= y && my < y + LAYER_ICON;
-                raisedPanel(g, x, y, LAYER_ICON, LAYER_ICON, hover ? BTN_HOVER : (ok ? GUI_FACE : BTN_DISABLED));
-                centered(g, "+", x + LAYER_ICON / 2, y + 2, ok ? LABEL_HDR : COST_BAD);
+                drawAddChip(g, x, y, LAYER_ICON, canAddLayer(), mx, my);
                 continue;
             }
             g.fill(x, y, x + LAYER_ICON, y + LAYER_ICON, SLOT_DARK); // chip backing (exact cell)
@@ -1921,23 +1945,17 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             ItemStack icon = c.kind() == 0 ? layerIcon(lowerLayers.get(c.index()))
                     : c.kind() == 2 ? layerIcon(upperLayers.get(c.index()))
                     : activeLayerIcon();
-            var pose = g.pose();
-            pose.pushMatrix();
-            pose.translate(x, y);
-            pose.scale(LAYER_ICON / 16f, LAYER_ICON / 16f);
-            g.item(icon, 0, 0);
-            pose.popMatrix();
+            drawCellItem(g, icon, x, y, LAYER_ICON);
             shardBevel(g, x, y, LAYER_ICON); // menu-style sunken frame
             // While glow is focused the colour strip edits the glow colours, not this layer, so drop the active
             // layer's selection ring so it reads as unfocused (the glow mode button carries the highlight).
             if (c.kind() == 1 && !glowFocused) border(g, x, y, LAYER_ICON, LAYER_ICON, RING_MAIN); // active layer
-            if (mx >= x && mx < x + LAYER_ICON && my >= y && my < y + LAYER_ICON)
+            if (inBox(mx, my, x, y, LAYER_ICON, LAYER_ICON))
                 g.fill(x, y, x + LAYER_ICON, y + LAYER_ICON, HOVER_TINT);
         }
     }
 
     // ── Color-shard strip (active layer's colors, mirrors the layer strip but below the preview) ──────
-
 
     /** The colour shards belong to the active layer, so the strip only shows them while a design is being
      *  previewed; with no preview it collapses to just the "+" box, mirroring the layer strip hiding its
@@ -1957,31 +1975,41 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             int rgb = mixRgb(shard);
             if (rgb < 0 && isCustomShard(shard)) {       // rainbow chosen, no hex yet → show the rainbow dye icon
                 g.fill(x, y, x + COLOR_ICON, y + COLOR_ICON, SLOT_DARK);
-                var pose = g.pose();
-                pose.pushMatrix();
-                pose.translate(x, y);
-                pose.scale(COLOR_ICON / 16f, COLOR_ICON / 16f);
-                g.item(ModItems.RAINBOW_DYE.get().getDefaultInstance(), 0, 0);
-                pose.popMatrix();
+                drawCellItem(g, ModItems.RAINBOW_DYE.get().getDefaultInstance(), x, y, COLOR_ICON);
             } else {
                 g.fill(x, y, x + COLOR_ICON, y + COLOR_ICON, rgb < 0 ? COLOR_UNSET : 0xFF000000 | rgb);
             }
             shardBevel(g, x, y, COLOR_ICON);                                              // menu-style sunken frame
             if (k == selectedColorIdx) border(g, x, y, COLOR_ICON, COLOR_ICON, RING_MAIN);
-            if (mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON)
+            if (inBox(mx, my, x, y, COLOR_ICON, COLOR_ICON))
                 g.fill(x, y, x + COLOR_ICON, y + COLOR_ICON, HOVER_TINT);
         }
         // "+" add-color box after the shards, hidden while the hex box is open so it doesn't paint over it
-        // (the hex EditBox is a widget drawn earlier, in super.extractContents). With no preview it's the only
-        // thing on the strip and shows disabled/red (like the layer strip's [+]), since there's no layer to
-        // add a colour to yet.
+        // (the hex EditBox is drawn last, at the end of extractContents). With no preview it's the only thing
+        // on the strip and shows disabled/red (like the layer strip's [+]), since there's no layer to add a
+        // colour to yet.
         if (n < 8 && !hexOpen) {
             int x = leftPos + COLOR_STRIP_X + n * COLOR_CELL, y = topPos + COLOR_STRIP_Y;
-            boolean on = colorShardsVisible();
-            boolean hover = on && mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON;
-            raisedPanel(g, x, y, COLOR_ICON, COLOR_ICON, hover ? BTN_HOVER : (on ? GUI_FACE : BTN_DISABLED));
-            centered(g, "+", x + COLOR_ICON / 2, y + 2, on ? LABEL_HDR : COST_BAD);
+            drawAddChip(g, x, y, COLOR_ICON, colorShardsVisible(), mx, my);
         }
+    }
+
+    /** The square "+" chip both strips end with: a raised button face that lights on hover and greys out
+     *  when there is nothing to add. */
+    private void drawAddChip(GuiGraphicsExtractor g, int x, int y, int size, boolean enabled, int mx, int my) {
+        boolean hover = enabled && inBox(mx, my, x, y, size, size);
+        raisedPanel(g, x, y, size, size, hover ? BTN_HOVER : (enabled ? GUI_FACE : BTN_DISABLED));
+        centered(g, "+", x + size / 2, y + 2, enabled ? LABEL_HDR : COST_BAD);
+    }
+
+    /** Draw an item scaled down from its native 16px into a {@code size}px strip cell. */
+    private static void drawCellItem(GuiGraphicsExtractor g, ItemStack stack, int x, int y, int size) {
+        var pose = g.pose();
+        pose.pushMatrix();
+        pose.translate(x, y);
+        pose.scale(size / 16f, size / 16f);
+        g.item(stack, 0, 0);
+        pose.popMatrix();
     }
 
     /** Color-strip clicks: left-click a shard selects it (the dye bar then highlights/recolors it),
@@ -1992,8 +2020,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         int y = topPos + COLOR_STRIP_Y;
         int n = Math.min(shards.size(), 8);
         for (int k = 0; k < n; k++) {
-            int x = leftPos + COLOR_STRIP_X + k * COLOR_CELL;
-            if (mx < x || mx >= x + COLOR_ICON || my < y || my >= y + COLOR_ICON) continue;
+            if (!inBox(mx, my, leftPos + COLOR_STRIP_X + k * COLOR_CELL, y, COLOR_ICON, COLOR_ICON)) continue;
             if (button == 0 && hasShiftDown() && selectedColorIdx >= 0 && selectedColorIdx != k
                     && selectedColorIdx < shards.size()) { // shift-left-click another shard: swap the two colours
                 Collections.swap(shards, selectedColorIdx, k);
@@ -2012,12 +2039,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             }
             return true;
         }
-        if (n < 8 && !hexOpen) {                      // "+" box: add a new unset shard, selected (hidden while editing hex)
-            int x = leftPos + COLOR_STRIP_X + n * COLOR_CELL;
-            if (mx >= x && mx < x + COLOR_ICON && my >= y && my < y + COLOR_ICON) {
-                if (button == 0) { shards.add(new ArrayList<>()); selectedColorIdx = n; closeHex(); }
-                return true;
-            }
+        // "+" box: add a new unset shard, selected (hidden while editing hex).
+        if (n < 8 && !hexOpen && inBox(mx, my, leftPos + COLOR_STRIP_X + n * COLOR_CELL, y, COLOR_ICON, COLOR_ICON)) {
+            if (button == 0) { shards.add(new ArrayList<>()); selectedColorIdx = n; closeHex(); }
+            return true;
         }
         return false;
     }
@@ -2226,18 +2251,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             // button beside it is a widget.
             int nx = leftPos + NAME_BOX_X, ny = topPos + NAME_BOX_Y;
             raisedPanel(g, nx, ny, NAME_BOX_W, 12, GUI_FACE);
-            var pose = g.pose();
-            pose.pushMatrix();
-            pose.translate(nx + NAME_BOX_W / 2f, ny + 3f);
-            pose.scale(0.85f, 0.85f);
-            centered(g, Component.translatable("screen.customglint.glint_table.not_available").getString(), 0, 0, COST_BAD);
-            pose.popMatrix();
+            centeredScaled(g, label("not_available"), nx + NAME_BOX_W / 2, ny + 3, 0.85f, COST_BAD);
         }
     }
 
     /** The whole trim's material cost {redstone, slime, glass}: per layer, one redstone/slime for every ± step
      *  speed/scale sits off 1× and one glass per opacity level, tallied across the active + committed layers.
-     *  Tuning a layer is now a real material sink, not a flat 1. Mirrors {@link GlintTableMenu#print}. */
+     *  The cost scales with how far a layer is tuned rather than being flat. Mirrors {@link GlintTableMenu#print}. */
     private int[] layerCosts() {
         // A Glow Trim has no pattern scale or opacity, so those cost nothing for it; only its glow-cycle speed
         // (redstone) counts.
@@ -2281,6 +2301,12 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private int simTearCost() { return modeTearCost(true); }
     private int seqTearCost() { return modeTearCost(false); }
 
+    /** True when a stack is a glint trim that already has a design picked, the minimum a print needs. An empty
+     *  stack holds AIR, so the emptiness check is implicit. */
+    private static boolean hasDesign(ItemStack s) {
+        return s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null;
+    }
+
     private boolean canPrint() {
         if (frameMemo && frameCanPrint != null) return frameCanPrint;
         boolean result = computeCanPrint();
@@ -2296,7 +2322,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (src.getItem() instanceof GlowTrimItem)
             return countSelectedDyes() > 0 && dyesAffordable()
                     && slotUnits(GlintTableMenu.SLOT_REDSTONE) >= layerCosts()[0];
-        if (src.isEmpty() || !(src.getItem() instanceof GlintTrimItem) || GlintTrimItem.getPattern(src) == null) return false;
+        if (!hasDesign(src)) return false;
         // One layer tear per extra layer beyond the first, and never past the cap.
         if (totalLayers() > MAX_LAYERS) return false;
         if (layerTearCount() < totalLayers() - 1) return false;
@@ -2363,7 +2389,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             if (countSelectedDyes() == 0) out.add(Component.translatable("screen.customglint.glint_table.issue.add_color"));
             return out;
         }
-        if (src.isEmpty() || !(src.getItem() instanceof GlintTrimItem) || GlintTrimItem.getPattern(src) == null) {
+        if (!hasDesign(src)) {
             out.add(Component.translatable("screen.customglint.glint_table.issue.pick_design"));
             return out; // everything else depends on a chosen design
         }
@@ -2407,7 +2433,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return new ItemStack(item).getHoverName();
     }
 
-
     /** Hover breakdown for the Print button: every material the build will consume, each green when the
      *  slot holds enough and red when it's short, plus a header that flags an incomplete build. */
     private List<Component> printTooltip() {
@@ -2417,8 +2442,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         // No design chosen yet: nothing to build or consume, just say so. A Glow Trim has no design, so it
         // skips the pick-design guard and falls through to its glow-colour issues + dye/redstone breakdown.
         ItemStack src = activeTrim();
-        if (!(src.getItem() instanceof GlowTrimItem)
-                && (src.isEmpty() || !(src.getItem() instanceof GlintTrimItem) || GlintTrimItem.getPattern(src) == null)) {
+        if (!(src.getItem() instanceof GlowTrimItem) && !hasDesign(src)) {
             lines.add(Component.literal("• ").append(Component.translatable("screen.customglint.glint_table.issue.pick_design")).withStyle(ChatFormatting.RED));
             return lines;
         }
@@ -2431,32 +2455,27 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         boolean fromBase = base.getItem() instanceof GlintTrimItem;
         boolean baseGlowing = fromBase && CustomGlint.isGlowing(base);
 
-        boolean any = false;
+        // Everything from here is the material breakdown; remember where it starts so an empty one can say so.
+        int firstMaterialLine = lines.size();
         // Dyes for every colour across all layers (cumulative: a shade reused costs a dye each time), plus one
         // rainbow dye per custom / non-dye colour.
         DyeReq req = dyeReq();
         for (int i = 0; i < 16; i++)
-            if (req.counts()[i] > 0) { reqLine(lines, itemName(GlintTableMenu.DYE_ITEMS[i]), req.counts()[i], GlintTableMenu.SLOT_DYE_START + i); any = true; }
-        if (req.rainbow() > 0)       { reqLine(lines, itemName(ModItems.RAINBOW_DYE.get()), req.rainbow(), GlintTableMenu.SLOT_RAINBOW_DYE); any = true; }
+            if (req.counts()[i] > 0) reqLine(lines, itemName(GlintTableMenu.DYE_ITEMS[i]), req.counts()[i], GlintTableMenu.SLOT_DYE_START + i);
+        if (req.rainbow() > 0) reqLine(lines, itemName(ModItems.RAINBOW_DYE.get()), req.rainbow(), GlintTableMenu.SLOT_RAINBOW_DYE);
         int[] cost = layerCosts();
-        if (cost[0] > 0)             { reqLine(lines, itemName(Items.REDSTONE), cost[0], GlintTableMenu.SLOT_REDSTONE); any = true; }
-        if (cost[1] > 0)             { reqLine(lines, itemName(Items.SLIME_BALL), cost[1], GlintTableMenu.SLOT_SLIME); any = true; }
-        if (cost[2] > 0)             { reqLine(lines, itemName(Items.GLASS), cost[2], GlintTableMenu.SLOT_GLASS); any = true; }
-        if (modGlow && !baseGlowing) { reqLine(lines, itemName(Items.GLOWSTONE_DUST), totalLayers(), GlintTableMenu.SLOT_GLOWSTONE); any = true; }
+        if (cost[0] > 0) reqLine(lines, itemName(Items.REDSTONE), cost[0], GlintTableMenu.SLOT_REDSTONE);
+        if (cost[1] > 0) reqLine(lines, itemName(Items.SLIME_BALL), cost[1], GlintTableMenu.SLOT_SLIME);
+        if (cost[2] > 0) reqLine(lines, itemName(Items.GLASS), cost[2], GlintTableMenu.SLOT_GLASS);
+        if (modGlow && !baseGlowing) reqLine(lines, itemName(Items.GLOWSTONE_DUST), totalLayers(), GlintTableMenu.SLOT_GLOWSTONE);
         int extraLayers = lowerLayers.size() + upperLayers.size();
-        if (extraLayers > 0)         { reqLine(lines, itemName(ModItems.GLINT_LAYER_TEAR.get()), extraLayers, GlintTableMenu.SLOT_LAYER_TEAR); any = true; }
+        if (extraLayers > 0) reqLine(lines, itemName(ModItems.GLINT_LAYER_TEAR.get()), extraLayers, GlintTableMenu.SLOT_LAYER_TEAR);
         // A mode tear per multi-colour layer: simultaneous and sequential each tallied across the whole trim.
-        int simTears = simTearCost();
-        if (simTears > 0) {
-            reqLine(lines, itemName(ModItems.GLINT_TEAR_SIMULTANEOUS.get()), simTears, GlintTableMenu.SLOT_TEAR);
-            any = true;
-        }
-        int seqTears = seqTearCost();
-        if (seqTears > 0) {
-            reqLine(lines, itemName(ModItems.GLINT_TEAR_SEQUENTIAL.get()), seqTears, GlintTableMenu.SLOT_TEAR_SEQ);
-            any = true;
-        }
-        if (!any) lines.add(Component.translatable("screen.customglint.glint_table.nothing").withStyle(ChatFormatting.DARK_GRAY));
+        int simTears = simTearCost(), seqTears = seqTearCost();
+        if (simTears > 0) reqLine(lines, itemName(ModItems.GLINT_TEAR_SIMULTANEOUS.get()), simTears, GlintTableMenu.SLOT_TEAR);
+        if (seqTears > 0) reqLine(lines, itemName(ModItems.GLINT_TEAR_SEQUENTIAL.get()), seqTears, GlintTableMenu.SLOT_TEAR_SEQ);
+        if (lines.size() == firstMaterialLine)
+            lines.add(Component.translatable("screen.customglint.glint_table.nothing").withStyle(ChatFormatting.DARK_GRAY));
         return lines;
     }
 
@@ -2537,18 +2556,18 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 () -> Component.translatable("screen.customglint.skin." + skin.name.toLowerCase(Locale.ROOT)).getString(),
                 () -> LABEL_HDR, () -> GUI_FACE, b -> cycleSkin(b == 1 ? -1 : 1)));
 
-        addRenderableWidget(new BevelButton(leftPos + SKIN_BTN_X - SND_BTN_W - 2, topPos + SKIN_BTN_Y, SND_BTN_W, SKIN_BTN_H, 2, false,
+        addRenderableWidget(new BevelButton(sndBtnX(), topPos + SKIN_BTN_Y, SND_BTN_W, SKIN_BTN_H, 2, false,
                 () -> "♪", () -> GlintClientConfig.glintTableSound() ? COST_OK : COST_BAD, () -> GUI_FACE,
                 b -> GlintClientConfig.setGlintTableSound(!GlintClientConfig.glintTableSound())));
 
         // Import: left-click opens a picker of premade config trims (same source as the wand editor's
         // Import); right-click saves the current preview build to a config file so it can be imported later.
         // Sits to the left of the sound toggle.
-        addRenderableWidget(new BevelButton(leftPos + SKIN_BTN_X - SND_BTN_W - 2 - IMP_BTN_W - 2, topPos + SKIN_BTN_Y, IMP_BTN_W, SKIN_BTN_H, 2, true,
+        addRenderableWidget(new BevelButton(impBtnX(), topPos + SKIN_BTN_Y, IMP_BTN_W, SKIN_BTN_H, 2, true,
                 () -> "↓", () -> LABEL_HDR, () -> GUI_FACE, b -> { if (b == 1) saveCurrentAsImport(); else toggleImportPicker(); }));
 
         printBtn = addRenderableWidget(new BevelButton(leftPos + PRINT_X, topPos + PRINT_Y, PRINT_W, PRINT_H, 3, false,
-                () -> Component.translatable("screen.customglint.glint_table.print").getString(), () -> canPrint() ? LABEL_HDR : COST_BAD, () -> canPrint() ? GUI_FACE : BTN_DISABLED,
+                () -> label("print"), () -> canPrint() ? LABEL_HDR : COST_BAD, () -> canPrint() ? GUI_FACE : BTN_DISABLED,
                 b -> { if (canPrint()) onPrint(); }));
 
         addRenderableWidget(new BevelButton(leftPos + INTERP_X, topPos + INTERP_Y, INTERP_W, INTERP_H, 2, false,
@@ -2564,7 +2583,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                         : tipLines("screen.customglint.glint_table.tip.scroll")));
 
         addRenderableWidget(new BevelButton(tearToggleCx() - 15, topPos + tear.y + 26, 30, 11, 2, false,
-                () -> Component.translatable(tearSimultaneous ? "screen.customglint.glint_table.sim" : "screen.customglint.glint_table.seq").getString(), () -> LABEL_HDR, () -> GUI_FACE,
+                () -> label(tearSimultaneous ? "sim" : "seq"), () -> LABEL_HDR, () -> GUI_FACE,
                 b -> tearSimultaneous = !tearSimultaneous)
                 .tip(() -> tipLines("screen.customglint.glint_table.tip.type")));
 
@@ -2676,22 +2695,22 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     private String glowModeLabel() {
         if (glowTrimMain()) return naLabel();
-        if (!modGlow) return Component.translatable("screen.customglint.glint_table.glow_off").getString();
-        return Component.translatable(glowAuto
-                ? "screen.customglint.glint_table.glow_auto" : "screen.customglint.glint_table.glow_manual").getString();
+        if (!modGlow) return label("glow_off");
+        return label(glowAuto ? "glow_auto" : "glow_manual");
     }
 
     /** Localized "True"/"False" for the boolean toggle buttons. */
     private static Component boolLabel(boolean value) {
-        return Component.translatable(value ? "screen.customglint.glint_table.true" : "screen.customglint.glint_table.false");
+        return Component.translatable("screen.customglint.glint_table." + (value ? "true" : "false"));
     }
 
     /** Localized "N/A" shown when a toggle is unavailable. */
     private static String naLabel() {
-        return Component.translatable("screen.customglint.glint_table.na").getString();
+        return label("na");
     }
 
-    /** Resolved text for a {@code screen.customglint.glint_table.<suffix>} caption key. */
+    /** Resolved text for a {@code screen.customglint.glint_table.<suffix>} caption key. Every plain caption on
+     *  this screen goes through here so the key prefix is written once. */
     private static String label(String suffix) {
         return Component.translatable("screen.customglint.glint_table." + suffix).getString();
     }
@@ -2703,6 +2722,17 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     /** Flat (no drop-shadow) centered text, like the vanilla container labels. */
     private void centered(GuiGraphicsExtractor g, String str, int cx, int y, int color) {
         g.text(font, str, cx - font.width(str) / 2, y, color, false);
+    }
+
+    /** {@link #centered} under a uniform scale about (cx, y). The font has no smaller size, so every caption
+     *  and stepper value that must fit a narrow slot is drawn shrunk this way. */
+    private void centeredScaled(GuiGraphicsExtractor g, String str, int cx, int y, float scale, int color) {
+        var pose = g.pose();
+        pose.pushMatrix();
+        pose.translate(cx, y);
+        pose.scale(scale, scale);
+        centered(g, str, 0, 0, color);
+        pose.popMatrix();
     }
 
     /** 1px rectangle outline. */
@@ -2755,13 +2785,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
      *  buttons (capped at 0.8×) instead of bleeding into them on wide values like "100%" / "0.85". */
     private void fitValue(GuiGraphicsExtractor g, String val, int cx, int y) {
         int w = font.width(val);
-        float vs = w > 0 ? Math.min(0.8f, 11f / w) : 0.8f;
-        var pose = g.pose();
-        pose.pushMatrix();
-        pose.translate(cx, y);
-        pose.scale(vs, vs);
-        centered(g, val, 0, 0, LABEL_HDR);
-        pose.popMatrix();
+        centeredScaled(g, val, cx, y, w > 0 ? Math.min(0.8f, 11f / w) : 0.8f, LABEL_HDR);
     }
 
     /** Center-x of the shared tear toggle: the midpoint between the two side-by-side tear slots. */
@@ -2812,12 +2836,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
     /** A 0.7× centered label, used for every slot caption so they share one size. */
     private void smallLabel(GuiGraphicsExtractor g, String label, int cx, int y, int color) {
-        var pose = g.pose();
-        pose.pushMatrix();
-        pose.translate(cx, y);
-        pose.scale(0.7f, 0.7f);
-        centered(g, label, 0, 0, color);
-        pose.popMatrix();
+        centeredScaled(g, label, cx, y, 0.7f, color);
     }
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -2835,29 +2854,29 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return false;
     }
 
-    /** True when (mx, my) is over the cell area of either scrollable grid. */
-    private boolean overEitherGrid(double mx, double my) {
-        return overGrid(mx, my, LGRID_X) || overGrid(mx, my, RGRID_X);
+    /** Half-open hit test in SCREEN coordinates: right and bottom edges belong to the next widget over, which
+     *  is what keeps adjacent grid cells and strip chips from both claiming the same pixel. */
+    private static boolean inBox(double mx, double my, int x, int y, int w, int h) {
+        return mx >= x && mx < x + w && my >= y && my < y + h;
     }
 
-    private boolean overGrid(double mx, double my, int gx) {
-        int x0 = leftPos + gx, y0 = topPos + GRID_Y;
-        return mx >= x0 && mx < x0 + GRID_COLS * CELL && my >= y0 && my < y0 + GRID_ROWS * CELL;
+    /** True when (mx, my) is over the cell area of either scrollable grid. */
+    private boolean overEitherGrid(double mx, double my) {
+        return inGrid(mx, my, leftPos + LGRID_X, topPos + GRID_Y)
+                || inGrid(mx, my, leftPos + RGRID_X, topPos + GRID_Y);
     }
 
     /** Whether (mx, my) is over the 16×16 item area of a table slot. */
     private boolean overSlot(double mx, double my, int slotConst) {
         Slot s = menu.slots.get(slotConst);
-        int sx = leftPos + s.x, sy = topPos + s.y;
-        return mx >= sx && mx < sx + 16 && my >= sy && my < sy + 16;
+        return inBox(mx, my, leftPos + s.x, topPos + s.y, 16, 16);
     }
 
     /** The grid index under (mx, my) for a grid at (gx, gy), or -1. */
-    private int gridIndexAt(double mx, double my, int gx, int gy, int scroll, int total) {
+    private static int gridIndexAt(double mx, double my, int gx, int gy, int scroll, int total) {
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
-                int cx = gx + col * CELL, cy = gy + row * CELL;
-                if (mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16) {
+                if (inBox(mx, my, gx + col * CELL, gy + row * CELL, 16, 16)) {
                     int idx = (scroll + row) * GRID_COLS + col;
                     return idx < total ? idx : -1;
                 }
@@ -2883,8 +2902,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
                 if (importSearchBox != null) importSearchBox.setFocused(false);
                 return true;
             }
-            int listY = oy + 20, sbX = ox + IMP_PW - 5, trackH = IMPORT_ROWS * IMPORT_ROW_H;
-            if (importFiltered.size() > IMPORT_ROWS && mx >= sbX && mx < sbX + 4 && my >= listY && my < listY + trackH) {
+            int listY = impListY(), sbX = ox + IMP_PW - 5, trackH = IMPORT_ROWS * IMPORT_ROW_H;
+            if (importFiltered.size() > IMPORT_ROWS && inBox(mx, my, sbX, listY, SCROLLBAR_W, trackH)) {
                 draggingImport = true;
                 importScroll = importScrollFromMouse(my);
                 return true;
@@ -2973,18 +2992,15 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
 
         // Layer strip (same rule as the color strip): left-click selects a layer; right-click deletes it only
         // when it's the selected (active) one, so you select first, then right-click to delete. [+] adds.
-        if (layerStripVisible()) {
-            int cy = y + LAYER_STRIP_Y;
-            for (Chip c : layerChips()) {
-                int cx = x + c.x();
-                if (mx < cx || mx >= cx + LAYER_ICON || my < cy || my >= cy + LAYER_ICON) continue;
-                glowFocused = false; // touching the layer strip returns the colour strip to the active layer
-                if (c.kind() == 3) { if (event.button() == 0) addLayer(); }         // [+] add chip
-                else if (c.kind() == 1) { if (event.button() == 1) removeActiveLayer(); } // selected layer: right-click deletes
-                else if (event.button() == 0 && hasShiftDown()) swapLayers(c.kind(), c.index()); // shift-left: swap with the active layer
-                else editLayer(c.kind(), c.index());                                 // unselected: any click selects it first
-                return true;
-            }
+        int cy = y + LAYER_STRIP_Y;
+        for (Chip c : layerChips()) {
+            if (!inBox(mx, my, x + c.x(), cy, LAYER_ICON, LAYER_ICON)) continue;
+            glowFocused = false; // touching the layer strip returns the colour strip to the active layer
+            if (c.kind() == 3) { if (event.button() == 0) addLayer(); }         // [+] add chip
+            else if (c.kind() == 1) { if (event.button() == 1) removeActiveLayer(); } // selected layer: right-click deletes
+            else if (event.button() == 0 && hasShiftDown()) swapLayers(c.kind(), c.index()); // shift-left: swap with the active layer
+            else editLayer(c.kind(), c.index());                                 // unselected: any click selects it first
+            return true;
         }
 
         // Color-shard strip: right-click a shard removes that color instance.
@@ -2999,9 +3015,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             List<List<Integer>> editing = editShards();
             boolean shardSel = selectedColorIdx >= 0 && selectedColorIdx < editing.size();
             for (int i = 0; i < 16; i++) {
-                Slot s = menu.slots.get(GlintTableMenu.SLOT_DYE_START + i);
-                int sx = x + s.x, sy = y + s.y;
-                if (mx >= sx && mx < sx + 16 && my >= sy && my < sy + 16) {
+                if (overSlot(mx, my, GlintTableMenu.SLOT_DYE_START + i)) {
                     if (menu.getCarried().isEmpty() && shardSel) {
                         List<Integer> shard = editing.get(selectedColorIdx);
                         if (isCustomShard(shard)) { shard.clear(); shard.add(i); closeHex(); } // leave rainbow mode
@@ -3015,9 +3029,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             }
             // Rainbow dye → put the selected shard into custom-hex (rainbow) mode; click the shard to type a hex.
             // Works with an empty slot too; the rainbow dye is charged at print.
-            Slot rs = menu.slots.get(GlintTableMenu.SLOT_RAINBOW_DYE);
-            int rx = x + rs.x, ry = y + rs.y;
-            if (mx >= rx && mx < rx + 16 && my >= ry && my < ry + 16) {
+            if (overSlot(mx, my, GlintTableMenu.SLOT_RAINBOW_DYE)) {
                 if (menu.getCarried().isEmpty() && shardSel) {
                     List<Integer> shard = editing.get(selectedColorIdx);
                     shard.clear(); shard.add(RAINBOW);
@@ -3174,14 +3186,13 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return super.charTyped(event);
     }
 
-    private boolean inGrid(double mx, double my, int gx, int gy) {
-        return mx >= gx && mx < gx + GRID_COLS * CELL && my >= gy && my < gy + GRID_ROWS * CELL;
+    /** Whether (mx, my) is over the cell area (not the scrollbar) of the grid whose top-left is (gx, gy). */
+    private static boolean inGrid(double mx, double my, int gx, int gy) {
+        return inBox(mx, my, gx, gy, GRID_COLS * CELL, GRID_ROWS * CELL);
     }
 
-    private int scrolled(int cur, int total, double dir) {
-        int rows = (total + GRID_COLS - 1) / GRID_COLS;
-        int maxRow = Math.max(0, rows - GRID_ROWS);
-        return Math.max(0, Math.min(maxRow, cur - (int) Math.signum(dir)));
+    private static int scrolled(int cur, int total, double dir) {
+        return Math.max(0, Math.min(maxScrollRow(total), cur - (int) Math.signum(dir)));
     }
 
     @Override
