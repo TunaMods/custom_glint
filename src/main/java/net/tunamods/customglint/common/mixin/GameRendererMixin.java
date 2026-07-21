@@ -63,7 +63,7 @@ public class GameRendererMixin {
     //
     // TRIED (attempt 2, STILL floated): with the dedicated queue in place, this drain ran with content but
     // re-applied the world `modelViewMatrix` (mvStack.mul(modelViewMatrix)). Wrong space. Verified against
-    // Iris's HandRenderer.setupGlState/renderSolid (jars/iris_extract): under a pack Iris bakes the hand
+    // Iris's HandRenderer.setupGlState/renderSolid: under a pack Iris bakes the hand
     // perspective + bobHurt/bobView INTO the uploaded projection matrix and renders the hand with an
     // IDENTITY modelview, and the item submit poses are hand-LOCAL (relative to a fresh PoseStack). So
     // multiplying by the world view put the hand-local pose out into the world ≈1 block away, the float.

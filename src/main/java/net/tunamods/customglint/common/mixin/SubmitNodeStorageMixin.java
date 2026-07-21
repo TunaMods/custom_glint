@@ -55,6 +55,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(SubmitNodeStorage.class)
 public class SubmitNodeStorageMixin {
 
+    /** Guards against re-entering these hooks while submitting our own glint nodes (which call
+     *  {@code submitModel}/{@code submitModelPart} again). Render thread only. */
+    @Unique
+    private static boolean cg_addingGlint = false;
+
+    /** Per-item-submit token of the last submit we added glint for. A special renderer can submit several
+     *  model/part nodes per item (shield: base + patterns + foil); glinting only the first keeps one glint
+     *  pass over the item shape instead of stacking one per node. */
+    @Unique
+    private static final ThreadLocal<Object> cg_glintedToken = new ThreadLocal<>();
+
     @Inject(method = "submitModel", at = @At("HEAD"), cancellable = true, require = 0)
     private void cg_captureSpecialModel(Model model, Object state, PoseStack poseStack, RenderType renderType,
             int lightCoords, int overlayCoords, int tintedColor, TextureAtlasSprite sprite, int outlineColor,
@@ -127,17 +138,6 @@ public class SubmitNodeStorageMixin {
     private static boolean cg_isVanillaGlint(RenderType rt) {
         return rt == RenderTypes.entityGlint() || rt == RenderTypes.glint() || rt == RenderTypes.glintTranslucent();
     }
-
-    /** Guards against re-entering these hooks while submitting our own glint nodes (which call
-     *  {@code submitModel}/{@code submitModelPart} again). Render thread only. */
-    @Unique
-    private static boolean cg_addingGlint = false;
-
-    /** Per-item-submit token of the last submit we added glint for. A special renderer can submit several
-     *  model/part nodes per item (shield: base + patterns + foil); glinting only the first keeps one glint
-     *  pass over the item shape instead of stacking one per node. */
-    @Unique
-    private static final ThreadLocal<Object> cg_glintedToken = new ThreadLocal<>();
 
     @Unique
     private static boolean cg_firstGlintForToken() {

@@ -14,13 +14,13 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
 import net.tunamods.customglint.common.client.GlintCarrier;
-
-import java.util.List;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.List;
 
 /**
  * ENTITY per-layer glint. Every entity model, the base body AND every {@code RenderLayer} surface (sheep
@@ -43,6 +43,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(SubmitNodeCollection.class)
 public class SubmitNodeCollectionMixin {
 
+    /** Guards against re-entering this hook while submitting our own glint nodes (which call
+     *  {@code submitModel} again). Render thread only. */
+    @Unique
+    private static boolean cg_addingGlint = false;
+
     @Inject(method = "submitModel", at = @At("HEAD"), require = 0)
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void cg_layerGlint(Model model, Object state, PoseStack poseStack, RenderType renderType,
@@ -58,10 +63,10 @@ public class SubmitNodeCollectionMixin {
         // Off a shader pack, stash the layer glint for the stable-depth draw at AfterWeather (drawn on top,
         // occluded against the opaque-depth snapshot) when it would otherwise fight a re-sorted / mismatched
         // depth in-phase:
-        //   - a TRANSLUCENT layer (slime outer shell) lands in 26.1's distance-sorted translucent bucket with
-        //     our glint (also mark the entity so its inner body glint is skipped, the shell is the surface),
-        //   - a CHROMATIC layer draws through the EQUAL-depth chromatic RT, which flickers on the ~1 ULP depth
-        //     mismatch between our program and the layer surface (both sheep wool and slime shell).
+        //   1. a TRANSLUCENT layer (slime outer shell) lands in 26.1's distance-sorted translucent bucket with
+        //      our glint (also mark the entity so its inner body glint is skipped, the shell is the surface),
+        //   2. a CHROMATIC layer draws through the EQUAL-depth chromatic RT, which flickers on the ~1 ULP depth
+        //      mismatch between our program and the layer surface (both sheep wool and slime shell).
         boolean translucent = cg_isTranslucent(renderType);
         if (translucent) EntityGlintRender.markTranslucentShell(state);
         if ((translucent || cg_hasChromatic(res.data)) && !CustomGlintRenderer.isShaderPackActive()) {
@@ -94,11 +99,6 @@ public class SubmitNodeCollectionMixin {
         for (CustomGlint.Layer l : data.layers()) if (CustomGlint.isChromatic(l)) return true;
         return false;
     }
-
-    /** Guards against re-entering this hook while submitting our own glint nodes (which call
-     *  {@code submitModel} again). Render thread only. */
-    @Unique
-    private static boolean cg_addingGlint = false;
 
     /**
      * GLINT + GLOW for block-model entity layers, mooshroom mushrooms, snow-golem pumpkin, and any modded

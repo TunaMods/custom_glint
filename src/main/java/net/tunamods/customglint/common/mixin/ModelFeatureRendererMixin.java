@@ -6,6 +6,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.OutlineBufferSource;
@@ -33,7 +34,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p>We go one better than vanilla: rather than a SECOND {@code renderToBuffer} per glowing entity
  * (vanilla's cost, and what an earlier version of this mixin did), we redirect the body's single
  * {@code renderToBuffer} to fan its vertices into BOTH the normal buffer and our glow-mask buffer via a
- * {@link com.mojang.blaze3d.vertex.VertexMultiConsumer}. The silhouette is captured during the one model
+ * {@link VertexMultiConsumer}. The silhouette is captured during the one model
  * walk the entity already does, a few extra vertex writes, no second traversal, no second setupAnim.
  * This is what makes glow scale like vanilla (the bottleneck was the per-entity second model walk).
  * {@code drainBodyOutlines} flushes the mask buffer and runs the single occluded composite.

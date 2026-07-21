@@ -193,6 +193,7 @@ public class GuiRendererMixin {
             // everywhere else (so it isn't "chosen" and can't be printed), only the draw substitutes white.
             if (colors.length == 0) colors = new int[]{0xFFFFFFFF};
             int cc = Math.max(1, colors.length);
+            // patternScale as 12-bit fixed point, clamped to the int16 the payload field can hold.
             int psPacked = Math.min(32767, Math.round(layer.patternScale() * 4096.0f));
             int scrollDir = layer.scrollDir();
             float scrollOffset = layer.scrollOffset();
