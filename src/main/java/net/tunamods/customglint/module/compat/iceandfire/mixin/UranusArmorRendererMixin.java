@@ -29,7 +29,7 @@ import java.util.List;
 /**
  * Standalone-only compat for Ice &amp; Fire Community Edition (and any iafenvoy mod using uranus's
  * armor system). IaF player armor (copper, deathworm, dragonsteel/dragonscale, sea-serpent, troll, …)
- * no longer renders through vanilla HumanoidArmorLayer — uranus's ArmorFeatureRendererMixin injects
+ * no longer renders through vanilla HumanoidArmorLayer: uranus's ArmorFeatureRendererMixin injects
  * at HEAD of {@code renderArmorPiece}, dispatches to
  * {@code com.iafenvoy.uranus.client.render.armor.IArmorRendererBase#render} (a default interface
  * method), then CANCELS the vanilla path. Because uranus cancels at HEAD, {@link HumanoidArmorLayerMixin}'s
@@ -37,7 +37,7 @@ import java.util.List;
  *
  * IaF's concrete renderers (BasicArmorRenderer / ScaleArmorRenderer) only implement
  * {@code getHumanoidArmorModel}; neither overrides {@code render}, so the interface default is the
- * single render path and the right injection target. We @Inject at its RETURN — by then uranus has
+ * single render path and the right injection target. We @Inject at its RETURN; by then uranus has
  * already drawn the base armor through {@code armorCutoutNoCull}, so we just overlay the glint,
  * reproducing HumanoidArmorLayerMixin's glint logic.
  *
@@ -67,7 +67,7 @@ public interface UranusArmorRendererMixin {
 
         // Glow outline: uranus cancels the vanilla HumanoidArmorLayer path, so the generic in-phase tee
         // never captures IaF player armor. Re-render the configured armorModel (per-slot visibility already
-        // applied) traced against the armor texture uranus draws — its getArmorTexture default is the raw
+        // applied) traced against the armor texture uranus draws. Its getArmorTexture default is the raw
         // material layer-0 texture (IaF's concrete renderers only override getHumanoidArmorModel). Keyed
         // CAT_ARMOR + the wearer's id so all pieces + the body compose as one ring.
         if (glow) {
@@ -80,30 +80,10 @@ public interface UranusArmorRendererMixin {
 
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
-                int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
-                if (layers[li].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
-                    }
-                } else {
-                    int c = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                    float a = ((c >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((c >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((c >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( c        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
-                }
+                CustomGlintRenderer.fanLayerBuffers(list, buffer, glint, li,
+                        (l, c, i) -> CustomGlintRenderer.forArmorGlint(glint, l, c, i));
             }
             if (!list.isEmpty()) {
                 VertexConsumer combined = list.size() == 1 ? list.get(0)

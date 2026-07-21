@@ -40,6 +40,12 @@ public final class ModItems {
     public static final DeferredItem<RainbowDyeItem> RAINBOW_DYE = ITEMS.register("rainbow_dye",
             () -> new RainbowDyeItem(new Item.Properties()));
 
+    public static final DeferredItem<GlintBagItem> GLINT_BAG = ITEMS.register("glint_bag",
+            () -> new GlintBagItem(new Item.Properties().stacksTo(1)));
+
+    public static final DeferredItem<TrimPowderItem> TRIM_POWDER = ITEMS.register("trim_powder",
+            () -> new TrimPowderItem(new Item.Properties()));
+
     /** BlockItem for the Glint Table. The block/BE/menu/attachment registries live in module.block /
      *  module.menu; the block holder resolves at item-registration time (blocks register first). */
     public static final DeferredItem<BlockItem> GLINT_TABLE_ITEM = ITEMS.register("glint_table",

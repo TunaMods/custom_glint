@@ -33,7 +33,7 @@ public final class IceAndFireCompat {
         // Client-only mount-armor cache cleanup wiring.
         if (FMLEnvironment.dist == Dist.CLIENT) IceAndFireClientCompat.run();
 
-        // Mount armor sync (hippogryph / hippocampus) — needed on the server to push armor stacks
+        // Mount armor sync (hippogryph / hippocampus): needed on the server to push armor stacks
         // to tracking clients via MountArmorSync. onEntityLeave's `isClientSide` guard makes it a
         // no-op on the server, so a single addListener works for both sides.
         NeoForge.EVENT_BUS.addListener(IceAndFireCompat::onStartTracking);

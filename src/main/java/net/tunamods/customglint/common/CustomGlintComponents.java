@@ -14,15 +14,16 @@ import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
  * API-jar item data component for glint state. {@link #GLINT} ({@code customglint:glint}) carries a
- * {@link GlintState} (the glint {@link CustomGlint.Data} plus the two glow fields) — the modern,
+ * {@link GlintState} (the glint {@link CustomGlint.Data} plus the glow fields): the modern,
  * codec-typed replacement for stuffing a {@code CompoundTag} into vanilla's {@code CUSTOM_DATA}.
  *
  * <p>{@link #ENTITY_GLINT} is the entity counterpart: a synced {@link AttachmentType}. NeoForge persists it
  * server-side, auto-syncs it to tracking clients on every write (so there is no manual sync packet), and
  * copies it across player respawn.
  *
- * <p>Lives in the api jar (the {@code common} package) so embedders that bundle only the api get both with
- * no wiring; {@link CustomGlintApiMod} calls {@link #register}.
+ * <p>{@link CustomGlintApiMod} calls {@link #register}. The static-imported {@code MOD_ID} names the full
+ * mod's class, which the api jar does not ship: it is a compile-time String constant, so javac folds the
+ * literal in and no runtime reference to {@code CustomGlintMod} survives.
  */
 public final class CustomGlintComponents {
     private CustomGlintComponents() {}

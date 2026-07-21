@@ -17,6 +17,9 @@ public final class ModMenuTypes {
     public static final DeferredHolder<MenuType<?>, MenuType<GlintTableMenu>> GLINT_TABLE_MENU =
             MENU_TYPES.register("glint_table", () -> IMenuTypeExtension.create(GlintTableMenu::new));
 
+    public static final DeferredHolder<MenuType<?>, MenuType<GlintBagMenu>> GLINT_BAG_MENU =
+            MENU_TYPES.register("glint_bag", () -> IMenuTypeExtension.create(GlintBagMenu::new));
+
     public static void register(IEventBus bus) {
         MENU_TYPES.register(bus);
     }

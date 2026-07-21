@@ -43,13 +43,13 @@ import java.util.List;
  * base part unchanged, then run the glint and the outline against THAT part's texture
  * ({@code CG_TEX}, side-channelled from the {@code entityCutoutNoCull} redirect that fires
  * immediately before each part draw). The body shares the dragon model, so an EQUAL-depth glint
- * would cover every face — instead the glint uses {@link CustomGlintRenderer#forArmorGlint},
+ * would cover every face; instead the glint uses {@link CustomGlintRenderer#forArmorGlint},
  * which masks to each part's armor texture cutout via EQUAL depth against the armorCutoutNoCull
  * base draw (no stencil). The glow outline is teed here per part: CE's DragonArmorFeatureRenderer
  * renders outside any vanilla layer, so the generic in-phase tee never reaches it and we capture the
  * silhouette explicitly.
  *
- * <p>Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET — first stack with a custom glint
+ * <p>Source-of-glint resolution: HEAD &gt; CHEST &gt; LEGS &gt; FEET; first stack with a custom glint
  * wins, resolved once at HEAD and reused for every part (the per-part texture mask is what keeps
  * each part's glint to its own armor).
  */
@@ -117,7 +117,7 @@ public class LayerDragonArmorMixin {
         // Draw the base armor part through the UNWRAPPED buffer, and with armorCutoutNoCull instead
         // of CE's entityCutoutNoCull. Two reasons, both tied to the dragon being glinted:
         //   (1) The wrapper auto-glints entity_* RTs, so the entityCutoutNoCull consumer CE handed us
-        //       already carried the dragon's BODY glint — drawing the armor through it stamped the
+        //       already carried the dragon's BODY glint, so drawing the armor through it stamped the
         //       body glint onto the armor.
         //   (2) The dragon armor reuses the dragon's OWN model/geometry, so armor and body sit at the
         //       SAME depth; the body glint (EQUAL depth) then draws over the armor wherever the body
@@ -158,30 +158,24 @@ public class LayerDragonArmorMixin {
             // the dragon's body glint. The per-part armor texture cutout is the mask. Routed through
             // the unwrapped `flush` so the wrapper can't re-fan it.
             CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             List<VertexConsumer> list = new ArrayList<>();
             for (int li = 0; li < layers.length; li++) {
-                int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
-                if (layers[li].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float aa = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * aa;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * aa;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * aa;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, i);
-                        if (rt != null) list.add(flush.getBuffer(rt));
+                if (CustomGlint.isChromatic(layers[li])) {
+                    // Chromatic has no PNG, so forArmorGlint skipped it and dragon armor showed no chromatic.
+                    // Off-pack, draw the in-phase chromatic cutout RT (this part's armor texture is the mask).
+                    // Under a pack that program is hijacked, so capture the part and queue the post-pass chromatic
+                    // overlay against the part texture, same as the hippogryph and hippocampus armor.
+                    if (CustomGlintRenderer.isShaderPackActive()) {
+                        LivingEntity ent = CG_ENTITY.get();
+                        if (ent != null) EntityGlintRender.captureChromaticModel(ent, model, tex, pose, light, glint, li);
+                    } else {
+                        RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, li);
+                        if (crt != null) list.add(flush.getBuffer(crt));
                     }
-                } else {
-                    int c = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                    float aa = ((c >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((c >> 16) & 0xFF) / 255.0f * aa;
-                    buf[1] = ((c >>  8) & 0xFF) / 255.0f * aa;
-                    buf[2] = ( c        & 0xFF) / 255.0f * aa;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, li, buf, 0);
-                    if (rt != null) list.add(flush.getBuffer(rt));
+                    continue;
                 }
+                CustomGlintRenderer.fanLayerBuffers(list, flush, glint, li,
+                        (l, c, i) -> CustomGlintRenderer.forArmorGlint(glint, l, c, i));
             }
             if (!list.isEmpty()) {
                 VertexConsumer combined = list.size() == 1 ? list.get(0)
@@ -189,7 +183,6 @@ public class LayerDragonArmorMixin {
                 model.renderToBuffer(pose, combined, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
             }
         }
-
     }
 
     @Inject(method = "render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILcom/iafenvoy/iceandfire/entity/DragonBaseEntity;FFFFFF)V",

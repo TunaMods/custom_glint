@@ -1,5 +1,9 @@
-custom_glint — Credits
+custom_glint credits
 
 Author: Tuna (TunaMods)
 
-Special Thanks - Kaupenjoe
+Special thanks to Kaupenjoe
+
+Textures:
+- Glint Bag and Trim Powder icons from Malcolm Riley's "unused-textures" pack:
+  https://github.com/malcolmriley/unused-textures

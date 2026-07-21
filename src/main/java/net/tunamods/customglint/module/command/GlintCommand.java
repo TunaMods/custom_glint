@@ -4,8 +4,11 @@ import java.io.BufferedWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import com.google.gson.Gson;
@@ -32,12 +35,24 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomModelData;
 
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.ModConfigPaths;
 import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.module.menu.GlintTableMenu;
+import net.tunamods.customglint.module.menu.ModAttachments;
+import net.tunamods.customglint.module.network.GlintStoredSyncPacket;
 
+/**
+ * The op-gated {@code /glint} command tree: apply, remove and glow on the held item, entity glints on a
+ * target selector, plus the cheat/extract/export utilities. Every branch is permission level 2, so it is a
+ * creative and server-admin tool; players get the same operations through the wand and the Glint Table.
+ */
 public class GlintCommand {
 
+    /** Palette the {@code colors} argument accepts, in wand-swatch order. Names match the vanilla dyes. */
     private static final Map<String, Integer> COLORS = new LinkedHashMap<>();
 
     static {
@@ -129,6 +144,8 @@ public class GlintCommand {
                 .then(Commands.argument("enabled", BoolArgumentType.bool())
                     .executes(ctx -> glow(ctx.getSource(),
                         BoolArgumentType.getBool(ctx, "enabled")))))
+            .then(Commands.literal("cheat")
+                .executes(ctx -> cheat(ctx.getSource())))
             .then(Commands.literal("extract")
                 .executes(ctx -> extract(ctx.getSource())))
             .then(Commands.literal("export")
@@ -202,28 +219,10 @@ public class GlintCommand {
                                    String designName, String colorsArg,
                                    float speed, boolean smooth, float scale, boolean simultaneous,
                                    boolean glowing) {
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
-        }
-        // Resolve via the shared helper: handles the vanilla/chromatic sentinels and namespace:name forms,
-        // and uses tryParse (not the throwing factory) so a malformed data-pack design name can't crash the tick.
-        ResourceLocation design = CustomGlint.designFromName(key);
-
-        String[] parts = colorsArg.split(",");
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
-            }
-            colors[i] = c;
-        }
+        ResourceLocation design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
 
         CustomGlint.Layer layer = new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous);
         CustomGlint.Layer[] layers = CustomGlint.ensureChromaticSeeds(new CustomGlint.Layer[]{ layer });
@@ -282,40 +281,16 @@ public class GlintCommand {
 
     private static int apply(CommandSourceStack source, String designName, String colorsArg,
                               float speed, boolean smooth, float scale, boolean simultaneous) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        String key = designName.toLowerCase();
-        if (!GlintTrimItem.PATTERNS.contains(key)) {
-            source.sendFailure(Component.literal(
-                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
-            return 0;
-        }
-        // Resolve via the shared helper: handles the vanilla/chromatic sentinels and namespace:name forms,
-        // and uses tryParse (not the throwing factory) so a malformed data-pack design name can't crash the tick.
-        ResourceLocation design = CustomGlint.designFromName(key);
+        ResourceLocation design = resolveDesign(source, designName);
+        if (design == null) return 0;
+        int[] colors = parseColors(source, colorsArg);
+        if (colors == null) return 0;
 
-        String[] parts = colorsArg.split(",");
-        int[] colors = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            String name = parts[i].trim().toLowerCase();
-            Integer c = COLORS.get(name);
-            if (c == null) {
-                source.sendFailure(Component.literal(
-                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
-                return 0;
-            }
-            colors[i] = c;
-        }
-
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         CustomGlint.write(stack, CustomGlint.ensureChromaticSeeds(
                 new CustomGlint.Layer[]{ new CustomGlint.Layer(design, colors, speed, smooth, scale, simultaneous) }));
@@ -324,19 +299,13 @@ public class GlintCommand {
     }
 
     private static int glow(CommandSourceStack source, boolean enabled) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
-        // No glint required — glow is independent of glint Data. A glow-only item (no glowColors, no
+        // No glint required; glow is independent of glint Data. A glow-only item (no glowColors, no
         // glint) outlines in white by default; if a glint is present the outline picks up its colour.
         CustomGlint.setGlowing(stack, enabled);
         source.sendSuccess(() -> Component.literal(enabled ? "Glowing outline enabled" : "Glowing outline disabled"), false);
@@ -344,17 +313,11 @@ public class GlintCommand {
     }
 
     private static int remove(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (stack.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack stack = requireHeldItem(source, player);
+        if (stack == null) return 0;
 
         if (!CustomGlint.has(stack)) {
             source.sendFailure(Component.literal("Item has no custom glint"));
@@ -366,18 +329,37 @@ public class GlintCommand {
         return 1;
     }
 
-    private static int extract(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+    /** Unlocks every Glint Table design at once: stores all built-in designs (+ the Glow Trim) into the
+     *  player's design library so the whole left palette is usable, instead of depositing each trim one by
+     *  one from creative. */
+    private static int cheat(CommandSourceStack source) {
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        // Copy before mutating; the decoded attachment list is immutable (see GlintTableMenu#slotsChanged).
+        List<String> stored = new ArrayList<>(player.getData(ModAttachments.STORED_DESIGNS.get()));
+        int before = stored.size();
+        if (!stored.contains(GlowTrimItem.STORAGE_KEY)) stored.add(GlowTrimItem.STORAGE_KEY);
+        for (String name : GlintTrimItem.PATTERNS) if (!stored.contains(name)) stored.add(name);
+
+        int added = stored.size() - before;
+        player.setData(ModAttachments.STORED_DESIGNS.get(), stored);
+        PacketDistributor.sendToPlayer(player, new GlintStoredSyncPacket(new ArrayList<>(stored)));
+        GlintTableMenu.checkDesignAdvancements(player);
+
+        final int n = added;
+        source.sendSuccess(() -> Component.literal(n == 0
+                ? "All Glint Table designs were already unlocked"
+                : "Unlocked " + n + " Glint Table design" + (n == 1 ? "" : "s")), false);
+        return 1;
+    }
+
+    private static int extract(CommandSourceStack source) {
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
+
+        ItemStack held = requireHeldItem(source, player);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
@@ -409,6 +391,8 @@ public class GlintCommand {
             // Copy the full multi-layer glint tag verbatim from the held item.
             CustomGlint.writeItemTag(trim, CustomGlint.itemGlintTag(held));
             // Set CustomModelData without calling setGlowing (which would clobber the multi-layer tag).
+            // Same index scheme as GlintTrimItem: glowing variants sit in a +1000 band, and +1 keeps
+            // index 0 (the default model) free.
             String name = layer0.design().equals(CustomGlint.VANILLA) ? "vanilla" : GlintTrimItem.extractPatternName(layer0.design());
             int idx = GlintTrimItem.PATTERNS.indexOf(name);
             if (idx >= 0) trim.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData((glowing ? 1000 : 0) + idx + 1));
@@ -420,17 +404,11 @@ public class GlintCommand {
     }
 
     private static int export(CommandSourceStack source, String name) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Must be a player"));
-            return 0;
-        }
+        ServerPlayer player = requirePlayer(source);
+        if (player == null) return 0;
 
-        ItemStack held = player.getItemInHand(InteractionHand.MAIN_HAND);
-        if (held.isEmpty()) {
-            source.sendFailure(Component.literal("Hold an item in your main hand"));
-            return 0;
-        }
+        ItemStack held = requireHeldItem(source, player);
+        if (held == null) return 0;
 
         CustomGlint.Data data = CustomGlint.read(held);
         if (data == null) {
@@ -439,7 +417,7 @@ public class GlintCommand {
         }
 
         try {
-            Path configDir = Paths.get("config/customglint/trims").toAbsolutePath();
+            Path configDir = ModConfigPaths.TRIMS_DIR;
             Files.createDirectories(configDir);
 
             JsonObject root = new JsonObject();
@@ -497,5 +475,58 @@ public class GlintCommand {
             source.sendFailure(Component.literal("Failed to export: " + e.getMessage()));
             return 0;
         }
+    }
+
+    // Shared argument/source checks. Each reports its own failure message and returns null, so callers
+    // only need a null check before carrying on.
+
+    /** The command sender as a player, or null (after sending "Must be a player") when the source isn't one. */
+    private static ServerPlayer requirePlayer(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) source.sendFailure(Component.literal("Must be a player"));
+        return player;
+    }
+
+    /** The player's main-hand item, or null (after sending "Hold an item...") when the hand is empty. */
+    private static ItemStack requireHeldItem(CommandSourceStack source, ServerPlayer player) {
+        ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (stack.isEmpty()) {
+            source.sendFailure(Component.literal("Hold an item in your main hand"));
+            return null;
+        }
+        return stack;
+    }
+
+    /** Resolves a design name to its ResourceLocation, or reports the valid names and returns null. */
+    private static ResourceLocation resolveDesign(CommandSourceStack source, String designName) {
+        String key = designName.toLowerCase();
+        if (!GlintTrimItem.PATTERNS.contains(key)) {
+            source.sendFailure(Component.literal(
+                "Unknown design '" + designName + "'. Valid: " + String.join(", ", GlintTrimItem.PATTERNS)));
+            return null;
+        }
+        // designFromName handles the vanilla/chromatic sentinels and namespace:name forms, and uses tryParse
+        // (not the throwing factory) so a malformed data-pack design name can't crash the tick.
+        return CustomGlint.designFromName(key);
+    }
+
+    /** Parses a comma-separated color-name list to ARGB (capped at MAX_COLORS_PER_LAYER, since the renderer
+     *  fans out one draw per color), or reports the offending name and returns null. */
+    private static int[] parseColors(CommandSourceStack source, String colorsArg) {
+        String[] parts = colorsArg.split(",");
+        if (parts.length > CustomGlint.MAX_COLORS_PER_LAYER)
+            parts = Arrays.copyOf(parts, CustomGlint.MAX_COLORS_PER_LAYER);
+        int[] colors = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            String name = parts[i].trim().toLowerCase();
+            Integer c = COLORS.get(name);
+            if (c == null) {
+                source.sendFailure(Component.literal(
+                    "Unknown color '" + name + "'. Valid: " + String.join(", ", COLORS.keySet())));
+                return null;
+            }
+            colors[i] = c;
+        }
+        return colors;
     }
 }

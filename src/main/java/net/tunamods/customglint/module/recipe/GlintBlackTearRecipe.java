@@ -17,6 +17,8 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** Glint Black Tear + any glinted item → the item stripped back to bare. A Glint Trim keeps its design and
+ *  loses everything else, so the trim stays usable; any other item loses the glint outright. */
 public class GlintBlackTearRecipe extends CustomRecipe {
 
     public static final SimpleCraftingRecipeSerializer<GlintBlackTearRecipe> SERIALIZER =
@@ -90,10 +92,10 @@ public class GlintBlackTearRecipe extends CustomRecipe {
         NonNullList<Ingredient> list = NonNullList.create();
         list.add(Ingredient.of(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance()));
         list.add(Ingredient.of(
-            CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.res("textures/glint/wave.png"), new int[]{0xFFFF0000}),
-            CustomGlint.glinted(Items.GOLDEN_CHESTPLATE, CustomGlint.res("textures/glint/sparkle.png"), new int[]{0xFF00AAFF}),
-            CustomGlint.glinted(Items.BOW, CustomGlint.res("textures/glint/stars.png"), new int[]{0xFFFFFF00}),
-            CustomGlint.glinted(Items.BOOK, CustomGlint.res("textures/glint/pulse.png"), new int[]{0xFF8800CC})
+            CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{0xFFFF0000}),
+            CustomGlint.glinted(Items.GOLDEN_CHESTPLATE, CustomGlint.SPARKLE, new int[]{0xFF00AAFF}),
+            CustomGlint.glinted(Items.BOW, CustomGlint.STARS, new int[]{0xFFFFFF00}),
+            CustomGlint.glinted(Items.BOOK, CustomGlint.PULSE, new int[]{0xFF8800CC})
         ));
         return list;
     }

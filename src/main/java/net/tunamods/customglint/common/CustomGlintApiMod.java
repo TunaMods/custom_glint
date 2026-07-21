@@ -10,6 +10,11 @@ import net.neoforged.neoforge.event.entity.player.ItemFishedEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.tunamods.customglint.common.client.CustomGlintClientInit;
 
+/**
+ * Entry point of the api jar. Everything wired here is server-safe except the one dist-guarded call into
+ * {@link CustomGlintClientInit}, so a mod that bundles only the api jar gets working glint storage and
+ * auto-apply on both a client and a dedicated server with no extra setup.
+ */
 @Mod(CustomGlintApiMod.MOD_ID)
 public class CustomGlintApiMod {
     public static final String MOD_ID = "customglint_api";
@@ -17,18 +22,15 @@ public class CustomGlintApiMod {
     public CustomGlintApiMod(IEventBus modEventBus) {
         // Glint item data component + synced entity-glint attachment (customglint:glint / :entity_glint).
         // The attachment auto-syncs to tracking clients, so per-instance entity glint needs no sync packet.
-        // Registered here so mods that bundle only the api jar get both with no extra wiring.
         CustomGlintComponents.register(modEventBus);
 
-        // Renderer-touching init (BEWLR outline textures, resource reload listener for the texture
-        // cache) happens only on the client. The client classes are referenced solely inside the
-        // dist guard, so the JVM never resolves CustomGlintRenderer on a dedicated server — the
-        // guarded branch (and therefore the class load) only runs on the matching dist.
+        // Client-only render init (BEWLR outline textures, texture-cache reload listener). Referenced
+        // solely inside this dist guard, so a dedicated server never loads CustomGlintRenderer.
         if (FMLEnvironment.dist == Dist.CLIENT) {
             CustomGlintClientInit.run(modEventBus);
         }
 
-        // Server-safe event listeners — only touch NBT/data registries on CustomGlint.
+        // Server-safe event listeners: only touch NBT/data registries on CustomGlint.
         NeoForge.EVENT_BUS.addListener(this::onCraft);
         NeoForge.EVENT_BUS.addListener(this::onFish);
         NeoForge.EVENT_BUS.addListener(this::onMobDrop);

@@ -1,0 +1,8 @@
+{
+    "vertex": "customglint:chromatic_composite",
+    "fragment": "customglint:chromatic_composite",
+    "samplers": [
+        { "name": "Sampler0" }
+    ],
+    "uniforms": []
+}

@@ -1,5 +1,9 @@
 package net.tunamods.customglint.module.network;
 
+import net.tunamods.customglint.module.item.ModItems;
+import net.tunamods.customglint.common.CustomGlint;
+import net.tunamods.customglint.module.item.GlintTrimItem;
+import net.tunamods.customglint.module.item.GlintWandItem;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -9,11 +13,11 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlintWandItem;
-import net.tunamods.customglint.module.item.ModItems;
 
+/**
+ * C→S: the wand editor's "give trim" button mints a finished {@link GlintTrimItem} carrying the current build.
+ * Shares {@link GlintApplyPacket}'s layer + glow-and-name wire format.
+ */
 public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static final Type<GiveGlintTrimPacket> TYPE =
@@ -43,39 +47,27 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
 
     public static void encode(FriendlyByteBuf buf, GiveGlintTrimPacket pkt) {
         GlintApplyPacket.writeLayers(buf, pkt.layers);
-        buf.writeBoolean(pkt.glowing);
-        buf.writeVarInt(pkt.glowColors.length);
-        for (int c : pkt.glowColors) buf.writeInt(c);
-        buf.writeUtf(pkt.trimName);
-        buf.writeInt(pkt.trimNameColor);
+        GlintApplyPacket.writeGlowAndName(buf, pkt.glowing, pkt.glowColors, pkt.trimName, pkt.trimNameColor);
     }
 
     public static GiveGlintTrimPacket decode(FriendlyByteBuf buf) {
-        // Shared, bounds-checked decoders: a crafted packet can't throw NegativeArraySizeException or
-        // desync the trailing fields on the network thread.
-        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, 8);
-        boolean glowing = buf.readBoolean();
-        int[] glowColors = GlintApplyPacket.readCappedColors(buf);
-        String trimName = buf.readUtf(32767);
-        int trimNameColor = buf.readInt();
-        return new GiveGlintTrimPacket(layers, glowing, glowColors, trimName, trimNameColor);
+        CustomGlint.Layer[] layers = GlintApplyPacket.readLayers(buf, GlintApplyPacket.MAX_LAYERS);
+        GlintApplyPacket.GlowName gn = GlintApplyPacket.readGlowAndName(buf);
+        return new GiveGlintTrimPacket(layers, gn.glowing(), gn.glowColors(), gn.name(), gn.nameColor());
     }
 
     public static void handle(GiveGlintTrimPacket pkt, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer player)) return;
-            // Only honored when the player actually holds the wand that opens the editor (or is an op).
-            // Without this gate any client could request the server spawn free Glint Trims into their inventory.
-            boolean wandIsWand = player.getMainHandItem().getItem() instanceof GlintWandItem
-                    || player.getOffhandItem().getItem() instanceof GlintWandItem;
-            if (!wandIsWand && !player.hasPermissions(2)) return;
+            // Holding the wand is the gate (see ModNetworking.holdsWand); without it a modified client could
+            // send this with no wand and get free painted trims.
+            if (!ModNetworking.holdsWand(player)) return;
 
             ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
 
-            // Roll a stable oil-slick seed into any unseeded chromatic layer once, so the granted trim keeps
-            // one pattern (the editor sends unseeded layers).
-            CustomGlint.Layer[] seeded = CustomGlint.ensureChromaticSeeds(pkt.layers);
-            if (seeded.length > 0) {
+            if (pkt.layers.length > 0) {
+                // Roll a unique seed into any unseeded chromatic layer (the editor builds layers without one).
+                CustomGlint.Layer[] seeded = CustomGlint.ensureChromaticSeeds(pkt.layers);
                 CustomGlint.Layer layer0 = seeded[0];
                 for (int color : layer0.colors()) GlintTrimItem.addColor(trim, color);
                 GlintTrimItem.setSpeed(trim, layer0.speed());
@@ -84,20 +76,19 @@ public class GiveGlintTrimPacket implements CustomPacketPayload {
                 GlintTrimItem.setScrollOffset(trim, layer0.scrollOffset());
                 GlintTrimItem.setPattern(trim, layer0.design());
                 GlintTrimItem.setGlowing(trim, pkt.glowing);
-                CustomGlint.setGlowing(trim, pkt.glowing);
 
-                CustomGlint.remove(trim);
+                // The GlintTrimItem setters above only seed the trim's display config + CustomModelData;
+                // each of them rewrites the glint Data as a single SEQUENTIAL layer. Write the real Data
+                // from the packet layers last so every layer's simultaneous flag (and any extra layers)
+                // is preserved, otherwise a single-layer simultaneous trim always came out sequential.
                 CustomGlint.write(trim, seeded);
                 CustomGlint.setGlowing(trim, pkt.glowing);
+                // Keep the TrimConfig seed in sync with the Data we just wrote (setPattern rolled its own,
+                // independent seed; align both so the preview, smithing transfer, and later edits agree).
+                GlintTrimItem.setSeed(trim, layer0.seed());
             }
 
-            // Apply custom name and color if provided
-            if (!pkt.trimName.isEmpty()) {
-                Component displayName = Component.literal(pkt.trimName)
-                    .withStyle(s -> s.withColor(TextColor.fromRgb((pkt.trimNameColor >>> 8) & 0xFFFFFF)));
-                trim.set(DataComponents.CUSTOM_NAME, displayName);
-            }
-
+            GlintApplyPacket.applyCustomName(trim, pkt.trimName, pkt.trimNameColor);
             player.addItem(trim);
         });
     }

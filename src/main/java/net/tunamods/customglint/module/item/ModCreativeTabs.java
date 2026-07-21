@@ -30,18 +30,20 @@ public final class ModCreativeTabs {
             })
             .displayItems((parameters, output) -> {
                 output.accept(ModItems.GLINT_WAND.get());
+                output.accept(ModItems.GLINT_BAG.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_TEAR_SIMULTANEOUS.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_TEAR_SEQUENTIAL.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_LAYER_TEAR.get().getDefaultInstance());
                 output.accept(ModItems.GLINT_BLACK_TEAR.get().getDefaultInstance());
                 output.accept(ModItems.RAINBOW_DYE.get().getDefaultInstance());
+                output.accept(ModItems.TRIM_POWDER.get());
                 output.accept(new ItemStack(ModItems.GLINT_TABLE_ITEM.get()));
                 output.accept(new ItemStack(ModItems.GLOW_TRIM.get()));
                 for (String pattern : GlintTrimItem.PATTERNS) {
                     ItemStack trim = new ItemStack(ModItems.GLINT_TRIM.get());
-                    // designFromName resolves the vanilla / chromatic sentinels and namespaced names — the
+                    // designFromName resolves the vanilla / chromatic sentinels and namespaced names. The
                     // chromatic sentinel maps to the no-PNG CHROMATIC constant, which the old inline path
-                    // mis-built as customglint:textures/glint/chromatic.png (a missing texture → blank trim).
+                    // mis-built as customglint:textures/glint/chromatic.png (a missing texture, so a blank trim).
                     GlintTrimItem.setPattern(trim, CustomGlint.designFromName(pattern));
                     output.accept(trim);
                 }

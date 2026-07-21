@@ -20,6 +20,10 @@ import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/**
+ * Smithing: Glint Trim (template) + base item + Glowstone Dust → the base item wearing the trim's glint.
+ * The glow-only counterpart is {@link GlowTrimSmithingRecipe}.
+ */
 public class GlintTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();
 
@@ -34,7 +38,10 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public boolean isBaseIngredient(ItemStack stack) {
+        // Glowstone is the addition, never the base. Excluding it here lets the smithing menu's shift-click
+        // router fall through to the addition slot instead of short-circuiting on the (occupied) base slot.
         return !stack.isEmpty()
+                && !stack.is(Items.GLOWSTONE_DUST)
                 && !(stack.getItem() instanceof GlintTrimItem)
                 && !(stack.getItem() instanceof GlowTrimItem);
     }
@@ -71,8 +78,8 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
                 : new CustomGlint.Layer[]{ new CustomGlint.Layer(pattern, colors, speed, interpolate,
                         GlintTrimItem.getScale(template), simultaneous) };
         // Commit a stable oil-slick seed into any unseeded chromatic layer here (the trim/preview carry seed 0).
-        // Smithing recomputes the result only when the input slots change, so this is a one-shot commit — the
-        // table's print-time equivalent — not a per-frame re-roll that would flicker the pattern.
+        // Smithing recomputes the result only when the input slots change, so this is a one-shot commit (the
+        // table's print-time equivalent), not a per-frame re-roll that would flicker the pattern.
         CustomGlint.write(result, CustomGlint.ensureChromaticSeeds(layers));
         if (GlintTrimItem.isGlowing(template)) CustomGlint.setGlowing(result, true);
         return result;
@@ -81,10 +88,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000)));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
         list.add(Ingredient.of(Items.GLOWSTONE_DUST));
         return list;
@@ -97,7 +101,7 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        return CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.res("textures/glint/wave.png"), new int[]{0xFFFF0000});
+        return CustomGlint.glinted(Items.DIAMOND_SWORD, CustomGlint.WAVE, new int[]{0xFFFF0000});
     }
 
     @Override
@@ -106,10 +110,14 @@ public class GlintTrimSmithingRecipe implements SmithingRecipe {
     }
 
     public static class Serializer implements RecipeSerializer<GlintTrimSmithingRecipe> {
+        // Stateless recipe: share ONE instance between both codecs. StreamCodec.unit validates on encode that
+        // the value == the captured instance (identity, no equals override), so the map codec must decode that
+        // SAME singleton, not a fresh `new` each load; otherwise recipe sync throws "Can't encode ...".
+        private static final GlintTrimSmithingRecipe INSTANCE = new GlintTrimSmithingRecipe();
         private static final MapCodec<GlintTrimSmithingRecipe> CODEC =
-                MapCodec.unit(GlintTrimSmithingRecipe::new);
+                MapCodec.unit(INSTANCE);
         private static final StreamCodec<RegistryFriendlyByteBuf, GlintTrimSmithingRecipe> STREAM_CODEC =
-                StreamCodec.unit(new GlintTrimSmithingRecipe());
+                StreamCodec.unit(INSTANCE);
 
         @Override
         public MapCodec<GlintTrimSmithingRecipe> codec() {

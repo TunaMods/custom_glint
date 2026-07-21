@@ -16,6 +16,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** GlintTrimItem (with a pattern) + 1-8 Slime Balls → the same trim at 0.5x scale per ball. */
 public class GlintTrimScaleRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimScaleRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimScaleRecipe::new);
@@ -26,45 +27,22 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
 
     @Override
     public boolean matches(CraftingInput pInv, Level pLevel) {
-        ItemStack trim = ItemStack.EMPTY;
-        int count = 0;
-        for (int i = 0; i < pInv.size(); i++) {
-            ItemStack s = pInv.getItem(i);
-            if (s.isEmpty()) continue;
-            if (s.getItem() instanceof GlintTrimItem && GlintTrimItem.getPattern(s) != null) {
-                if (!trim.isEmpty()) return false;
-                trim = s;
-            } else if (s.is(Items.SLIME_BALL)) {
-                count++;
-            } else {
-                return false;
-            }
-        }
-        return !trim.isEmpty() && count >= 1 && count <= 8;
+        return TrimRecipes.matchTrimPlusModifier(pInv, Items.SLIME_BALL) != null;
     }
 
     @Override
     public ItemStack assemble(CraftingInput pInv, HolderLookup.Provider pRegistryAccess) {
-        ItemStack trim = ItemStack.EMPTY;
-        int count = 0;
-        for (int i = 0; i < pInv.size(); i++) {
-            ItemStack s = pInv.getItem(i);
-            if (s.isEmpty()) continue;
-            if (s.getItem() instanceof GlintTrimItem) trim = s;
-            else if (s.is(Items.SLIME_BALL)) count++;
-        }
-        if (trim.isEmpty()) return ItemStack.EMPTY;
-        ItemStack result = trim.copy();
+        TrimRecipes.TrimAndCount found = TrimRecipes.scanTrimPlusModifier(pInv, Items.SLIME_BALL);
+        if (found.trim().isEmpty()) return ItemStack.EMPTY;
+        ItemStack result = found.trim().copy();
         result.setCount(1);
-        GlintTrimItem.setScale(result, count * 0.5f);
+        GlintTrimItem.setScale(result, found.count() * 0.5f); // 0.5x per slime ball, so 1..8 balls map to 0.5x..4.0x scale
         return result;
     }
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(result, 0xFFFF0000);
+        ItemStack result = TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000);
         GlintTrimItem.setScale(result, 2.0f);
         return result;
     }
@@ -75,10 +53,7 @@ public class GlintTrimScaleRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
-        GlintTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(TrimRecipes.exampleTrim(CustomGlint.WAVE, 0xFFFF0000)));
         list.add(Ingredient.of(Items.SLIME_BALL));
         return list;
     }

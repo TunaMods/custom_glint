@@ -24,14 +24,14 @@ import java.util.List;
 /**
  * Standalone-only compat: BackpackItemStackRenderer (BEWLR) iterates renderPasses from its
  * BakedModel and calls MultiBufferSource.getBuffer(RenderType) directly per pass, bypassing
- * ItemRenderer.getFoilBuffer — so ItemRendererMixin never wraps the consumer with our glint
+ * ItemRenderer.getFoilBuffer, so ItemRendererMixin never wraps the consumer with our glint
  * layers. The outline already works because it's the generic post-process silhouette driven from
  * ItemRenderer.render at the BEWLR boundary, independent of getFoilBuffer.
  *
  * At RETURN of renderByItem we re-resolve the baked model the same way SB did and submit it
  * to ItemRenderer.renderModelLists with a VertexMultiConsumer of our glint render types. SB
  * does not push/pop pose inside renderByItem, so the pose state at RETURN matches what the
- * model was rendered in — no extra translate needed.
+ * model was rendered in, so no extra translate is needed.
  *
  * isItem=false on forGlint (3D BEWLR scale 1.0), same as the troll weapon path.
  */
@@ -68,31 +68,22 @@ public class BackpackItemStackRendererMixin {
             layers[i] = new CustomGlint.Layer(l.design(), l.colors(), l.speed(), l.interpolate(),
                     l.patternScale() * CG_BACKPACK_PATTERN_SCALE, l.simultaneous());
         }
-        glint = new CustomGlint.Data(layers);
-        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
+        CustomGlint.Data scaled = new CustomGlint.Data(layers);
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
-            if (layers[li].simultaneous()) {
-                for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, i);
+            if (CustomGlint.isChromatic(layers[li])) {
+                // Chromatic has no PNG, so forGlint skipped it and the backpack showed no chromatic slick.
+                // Off-pack, draw the in-phase 3D-item chromatic slick at the special-item scale; under a pack
+                // that program is hijacked and ItemRendererMixin's special-item capture (the backpack is an
+                // isCustomRenderer BEWLR item) drains it post-pass, the same path that traces the glow ring.
+                if (!CustomGlintRenderer.isShaderPackActive()) {
+                    RenderType rt = CustomGlintRenderer.forChromaticSpecialGlint(scaled, li);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
-            } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
+                continue;
             }
+            CustomGlintRenderer.fanLayerBuffers(list, buffer, scaled, li,
+                    (l, c, i) -> CustomGlintRenderer.forGlint(scaled, l, c, false, i));
         }
         if (list.isEmpty()) return;
         VertexConsumer combined = list.size() == 1 ? list.get(0)

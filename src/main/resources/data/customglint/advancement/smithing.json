@@ -1,0 +1,45 @@
+{
+  "parent": "customglint:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:diamond_sword",
+      "components": {
+        "customglint:glint": {
+          "glint": {
+            "layers": [
+              {
+                "design": "customglint:textures/glint/sparkle.png",
+                "colors": [
+                  -32768
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "title": {
+      "translate": "advancement.customglint.smithing.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.smithing.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "smith": {
+      "trigger": "minecraft:recipe_crafted",
+      "conditions": {
+        "recipe_id": "customglint:glint_trim_smithing"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "smith"
+    ]
+  ]
+}

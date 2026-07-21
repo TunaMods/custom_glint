@@ -9,8 +9,9 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
 
 /**
- * C→S: shift-left-click an empty design in the Glint Table's left palette. The server hands the player a free
- * blank trim of that design (it carries no colors, so it's just a template). No-op if the inventory is full.
+ * C→S: shift-left-click an empty design in the Glint Table's left palette. The server hands the player a
+ * free blank trim of that design (the design carries no colors, so it's just a template). If the inventory
+ * is full it's a no-op. Carries the grid design name.
  */
 public record GlintGiveDesignPacket(String design) implements CustomPacketPayload {
 
@@ -25,10 +26,6 @@ public record GlintGiveDesignPacket(String design) implements CustomPacketPayloa
     }
 
     public static void handle(GlintGiveDesignPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                m.giveDesignCopy(pkt.design());
-            }
-        });
+        ModNetworking.withGlintTable(ctx, (sp, menu) -> menu.giveDesignCopy(pkt.design()));
     }
 }

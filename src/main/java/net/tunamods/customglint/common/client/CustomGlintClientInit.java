@@ -2,10 +2,12 @@ package net.tunamods.customglint.common.client;
 
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.tunamods.customglint.common.CustomGlintApiMod;
 
@@ -20,25 +22,27 @@ public final class CustomGlintClientInit {
     /** Invoked from the API mod constructor on client only, with the mod event bus. */
     public static void run(IEventBus modEventBus) {
         modEventBus.addListener(CustomGlintClientInit::onRegisterClientReloadListeners);
-        // Glow-outline core shaders (silhouette + composite) — mod-bus event, client only.
+        // Glow-outline core shaders (silhouette + composite): mod-bus event, client only.
         modEventBus.addListener(GlowOutlineRenderer::registerShaders);
-        // Procedural chromatic glint core shader — mod-bus event, client only.
+        // Procedural chromatic glint core shader: mod-bus event, client only.
         modEventBus.addListener(CustomGlintRenderer::registerShaders);
 
         // Release the glow-outline offscreen targets + silhouette RT caches on resource reload, so
         // they aren't pinned for the whole session.
         CustomGlintRenderer.additionalReloadCleanup.add(GlowOutlineRenderer::release);
 
-        // Once-per-frame stencil-clear gate reset, consumed by the compat stencil RTs
-        // (IaF mount armor, EK decorations) that still use pendingFrameStencilClear.
-        // RenderFrameEvent.Pre fires once per rendered frame regardless of shader pack or
-        // batched-render plumbing, which is what we need. Also resets the glow-outline
-        // per-frame capture queue + id counter.
-        NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> {
-            CustomGlintRenderer.pendingFrameStencilClear = true;
-            CustomGlintRenderer.resetStencilSlots();
-            GlowOutlineRenderer.beginFrame();
-        });
+        // Reset the glow-outline per-frame capture queue + id counter. RenderFrameEvent.Pre fires once per
+        // rendered frame regardless of shader pack or batched-render plumbing, which is what we need.
+        NeoForge.EVENT_BUS.addListener((RenderFrameEvent.Pre event) -> GlowOutlineRenderer.beginFrame());
+
+        // JEI (and other overlays) draw their ingredient-list icons in ScreenEvent.Render.Post, AFTER the
+        // container screen's own batched-glint drains (AbstractContainerScreenMixin, before its tooltip). Those
+        // overlay icons route their glint into the same batched source but nothing drained it there, so it drew
+        // a frame late at the wrong depth, so the icons looked blank. Drain once more at LOWEST priority, after
+        // JEI's own Render.Post handler has drawn (and depth-committed) its icons; a no-op when the batch is
+        // empty (every non-overlay screen already drained it).
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, (ScreenEvent.Render.Post event) ->
+                CustomGlintRenderer.drainGuiGlint());
 
         // Drain world-space item glow outlines after weather, where the live world projection /
         // modelview still match what the items were drawn with (the camera modelview hasn't been
@@ -50,8 +54,14 @@ public final class CustomGlintClientInit {
         // to the main target. Off-pack, do the whole drain immediately as before.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent event) -> {
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
-                if (CustomGlintRenderer.isShaderPackActive()) GlowOutlineRenderer.accumulateWorld();
-                else GlowOutlineRenderer.drainWorld();
+                if (CustomGlintRenderer.isShaderPackActive()) {
+                    GlowOutlineRenderer.accumulateWorld();
+                    // Chromatic can't draw in-phase under a pack; render the slick into its own target now
+                    // (matrices live, scene depth committed) and defer the blit to renderLevel TAIL.
+                    GlowOutlineRenderer.accumulateChromaticWorld();
+                } else {
+                    GlowOutlineRenderer.drainWorld();
+                }
             }
         });
     }

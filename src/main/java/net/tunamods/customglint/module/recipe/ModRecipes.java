@@ -7,6 +7,8 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.tunamods.customglint.CustomGlintMod;
 
+/** Recipe-serializer registrations. The registered names are what the recipe JSON under
+ *  {@code data/customglint/recipe/} resolves by, so renaming one breaks its JSON. */
 public final class ModRecipes {
     private ModRecipes() {}
 
@@ -43,6 +45,8 @@ public final class ModRecipes {
             RECIPE_SERIALIZERS.register("glow_trim_merge", () -> GlowTrimMergeRecipe.SERIALIZER);
     public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<GlowTrimSmithingRecipe>> GLOW_TRIM_SMITHING_SERIALIZER =
             RECIPE_SERIALIZERS.register("glow_trim_smithing", () -> GlowTrimSmithingRecipe.SERIALIZER);
+    public static final DeferredHolder<RecipeSerializer<?>, RecipeSerializer<TrimPowderRecipe>> TRIM_POWDER_SERIALIZER =
+            RECIPE_SERIALIZERS.register("trim_powder_craft", () -> TrimPowderRecipe.SERIALIZER);
 
     public static void register(IEventBus bus) {
         RECIPE_SERIALIZERS.register(bus);

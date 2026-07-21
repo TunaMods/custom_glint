@@ -29,7 +29,7 @@ import java.util.List;
 /**
  * Standalone-only ElytraSlot compat. ElytraSlot adds a dedicated Curios slot (id {@code elytra},
  * or sometimes {@code back} when its compatibility provider routes through Curios' back slot)
- * and renders the equipped elytra via its own {@code ElytraSlotLayer} — vanilla's
+ * and renders the equipped elytra via its own {@code ElytraSlotLayer}. Vanilla's
  * {@code ElytraLayer} (which our {@code ElytraLayerMixin} hooks) only checks the chestplate
  * slot, so the glint never fires for Curios-slot elytras.
  *
@@ -38,8 +38,8 @@ import java.util.List;
  * {@code translate(0, 0, 0.125)} → {@code copyPropertiesTo} → {@code setupAnim} →
  * {@code renderToBuffer} → {@code popPose}. At TAIL the pose is restored, so we re-apply the same
  * (0, 0, 0.125) offset before drawing our glint / outline. The {@code elytraModel} field still
- * holds the setupAnim state from the prior call (model rotations aren't pose state) — no need
- * to re-run setupAnim.
+ * holds the setupAnim state from the prior call (model rotations aren't pose state), so there's no
+ * need to re-run setupAnim.
  *
  * {@code ElytraRenderResult} is referenced only via {@code @Coerce Object} + reflection so this
  * compat class has zero compile/runtime dep on ElytraSlot. Same soft-compat pattern as our other
@@ -53,6 +53,15 @@ public class ElytraSlotLayerMixin {
 
     private static volatile Method CG_STACK_M;
     private static volatile Method CG_TEXTURE_M;
+
+    // Is Sodium's entity render path on the classpath this run? Gates the per-buffer glint draw below.
+    private static final boolean SODIUM_PRESENT =
+            cg_classPresent("net.caffeinemc.mods.sodium.client.render.immediate.model.EntityRenderer");
+
+    private static boolean cg_classPresent(String fqn) {
+        try { Class.forName(fqn, false, ElytraSlotLayerMixin.class.getClassLoader()); return true; }
+        catch (Throwable t) { return false; }
+    }
 
     @Inject(method = "lambda$render$0", at = @At("TAIL"), require = 0, remap = false)
     private void cg_elytraSlotGlint(LivingEntity entity, PoseStack poseStack,
@@ -79,35 +88,39 @@ public class ElytraSlotLayerMixin {
         boolean glowing = CustomGlint.hasGlowEffect(stack);
         if (glint == null && !glowing) return;
 
+        // Off pack the textured glint draws through forElytraGlint (chromatic through forElytraChromaticGlint):
+        // NEW_ENTITY RTs that ride Sodium's renderCuboid alongside the base elytra, so they quantize identically
+        // and don't z-fight the way forArmorGlint's POSITION_TEX path did under Sodium. Both test EQUAL against the
+        // base elytra's own cutout depth (no camera-ward bias), so where the closed wings overlap at the center
+        // only the nearest wing's glint matches and the far one fails: no additive seam. Under a shader pack that
+        // program is hijacked, so keep forArmorGlint in-phase there (the chromatic layers defer to the overlay drain).
+        boolean pack = CustomGlintRenderer.isShaderPackActive();
+        boolean cutout = !pack && tex != null;
+
         VertexConsumer combined = null;
+        List<VertexConsumer> list = new ArrayList<>();
+        List<Integer> chromaPackLayers = new ArrayList<>();
         if (glint != null) {
             CustomGlint.Layer[] layers = glint.layers();
-            float[] buf = CustomGlintRenderer.COLOR_BUF.get();
-            List<VertexConsumer> list = new ArrayList<>();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
-                if (layers[layerIdx].simultaneous()) {
-                    for (int i = 0; i < colors.length; i++) {
-                        float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                        buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                        buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                        buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                        buf[3] = 1.0f;
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, i);
-                        if (rt != null) list.add(buffer.getBuffer(rt));
+                if (CustomGlint.isChromatic(layers[layerIdx])) {
+                    // Under a shader pack chromatic can't draw in-phase; capture the elytra for the post-Iris
+                    // overlay drain instead (see EntityGlintRender.captureChromaticModel).
+                    if (pack) {
+                        chromaPackLayers.add(layerIdx);
+                    } else {
+                        RenderType crt = cutout
+                                ? CustomGlintRenderer.forElytraChromaticGlint(glint, layerIdx)
+                                : CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                        if (crt != null) list.add(buffer.getBuffer(crt));
                     }
-                } else {
-                    int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    float a = ((color >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( color        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, buf, 0);
-                    if (rt != null) list.add(buffer.getBuffer(rt));
+                    continue;
                 }
+                CustomGlintRenderer.fanLayerBuffers(list, buffer, glint, layerIdx, (l, c, i) -> cutout
+                        ? CustomGlintRenderer.forElytraGlint(glint, l, c, i)
+                        : CustomGlintRenderer.forArmorGlint(glint, l, c, i));
             }
-            if (!list.isEmpty()) {
+            if (!list.isEmpty() && !(cutout && SODIUM_PRESENT)) {
                 combined = list.size() == 1 ? list.get(0)
                         : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
             }
@@ -117,8 +130,23 @@ public class ElytraSlotLayerMixin {
         // preserved (model state, not pose), so the re-rendered silhouette matches the drawn wings.
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        if (combined != null) {
+        if (cutout && SODIUM_PRESENT && !list.isEmpty()) {
+            // Sodium coplanar z-fight (mirrors HorseArmorLayerMixin): a combined VertexMultiConsumer breaks
+            // Sodium's renderCuboid fast-path ("does not support optimized vertex writing"), so the glint would
+            // fall to the vanilla per-vertex path while the elytra stays on renderCuboid and the two coplanar
+            // meshes z-fight. Per-buffer walks keep every layer on renderCuboid alongside the elytra.
+            for (VertexConsumer vc : list) {
+                elytraModel.renderToBuffer(poseStack, vc, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+            }
+        } else if (combined != null) {
             elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        }
+        // Under a shader pack the in-phase chromatic program is hijacked, so capture the elytra per chromatic
+        // layer for the post-Iris overlay drain (matches the vanilla ElytraLayerMixin path).
+        if (!chromaPackLayers.isEmpty() && tex != null) {
+            for (int li : chromaPackLayers) {
+                EntityGlintRender.captureChromaticModel(entity, elytraModel, tex, poseStack, packedLight, glint, li);
+            }
         }
         // Vanilla's ElytraLayer captures the glow outline via an in-phase tee; ElytraSlot's own layer never
         // does, so a Curios-slot elytra had no ring. Capture it here (record-only re-render), keyed by the

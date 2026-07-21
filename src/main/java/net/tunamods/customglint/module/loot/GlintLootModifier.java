@@ -16,6 +16,10 @@ import net.tunamods.customglint.common.CustomGlint;
 import java.util.Map;
 import java.util.function.Supplier;
 
+/**
+ * Applies the auto-apply glints registered in {@link CustomGlint#LOOT_GLINTS} to items rolled from a loot
+ * table, keyed on the table id and the item. Tables with no registered glint pass straight through.
+ */
 public class GlintLootModifier extends LootModifier {
 
     public static final Supplier<MapCodec<GlintLootModifier>> CODEC =

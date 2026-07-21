@@ -1,0 +1,39 @@
+{
+  "parent": "customglint:ratatouille",
+  "display": {
+    "icon": {
+      "id": "customglint:glint_trim",
+      "components": {
+        "customglint:glint": {
+          "glint": {
+            "layers": [
+              { "design": "customglint:textures/glint/sparkle.png", "colors": [ -65536 ] },
+              { "design": "customglint:textures/glint/swirl.png", "colors": [ -16711936 ] },
+              { "design": "customglint:textures/glint/aurora.png", "colors": [ -16776961 ] }
+            ]
+          }
+        }
+      }
+    },
+    "title": {
+      "translate": "advancement.customglint.like_ogres.title"
+    },
+    "description": {
+      "translate": "advancement.customglint.like_ogres.description"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "layered": {
+      "trigger": "customglint:layered_trim"
+    }
+  },
+  "requirements": [
+    [
+      "layered"
+    ]
+  ]
+}

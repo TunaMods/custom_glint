@@ -16,6 +16,8 @@ import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
 
+/** {@link GlintTrimDuplicateRecipe} for an uncolored trim: the centre slot takes a patterned trim with no
+ *  colors, so a freshly looted design can be copied before it is dyed. */
 public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     public static final SimpleCraftingRecipeSerializer<GlintTrimBlankDuplicateRecipe> SERIALIZER =
             new SimpleCraftingRecipeSerializer<>(GlintTrimBlankDuplicateRecipe::new);
@@ -57,8 +59,8 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLINT_TRIM.get(), 2);
-        GlintTrimItem.setPattern(result, CustomGlint.res("textures/glint/wave.png"));
+        ItemStack result = TrimRecipes.exampleTrim(CustomGlint.WAVE);
+        result.setCount(2);
         return result;
     }
 
@@ -68,8 +70,7 @@ public class GlintTrimBlankDuplicateRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.withSize(9, Ingredient.EMPTY);
-        ItemStack trimExample = new ItemStack(ModItems.GLINT_TRIM.get());
-        GlintTrimItem.setPattern(trimExample, CustomGlint.res("textures/glint/wave.png"));
+        ItemStack trimExample = TrimRecipes.exampleTrim(CustomGlint.WAVE);
         for (int i = 0; i < 9; i++) {
             if (i == 4) list.set(i, Ingredient.of(trimExample));
             else if (i == 7) list.set(i, Ingredient.of(Items.GLOWSTONE_DUST));

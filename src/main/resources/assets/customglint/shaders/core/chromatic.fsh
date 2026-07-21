@@ -25,7 +25,7 @@ in float vCount;
 
 out vec4 fragColor;
 
-const float DENSITY = 7.0; // noise cells across one UV unit — tunable look/scale knob
+const float DENSITY = 7.0; // noise cells across one UV unit: tunable look/scale knob
 
 float hash(vec2 p) {
     p = fract(p * vec2(127.31, 311.7));
@@ -93,7 +93,7 @@ void main() {
     float bright = 0.7 + 0.3 * n2;
 
     // Master fade rides ColorModulator.a (the renderer sets ColorModulator white), times the distance fog
-    // fade and the engine glint-alpha — same fade chain vanilla rendertype_glint uses.
+    // fade and the engine glint-alpha: same fade chain vanilla rendertype_glint uses.
     float fade = linear_fog_fade(vertexDistance, FogStart, FogEnd) * GlintAlpha * ColorModulator.a;
     fragColor = vec4(col * bright * fade, 1.0);
 }

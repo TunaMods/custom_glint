@@ -1,3 +1,85 @@
+[1.7.0]
+
+Renamed the mod to Glint & Glamour (formerly Custom Glints). Nothing in your worlds changes: same items, same saves.
+
+Added:
+- /glint cheat to unlock every Glint Table design at once
+- Several Advancements
+- Trim import to the Glint Table: save any build you preview to a file and pull it back later as a build target that unlocks once you print it
+- On servers, operators can share a set of blueprint trims that everyone sees in the import list
+- The Glint Table now lets you build and preview a trim from any design, dye, glow, or name freely; the materials are only required and consumed when you print
+- Manual glow lets you pick up to 8 glow colors in the Glint Table's color strip (right-click the Auto/Manual button to edit them) instead of a single color
+- The glow outline can now animate at its own speed and either blend smoothly or step between colors, set alongside the glow in the Glint Table
+- You can build and print a standalone Glow Trim at the Glint Table, choosing its glow colors and cycle speed
+- Save Design in the wand editor: save your current build to the server so anyone can import it later through the wand or the Glint Table (delete saved designs from the Import list with the trash icon)
+- Hover tooltips on every button and control, in both the wand editor and the Glint Table
+- Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
+- Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
+- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it; trims go to its library, materials into its slots
+- Trim Powder: smelt a trim you don't want into powder, then craft 4 powder with 2 Glowstone Dust for a fresh random trim
+
+Fixed:
+- The wand editor now works in survival as long as you're holding the wand, instead of requiring creative mode
+- Importing a trim in the wand editor now keeps its glow colors instead of dropping them, and refills its custom name
+- The wand editor's Import search box now accepts typed text
+- Importing a trim you already own no longer leaves a duplicate in the Glint Table's printed list
+- Every color on every layer of a printed trim now costs its own dye, counted separately each time a shade is reused (a matching dye per shade, a Rainbow Dye per custom color); the Print tooltip lists the dyes and the button waits until you have them
+- The Glint Table's Import list now draws above item icons and glint effects instead of being hidden behind them
+- The Glint Table's "add a color" warning shows whenever any layer is missing a color, not only the layer you are editing
+- A glowing item's inventory halo now cycles in step with its tinted edge instead of drifting out of sync
+- /glint glow no longer needs a glint on the item or entity; a glowing outline can stand on its own and shows white when there's no glint color
+- The Glint Table now drops itself when broken
+- Picking black for a glint color now hides that layer, so you can leave a gap in a design
+- JEI now lists every trim design, and clicking any trim shows all its recipes again (coloring, speed, scale, opacity, duplicating, merging)
+- The opacity recipe (a trim plus glass) now shows in JEI
+- The glow trim recipes in JEI now show the glow outline on their result
+- A glowing item's outline in JEI recipe views now draws behind the tooltip instead of over it
+- Glow Trims now show their dyeing recipe in JEI
+- Fixed glint table recipe
+- Chromatic glint designs now render with a shader pack installed instead of turning invisible
+- Hotbar item glints no longer disappear after reloading shaders (they used to come back only when you opened chat or rejoined the world)
+- A glowing armor's outline no longer bleeds over the wearer's bare arms and legs; the whole figure now takes one clean outline
+- A glow outline is no longer washed out where a chromatic glint sits behind it
+- The Glint Table no longer deletes a white color when you load or click a trim's layer; a real white shard stays, and only an empty layer starts colorless
+- With a shader pack on, a glow outline no longer shows as a thin line through the wearer; the part hidden behind the body stays hidden
+
+Altered:
+- Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
+- The Glint Table's Print tooltip is tidier, dropping the "Can't print yet" and "Consumes" headings
+- The Glint Table's layer row now stays visible, and the color row appears once you start building a trim
+- Glint Table tooltips are now a clean white to match the wand editor
+- The Glint Table's main slot shows the trim you are building with all its committed layers; a trim in the merge slot only joins the preview until you commit it with the + button
+- Making a trim glow now costs one glowstone per layer
+- Sequential multi-color layers now cost a sequential tear, matching how simultaneous layers cost a simultaneous tear
+- Chest loot now drops blank trims so matching ones stack, with Glow Trims mixed into the trim drop as the rarer variant instead of a separate roll
+
+[Compat]
+- Punchy: the held-item glow outline now renders correctly with its first-person animations, including under shader packs
+- Gnetum: works out of the box, no compatibility patch needed
+- Enhanced Visuals: works out of the box, no compatibility patch needed
+- Epic Fight: glowing entities keep their glow outline while Epic Fight renders them with its own animations
+- Iron's Spells 'n Spellbooks and other GeckoLib armor: worn armor now takes custom glints and glow outlines
+- Immersive Armors: the mod's layered armor now takes custom glints and glow outlines while worn
+- Mekanism: the MekaSuit, Jetpacks, Free Runners and their armored variants, and the Scuba tank and mask now take custom glints and glow outlines while worn
+- Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
+- Elytra Slot: an elytra worn in the mod's dedicated slot now takes custom glints and glow outlines, including the Chromatic design
+
+[Compat fixes]
+- Ice and Fire (Community Edition): a glinted dragon's wings now cut to the membrane shape under
+  a shader pack instead of drawing solid planes across each wing.
+- Ice and Fire (Community Edition): hippogryph and hippocampus armor now shows the Chromatic
+  design, and with shaders on a mount's chromatic no longer bleeds across its armor.
+- Ice and Fire (Community Edition): a glinted hippogryph or hippocampus no longer paints its
+  glint onto its saddle, bridle and chest harness.
+- Ice and Fire (Community Edition): dragon armor now shows the Chromatic design.
+- Ice and Fire (Community Edition): troll weapons and the deathworm gauntlet now show the
+  Chromatic design, with shaders on or off.
+- Epic Knights: armor decorations now show the Chromatic design, with shaders on or off.
+- Sophisticated Backpacks: worn and held backpacks now show the Chromatic design, with shaders
+  on or off.
+- Photon: glints keep their colors while the pack is on. They used to drop to plain grey on
+  items, armor and entities alike.
+
 [1.6.0]
 
 - Added the Glint Table: a block for building and printing trims with a slot-based editor, crafted from iron blocks, a crafting table, a smithing table, and a Glint Trim

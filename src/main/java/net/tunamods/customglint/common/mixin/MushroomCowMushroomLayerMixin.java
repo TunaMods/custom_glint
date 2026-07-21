@@ -17,8 +17,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Folds a mooshroom's mushrooms into the glow outline. The mushrooms are BLOCK models drawn via
- * {@code BlockRenderDispatcher.renderSingleBlock} — not an EntityModel through {@code renderColoredCutoutModel}
- * — so no generic surface tee reaches them. Stash the entity at render HEAD, then on each mushroom's
+ * {@code BlockRenderDispatcher.renderSingleBlock}, not an EntityModel through {@code renderColoredCutoutModel},
+ * so no generic surface tee reaches them. Stash the entity at render HEAD, then on each mushroom's
  * {@code renderSingleBlock} draw the real block and, when the entity glows, re-render it into a record-only
  * capturing buffer and queue the silhouette under the entity's CAT_ENTITY id (merges with the cow's body ring).
  */
@@ -54,7 +54,7 @@ public class MushroomCowMushroomLayerMixin {
         if (entity == null || entity.isInvisible()) return;
         EntityGlintRender.Resolution r = EntityGlintRender.instanceResolver.resolve(entity);
         if (r == null || !(r.glowing || r.glowColors.length > 0)) return;
-        // Record-only re-render (a second block draw is fine here — niche entity, and it keeps the real draw
+        // Record-only re-render (a second block draw is fine here: niche entity, and it keeps the real draw
         // on Sodium's fast path). The mushroom block traces against the block atlas, full-fill = its shape.
         GlowOutlineRenderer.CapturingBufferSource cap = new GlowOutlineRenderer.CapturingBufferSource(null);
         dispatcher.renderSingleBlock(state, pose, cap, light, overlay);

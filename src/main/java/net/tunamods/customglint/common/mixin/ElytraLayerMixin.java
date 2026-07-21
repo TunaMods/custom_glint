@@ -28,11 +28,11 @@ import java.util.List;
 
 /**
  * Two hooks on {@code ElytraLayer.render}:
- *  1. {@link Redirect} on the vanilla elytra {@code renderToBuffer} — the IN-PHASE glow TEE. The elytra
+ *  1. {@link Redirect} on the vanilla elytra {@code renderToBuffer}: the IN-PHASE glow TEE. The elytra
  *     wings are drawn once by vanilla (inside its {@code translate(0,0,0.125)} push/pop); we route that
  *     single walk through a recording consumer to capture the glow silhouette in place, instead of a second
  *     re-render. Keyed by the elytra STACK so it keeps its own ring. No-op capture when not glowing.
- *  2. {@link Inject} at RETURN — draws the custom GLINT (vanilla doesn't), re-applying the 0.125 offset.
+ *  2. {@link Inject} at RETURN, draws the custom GLINT (vanilla doesn't), re-applying the 0.125 offset.
  * Both honor vanilla's {@code shouldRender} so a Mekanism-style subclass layer doesn't double-draw.
  */
 @Mixin(ElytraLayer.class)
@@ -58,6 +58,8 @@ public class ElytraLayerMixin {
         if (!entity.isInvisible() && !stack.isEmpty() && CustomGlint.hasGlowEffect(stack)) {
             ResourceLocation tex = ((ElytraLayer) (Object) this).getElytraTexture(stack, entity);
             if (tex != null) {
+                // Priority 1 (worn armor and the body use 0): the composite sorts low priority first, so the
+                // elytra's ring draws last and stays on top of the body/armor it covers at the seam.
                 spec = new EntityGlintRender.OutlineSpec(stack, tex, CustomGlintRenderer.resolveGlowColor(stack),
                         GlowOutlineRenderer.CAT_ARMOR, 1);
             }
@@ -95,10 +97,18 @@ public class ElytraLayerMixin {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
 
         List<VertexConsumer> list = new ArrayList<>();
+        List<Integer> chromaPackLayers = new ArrayList<>();
+        boolean pack = CustomGlintRenderer.isShaderPackActive();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
             if (CustomGlint.isChromatic(layers[layerIdx])) {
-                RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
-                if (crt != null) list.add(buffer.getBuffer(crt));
+                // Under a shader pack chromatic can't draw in-phase; capture the elytra for the post-Iris
+                // overlay drain instead (see EntityGlintRender.captureChromaticModel).
+                if (pack) {
+                    chromaPackLayers.add(layerIdx);
+                } else {
+                    RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
+                    if (crt != null) list.add(buffer.getBuffer(crt));
+                }
                 continue;
             }
             int[] colors = layers[layerIdx].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[layerIdx].colors();
@@ -123,13 +133,24 @@ public class ElytraLayerMixin {
                 if (rt != null) list.add(buffer.getBuffer(rt));
             }
         }
-        if (list.isEmpty()) return;
-        VertexConsumer combined = list.size() == 1 ? list.get(0)
-                : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
-        // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset.
+        if (list.isEmpty() && chromaPackLayers.isEmpty()) return;
+        // Vanilla's render pops the pose before returning, so re-apply the elytra's (0, 0, 0.125) offset for
+        // both the in-phase glint draw and the chromatic capture (so the captured verts match the drawn wings).
         poseStack.pushPose();
         poseStack.translate(0.0f, 0.0f, 0.125f);
-        elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        if (!list.isEmpty()) {
+            VertexConsumer combined = list.size() == 1 ? list.get(0)
+                    : VertexMultiConsumer.create(list.toArray(new VertexConsumer[0]));
+            elytraModel.renderToBuffer(poseStack, combined, packedLight, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        }
+        if (!chromaPackLayers.isEmpty()) {
+            ResourceLocation ctex = ((ElytraLayer) (Object) self).getElytraTexture(stack, entity);
+            if (ctex != null) {
+                for (int li : chromaPackLayers) {
+                    EntityGlintRender.captureChromaticModel(entity, elytraModel, ctex, poseStack, packedLight, glint, li);
+                }
+            }
+        }
         poseStack.popPose();
     }
 

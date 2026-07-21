@@ -22,7 +22,7 @@ import net.tunamods.customglint.module.item.ModItems;
 /**
  * Smithing: Glow Trim (template) + base item + Glowstone Dust → base item with
  * glowColors+glowing applied via {@link CustomGlint#setGlowColors}. Does NOT touch any
- * existing glint Data on the base — Glow Trim is strictly a glow-only application.
+ * existing glint Data on the base. Glow Trim is strictly a glow-only application.
  */
 public class GlowTrimSmithingRecipe implements SmithingRecipe {
     public static final Serializer SERIALIZER = new Serializer();
@@ -37,7 +37,10 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
 
     @Override
     public boolean isBaseIngredient(ItemStack stack) {
+        // Glowstone is the addition, never the base. Excluding it here lets the smithing menu's shift-click
+        // router fall through to the addition slot instead of short-circuiting on the (occupied) base slot.
         return !stack.isEmpty()
+                && !stack.is(Items.GLOWSTONE_DUST)
                 && !(stack.getItem() instanceof GlowTrimItem)
                 && !(stack.getItem() instanceof GlintTrimItem);
     }
@@ -64,15 +67,15 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
         result.setCount(1);
         CustomGlint.setGlowColors(result, colors);
         CustomGlint.setGlowing(result, true);
+        // Carry the trim's glow-cycle speed + interpolation onto the item so its outline animates as designed.
+        CustomGlint.setGlowAnim(result, CustomGlint.getGlowSpeed(template), CustomGlint.getGlowInterpolate(template));
         return result;
     }
 
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        ItemStack trimExample = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(trimExample, 0xFFFF0000);
-        list.add(Ingredient.of(trimExample));
+        list.add(Ingredient.of(TrimRecipes.exampleGlowTrim(0xFFFF0000)));
         list.add(Ingredient.of(Items.DIAMOND_SWORD, Items.DIAMOND_CHESTPLATE, Items.BOW, Items.BOOK, Items.ELYTRA));
         list.add(Ingredient.of(Items.GLOWSTONE_DUST));
         return list;
@@ -96,10 +99,13 @@ public class GlowTrimSmithingRecipe implements SmithingRecipe {
     }
 
     public static class Serializer implements RecipeSerializer<GlowTrimSmithingRecipe> {
+        // Stateless recipe: share ONE instance so the map codec decodes the same singleton the StreamCodec.unit
+        // encode-check expects (identity equality). A fresh `new` per load would throw "Can't encode ..." on sync.
+        private static final GlowTrimSmithingRecipe INSTANCE = new GlowTrimSmithingRecipe();
         private static final MapCodec<GlowTrimSmithingRecipe> CODEC =
-                MapCodec.unit(GlowTrimSmithingRecipe::new);
+                MapCodec.unit(INSTANCE);
         private static final StreamCodec<RegistryFriendlyByteBuf, GlowTrimSmithingRecipe> STREAM_CODEC =
-                StreamCodec.unit(new GlowTrimSmithingRecipe());
+                StreamCodec.unit(INSTANCE);
 
         @Override
         public MapCodec<GlowTrimSmithingRecipe> codec() {

@@ -6,7 +6,7 @@
 // skeleton as vanilla rendertype_glint.vsh, but the chromatic design has no texture: the fragment shader
 // synthesises an oil-slick from value-noise. The per-layer payload that the RenderType can't carry as a
 // uniform rides spare slots of the TextureMat (fed by CustomGlintRenderer's chromatic texture matrix):
-//   TextureMat[2][3] = per-trim seed   (decorrelates each trim's pattern — "no two look alike")
+//   TextureMat[2][3] = per-trim seed   (decorrelates each trim's pattern: "no two look alike")
 //   TextureMat[2][0] = morph speed     (scales the GameTime-driven flow)
 //   TextureMat[2][1] = colour count    (0 => rainbow fallback; 1..8 => palette texels)
 // The 2D part of TextureMat still scales/positions the noise UV exactly like the normal glint.

@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.tunamods.customglint.module.compat.immersivearmors.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "ArmorPieceMixin",
+    "PieceRenderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

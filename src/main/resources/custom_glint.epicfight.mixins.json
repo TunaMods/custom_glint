@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "net.tunamods.customglint.module.compat.epicfight.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "PatchedLivingEntityRendererMixin",
+    "WearableItemLayerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

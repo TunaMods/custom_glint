@@ -63,6 +63,21 @@ public final class ModComponents {
                     .persistent(Codec.INT.listOf())
                     .networkSynchronized(ByteBufCodecs.fromCodec(Codec.INT.listOf())));
 
+    /** Marks a printed-library trim that was imported from a config file but not yet crafted: it renders
+     *  dimmed in the Glint Table's right grid and can't be withdrawn until the player prints a matching
+     *  trim, which clears the flag. Present (true) = locked; absent = a normal, owned printed trim. */
+    public static final Supplier<DataComponentType<Boolean>> IMPORT_LOCKED =
+            DATA_COMPONENTS.registerComponentType("import_locked", b -> b
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
+
+    /** Glint Bag auto-collect toggle. Absent = on (the default for a fresh bag); {@code false} = off. Drives
+     *  both the pickup/sweep behaviour and the golden glint/glow that marks it. */
+    public static final Supplier<DataComponentType<Boolean>> BAG_AUTO_COLLECT =
+            DATA_COMPONENTS.registerComponentType("bag_auto_collect", b -> b
+                    .persistent(Codec.BOOL)
+                    .networkSynchronized(ByteBufCodecs.BOOL));
+
     public static void register(IEventBus modEventBus) {
         DATA_COMPONENTS.register(modEventBus);
     }

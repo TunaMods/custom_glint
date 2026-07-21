@@ -1,5 +1,5 @@
-Custom Glints - developer documentation
-Minecraft 1.21.1 / NeoForge 21.x - MIT license (attribution required)
+Glint & Glamour developer documentation
+Minecraft 1.21.1 / NeoForge 21.x. MIT license (attribution required)
 ================================================================================
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
@@ -12,11 +12,11 @@ built-in designs, extensible via data packs.
   Two artifacts
 ================================================================================
 
-  custom-glint-api-<ver>.jar   (modid: customglint_api)
+  glint-and-glamour-api-<ver>.jar   (modid: customglint_api)
       Rendering pipeline + Java API. No wand, recipes, or /glint command.
       Bundle this via jarJar.
 
-  customglint-<ver>.jar        (modid: customglint + customglint_api)
+  Glint-and-Glamour-<ver>.jar        (modid: customglint + customglint_api)
       Full standalone download. Adds wand, Glint Trim / Glow Trim / Tear
       items, recipes, /glint command, loot modifiers, JEI integration.
       The api jar is nested inside via META-INF/jarjar/.
@@ -33,22 +33,22 @@ In build.gradle:
 
     repositories {
         maven {
-            name = "TunaMods Custom Glints"
+            name = "TunaMods Glint & Glamour"
             url = "https://raw.githubusercontent.com/TunaMods/custom_glint/1.21.1/mcmodsrepo"
         }
     }
 
     dependencies {
-        jarJar(implementation("net.tunamods.customglint:custom-glint-api")) {
+        jarJar(implementation("net.tunamods.customglint:glint-and-glamour-api")) {
             version {
-                strictly "[1.5.0,2.0)"
-                prefer "1.5.0"
+                strictly "[1.7.0,2.0)"
+                prefer "1.7.0"
             }
         }
     }
 
 This compiles your mod against the api and embeds it in your jar. ModDevGradle
-nests jarJar dependencies automatically - there is no jarJar.enable() call and
+nests jarJar dependencies automatically. There is no jarJar.enable() call and
 no separate jarJar task. Build with `./gradlew build`; the api is packed into
 the normal build/libs/yourmod-<version>.jar (no -all classifier).
 
@@ -63,7 +63,7 @@ Alternative: declare as a hard / soft dep instead of bundling.
     [[dependencies.yourmodid]]
         modId="customglint_api"
         type="required"
-        versionRange="[1.5,)"
+        versionRange="[1.7,)"
         ordering="NONE"
         side="BOTH"
 
@@ -175,8 +175,8 @@ Tag-level helpers for packets, NBT files, and snapshot / restore:
   CompoundTag      fresh    = CustomGlint.toTag(layers);
 
 Client-side mutations (writeEntity / setEntityGlowing / setEntityGlowColors called
-on the client — preview UIs, replay viewers, entities reconstructed from stored
-NBT) render immediately without waiting for a server broadcast. If you need to
+on the client, for preview UIs, replay viewers, or entities reconstructed from
+stored NBT) render immediately without waiting for a server broadcast. If you need to
 force a re-sync after manually editing the entity's persistent NBT, call the
 client-only helper:
 
@@ -220,35 +220,76 @@ pipeline directly via the hooks below if your mod ships one.
 
 
 ================================================================================
+  Specifically supported mods
+================================================================================
+
+These integrations ship in the FULL standalone jar only, NOT in the bundled
+api jar. Each targets the other mod by class name with a soft mixin (no hard
+dependency) and no-ops when the mod is absent, so a modpack without the mod is
+never affected.
+
+  Ice and Fire          - troll weapons, death worm gauntlets, dragon armor,
+                          hippogryph armor, and hippocampus armor take glints
+                          and glow outlines.
+  Epic Knights          - armor decoration overlays (capes, tabards, trims)
+  (magistuarmory)         take glints.
+  Epic Fight            - glowing entities keep their glow outline while Epic
+                          Fight renders them with its own animated meshes.
+  Iron's Spells         - worn armor takes glints and glow outlines. Covers any
+  ('n Spellbooks)         mod whose armor draws through GeckoLib's
+                          GeoArmorRenderer (Ars Nouveau and the like too).
+  Immersive Armors      - the mod's layered armor takes glints and glow
+                          outlines while worn, though it draws each piece with
+                          its own model instead of the vanilla armor layer.
+  Mekanism              - the MekaSuit, Jetpacks, Free Runners and their armored
+                          variants, and the Scuba tank and mask take glints and
+                          glow outlines while worn.
+  Artifacts             - belts, necklaces, gloves, boots and other artifacts
+                          worn in Curios slots take glints and glow outlines.
+  Sophisticated         - backpacks glint across all of their render passes.
+  Backpacks
+  ElytraSlot            - an elytra worn in the dedicated Curios slot glints
+                          like a chestplate elytra.
+  First-Person Model    - held-item glow outlines stay aligned in its 3.5D
+                          body view.
+  JEI                   - the Glint Trim, Glow Trim, Tear, smithing, and Rainbow
+                          Dye recipes and info pages show in the recipe view.
+
+Modded armor and held items that go through the normal ItemRenderer / armor
+layer flow are handled automatically, with no per-mod integration.
+
+
+================================================================================
   Advanced rendering hooks
 ================================================================================
 
-Client-only. Gate any reference with FMLEnvironment / DistExecutor.
+Client-only. Gate any reference with FMLEnvironment.dist.
 
   import net.tunamods.customglint.common.client.CustomGlintRenderer;
 
-  int argb = CustomGlintRenderer.outlineColor(stack);
+  // Glow color for an item, from its glow-color or glint NBT (white if neither)
+  int argb  = CustomGlintRenderer.resolveGlowColor(stack);
+  int frame = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
 
-  // RenderType factories (cached, self-register into fixedBuffers)
+  // Glint RenderType factories (cached, self-register into fixedBuffers). Pick the
+  // one whose depth matches the base draw, or the EQUAL-depth glint z-fights:
+  //   forGlint           - held items and BEWLR models
+  //   forArmorGlint      - armorCutoutNoCull surfaces (view-offset depth)
+  //   forHorseArmorGlint - entityCutoutNoCull surfaces (no polygon offset)
   RenderType rt  = CustomGlintRenderer.forGlint(glint, layerIdx, frameColor, isItem, colorIdx);
   RenderType rtA = CustomGlintRenderer.forArmorGlint(glint, layerIdx, frameColor, colorIdx);
   RenderType rtH = CustomGlintRenderer.forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx);
 
-  // Two-pass stencil outline for entity / armor models
-  CustomGlintRenderer.doModelOutline(poseStack, bufferSource, packedLight,
-      model, modelTexture, glint, equipmentSlot);
-
-  // Stencil outline for an item (BEWLR + flat-sprite paths)
-  CustomGlintRenderer.doItemOutline(stack, displayContext, poseStack,
-      bufferSource, packedLight, overlay);
-
   // Public ThreadLocals
-  CustomGlintRenderer.CURRENT_ITEM_STACK
-  CustomGlintRenderer.IN_OUTLINE
-  CustomGlintRenderer.COLOR_BUF
+  CustomGlintRenderer.CURRENT_ITEM_STACK   // set while an item is rendering
+  CustomGlintRenderer.IN_OUTLINE           // recursion guard during outline capture
+  CustomGlintRenderer.COLOR_BUF            // scratch float[4] for a frame color
 
-  // Optional gate to suppress outlines (true = skip)
-  CustomGlintRenderer.outlineSuppressor = () -> shouldSuppress();
+The glow outline is a post-process pass, captured automatically from the vanilla
+item, armor, and entity draws. There is no per-call outline draw method. A
+custom renderer that bypasses the item-foil buffer drives it the way the bundled
+mod compat does: fan the glint through a RenderType factory above, and route the
+same mesh into GlowOutlineRenderer to capture its silhouette.
 
 
 ================================================================================

@@ -13,6 +13,7 @@ import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleCraftingRecipeSerializer;
 import net.minecraft.world.level.Level;
 
+import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import net.tunamods.customglint.module.item.ModItems;
@@ -46,7 +47,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
             }
         }
         return filled == 2 && !trim.isEmpty() && !dye.isEmpty()
-                && GlowTrimItem.getColors(trim).length < 8;
+                && GlowTrimItem.getColors(trim).length < CustomGlint.MAX_COLORS_PER_LAYER;
     }
 
     @Override
@@ -72,9 +73,7 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
 
     @Override
     public ItemStack getResultItem(HolderLookup.Provider pRegistryAccess) {
-        ItemStack result = new ItemStack(ModItems.GLOW_TRIM.get());
-        GlowTrimItem.addColor(result, 0xFFFF0000);
-        return result;
+        return TrimRecipes.exampleGlowTrim(0xFFFF0000);
     }
 
     @Override
@@ -83,13 +82,8 @@ public class GlowTrimDyeRecipe extends CustomRecipe {
     @Override
     public NonNullList<Ingredient> getIngredients() {
         NonNullList<Ingredient> list = NonNullList.create();
-        list.add(Ingredient.of(new ItemStack(ModItems.GLOW_TRIM.get())));
-        list.add(Ingredient.of(
-            Items.WHITE_DYE, Items.ORANGE_DYE, Items.MAGENTA_DYE, Items.LIGHT_BLUE_DYE,
-            Items.YELLOW_DYE, Items.LIME_DYE, Items.PINK_DYE, Items.GRAY_DYE,
-            Items.LIGHT_GRAY_DYE, Items.CYAN_DYE, Items.PURPLE_DYE, Items.BLUE_DYE,
-            Items.BROWN_DYE, Items.GREEN_DYE, Items.RED_DYE, Items.BLACK_DYE
-        ));
+        list.add(Ingredient.of(TrimRecipes.exampleGlowTrim()));
+        list.add(TrimRecipes.anyDye());
         return list;
     }
 

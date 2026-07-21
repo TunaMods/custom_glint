@@ -27,10 +27,12 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.neoforged.neoforge.client.event.RegisterShadersEvent;
 import net.tunamods.customglint.common.CustomGlint;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fStack;
 import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
 
+import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -58,10 +60,10 @@ import java.util.Optional;
  * shader pack the world drain splits into accumulate-now (see {@link #accumulateWorld()}) and
  * composite-at-{@code renderLevel}-TAIL (see {@link #compositeWorld()}).
  *
- * <p><b>Occlusion</b> — the silhouette pass occludes against the scene: it binds the main depth texture to
+ * <p><b>Occlusion</b>: the silhouette pass occludes against the scene by binding the main depth texture to
  * sampler unit 1 (safe, because that pass writes the offscreen MASK, not the main target) and discards
  * silhouette fragments behind world geometry, so a world item behind a wall doesn't ring. The remaining
- * deferred case is composite-stage <i>through-wall</i> occlusion — the composite cannot sample the main
+ * deferred case is composite-stage <i>through-wall</i> occlusion. The composite cannot sample the main
  * target's depth while also writing its colour (reading an attachment of the bound framebuffer is undefined
  * and returns garbage on some drivers / under Sodium, which crackled the ring), so it would need a
  * format-matched depth COPY (the main target is DEPTH+STENCIL, so a plain-DEPTH blit fails). The ring is a
@@ -74,12 +76,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private GlowOutlineRenderer() { super("", () -> {}, () -> {}); }
 
     // ── Outline categories + per-object id keys ────────────────────────────────
-    // key = (category << 5) | id : top 2 bits = category, low 5 = a running 1..31 id. Stamped into the
-    // silhouette's vertex-colour alpha so the composite can keep each object's ring separate and pick a
-    // per-category thickness (see glow_composite.fsh THICKNESS[]).
+    // key = (category << 5) | id : the low 5 bits are a running 1..31 id, the bits above them the category
+    // (so a key never exceeds 127 and fits the vertex-colour alpha byte). Stamped into the silhouette's
+    // vertex-colour alpha so the composite can keep each object's ring separate and pick a per-category
+    // thickness (see glow_composite.fsh THICKNESS[]).
     public static final int CAT_ENTITY = 0, CAT_ARMOR = 1, CAT_ITEM = 2, CAT_HELD_FP = 3;
 
-    // Per-category ring thickness in texels — MUST mirror glow_composite.fsh THICKNESS[]. Drives the
+    // Per-category ring thickness in texels. MUST mirror glow_composite.fsh THICKNESS[]. Drives the
     // composite kernel radius and the per-job scissor pad for whichever categories a single drain contains.
     private static final int[] CAT_THICKNESS = { 4, 4, 3, 7 };
 
@@ -141,7 +144,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // Dedicated mask for the deferred under-shader-pack world drain. The world silhouettes are accumulated at
     // AFTER_WEATHER but composited at renderLevel TAIL; in between, the first-person hand drain clears + rewrites
     // the SHARED maskTarget, so the deferred world composite needs its own untouched mask (else it would
-    // composite the hand's silhouette at the world's box positions — a doubled, floating ring).
+    // composite the hand's silhouette at the world's box positions, a doubled, floating ring).
     private static TextureTarget worldDeferredMask;
 
     private static void ensureTarget(int width, int height) {
@@ -149,11 +152,11 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     }
 
     /** Create or resize a NEAREST RGBA+depth mask target. useDepth=true: the silhouette pass depth-tests
-     *  (LEQUAL) against the mask's OWN depth so only the front-most fragment per pixel writes — without it the
+     *  (LEQUAL) against the mask's OWN depth so only the front-most fragment per pixel writes; without it the
      *  model's NO_CULL back faces (always "behind" the front face that's in the scene depth) would overwrite
      *  the front face's occlusion verdict and punch holes. The OCCLUSION test itself samples the MAIN depth
      *  texture (Sampler1, bound at drain), safe because the silhouette writes the MASK, not the main target.
-     *  Fully recreate on size change rather than resize() — a window resize otherwise left the depth
+     *  Fully recreate on size change rather than resize(): a window resize otherwise left the depth
      *  attachment in a state where the silhouette's LEQUAL test silently dropped every fragment. */
     private static TextureTarget ensureTarget(TextureTarget t, int width, int height) {
         if (t != null && (t.width != width || t.height != height)) {
@@ -172,7 +175,9 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     public static void release() {
         if (maskTarget != null) { maskTarget.destroyBuffers(); maskTarget = null; }
         if (worldDeferredMask != null) { worldDeferredMask.destroyBuffers(); worldDeferredMask = null; }
+        if (chromaticTarget != null) { chromaticTarget.destroyBuffers(); chromaticTarget = null; }
         texSilhouetteRTs.clear();
+        texSilhouetteTriRTs.clear();
         rtTextureCache.clear();
     }
 
@@ -186,10 +191,17 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  fragment wins), no blend; the shader alpha-discards against {@code tex} so the mask traces the real
      *  shape. The name must be unique per texture (RenderType identity includes it). */
     private static RenderType buildSilhouetteRT(String name, ResourceLocation tex) {
+        return buildSilhouetteRT(name, tex, VertexFormat.Mode.QUADS);
+    }
+
+    // {@code mode} lets a caller build a TRIANGLES-mode silhouette RT for a silhouette captured from a
+    // triangle-list draw (Epic Fight patched-entity meshes). A QUADS RT fed triangle-list vertices
+    // reassembles them wrong and the mask shatters.
+    private static RenderType buildSilhouetteRT(String name, ResourceLocation tex, VertexFormat.Mode mode) {
         return RenderType.create(
                 name,
                 DefaultVertexFormat.NEW_ENTITY,
-                VertexFormat.Mode.QUADS,
+                mode,
                 1024,
                 false,
                 false,
@@ -233,19 +245,28 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 t -> buildSilhouetteRT("customglint:glow_silhouette_tex_" + t, t));
     }
 
+    // TRIANGLES-mode counterpart of silhouetteTexRT, for triangle-list silhouette captures (Epic Fight
+    // patched-entity meshes). Cached separately; cleared on resource reload.
+    private static final Map<ResourceLocation, RenderType> texSilhouetteTriRTs = new HashMap<>();
+
+    private static RenderType silhouetteTexTriangleRT(ResourceLocation tex) {
+        return texSilhouetteTriRTs.computeIfAbsent(tex,
+                t -> buildSilhouetteRT("customglint:glow_silhouette_tri_" + t, t, VertexFormat.Mode.TRIANGLES));
+    }
+
     // ── RenderType → texture resolution (for special-item silhouettes) ──────────
     // A BEWLR (trident, shield, IaF/EK custom renderers) draws its model through RenderTypes bound to the
     // item's OWN texture, whose alpha is the real shape. To trace that shape (instead of white-filling the
     // whole model hull → a square/over-cover), the special capture groups vertices by the texture of each
     // RenderType it draws through. RenderType doesn't expose its texture, so it's read reflectively from the
-    // composite state (state().textureState.texture) — best-effort, cached per RenderType, with WHITE_TEXTURE
+    // composite state (state().textureState.texture): best-effort, cached per RenderType, with WHITE_TEXTURE
     // (full fill) as the fallback for non-composite / textureless RTs so behaviour degrades to the old hull.
     private static final Map<RenderType, ResourceLocation> rtTextureCache = new IdentityHashMap<>();
-    private static Method cgStateMethod;
-    private static Field cgTextureStateField;
-    private static Field cgTextureField;
+    private static Method stateMethod;
+    private static Field textureStateField;
+    private static Field textureField;
 
-    static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
+    public static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
         ResourceLocation r = rtTextureCache.get(rt);
         if (r != null) return r;
         r = reflectRenderTypeTexture(rt);
@@ -256,21 +277,21 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     @SuppressWarnings("unchecked")
     private static ResourceLocation reflectRenderTypeTexture(RenderType rt) {
         try {
-            Method sm = cgStateMethod;
+            Method sm = stateMethod;
             if (sm == null || !sm.getDeclaringClass().isInstance(rt)) {
                 sm = rt.getClass().getDeclaredMethod("state");
                 sm.setAccessible(true);
-                cgStateMethod = sm;
+                stateMethod = sm;
             }
             Object state = sm.invoke(rt); // RenderType.CompositeState
-            Field tsf = cgTextureStateField;
+            Field tsf = textureStateField;
             if (tsf == null || !tsf.getDeclaringClass().isInstance(state)) {
                 tsf = state.getClass().getDeclaredField("textureState");
                 tsf.setAccessible(true);
-                cgTextureStateField = tsf;
+                textureStateField = tsf;
             }
             Object texState = tsf.get(state); // RenderStateShard.EmptyTextureStateShard / TextureStateShard
-            Field tf = cgTextureField;
+            Field tf = textureField;
             if (tf == null || !tf.getDeclaringClass().isInstance(texState)) {
                 Field found = null;
                 for (Class<?> c = texState.getClass(); c != null && found == null; c = c.getSuperclass()) {
@@ -279,7 +300,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 if (found == null) return WHITE_TEXTURE; // EmptyTextureStateShard has no texture
                 found.setAccessible(true);
                 tf = found;
-                cgTextureField = tf;
+                textureField = tf;
             }
             Object opt = tf.get(texState);
             if (opt instanceof Optional<?> o && o.isPresent() && o.get() instanceof ResourceLocation loc)
@@ -293,7 +314,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // ── Per-identity outline id ──────────────────────────────────────────────────
     // One id per logical figure (an entity instance), SHARED by its body and all its worn armor. The
     // composite compares only the low-5-bit id (key & 31) for "same object → no internal seam", and reads
-    // the per-category thickness from the high bits — so body (CAT_ENTITY) and armor (CAT_ARMOR) of one
+    // the per-category thickness from the high bits, so body (CAT_ENTITY) and armor (CAT_ARMOR) of one
     // figure compose as ONE unified ring while staying distinct from other figures. Reset each frame.
     private static final Map<Object, Integer> glowIdByIdentity = new IdentityHashMap<>();
 
@@ -302,6 +323,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         return (category << 5) | id;
     }
 
+    // 4096 bytes is only the starting allocation; ByteBufferBuilder grows itself as a drain fills it.
     private static final ByteBufferBuilder MASK_BUFFER = new ByteBufferBuilder(4096);
     private static final MultiBufferSource.BufferSource MASK_BUFFERS =
             MultiBufferSource.immediate(MASK_BUFFER);
@@ -325,7 +347,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // Exact on-screen bounds (GL bottom-left px) of the silhouette currently being accumulated, tracked
     // per-vertex in SilhouetteConsumer. Replaces projecting the camera-space AABB CORNERS: a close /
     // first-person item's synthetic AABB corners can fall behind the near plane and force the scissor to
-    // fullscreen (the radius-7 held-FP kernel over the whole screen — the GPU spike on a held glowing item).
+    // fullscreen (the radius-7 held-FP kernel over the whole screen, the GPU spike on a held glowing item).
     // The item's DRAWN vertices are all in front of the camera, so projecting them gives a stable tight box.
     private static final float[] screenBox = new float[4]; // minX,minY,maxX,maxY
 
@@ -340,14 +362,14 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private static final List<Box> itemBoxes = new ArrayList<>();
 
     // Distance-proportional thinning (ported from 26.1.2's glow_outline_id.fsh, computed CPU-side here from
-    // each object's camera-relative AABB instead of sampling scene depth — 1.21.1 can't sample the main
+    // each object's camera-relative AABB instead of sampling scene depth; 1.21.1 can't sample the main
     // depth in the composite without the feedback-loop crackle). At/under REF_DIST the ring keeps full
     // thickness; beyond it narrows ∝ 1/distance so the ring tracks the object's apparent size, floored at
     // MIN_SCALE so far rings stay a hairline.
     private static final float REF_DIST = 4.0f;   // blocks
     private static final float MIN_SCALE = 0.40f;
 
-    // GUI ring thickness as a FRACTION of an icon (1/16) pixel — matches the 26.1 GUI outline's THICKNESS.
+    // GUI ring thickness as a FRACTION of an icon (1/16) pixel. Matches the 26.1 GUI outline's THICKNESS.
     // The composite reach is this * the icon's on-screen pixel size, in framebuffer texels, so the ring
     // reads as a thin ~1px line rather than a full blocky icon-pixel (which is ~2 screen px at common GUI
     // scales). Sub-icon-pixel but still crisp (square Chebyshev reach, no anti-aliasing).
@@ -395,7 +417,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // shape against {@code tex}. Each job carries an explicit {@code key} from {@link #glowKeyFor} so a
     // figure's body + all its armor share one id and compose as ONE ring.
     private record ModelJob(float[] data, int len, ResourceLocation tex, int color, int key, int category,
-                            int priority, float[] anchor) {}
+                            int priority, float[] anchor, boolean triangles) {}
 
     private static final List<ItemJob> worldJobs = new ArrayList<>();
     private static final List<ItemJob> heldFpJobs = new ArrayList<>();
@@ -422,6 +444,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  drawn hand item. */
     public static void queueHeldFpItem(List<BakedQuad> quads, PoseStack.Pose pose, int light, int color) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
+        snapshotHeldFpMatrices();
         heldFpJobs.add(new ItemJob(quads, pose, light, color, CAT_HELD_FP, null));
     }
 
@@ -445,16 +468,81 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                          int category, int priority) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
         if (len < 20 || tex == null) return; // need at least one quad (4 verts * 5 floats)
-        float[] copy = new float[len];
-        System.arraycopy(data, 0, copy, 0, len);
-        modelWorldJobs.add(new ModelJob(copy, len, tex, color, key, category, priority, null));
+        modelWorldJobs.add(new ModelJob(Arrays.copyOf(data, len), len, tex, color, key, category, priority, null, false));
+    }
+
+    /** TRIANGLES-mode counterpart of {@link #queueModelOutline}, for a silhouette captured from a
+     *  triangle-list draw (Epic Fight patched-entity meshes route through a TRIANGLES-mode RenderType).
+     *  {@code data} is camera-relative {@code [x,y,z,u,v]} per vertex in triangle-list order; the vertex
+     *  count is trimmed to a multiple of 3 so the deferred TRIANGLES draw never leaves a partial primitive.
+     *  Same {@code key} scheme as {@link #queueModelOutline}: the body mesh + every worn/patched layer of
+     *  one figure share a key and compose as ONE ring. Drained with the world items at {@code AFTER_WEATHER}. */
+    public static void queueModelOutlineTriangles(float[] data, int len, ResourceLocation tex, int color, int key,
+                                                  int category, int priority) {
+        if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
+        if (tex == null) return;
+        float[] copy = trimToPrimitives(data, len, true);
+        if (copy == null) return;
+        modelWorldJobs.add(new ModelJob(copy, copy.length, tex, color, key, category, priority, null, true));
+    }
+
+    /** Copy the first {@code len} floats of {@code data} trimmed to WHOLE primitives (3 verts per triangle,
+     *  4 per quad, 5 floats per vert) so a deferred draw never gets a partial primitive. Null when fewer than
+     *  one whole primitive was captured. */
+    @Nullable
+    private static float[] trimToPrimitives(float[] data, int len, boolean triangles) {
+        int vertsPerPrim = triangles ? 3 : 4;
+        int verts = len / 5;
+        verts -= verts % vertsPerPrim;
+        int usable = verts * 5;
+        if (usable < vertsPerPrim * 5) return null;
+        return Arrays.copyOf(data, usable);
+    }
+
+    // Set for the duration of the first-person hand pass (armed at the HEAD of
+    // ItemInHandRenderer.renderHandsWithItems / GameRenderer.renderItemInHand). FP-replacing mods (Punchy,
+    // First-Person Model) draw the held item with a THIRD_PERSON display context during that pass; this flag
+    // lets the capture route it to the FP held queue (drained under the hand-FOV matrices) instead of the
+    // world queue, and the drain point clears it.
+    private static boolean fpHandPass = false;
+
+    /** Arm/disarm the first-person hand pass (see {@link #isFpHand()}). */
+    public static void setFpHandPass(boolean active) { fpHandPass = active; }
+
+    /** True when the item currently being drawn belongs to the first-person hand: either our own hand-pass
+     *  flag is armed (vanilla / Punchy / FPM off-pack), or Iris is in its HAND phase (under a shader pack the
+     *  hand is drawn there (inside the gbuffer pass, outside renderItemInHand/renderHandsWithItems), so the
+     *  flag never arms). Used to treat a THIRD_PERSON-context held item (Punchy / FPM / Iris draw it that way)
+     *  as first-person so it routes to the FP queue. */
+    public static boolean isFpHand() { return fpHandPass || CustomGlintRenderer.isShaderHandPass(); }
+
+    /** True for a native first-person hand context, or any item captured inside the hand pass. */
+    static boolean isFpContext(ItemDisplayContext ctx) {
+        return ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || isFpHand();
     }
 
     /** CAT_HELD_FP for a first-person hand item, else CAT_ITEM. */
     static int itemCategory(ItemDisplayContext ctx) {
-        boolean fp = ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
-                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND;
-        return fp ? CAT_HELD_FP : CAT_ITEM;
+        return isFpContext(ctx) ? CAT_HELD_FP : CAT_ITEM;
+    }
+
+    // Modelview a first-person held item is DRAWN under, snapshotted when it is queued (inside the hand pass).
+    // Under a shader pack the drain runs at renderItemInHand RETURN, where vanilla has already popped the
+    // hand modelview back to the world one; replaying under that detaches the ring and free-floats it near
+    // the player. The PROJECTION is deliberately NOT snapshotted: at renderItemInHand RETURN the live
+    // RenderSystem projection is still the fixed hand-FOV projection (vanilla set it at the method HEAD and
+    // never restores it), which is exactly what the hand was drawn under. Overriding it with Iris's gbuffer
+    // (world) projection instead made the ring drift on sprint, when the world FOV diverges from the hand's.
+    private static final Matrix4f HELD_FP_MV = new Matrix4f();
+    private static boolean heldFpMatricesValid = false;
+
+    /** Capture the live RenderSystem modelview the first-person hand item is drawn under (the hand pass sets
+     *  it once and every hand item shares it). */
+    private static void snapshotHeldFpMatrices() {
+        HELD_FP_MV.set(RenderSystem.getModelViewMatrix());
+        heldFpMatricesValid = true;
     }
 
     /** Queue one textured item silhouette bucket under an explicit outline {@code key}. A multi-texture item
@@ -464,13 +552,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                 ItemDisplayContext ctx, int key, float[] anchor) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
         if (len < 20 || tex == null) return; // need at least one quad (4 verts * 5 floats)
-        float[] copy = new float[len];
-        System.arraycopy(data, 0, copy, 0, len);
-        ModelJob job = new ModelJob(copy, len, tex, color, key, itemCategory(ctx), 0,
-                ctx == ItemDisplayContext.GUI ? anchor : null);
+        ModelJob job = new ModelJob(Arrays.copyOf(data, len), len, tex, color, key, itemCategory(ctx), 0,
+                ctx == ItemDisplayContext.GUI ? anchor : null, false);
         if (ctx == ItemDisplayContext.GUI) modelGuiJobs.add(job);
-        else if (ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
-                || ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND) modelFpJobs.add(job);
+        else if (isFpContext(ctx)) { snapshotHeldFpMatrices(); modelFpJobs.add(job); }
         else modelWorldJobs.add(job);
     }
 
@@ -486,6 +571,11 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         glowIdCounter = 0;
         guiMaskCleared = false;
         worldDeferredPending = false;
+        heldFpMatricesValid = false;
+        chromaticWorldJobs.clear();
+        chromaticFpJobs.clear();
+        chromaticGuiJobs.clear();
+        chromaticPending = false;
     }
 
     // ── Drain ──────────────────────────────────────────────────────────────────
@@ -494,27 +584,47 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  {@code RenderLevelStageEvent.AFTER_WEATHER}, where the live projection / modelview are the world
      *  ones the items and entities were drawn with. */
     public static void drainWorld() {
-        drain(worldJobs, modelWorldJobs);
+        drain(worldJobs, modelWorldJobs, true);
     }
 
     /** Drain first-person held item outlines. Called at the RETURN of
      *  {@code ItemInHandRenderer.renderHandsWithItems} (via {@code ItemInHandRendererMixin}), where the
-     *  live ProjMat is the hand-FOV projection and the live ModelView is the camera rotation — exactly the
+     *  live ProjMat is the hand-FOV projection and the live ModelView is the camera rotation, exactly the
      *  matrices the hand items were drawn under, so the captured camera-relative pose replays in place. The
      *  hand items have already been flushed ({@code endBatch}) by that point, so the ring composites over
      *  them. */
     public static void drainHeldFp() {
-        drain(heldFpJobs, modelFpJobs);
+        if (heldFpJobs.isEmpty() && modelFpJobs.isEmpty()) { heldFpMatricesValid = false; return; }
+        // Under a shader pack the drain runs at renderItemInHand RETURN, where the live modelview has been
+        // popped back to the world one; replaying the captured hand modelview puts the silhouette back on the
+        // hand item. The live projection there is still the fixed hand-FOV one the hand drew under, so it is
+        // left untouched (overriding it drifted the ring on sprint). Off-pack the drain point already has the
+        // correct live matrices, so keep that proven path untouched.
+        if (heldFpMatricesValid && CustomGlintRenderer.isShaderPackActive()) {
+            Matrix4fStack mv = RenderSystem.getModelViewStack();
+            mv.pushMatrix();
+            mv.set(HELD_FP_MV);
+            RenderSystem.applyModelViewMatrix();
+            try {
+                drain(heldFpJobs, modelFpJobs, false);
+            } finally {
+                mv.popMatrix();
+                RenderSystem.applyModelViewMatrix();
+            }
+        } else {
+            drain(heldFpJobs, modelFpJobs, false);
+        }
+        heldFpMatricesValid = false;
     }
 
     /** Drain GUI / inventory / HUD item outlines. Called per item from {@code ItemRendererMixin} at the
      *  RETURN of {@code ItemRenderer.render} when {@code ItemDisplayContext.GUI}, while the GUI ortho
      *  projection and modelview ({@code identity·translate(0,0,-11000)}) are still the live RenderSystem
-     *  matrices — so the captured GUI-space silhouette projects exactly onto the just-drawn icon. The icon's
+     *  matrices, so the captured GUI-space silhouette projects exactly onto the just-drawn icon. The icon's
      *  own quads are still buffered (GuiGraphics flushes after this returns), so the ring composites into the
      *  margin and the icon overdraws any overlap, leaving the ring strictly around it.
      *
-     *  <p>Differs from {@link #drain}: (1) the scene-depth occlusion sampler is left UNBOUND — the main
+     *  <p>Differs from {@link #drain}: (1) the scene-depth occlusion sampler is left UNBOUND, since the main
      *  depth here holds stale world depth and would wrongly occlude every flat icon; (2) ring thickness is
      *  driven by the icon's on-screen size (GUI_RING_ITEM_PIXELS) rather than camera distance; (3) the live
      *  GUI scissor (e.g. the wand-preview box) is saved, intersected with each ring box, and restored, so
@@ -531,7 +641,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         beginAccumulation(main.width, main.height);
 
         // Save the GUI's active GL scissor (raw bottom-left coords): we INTERSECT each ring box with it (so
-        // a ring can't draw past the GUI's own clip — e.g. the wand-editor preview box or a scroll panel)
+        // a ring can't draw past the GUI's own clip, e.g. the wand-editor preview box or a scroll panel)
         // and RESTORE it afterwards (our composite toggles the GL scissor per ring box and would otherwise
         // leave it disabled, unclipping the rest of the screen).
         boolean prevScissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
@@ -540,7 +650,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
         // Clear the mask ONCE per frame, not once per icon. GuiGraphics flushes (and so this drains) after
         // EVERY item it renders, so an inventory full of glowing items would otherwise do one FULL-SCREEN
-        // mask clear per icon — the dominant cost in that scene. GUI icon boxes are disjoint and each
+        // mask clear per icon, the dominant cost in that scene. GUI icon boxes are disjoint and each
         // composite is scissored + TargetId-filtered to its own icon, so one clear at the first GUI drain of
         // the frame is enough: later icons write into their own (already-clean) regions, and the first clear
         // also wipes the world/FP drains' leftover silhouettes. Reset in beginFrame().
@@ -561,8 +671,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         for (ItemJob job : guiJobs) {
             resetCamBox();
             int key = nextGlowKey(job.category);
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(base, r, g, b, key);
+            SilhouetteConsumer sc = new SilhouetteConsumer(base, job.color, key);
             for (BakedQuad quad : job.quads) {
                 sc.putBulkData(job.pose, quad, 1.0f, 1.0f, 1.0f, 1.0f, job.light, OverlayTexture.NO_OVERLAY);
             }
@@ -571,13 +680,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             if (box != null) itemBoxes.add(box);
         }
         // Textured item models: flat compat BEWLRs whose shape is texture-carved (IaF troll weapons) AND
-        // special / 3D BEWLR items (trident, shield) captured per-texture by the special path — each traces
+        // special / 3D BEWLR items (trident, shield) captured per-texture by the special path. Each traces
         // its real shape against its own texture, not a square model hull.
         for (ModelJob job : modelGuiJobs) {
             resetCamBox();
-            VertexConsumer tc = MASK_BUFFERS.getBuffer(silhouetteTexRT(job.tex));
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(tc, r, g, b, job.key);
+            VertexConsumer tc = MASK_BUFFERS.getBuffer(
+                    job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
+            SilhouetteConsumer sc = new SilhouetteConsumer(tc, job.color, job.key);
             emitModel(sc, job);
             Box box = computeGuiBox(main.width, main.height, job.key & 31, true, job.anchor);
             if (box != null && prevScissor) box = intersectBox(box, prevBox);
@@ -626,8 +735,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  their own texture through {@link #silhouetteTexRT}. Each job carries its own {@code category}; the
      *  per-job key drives the shader's per-category {@code THICKNESS[]}, and the composite kernel radius for
      *  the whole pass is the widest category present (a source can never ring past its own thickness, so a
-     *  larger kernel only costs unused taps — never a wrong ring). */
-    private static void drain(List<ItemJob> jobs, List<ModelJob> models) {
+     *  larger kernel only costs unused taps, never a wrong ring). */
+    private static void drain(List<ItemJob> jobs, List<ModelJob> models, boolean sceneOcclusion) {
         if (jobs.isEmpty() && models.isEmpty()) return;
         if (silhouetteShader == null || compositeShader == null) {
             jobs.clear(); models.clear(); return;
@@ -635,7 +744,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
         Matrix4f proj = RenderSystem.getProjectionMatrix();
         ensureTarget(main.width, main.height);
-        int searchRadius = accumulate(jobs, models, main, itemBoxes, maskTarget);
+        int searchRadius = accumulate(jobs, models, main, itemBoxes, maskTarget, sceneOcclusion);
         composite(main, itemBoxes, searchRadius, proj.m22(), proj.m32(), maskTarget, 0);
         jobs.clear();
         models.clear();
@@ -646,7 +755,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // scene composite (which runs later), so no world outline ever showed. Split the drain: ACCUMULATE the
     // mask at AFTER_WEATHER (the silhouette draw + screen-box projection need the live world matrices) but
     // hold the COMPOSITE until renderLevel TAIL (LevelRendererMixin), after the pack has finished compositing
-    // to the main target — so the ring lands on the final image. The composite is a matrix-independent
+    // to the main target, so the ring lands on the final image. The composite is a matrix-independent
     // fullscreen blit; only the ring-occlusion depth linearisation needs the world projection, snapshotted
     // here as projA/projB. Off-pack, AFTER_WEATHER still does the whole drain immediately (drainWorld).
     private static final List<Box> worldDeferredBoxes = new ArrayList<>();
@@ -664,7 +773,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
         Matrix4f proj = RenderSystem.getProjectionMatrix();
         worldDeferredMask = ensureTarget(worldDeferredMask, main.width, main.height);
-        worldDeferredSearchRadius = accumulate(worldJobs, modelWorldJobs, main, worldDeferredBoxes, worldDeferredMask);
+        worldDeferredSearchRadius = accumulate(worldJobs, modelWorldJobs, main, worldDeferredBoxes, worldDeferredMask, true);
         worldDeferredProjA = proj.m22();
         worldDeferredProjB = proj.m32();
         worldDeferredPending = true;
@@ -688,12 +797,251 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 worldDeferredMask, 1);
     }
 
+    // ── Deferred chromatic overlay (shader pack active) ─────────────────────────
+    // Under an Iris/Oculus pack the in-phase chromatic program is hijacked (the procedural slick goes flat
+    // white / never appears, no pack program can recreate the oil-slick). Mirror the glow deferred split:
+    // ACCUMULATE the slick into an isolated target at AFTER_WEATHER (the world matrices are live and the scene
+    // depth is committed for the overlay's in-shader occlusion), then COMPOSITE-blit it over the pack's final
+    // image at renderLevel TAIL. Off-pack nothing is queued (chromatic draws in-phase), so this is inert.
+    private static TextureTarget chromaticTarget;
+    private static final List<ChromaJob> chromaticWorldJobs = new ArrayList<>();
+    private static boolean chromaticPending = false;
+
+    private static final class ChromaJob {
+        final float[] data; final int len; final ResourceLocation tex;
+        final CustomGlint.Data glint; final int layerIdx; final boolean triangles; final boolean isItem;
+        final boolean special; // special 3D item (trident/shield): own texture + the denser special-item scale
+        final float[] color; final int colorIdx; // non-null color => TEXTURED (non-chromatic) glint overlay
+        final float brightness; // sub-1 dims the slick (slime shell); opaque surfaces stay at 1.0
+        ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
+                  boolean triangles, boolean isItem, boolean special, float brightness) {
+            this(data, len, tex, glint, layerIdx, triangles, isItem, special, null, 0, brightness);
+        }
+        ChromaJob(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint, int layerIdx,
+                  boolean triangles, boolean isItem, boolean special, float[] color, int colorIdx, float brightness) {
+            this.data = data; this.len = len; this.tex = tex;
+            this.glint = glint; this.layerIdx = layerIdx; this.triangles = triangles; this.isItem = isItem;
+            this.special = special; this.color = color; this.colorIdx = colorIdx; this.brightness = brightness;
+        }
+    }
+
+    // Chromatic drain destination: WORLD (renderLevel TAIL), FP hand (renderItemInHand RETURN), GUI (flush).
+    private static final int DEST_WORLD = 0, DEST_FP = 1, DEST_GUI = 2;
+
+    /** Queue a captured chromatic model (camera-relative {@code [x,y,z,u,v]} per vertex, QUADS or TRIANGLES
+     *  order) for the post-Iris overlay drain. Called from the armor chromatic chokepoints ONLY when a shader
+     *  pack is active; off-pack the layer draws in-phase and never reaches here. Trims to whole primitives so
+     *  the deferred draw never leaves a partial quad/triangle. */
+    public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
+                                           CustomGlint.Data glint, int layerIdx, boolean triangles) {
+        queueChromaticModel(data, len, tex, glint, layerIdx, triangles, 1.0f);
+    }
+
+    /** As {@link #queueChromaticModel} with a {@code brightness} the overlay applies to the slick (sub-1 dims
+     *  it). The slime shell passes < 1 so its chromatic doesn't read as a solid glowing block over the
+     *  translucent jelly; opaque surfaces stay at 1.0. */
+    public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
+                                           CustomGlint.Data glint, int layerIdx, boolean triangles, float brightness) {
+        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_WORLD, brightness);
+    }
+
+    /** Queue a captured horse-armor model for the post-Iris TEXTURED (non-chromatic) glint overlay: same world
+     *  drain as {@link #queueChromaticModel}, but the overlay samples the scrolled design × {@code color} and
+     *  cuts itself against {@code tex} (armor alpha). Called ONLY under a shader pack (off-pack the glint draws
+     *  in-phase and never reaches here). Trims to whole primitives so no partial quad/triangle is left. */
+    public static void queueGlintModel(float[] data, int len, ResourceLocation tex, CustomGlint.Data glint,
+                                       int layerIdx, float[] color, int colorIdx, boolean triangles) {
+        if (CustomGlintRenderer.isInShadowPass()) return;
+        if (tex == null || glint == null || color == null) return;
+        float[] copy = trimToPrimitives(data, len, triangles);
+        if (copy == null) return;
+        float[] col = { color[0], color[1], color[2], color[3] };
+        chromaticWorldJobs.add(new ChromaJob(copy, copy.length, tex, glint, layerIdx, triangles, false, false, col, colorIdx, 1.0f));
+    }
+
+    /** Special 3D item (trident/shield) tracing its own {@code tex} at the denser special-item noise scale.
+     *  {@code dest}: world (dropped/3rd-person), FP hand, or GUI icon, matching the world/hand item. */
+    public static void queueChromaticSpecial(float[] data, int len, ResourceLocation tex,
+                                             CustomGlint.Data glint, int layerIdx, int dest) {
+        queueChroma(data, len, tex, glint, layerIdx, false, false, true, dest, 1.0f);
+    }
+
+    /** As {@link #queueChromaticModel} but for a flat/quad ITEM (held third-person, dropped, item frame): the
+     *  captured verts are baked item quads and the overlay traces the block atlas (the item overlay RT binds
+     *  the atlas itself). QUADS. */
+    public static void queueChromaticItem(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_WORLD, 1.0f);
+    }
+
+    /** First-person-hand variant of {@link #queueChromaticModel} (worn-armor-style model in the hand). */
+    public static void queueChromaticModelFp(float[] data, int len, ResourceLocation tex,
+                                             CustomGlint.Data glint, int layerIdx, boolean triangles) {
+        queueChroma(data, len, tex, glint, layerIdx, triangles, false, false, DEST_FP, 1.0f);
+    }
+
+    /** GUI variant for a flat/quad item icon (inventory, hotbar, wand-menu preview). Item scale (atlas). */
+    public static void queueChromaticItemGui(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_GUI, 1.0f);
+    }
+
+    private static void queueChroma(float[] data, int len, ResourceLocation tex,
+                                    CustomGlint.Data glint, int layerIdx, boolean triangles, boolean isItem,
+                                    boolean special, int dest, float brightness) {
+        if (CustomGlintRenderer.isInShadowPass()) return;
+        if (tex == null || glint == null) return;
+        float[] copy = trimToPrimitives(data, len, triangles);
+        if (copy == null) return;
+        ChromaJob job = new ChromaJob(copy, copy.length, tex, glint, layerIdx, triangles, isItem, special, brightness);
+        switch (dest) {
+            case DEST_FP -> { chromaticFpJobs.add(job); snapshotHeldFpMatrices(); }
+            case DEST_GUI -> chromaticGuiJobs.add(job);
+            default -> chromaticWorldJobs.add(job);
+        }
+    }
+
+    /** Render {@code jobs} into the isolated chromatic target. {@code sceneOcclusion} binds the main depth on
+     *  unit 2 for the overlay's in-shader wall/self occlusion (world surfaces); the first-person hand item is
+     *  always foreground so it passes false (its own imprecise depth would else flicker its slick). Leaves the
+     *  main target bound. */
+    private static void accumulateChromaJobs(List<ChromaJob> jobs, boolean sceneOcclusion) {
+        RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
+        chromaticTarget = ensureTarget(chromaticTarget, main.width, main.height);
+        // glClear honours the live write masks; the world phase leaves depthMask=false, so force them on.
+        RenderSystem.depthMask(true);
+        RenderSystem.colorMask(true, true, true, true);
+        chromaticTarget.clear(Minecraft.ON_OSX);
+        chromaticTarget.bindWrite(true);
+        // Scene depth -> unit 2 for the overlay's in-shader occlusion. Safe: we write the isolated target, not
+        // the main colour, so there is no read/write feedback. The overlay RT setup only touches units 0/1.
+        RenderSystem.setShaderTexture(2, sceneOcclusion ? main.getDepthTextureId() : 0);
+        // Two passes so the straight-write chromatic slicks (NO_TRANSPARENCY) land BEFORE the additive textured
+        // glints: a chromatic job overwrites the target, so a textured job drawn first would be clobbered.
+        // Drawing chromatic first, then adding the textured glint over it, keeps both in a mixed glint. Textured
+        // jobs (color != null) additively sum, so their own order between each other doesn't matter.
+        for (int pass = 0; pass < 2; pass++) {
+            boolean texturedPass = pass == 1;
+            for (ChromaJob job : jobs) {
+                if ((job.color != null) != texturedPass) continue;
+                RenderType rt;
+                if (job.color != null) rt = CustomGlintRenderer.forGlintEntityOverlay(job.glint, job.layerIdx,
+                        job.color, job.colorIdx, job.tex, job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS);
+                else if (job.isItem) rt = CustomGlintRenderer.forChromaticItemGlintOverlay(job.glint, job.layerIdx);
+                else if (job.special) rt = CustomGlintRenderer.forChromaticSpecialGlintOverlay(job.glint, job.layerIdx, job.tex);
+                else rt = CustomGlintRenderer.forChromaticArmorGlintOverlay(job.glint, job.layerIdx, job.tex,
+                        job.triangles ? VertexFormat.Mode.TRIANGLES : VertexFormat.Mode.QUADS, job.brightness);
+                if (rt == null) continue;
+                VertexConsumer vc = MASK_BUFFERS.getBuffer(rt);
+                float[] d = job.data;
+                for (int i = 0; i + 4 < job.len; i += 5) {
+                    vc.addVertex(d[i], d[i + 1], d[i + 2]);
+                    vc.setColor(255, 255, 255, 255);
+                    vc.setUv(d[i + 3], d[i + 4]);
+                    vc.setUv1(0, 0);
+                    vc.setUv2(0, 0);
+                    vc.setNormal(0.0f, 1.0f, 0.0f);
+                }
+                MASK_BUFFERS.endBatch(); // flush per job so each overlay RT's texture + texture-matrix apply to its own verts
+            }
+        }
+        RenderSystem.setShaderTexture(2, 0);
+        main.bindWrite(true);
+    }
+
+    /** Screen-blit the chromatic target over the main target: result.rgb = src + dst - src*dst (brightens like
+     *  a foil, can't exceed 1.0 so a bright slick over lit geometry never clips to white). Shared by the world
+     *  composite + the first-person drain. */
+    private static void blitChromaticTarget() {
+        ShaderInstance shader = CustomGlintRenderer.chromaticCompositeShader();
+        if (shader == null || chromaticTarget == null) return;
+        RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
+        main.bindWrite(true);
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+        RenderSystem.enableBlend();
+        RenderSystem.blendFuncSeparate(
+                GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ONE_MINUS_SRC_COLOR,
+                GlStateManager.SourceFactor.ZERO, GlStateManager.DestFactor.ONE);
+        RenderSystem.setShader(() -> shader);
+        RenderSystem.setShaderTexture(0, chromaticTarget.getColorTextureId());
+        drawFullscreenQuad();
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+        RenderSystem.defaultBlendFunc();
+    }
+
+    /** Render the queued world chromatic slicks into the isolated target NOW (world matrices live, scene depth
+     *  bound); the composite blit is deferred to renderLevel TAIL. Called at {@code AFTER_WEATHER} under a pack. */
+    public static void accumulateChromaticWorld() {
+        chromaticPending = false;
+        if (chromaticWorldJobs.isEmpty()) return;
+        accumulateChromaJobs(chromaticWorldJobs, true);
+        chromaticWorldJobs.clear();
+        chromaticPending = true;
+    }
+
+    /** Composite the deferred world chromatic slick onto the (pack-composited) main target. renderLevel TAIL. */
+    public static void compositeChromaticWorld() {
+        if (!chromaticPending) return;
+        chromaticPending = false;
+        blitChromaticTarget();
+    }
+
+    // First-person hand chromatic items: captured during the hand pass, drained at renderItemInHand RETURN
+    // (post-Iris-safe) under the same captured hand modelview (HELD_FP_MV) as the glow FP ring.
+    private static final List<ChromaJob> chromaticFpJobs = new ArrayList<>();
+    // GUI / inventory / HUD icon chromatic items: captured at ItemRenderer.render RETURN, drained at
+    // GuiGraphics.flush() RETURN (GuiGraphicsMixin) while the GUI ortho matrices are still live.
+    private static final List<ChromaJob> chromaticGuiJobs = new ArrayList<>();
+
+    /** Drain the GUI chromatic icons: render into the target under the live GUI ortho matrices (no scene
+     *  occlusion, the GUI is 2D and icons don't overlap) and blit. Called at {@code GuiGraphics.flush} RETURN,
+     *  the same point the glow GUI ring drains, so the ortho projection / modelview match what the icons drew
+     *  under. */
+    public static void drainChromaticGui() {
+        if (chromaticGuiJobs.isEmpty()) return;
+        accumulateChromaJobs(chromaticGuiJobs, false);
+        blitChromaticTarget();
+        chromaticGuiJobs.clear();
+    }
+
+    /** Queue a first-person hand chromatic ITEM (captured baked quads). Snapshots the hand modelview like the
+     *  glow FP path so the drain can re-establish it under a shader pack. */
+    public static void queueChromaticItemFp(float[] data, int len, CustomGlint.Data glint, int layerIdx) {
+        queueChroma(data, len, TextureAtlas.LOCATION_BLOCKS, glint, layerIdx, false, true, false, DEST_FP, 1.0f);
+    }
+
+    /** Drain the first-person hand chromatic items. Called at {@code GameRenderer.renderItemInHand} RETURN
+     *  (post-Iris-safe), BEFORE {@link #drainHeldFp} clears the shared FP matrix snapshot. The FP item is
+     *  foreground so no scene occlusion; re-establish the captured hand modelview under a pack exactly like
+     *  drainHeldFp. Reuses the (already world-composited) chromatic target, re-cleared for the hand items. */
+    public static void drainChromaticFp() {
+        if (chromaticFpJobs.isEmpty()) return;
+        if (heldFpMatricesValid && CustomGlintRenderer.isShaderPackActive()) {
+            Matrix4fStack mv = RenderSystem.getModelViewStack();
+            mv.pushMatrix();
+            mv.set(HELD_FP_MV);
+            RenderSystem.applyModelViewMatrix();
+            try {
+                accumulateChromaJobs(chromaticFpJobs, false);
+                blitChromaticTarget();
+            } finally {
+                mv.popMatrix();
+                RenderSystem.applyModelViewMatrix();
+            }
+        } else {
+            accumulateChromaJobs(chromaticFpJobs, false);
+            blitChromaticTarget();
+        }
+        chromaticFpJobs.clear();
+    }
+
     /** Accumulate the silhouettes of {@code jobs}+{@code models} into the mask and compute each object's
      *  screen box into {@code outBoxes}. Must run while the world matrices are live (the silhouette RT draws
      *  through {@code ProjMat*ModelViewMat} and {@link SilhouetteConsumer} projects each vertex). Returns the
      *  composite kernel radius (the widest category present). Leaves the mask bound for writing. */
     private static int accumulate(List<ItemJob> jobs, List<ModelJob> models, RenderTarget main, List<Box> outBoxes,
-                                  TextureTarget mask) {
+                                  TextureTarget mask, boolean sceneOcclusion) {
         beginAccumulation(main.width, main.height);
 
         int searchRadius = 1;
@@ -713,11 +1061,14 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // Bind the main depth texture to sampler unit 1 so the silhouette shader can occlude fragments
         // that are behind the scene. Safe to read here: we're writing the MASK, not the main target.
         // (shaderTextures[1] persists across both silhouette RTs' draws; the RT setup only touches unit 0.)
-        RenderSystem.setShaderTexture(1, main.getDepthTextureId());
+        // sceneOcclusion=false leaves it unbound (unit 1 = 0) for the always-foreground first-person held
+        // item: under a shader pack the hand item's own imprecise depth would otherwise occlude its own ring,
+        // flipping in/out per frame (flicker) and shifting as the scene depth changes while you run.
+        RenderSystem.setShaderTexture(1, sceneOcclusion ? main.getDepthTextureId() : 0);
         // Under a shader pack the reconstructed scene distance is imprecise at grazing edges and the error
         // grows with distance, so the per-fragment occlusion flips in/out each frame (the dragon "inner-scale"
         // flicker). Give the occlusion a distance-scaled tolerance under a pack so grazing edges stay visible
-        // (no flickering holes) while a real wall — a large depth gap — still occludes. 0 off-pack (unchanged).
+        // (no flickering holes) while a real wall (a large depth gap) still occludes. 0 off-pack (unchanged).
         if (uSilBiasScale != null) uSilBiasScale.set(CustomGlintRenderer.isShaderPackActive() ? 0.03f : 0.0f);
         outBoxes.clear();
 
@@ -725,8 +1076,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         for (ItemJob job : jobs) {
             resetCamBox();
             int key = nextGlowKey(job.category);
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(base, r, g, b, key);
+            SilhouetteConsumer sc = new SilhouetteConsumer(base, job.color, key);
             for (BakedQuad quad : job.quads) {
                 sc.putBulkData(job.pose, quad, 1.0f, 1.0f, 1.0f, 1.0f, job.light, OverlayTexture.NO_OVERLAY);
             }
@@ -737,12 +1087,12 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // Model silhouettes (special / 3D BEWLR items, armor pieces, entity bodies): each traces its real
         // shape against its own texture, so switch the bound silhouette RT per texture (the immediate buffer
         // flushes the prior batch on each switch). The per-job key (from glowKeyFor / the item capture) makes
-        // a figure's body + armor — or a multi-texture item's buckets — share one id → one unified ring.
+        // a figure's body + armor (or a multi-texture item's buckets) share one id → one unified ring.
         for (ModelJob job : models) {
             resetCamBox();
-            VertexConsumer mc2 = MASK_BUFFERS.getBuffer(silhouetteTexRT(job.tex));
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(mc2, r, g, b, job.key);
+            VertexConsumer texBuf = MASK_BUFFERS.getBuffer(
+                    job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
+            SilhouetteConsumer sc = new SilhouetteConsumer(texBuf, job.color, job.key);
             emitModel(sc, job);
             int[] box = computeScissor(main.width, main.height, CAT_THICKNESS[job.category]);
             if (box != null) { float d = computeDist(); outBoxes.add(new Box(box[0], box[1], box[2], box[3], computeScale(d), job.key & 31, d, job.priority, 1.0f)); }
@@ -755,7 +1105,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     /** Composite once per OUTLINE ID, FAR→NEAR. Each pass rings only its own id's silhouette and is occluded
      *  where a nearer silhouette covers it; drawing near LAST makes a nearer object's whole outline layer
-     *  cleanly over a farther one's (elytra over helmet). Matrix-independent (fullscreen blit) — safe to run
+     *  cleanly over a farther one's (elytra over helmet). Matrix-independent (fullscreen blit), safe to run
      *  at a later phase than {@link #accumulate} (the deferred under-pack path). Rebinds the main target even
      *  when there are no on-screen boxes so the offscreen mask doesn't stay bound for whatever renders next. */
     private static void composite(RenderTarget main, List<Box> boxes, int searchRadius, float projA, float projB,
@@ -795,12 +1145,12 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     // The composite is split into begin / per-pass / end so the GL state + per-drain-constant uniforms
     // (blend, shader, mask textures, SearchRadius, ProjA/ProjB, GuiMode) are issued ONCE per drain rather
-    // than re-issued for every id pass. Nothing between passes resets that state, so this is pixel-identical
-    // — it just removes ~15 GL/uniform calls per pass, which adds up with many glowing objects on screen.
+    // than re-issued for every id pass. Nothing between passes resets that state, so this is pixel-identical;
+    // it just removes ~15 GL/uniform calls per pass, which adds up with many glowing objects on screen.
 
     /** Set up render state + per-drain-constant uniforms for a run of {@link #compositePass} calls.
      *  {@code projA}/{@code projB} are the perspective depth-linearisation terms ({@code ProjMat.m22/m32}) of
-     *  the projection the silhouettes were accumulated under — passed in (not read live) so the deferred
+     *  the projection the silhouettes were accumulated under, passed in (not read live) so the deferred
      *  under-Iris composite, which runs at {@code renderLevel} TAIL with a different live projection, still
      *  linearises ring-occlusion depth with the world projection. Ignored when {@code ringOcclusion} is off. */
     private static void compositeBegin(RenderTarget main, int searchRadius, boolean ringOcclusion, boolean guiMode,
@@ -843,15 +1193,20 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // ring on a small far object. (The hairline gap it closes is invisible at distance anyway.)
         if (uEdgeBleed != null) uEdgeBleed.set(Math.round(compositeEdgeBleed * thicknessScale));
 
-        Tesselator tess = Tesselator.getInstance();
-        BufferBuilder bb = tess.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        drawFullscreenQuad();
+
+        if (box != null) RenderSystem.disableScissor();
+    }
+
+    /** Unit-square quad in clip space, the geometry every fullscreen blit here draws through (the composite
+     *  pass and the chromatic screen blit). The bound shader supplies the transform. */
+    private static void drawFullscreenQuad() {
+        BufferBuilder bb = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
         bb.addVertex(0.0f, 0.0f, 0.0f).setUv(0.0f, 0.0f);
         bb.addVertex(1.0f, 0.0f, 0.0f).setUv(1.0f, 0.0f);
         bb.addVertex(1.0f, 1.0f, 0.0f).setUv(1.0f, 1.0f);
         bb.addVertex(0.0f, 1.0f, 0.0f).setUv(0.0f, 1.0f);
         BufferUploader.drawWithShader(bb.buildOrThrow());
-
-        if (box != null) RenderSystem.disableScissor();
     }
 
     /** Restore render state after a run of {@link #compositePass} calls. */
@@ -865,7 +1220,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     /** Padded screen-space scissor box (GL bottom-left origin, pixels) from the per-vertex {@code screenBox}
      *  tracked during accumulation. Returns null when nothing projected in front of the camera. No near-plane
-     *  fullscreen fallback: the drawn vertices are all in front, so the box is always tight — a close /
+     *  fullscreen fallback: the drawn vertices are all in front, so the box is always tight; a close /
      *  first-person item no longer blows the radius-7 kernel up to the whole screen. */
     private static int[] computeScissor(int width, int height, int searchRadius) {
         if (screenBox[0] > screenBox[2]) return null; // nothing projected in front of the camera
@@ -881,7 +1236,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** GUI variant of {@link #computeScissor}. {@code anchor} (from {@code ItemRendererMixin#cg_guiAnchor})
      *  carries the icon's GUI-space slot centre {@code [x,y,z]} and its nominal half-size in GUI px
      *  {@code [3]} = ½ the render-pose x-axis scale (8 for a 16-px inventory slot, 40 for the 5x wand
-     *  preview). Both the ring thickness and the slot clamp are sized off that REAL on-screen icon — not the
+     *  preview). Both the ring thickness and the slot clamp are sized off that REAL on-screen icon, not the
      *  silhouette footprint (which a 3D BEWLR overflows) and not a render-order flag (the preview's
      *  GuiGraphics.renderItem self-flushes before any opt-in could be set). Returns null when nothing
      *  accumulated / off-screen. dist/prio are unused in the GUI. */
@@ -969,7 +1324,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         }
     }
 
-    /** True when {@code boxes[i]}'s screen rect overlaps no OTHER box's rect — so within its scissor the only
+    /** True when {@code boxes[i]}'s screen rect overlaps no OTHER box's rect, so within its scissor the only
      *  silhouette texels are its own object's (a non-overlapping object's mask texels are bounded by its box).
      *  That lets the composite take the deep-interior early-out (SoloTarget): an interior pixel of the target
      *  can't ring because no different id is within reach. Pixel-identical to the full scan; just far cheaper
@@ -1001,9 +1356,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         private final VertexConsumer delegate;
         private final int r, g, b, key;
 
-        SilhouetteConsumer(VertexConsumer delegate, int r, int g, int b, int key) {
+        /** {@code color} is the packed 0xRRGGBB glow colour; alpha carries the outline {@code key} instead. */
+        SilhouetteConsumer(VertexConsumer delegate, int color, int key) {
             this.delegate = delegate;
-            this.r = r; this.g = g; this.b = b; this.key = key;
+            this.r = (color >> 16) & 0xFF;
+            this.g = (color >> 8) & 0xFF;
+            this.b = color & 0xFF;
+            this.key = key;
         }
 
         @Override public VertexConsumer addVertex(float x, float y, float z) {
@@ -1029,6 +1388,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             delegate.addVertex(x, y, z);
             return this;
         }
+        // Arguments deliberately discarded: the mask carries the glow colour + outline key, never the
+        // model's own vertex colour.
         @Override public VertexConsumer setColor(int red, int green, int blue, int alpha) { delegate.setColor(r, g, b, key); return this; }
         @Override public VertexConsumer setUv(float u, float v) { delegate.setUv(u, v); return this; }
         @Override public VertexConsumer setUv1(int u, int v) { delegate.setUv1(u, v); return this; }
@@ -1044,7 +1405,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // REAL item shape instead of white-filling the whole model hull (which read as a square / outlined
     // no-texture model parts). Textureless RTs fall back to WHITE_TEXTURE = full fill. Drawing the same shape
     // through several glint-layer buffers records it more than once, which is harmless: the mask write is
-    // keyed, not additive. Buckets are queued (via queueGroups → addItemModelJob) and replayed at drain — no
+    // keyed, not additive. Buckets are queued (via queueGroups → addItemModelJob) and replayed at drain: no
     // re-pose, the animation already lives in the positions.
 
     public static final class CapturingBufferSource implements MultiBufferSource {
@@ -1065,6 +1426,25 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             }
         }
 
+        /** Queue every captured bucket as a CHROMATIC overlay job (special / 3D BEWLR item, shader-pack path):
+         *  each texture bucket traces its own texture's alpha as the cutout, per chromatic layer. World items
+         *  drain at renderLevel TAIL; a first-person-hand item drains at the hand pass. GUI special items are
+         *  deferred (not routed here). */
+        public void queueChromaticGroups(CustomGlint.Data glint, ItemDisplayContext ctx) {
+            boolean gui = ctx == ItemDisplayContext.GUI;
+            boolean fp = isFpContext(ctx);
+            CustomGlint.Layer[] layers = glint.layers();
+            for (int li = 0; li < layers.length; li++) {
+                if (!CustomGlint.isChromatic(layers[li])) continue;
+                for (Map.Entry<ResourceLocation, float[]> e : data.entrySet()) {
+                    // Special 3D items trace their OWN texture at the denser special-item scale, in whichever
+                    // context (world / hand / GUI) so the icon matches the world/hand item.
+                    int dest = gui ? DEST_GUI : (fp ? DEST_FP : DEST_WORLD);
+                    queueChromaticSpecial(e.getValue(), counts.get(e.getKey()), e.getKey(), glint, li, dest);
+                }
+            }
+        }
+
         /** Queue every captured bucket as a world entity-surface silhouette under {@code identity}'s shared
          *  CAT_ENTITY id, so a block-rendered surface (a mooshroom's mushrooms) merges into the entity's body
          *  ring. Drained with the world outlines at AFTER_WEATHER. */
@@ -1077,6 +1457,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
         @Override public VertexConsumer getBuffer(RenderType renderType) {
             ResourceLocation tex = resolveRenderTypeTexture(renderType);
+            // 1024 floats = ~204 vertices to start; record() doubles the bucket when a model overruns it.
             data.computeIfAbsent(tex, k -> new float[1024]);
             counts.putIfAbsent(tex, 0);
             return new RecordingConsumer(tex, delegate == null ? null : delegate.getBuffer(renderType));

@@ -65,30 +65,20 @@ public class RenderDeathWormGauntletMixin {
         if (model == null) return;
 
         CustomGlint.Layer[] layers = glint.layers();
-        float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
-            int[] colors = layers[li].colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layers[li].colors();
-            if (layers[li].simultaneous()) {
-                for (int i = 0; i < colors.length; i++) {
-                    float a = ((colors[i] >> 24) & 0xFF) / 255.0f;
-                    buf[0] = ((colors[i] >> 16) & 0xFF) / 255.0f * a;
-                    buf[1] = ((colors[i] >>  8) & 0xFF) / 255.0f * a;
-                    buf[2] = ( colors[i]        & 0xFF) / 255.0f * a;
-                    buf[3] = 1.0f;
-                    RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, i);
+            if (CustomGlint.isChromatic(layers[li])) {
+                // Chromatic has no PNG, so forGlint skipped it and the gauntlet showed no chromatic. Off-pack, draw
+                // the in-phase 3D-item chromatic slick; under a pack that program is hijacked and the special-item
+                // capture in ItemRendererMixin drains it post-pass (the same path that traces the glow ring).
+                if (!CustomGlintRenderer.isShaderPackActive()) {
+                    RenderType rt = CustomGlintRenderer.forChromaticSpecialGlint(glint, li);
                     if (rt != null) list.add(buffer.getBuffer(rt));
                 }
-            } else {
-                int color = CustomGlintRenderer.computeAnimatedColor(glint, li);
-                float a = ((color >> 24) & 0xFF) / 255.0f;
-                buf[0] = ((color >> 16) & 0xFF) / 255.0f * a;
-                buf[1] = ((color >>  8) & 0xFF) / 255.0f * a;
-                buf[2] = ( color        & 0xFF) / 255.0f * a;
-                buf[3] = 1.0f;
-                RenderType rt = CustomGlintRenderer.forGlint(glint, li, buf, false, 0);
-                if (rt != null) list.add(buffer.getBuffer(rt));
+                continue;
             }
+            CustomGlintRenderer.fanLayerBuffers(list, buffer, glint, li,
+                    (l, c, i) -> CustomGlintRenderer.forGlint(glint, l, c, false, i));
         }
         if (list.isEmpty()) return;
         VertexConsumer combined = list.size() == 1 ? list.get(0)
