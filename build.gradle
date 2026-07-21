@@ -210,6 +210,11 @@ def apiJarName = "glint-and-glamour-api-${mod_version}.jar"
 
 tasks.register('apiJar', Jar) {
     archiveBaseName = 'glint-and-glamour-api'
+    // Tag the built file with the MC version to tell it apart from the 1.21.1 and 26.1.2 builds, which
+    // share the same mod_version. This is only the build/libs filename; the maven publication and the
+    // jarjar nesting both rename it back to glint-and-glamour-api-${mod_version}.jar, so the published
+    // coordinate stays the bare version.
+    archiveVersion = "${mod_version}-${minecraft_version}"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn 'classes', 'processResources'
 
@@ -297,6 +302,11 @@ tasks.register('stageApiInFullJar') {
 tasks.named('jar', Jar).configure {
     dependsOn 'stageApiInFullJar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // Tag the standalone download with the MC version so it doesn't collide with the 1.21.1 and 26.1.2
+    // builds, which share the same mod_version. The nested api jar keeps the plain version (embedders
+    // pin it by maven coordinate).
+    archiveVersion = "${mod_version}-${minecraft_version}"
 
     // Api content lives inside the nested api jar only. Drop it from the full jar so classes
     // aren't loaded twice when a downstream mod's bundled jarJar copy also resolves.
