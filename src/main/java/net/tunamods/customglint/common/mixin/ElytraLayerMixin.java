@@ -36,7 +36,7 @@ public class ElytraLayerMixin {
 
     @Shadow(aliases = {"f_116935_"}) private ElytraModel<?> elytraModel;
 
-    /** Vanilla elytra texture for the glow-outline trace - hoisted so it isn't reallocated per elytra per frame. */
+    /** Vanilla elytra texture for the glow-outline trace, hoisted so it isn't reallocated per elytra per frame. */
     private static final ResourceLocation CG_ELYTRA_TEX = new ResourceLocation("minecraft", "textures/entity/elytra.png");
 
     /** SRG target: injects at RETURN of render in obfuscated environments. */

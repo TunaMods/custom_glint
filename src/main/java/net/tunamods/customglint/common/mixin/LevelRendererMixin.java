@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p>Without a pack the world ring is composited at {@code RenderLevelStageEvent.AFTER_WEATHER}. Under a
  * pack that doesn't work: Iris reroutes those Forge stages into its gbuffer passes, then runs its own
- * scene composite ({@code finalizeLevelRendering}) at the RETURN of {@code renderLevel} - overwriting the
+ * scene composite ({@code finalizeLevelRendering}) at the RETURN of {@code renderLevel}, overwriting the
  * main target, so a ring drawn at AFTER_WEATHER is erased and nothing shows.
  *
  * <p>This mixin re-drains the world ring at {@code renderLevel} RETURN, replaying the projection snapshot
@@ -27,7 +27,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * AFTER Iris's finalize and the ring composites over the finished frame. No-op without a pack (the
  * AFTER_WEATHER drain already ran and cleared the queue).
  *
- * <p>Dual SRG/named, require=0 on both - same pattern as the other core mixins.
+ * <p>The HEAD/RETURN pair also brackets the world pass with {@code CustomGlintRenderer.setRenderingWorld}.
+ * The compat glint paths (GeckoLib, Mekanism, Artifacts) read that flag to skip the inventory player
+ * preview, where their entity-space glint would stretch into a projected ray under the GUI ortho.
+ *
+ * <p>Dual SRG/named, require=0 on both: same pattern as the other core mixins.
  *
  * <p>If the ring still doesn't show in-game under a pack, the first lever is this priority (whether the
  * callback lands before/after Iris's finalize at the shared RETURN); the second is the scene-depth

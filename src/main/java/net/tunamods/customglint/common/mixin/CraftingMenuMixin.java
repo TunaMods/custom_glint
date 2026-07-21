@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
  *
  * Server-safe: the vanilla method early-returns on isClientSide, so nothing here runs on the client.
  *
- * TRIED: @ModifyArg on ResultContainer.setItem alone looked wrong at first glance -- the method goes on to
+ * TRIED: @ModifyArg on ResultContainer.setItem alone looked wrong at first glance: the method goes on to
  * call setRemoteSlot and send ClientboundContainerSetSlotPacket with its own local, which an arg-only
  * change would not touch. It works because all three read the SAME ItemStack instance (local 6), so
  * mutating the stack in place inside the ModifyArg reaches the container, the remote slot, and the packet.

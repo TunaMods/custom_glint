@@ -17,17 +17,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Folds the slime's translucent OUTER shell into its glow outline. The inner body draws through
  * {@code LivingEntityRenderer.render} and is captured by the core body tee, but the outer shell is a
- * {@link SlimeOuterLayer} that renders its own (larger) model directly - it does NOT route through
+ * {@link SlimeOuterLayer} that renders its own (larger) model directly: it does NOT route through
  * {@code RenderLayer.renderColoredCutoutModel}, so {@code RenderLayerMixin}'s surface tee misses it and
  * only the inner cube gets a ring.
  *
  * At RETURN of the layer's {@code render} (the outer model's {@code setupAnim} state and the pose still
- * match the draw - the layer renders directly on the passed pose with no push/pop), re-render the outer
+ * match the draw, the layer renders directly on the passed pose with no push/pop), re-render the outer
  * model into the glow mask under the wearer's shared {@code CAT_ENTITY} id, so the outer shell's silhouette
  * merges with the inner body into ONE ring following the larger outer boundary. Glow-only; the inner glint
  * already fans onto the shell through the wrapped buffer during the real draw.
  *
- * Dual SRG/named {@code @Inject}, {@code require=0} - same pattern as {@code ElytraLayerMixin} (identical
+ * Dual SRG/named {@code @Inject}, {@code require=0}: same pattern as {@code ElytraLayerMixin} (identical
  * {@code RenderLayer.render} override + synthetic bridge shape). {@code SlimeOuterLayer} is only ever
  * instantiated for slimes, so the outer texture is the fixed vanilla slime texture (mirrors ElytraLayer's
  * hardcoded elytra texture).
@@ -37,7 +37,7 @@ public class SlimeOuterLayerMixin {
 
     @Shadow(aliases = {"f_117455_"}) private EntityModel<?> model;
 
-    /** Vanilla slime texture for the glow-outline trace - hoisted so it isn't reallocated per slime per frame. */
+    /** Vanilla slime texture for the glow-outline trace, hoisted so it isn't reallocated per slime per frame. */
     private static final ResourceLocation CG_SLIME_TEX = new ResourceLocation("minecraft", "textures/entity/slime/slime.png");
 
     /** SRG target: injects at RETURN of render in obfuscated environments. */

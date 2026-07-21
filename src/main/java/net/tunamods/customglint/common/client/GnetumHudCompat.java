@@ -6,7 +6,7 @@ import java.lang.reflect.Method;
  * Soft compat with Gnetum (a HUD-caching optimisation mod). Gnetum renders the in-game HUD (hotbar, …)
  * into an offscreen framebuffer and re-renders each element only every N frames, blitting the cached copy
  * on the frames in between. Our per-item content needs the element re-rendered every frame: the animated
- * glint foil freezes at whatever frame gnetum last cached, and the glow-outline ring flickers - its
+ * glint foil freezes at whatever frame gnetum last cached, and the glow-outline ring flickers. Its
  * silhouette is captured at {@code ItemRenderer.render}, so on a cached frame nothing is captured and the
  * once-per-frame {@code GlowOutlineRenderer.drainGui} composites no ring, while the refresh frame does.
  *

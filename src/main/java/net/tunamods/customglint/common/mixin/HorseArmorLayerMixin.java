@@ -70,7 +70,7 @@ public class HorseArmorLayerMixin {
             // ── Stencil mask pass ───────────────────────────────────────────
             // forHorseArmorGlint draws on every face of the armor model regardless of armor
             // texture alpha (the glint shader samples a glint design, not the armor texture).
-            // For vanilla iron/gold/diamond barding this is fine - the texture is full-coverage
+            // For vanilla iron/gold/diamond barding this is fine: the texture is full-coverage
             // opaque so visible glint == armor coverage. But Epic Knights barding (chainmail,
             // mail variants, etc.) has transparent gaps where the horse body shows through, and
             // the unmasked glint bleeds across those gaps onto the body silhouette. Stencil-mask

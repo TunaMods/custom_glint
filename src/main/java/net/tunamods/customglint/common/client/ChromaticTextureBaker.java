@@ -45,8 +45,8 @@ import java.util.Map;
  * frame stale, which is invisible on a slick that takes seconds to drift; a config seen for the first time draws
  * black for exactly one frame.
  *
- * <p>The baked texture is sampled under {@code patternScale} with {@code GL_REPEAT}, so the noise has to be
- * seamless. {@code chromatic.fsh} wraps its value-noise lattice at {@link #PERIOD} and steps octaves by integer
+ * <p>The baked texture is sampled under {@code patternScale} with {@code GL_REPEAT}, so the noise has to tile
+ * without a seam. {@code chromatic.fsh} wraps its value-noise lattice at {@link #PERIOD} and steps octaves by integer
  * factors, so every octave's lattice divides the period and the whole field repeats over one UV unit. The flow
  * offsets are wrapped to the period here on the CPU in double precision: translating a periodic field keeps it
  * periodic, and wrapping keeps the coordinates the hash sees small (the old {@code GameTime * 5000} grew without
@@ -97,10 +97,10 @@ public final class ChromaticTextureBaker {
      * frame. Called from the chromatic RenderType's {@code setupRenderState} on every draw, which is also what
      * keeps the entry warm in the LRU (the map is access-ordered, so the {@code get} counts).
      *
-     * <p>Returns 0 - no texture bound, so the layer samples black and an additive glint contributes nothing - for
+     * <p>Returns 0 (no texture bound, so the layer samples black and an additive glint contributes nothing) for
      * the one frame after a config is first seen. LOAD-BEARING that it does NOT create the target here: this runs
      * inside a RenderType's {@code setupRenderState}, i.e. mid-pass, and Forge's {@code RenderTarget.createBuffers}
-     * ends in {@code unbindWrite()}, which binds framebuffer 0 rather than main - the rest of the pass would render
+     * ends in {@code unbindWrite()}, which binds framebuffer 0 rather than main, so the rest of the pass would render
      * to the default framebuffer. Creation belongs in {@link #bakeFrame}, which rebinds main in its finally.
      */
     public static int textureId(Layer layer, int[] colors) {
@@ -111,7 +111,7 @@ public final class ChromaticTextureBaker {
     }
 
     /**
-     * Re-bake every config drawn last frame at the current time. Hooked to {@code RenderTickEvent.START} - the
+     * Re-bake every config drawn last frame at the current time. Hooked to {@code RenderTickEvent.START}: the
      * bake binds our own chromatic program, which only draws where Iris is not overriding shaders, and this runs
      * before the level pass where that gate is false.
      */
@@ -123,7 +123,7 @@ public final class ChromaticTextureBaker {
         // frame's own rendering, so a leak here would bleed into the whole frame, not just one pass. Same class of
         // guard GlowOutlineRenderer.bindMainAndResetState and the old replay drain used.
         Matrix4f savedProj = new Matrix4f(RenderSystem.getProjectionMatrix());
-        // setProjectionMatrix also sets RenderSystem's global VertexSorting, and that is NOT GL state - it is read
+        // setProjectionMatrix also sets RenderSystem's global VertexSorting, and that is NOT GL state; it is read
         // later by MultiBufferSource.endBatch and applied by every sortOnUpload RenderType. It must be handed back
         // with the projection or the frame's item bases re-sort against our ortho and lose their index buffers.
         VertexSorting savedSorting = RenderSystem.getVertexSorting();
@@ -139,7 +139,7 @@ public final class ChromaticTextureBaker {
             RenderSystem.setProjectionMatrix(new Matrix4f().setOrtho(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f),
                     VertexSorting.ORTHOGRAPHIC_Z);
             // Blend is deliberately NOT touched here. chromatic.json declares a ONE/ZERO replace blend, and
-            // ShaderInstance.apply() applies it from inside the draw - after anything set here. Letting it own the
+            // ShaderInstance.apply() applies it from inside the draw, after anything set here. Letting it own the
             // blend end to end leaves GL's enable state agreeing with BlendMode's static lastApplied, which is the
             // invariant a save/restore around it would break (see the LOAD-BEARING note in CustomGlintRenderer
             // above CHROMATIC_MODEL_UV_SCALE). Depth/cull off: a screen-space quad into a depth-less target.
@@ -201,7 +201,7 @@ public final class ChromaticTextureBaker {
             this.layer = layer;
             this.palette = palette;
             this.colorCount = colorCount;
-            // Decorrelates every trim's pattern - "no two look alike". Same derivation the old vsh used, moved to
+            // Decorrelates every trim's pattern ("no two look alike"). Same derivation the old vsh used, moved to
             // the CPU now that the seed no longer has to survive a round trip through a spare matrix slot.
             float s = (layer.seed() & 0xFFFF) / 256.0f;
             this.seedX = s * 3.1f;
@@ -262,7 +262,7 @@ public final class ChromaticTextureBaker {
             regenerateMipmaps();
         }
 
-        /** TextureMat as a flat payload, NOT a transform - the bake's UV needs no scaling (the fsh spreads DENSITY
+        /** TextureMat as a flat payload, NOT a transform: the bake's UV needs no scaling (the fsh spreads DENSITY
          *  cells across 0..1 itself), so all 16 slots are free and the vsh reads these as plain uniform elements.
          *  Layout mirrors the comment block in chromatic.vsh; keep the two in step. */
         private Matrix4f payload() {

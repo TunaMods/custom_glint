@@ -4,31 +4,32 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
-import org.joml.Matrix4f;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
-import java.util.ArrayList;
-import java.util.List;
-import net.minecraft.client.renderer.entity.ItemRenderer;
-import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.GlowOutlineRenderer;
 import net.tunamods.customglint.common.client.GnetumHudCompat;
+import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Intercepts render() to capture item stack + trigger glowing outline; intercepts getFoilBuffer/getFoilBufferDirect to inject custom per-item glint. Dual SRG/named targets, require=0 on all. */
 @Mixin(ItemRenderer.class)
@@ -130,7 +131,7 @@ public class ItemRendererMixin {
 
         // Special / 3D BEWLR items (trident, shield, any isCustomRenderer item, incl. modded) have no
         // baked quads. Re-render the whole item through renderStatic into a record-only buffer (guarded by
-        // IN_OUTLINE), capturing its animated, already-transformed geometry bucketed by texture - generic,
+        // IN_OUTLINE), capturing its animated, already-transformed geometry bucketed by texture: generic,
         // no per-item knowledge. Works in the GUI too (inventory/hotbar trident, shield, modded 3D items).
         if (model.isCustomRenderer()) {
             cg_captureSpecialOutline(stack, ctx, leftHand, pose, color, guiAnchor);
@@ -138,7 +139,7 @@ public class ItemRendererMixin {
         }
 
         // render() pushed the pose, applied the item's display transform (handleCameraTransforms ->
-        // applyTransform) + the (-0.5,-0.5,-0.5) centering, drew the quads, then popped - so pose.last()
+        // applyTransform) + the (-0.5,-0.5,-0.5) centering, drew the quads, then popped, so pose.last()
         // at this RETURN is the OUTER pose, missing both. Reproduce that sequence on a copy so the
         // silhouette matches the item's real on-screen scale and position.
         PoseStack tp = new PoseStack();
@@ -253,7 +254,7 @@ public class ItemRendererMixin {
     /** Capture a special / 3D BEWLR item's silhouette by re-rendering it through renderStatic into a
      *  record-only buffer. {@code pose} is the OUTER pose at render() RETURN; renderStatic re-applies the
      *  display transform, so the recorded positions are camera-relative and already include the item's
-     *  animation (riptide spin, block tilt - it lives in the pose the model draws under). IN_OUTLINE
+     *  animation (riptide spin, block tilt: it lives in the pose the model draws under). IN_OUTLINE
      *  prevents recursion and makes applyGlint route to the bare recording buffer. The capture buckets
      *  vertices by the texture each RenderType draws through, so the silhouette traces the real item shape
      *  via that texture's alpha (a trident traces the trident, not its square model hull). */
@@ -429,7 +430,7 @@ public class ItemRendererMixin {
         }
         if (list.isEmpty()) return null;
         list.add(buffer.getBuffer(renderType));
-        // Collapse duplicate glint delegates - Sodium/Embeddium's VertexMultiConsumer throws "Duplicate delegates"
+        // Collapse duplicate glint delegates: Sodium/Embeddium's VertexMultiConsumer throws "Duplicate delegates"
         // if the same buffer appears twice. In-place, no allocation when there are none (the common case).
         for (int i = list.size() - 1; i > 0; i--)
             if (list.indexOf(list.get(i)) != i) list.remove(i);

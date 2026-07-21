@@ -48,9 +48,9 @@ import java.util.Map;
 /**
  * Post-process glow-outline backend (1.20.1). Captures glowing items' silhouettes into an offscreen
  * mask target, then runs one fullscreen id-aware dilation composite that paints a ring over the scene.
- * Client-only; reached from {@link CustomGlintClientInit}. Ported from the 1.21.1 branch onto 1.20.1
- * Blaze3D primitives ({@link ShaderInstance} core shaders, a {@link TextureTarget} mask, a manual
- * {@link Tesselator} fullscreen blit).
+ * Client-only; reached from {@link CustomGlintClientInit}. Built on 1.20.1 Blaze3D primitives
+ * ({@link ShaderInstance} core shaders, a {@link TextureTarget} mask, a manual {@link Tesselator}
+ * fullscreen blit).
  *
  * <p>Coverage is full across the render surfaces: world items (third-person held, dropped, item
  * frames, other players) drained at {@code RenderLevelStageEvent.AFTER_WEATHER} where the live world
@@ -61,7 +61,7 @@ import java.util.Map;
  * recording {@code CapturingBufferSource}; and armor / entity model silhouettes ({@link #queueModelOutline},
  * driven from {@code EntityGlintRender}).
  *
- * <p><b>Occlusion</b> - the silhouette pass occludes against the scene: it binds the main depth texture
+ * <p><b>Occlusion</b>: the silhouette pass occludes against the scene: it binds the main depth texture
  * to sampler unit 1 (safe, because that pass writes the offscreen MASK, not the main target) and
  * discards silhouette fragments behind world geometry, so a world item behind a wall doesn't ring.
  */
@@ -77,7 +77,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // per-category thickness (see glow_composite.fsh THICKNESS[]).
     public static final int CAT_ENTITY = 0, CAT_ARMOR = 1, CAT_ITEM = 2, CAT_HELD_FP = 3;
 
-    // Per-category ring thickness in texels - MUST mirror glow_composite.fsh THICKNESS[].
+    // Per-category ring thickness in texels. MUST mirror glow_composite.fsh THICKNESS[].
     private static final int[] CAT_THICKNESS = { 4, 4, 3, 7 };
 
     private static int glowIdCounter = 0;
@@ -89,7 +89,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // ── Per-identity outline id ──────────────────────────────────────────────────
     // One id per logical figure (an entity instance), SHARED by its body and all its surface layers / worn
     // armor so they compose as ONE ring. The composite compares only the low-5-bit id (key & 31) for "same
-    // object → no internal seam" and reads the per-category thickness from the high bits - so body
+    // object → no internal seam" and reads the per-category thickness from the high bits, so body
     // (CAT_ENTITY) and armor (CAT_ARMOR) of one figure merge into one ring while staying distinct from other
     // figures. Reset each frame in beginFrame().
     private static final Map<Object, Integer> glowIdByIdentity = new IdentityHashMap<>();
@@ -105,12 +105,12 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private static ShaderInstance compositeShader;
 
     private static Uniform uSearchRadius, uThicknessScale, uProjA, uProjB,
-            uTargetId, uGuiMode, uSoloTarget, uEdgeBleed;
+            uTargetId, uGuiMode, uSoloTarget;
     private static Uniform uSilBiasScale;
 
     /** Mod-event-bus listener; registered from {@link CustomGlintClientInit#run}. The
      *  {@code "vertex"}/{@code "fragment"} program names inside each core-shader JSON must be namespaced
-     *  ({@code "customglint:glow_silhouette"}) - a bare name defaults to {@code minecraft}. */
+     *  ({@code "customglint:glow_silhouette"}); a bare name defaults to {@code minecraft}. */
     public static void registerShaders(RegisterShadersEvent event) {
         try {
             event.registerShader(
@@ -134,7 +134,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                         uTargetId       = shader.getUniform("TargetId");
                         uGuiMode        = shader.getUniform("GuiMode");
                         uSoloTarget     = shader.getUniform("SoloTarget");
-                        uEdgeBleed      = shader.getUniform("EdgeBleed");
                     });
         } catch (Exception e) {
             LOGGER.error("[{}] failed to register glow-outline shaders", MOD_ID, e);
@@ -163,7 +162,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  a NON-separate {@code srcalpha/1-srcalpha} blend) apply that blend to the ALPHA channel as well, so
      *  each decal drives the framebuffer alpha under its quad BELOW 1. On a window whose framebuffer is
      *  alpha-composited that reduced alpha presents as an opaque BLACK box behind each splatter (the RGB is
-     *  correct - an F2 screenshot, which samples main RGB, looks clean; only the composited window shows the
+     *  correct: an F2 screenshot, which samples main RGB, looks clean; only the composited window shows the
      *  boxes). A masked clear (glClear honours the colour write mask) writes alpha=1 everywhere without
      *  touching colour, so the window is opaque again. Cheap; run once at the end of the HUD frame. */
     public static void forceMainAlphaOpaque() {
@@ -280,6 +279,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private static final MultiBufferSource.BufferSource MASK_BUFFERS = MultiBufferSource.immediate(MASK_BUILDER);
 
     // ── Composite scissor / distance thinning ──────────────────────────────────
+    // Slack px added beyond the ring reach when padding a projected box, so rounding the float bounds to
+    // whole pixels can never clip the outermost ring texel.
     private static final int SCISSOR_MARGIN = 3;
     private static final float[] camBox = new float[6]; // minX,minY,minZ, maxX,maxY,maxZ (camera-relative)
 
@@ -298,10 +299,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private record Box(int x, int y, int w, int h, float scale, int id, float dist, int prio, float snap) {}
     private static final List<Box> itemBoxes = new ArrayList<>();
 
+    // The world ring thins with distance as REF_DIST/dist, clamped to [MIN_SCALE, 1]. 4 blocks is about
+    // arm's length, so a ring never grows past its full thickness on a nearby item; the 0.40 floor keeps a
+    // distant ring from thinning below what a pixel can carry and dropping out entirely.
     private static final float REF_DIST = 4.0f;   // blocks
     private static final float MIN_SCALE = 0.40f;
 
-    // GUI ring thickness as a FRACTION of an icon (1/16) pixel - matches the reference GUI outline THICKNESS.
+    // GUI ring thickness as a FRACTION of an icon (1/16) pixel, matching the reference GUI outline THICKNESS.
     // The composite reach is this * the icon's on-screen pixel size, in framebuffer texels, so the ring reads
     // as a thin ~1px line rather than a full blocky icon-pixel.
     private static final float GUI_RING_ITEM_PIXELS = 0.6f;
@@ -355,7 +359,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     /** Snapshot the live GL scissor (lower-left, framebuffer pixels) at queue time so a GUI icon's ring can be
      *  clipped to whatever clip was active when the icon drew (wand-preview recess, scroll viewport). The GUI
-     *  drain now runs once per context - after the screen's scissor has been popped - so it can no longer read
+     *  drain now runs once per context (after the screen's scissor has been popped), so it can no longer read
      *  the icon's clip live. Returns null when no scissor is active (normal slots). */
     private static int[] captureScissor() {
         if (!GL11.glIsEnabled(GL11.GL_SCISSOR_TEST)) return null;
@@ -367,7 +371,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** Queue a world-space glowing item (third-person held / dropped / frame / other player). {@code pose}
      *  is the item's camera-relative pose at its {@code ItemRenderer.render} RETURN; {@code modelView} is a
      *  COPY of the live {@code RenderSystem} modelview at that draw point. The silhouette is replayed under
-     *  that same modelview at drain - the AFTER_WEATHER live modelview differs (it would otherwise double
+     *  that same modelview at drain. The AFTER_WEATHER live modelview differs (it would otherwise double
      *  the camera transform and offset the ring). */
     public static void queueWorldItem(List<BakedQuad> quads, PoseStack.Pose pose, Matrix4f modelView,
                                       int light, int color) {
@@ -460,7 +464,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
      *  triangle-list draw (Epic Fight patched-entity meshes route through a TRIANGLES-mode RenderType).
      *  {@code data} is camera-relative {@code [x,y,z,u,v]} per vertex in triangle-list order; the vertex
      *  count is trimmed to a multiple of 3 so the deferred TRIANGLES draw never leaves a partial primitive.
-     *  Same {@code key} scheme as {@link #queueModelOutline} - the body mesh + every worn/patched layer of
+     *  Same {@code key} scheme as {@link #queueModelOutline}: the body mesh + every worn/patched layer of
      *  one figure share a key and compose as ONE ring. Drained with the world items at {@code AFTER_WEATHER}. */
     public static void queueModelOutlineTriangles(float[] data, int len, ResourceLocation tex, Matrix4f modelView,
                                                   int color, int key, int category) {
@@ -491,7 +495,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // ── Drain ──────────────────────────────────────────────────────────────────
 
     /** Drain world-space item outlines at {@code RenderLevelStageEvent.AFTER_WEATHER}, where the live
-     *  projection is the world one the items were drawn with. Used off-pack only - under a shader pack the
+     *  projection is the world one the items were drawn with. Used off-pack only; under a shader pack the
      *  drain is deferred to {@link #drainWorldShaderPack()} (see that method). */
     public static void drainWorld() { drain(worldJobs, modelWorldJobs, RenderSystem.getProjectionMatrix()); }
 
@@ -524,7 +528,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // ── Shader-pack (Oculus/Iris) deferred world drain ─────────────────────────
     // Snapshot of the live world projection taken at AFTER_WEATHER (which fires every frame BEFORE Iris's
     // end-of-renderLevel composite). Under a pack the world drain runs at renderLevel RETURN, past which the
-    // live projection has moved to GUI ortho - so the deferred drain replays this snapshot instead.
+    // live projection has moved to GUI ortho, so the deferred drain replays this snapshot instead.
     private static final Matrix4f WORLD_PROJ = new Matrix4f();
     private static boolean worldProjValid = false;
 
@@ -536,7 +540,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
     /** Deferred world drain for the shader-pack path. Iris composites its scene to the main render target
      *  at the RETURN of {@code LevelRenderer.renderLevel} ({@code finalizeLevelRendering}), overwriting
-     *  anything drawn during the earlier RenderLevelStageEvent phases - so under a pack the ring must be
+     *  anything drawn during the earlier RenderLevelStageEvent phases, so under a pack the ring must be
      *  composited AFTER that, replaying the {@link #snapshotWorldProjection() AFTER_WEATHER} projection. */
     public static void drainWorldShaderPack() {
         if (!worldProjValid) { worldJobs.clear(); modelWorldJobs.clear(); return; }
@@ -544,14 +548,14 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     }
 
     /** Drain GUI / inventory / HUD item outlines. Called ONCE per GUI context (container foreground, screen
-     *  post, HUD render post - see {@code CustomGlintClientInit}) rather than once per item flush, so all of a
+     *  post, HUD render post; see {@code CustomGlintClientInit}) rather than once per item flush, so all of a
      *  frame's glowing icons composite in a single mask pass instead of N framebuffer ping-pongs. By the time
      *  any of those hooks fire the icons (and their slot backgrounds) have already flushed to the main target,
      *  and the GUI ortho projection / modelview they were drawn under are still the live RenderSystem matrices
      *  (the per-icon slot position lives in the captured pose, not RS state, so the live base matrices are the
      *  same at any point in the GUI render). So each captured GUI-space silhouette projects exactly onto its
      *  drawn icon and the ring composites into the margin around it. Differs from {@link #drain}: (1) no captured-modelview
-     *  replay - the live matrices ARE the draw matrices, so accumulate directly; (2) the scene-depth occlusion
+     *  replay: the live matrices ARE the draw matrices, so accumulate directly; (2) the scene-depth occlusion
      *  sampler is left UNBOUND (stale world depth would wrongly occlude every flat icon); (3) ring thickness is
      *  driven by the icon's on-screen size (GUI_RING_ITEM_PIXELS) not camera distance; (4) each ring box is
      *  clipped to the GL scissor captured when that icon drew (wand-preview box, scroll viewport), so the
@@ -563,7 +567,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         Minecraft mc = Minecraft.getInstance();
         RenderTarget main = mc.getMainRenderTarget();
 
-        // Save/restore the live GL scissor for hygiene only - the composite toggles it per box and would
+        // Save/restore the live GL scissor for hygiene only. The composite toggles it per box and would
         // otherwise leave it disabled. Per-icon clipping uses each job's OWN scissor (captured when the icon
         // drew); the live scissor here is no longer the icon's clip, since this drain runs once per GUI
         // context after the screen popped its scissor. Read BEFORE the try so the finally can restore it.
@@ -578,7 +582,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             // modelview (no captured-modelview push like the world drain).
             beginAccumulation(main.width, main.height, RenderSystem.getModelViewMatrix(), RenderSystem.getProjectionMatrix());
 
-            // Clear the mask for this drain. The GUI now drains a few times per frame (once per GUI context -
+            // Clear the mask for this drain. The GUI now drains a few times per frame (once per GUI context:
             // HUD post, container foreground, screen post) instead of once per item flush, so a per-drain clear is
             // cheap and keeps each context's mask clean (a later dragged-item / tooltip drain can't pick up a
             // stale silhouette from the slot pass that already composited).
@@ -629,7 +633,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 compositeEnd();
             }
         } catch (Throwable t) {
-            // Log, but let the finally restore state - see bindMainAndResetState for why that's load-bearing.
+            // Log, but let the finally restore state. See bindMainAndResetState for why that's load-bearing.
             LOGGER.error("[{}] glow GUI drain failed", MOD_ID, t);
         } finally {
             bindMainAndResetState(main, true);
@@ -655,8 +659,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** Guarantee the MAIN render target is the bound draw target and hand back the GL state the surrounding
      *  render phase expects. Called in the finally of every drain so a mid-drain throw (or any leftover mask
      *  texture / scissor / blend the composite set) can never send the rest of the frame into the offscreen
-     *  mask (a black screen). {@code guiPhase}: the GUI/HUD render phase has a FIXED invariant - blend ON,
-     *  depth-test OFF - so restore that explicitly (not a captured snapshot, which can be a transient
+     *  mask (a black screen). {@code guiPhase}: the GUI/HUD render phase has a FIXED invariant: blend ON,
+     *  depth-test OFF. So restore that explicitly (not a captured snapshot, which can be a transient
      *  mid-HUD state). Handing EnhancedVisuals' post-HUD overlay pass blend=OFF made it draw opaque and paint
      *  the whole screen black. The world/held drain runs in the 3D pass, so it restores what it found there. */
     private static void bindMainAndResetState(RenderTarget main, boolean guiPhase) {
@@ -700,7 +704,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             int searchRadius = accumulate(jobs, models, main, proj, sceneOcclusion);
             composite(main, itemBoxes, searchRadius, proj.m22(), proj.m32());
         } catch (Throwable t) {
-            // Log, but let the finally restore state - see bindMainAndResetState for why that's load-bearing.
+            // Log, but let the finally restore state. See bindMainAndResetState for why that's load-bearing.
             LOGGER.error("[{}] glow world drain failed", MOD_ID, t);
         } finally {
             bindMainAndResetState(main, false);
@@ -723,7 +727,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         for (ModelJob j : models) searchRadius = Math.max(searchRadius, CAT_THICKNESS[j.category]);
 
         // Force write masks on before clearing: glClear honours the live GL write masks, and the world
-        // phase (AFTER_WEATHER) leaves depthMask=false - without this the mask's depth clear is a silent
+        // phase (AFTER_WEATHER) leaves depthMask=false; without this the mask's depth clear is a silent
         // no-op, the silhouette's LEQUAL test then drops every fragment and nothing rings.
         RenderSystem.depthMask(true);
         RenderSystem.colorMask(true, true, true, true);
@@ -890,7 +894,6 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         if (uProjA != null) uProjA.set(projA);
         if (uProjB != null) uProjB.set(projB);
         if (uGuiMode != null) uGuiMode.set(guiMode ? 1 : 0);
-        if (uEdgeBleed != null) uEdgeBleed.set(0);
     }
 
     private static void compositePass(Box box, float thicknessScale, int targetId, boolean soloTarget) {
@@ -935,7 +938,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     /** GUI variant of {@link #computeScissor}. {@code anchor} (from {@code ItemRendererMixin#cg_guiAnchor})
      *  carries the icon's GUI-space slot centre {@code [x,y,z]}, its nominal half-size in GUI px {@code [3]}
      *  (8 for a 16-px slot, 40 for the 5x wand preview), and the item texture's resolution {@code [4]}. Both
-     *  the ring thickness and the slot clamp are sized off that REAL on-screen icon - not the silhouette
+     *  the ring thickness and the slot clamp are sized off that REAL on-screen icon, not the silhouette
      *  footprint (which a 3D BEWLR overflows). Returns null when nothing accumulated / off-screen. */
     private static Box computeGuiBox(int width, int height, int id, boolean is3d, float[] anchor) {
         if (screenBox[0] > screenBox[2]) return null; // nothing accumulated
@@ -1018,7 +1021,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         }
     }
 
-    /** True when {@code boxes[i]} overlaps no OTHER box - so within its scissor only its own silhouette
+    /** True when {@code boxes[i]} overlaps no OTHER box, so within its scissor only its own silhouette
      *  texels exist, enabling the composite's deep-interior early-out. */
     private static boolean isSolo(List<Box> boxes, int i) {
         Box a = boxes.get(i);
@@ -1088,7 +1091,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // emitted vertex's already-transformed (camera-relative) [x,y,z,u,v] is recorded into a bucket keyed by
     // the texture of the RenderType it drew through, so the silhouette alpha-discards against that texture
     // and traces the REAL item shape. Textureless RTs fall back to WHITE_TEXTURE (full fill). Drawing the
-    // same shape through several layers records it more than once - harmless, the mask write is keyed.
+    // same shape through several layers records it more than once, harmlessly; the mask write is keyed.
     public static final class CapturingBufferSource implements MultiBufferSource {
         private final Map<ResourceLocation, float[]> data = new LinkedHashMap<>();
         private final Map<ResourceLocation, Integer> counts = new HashMap<>();

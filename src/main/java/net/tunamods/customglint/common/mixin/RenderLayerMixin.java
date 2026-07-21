@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
  * Folds entity-surface render layers into the body glow outline. {@code renderColoredCutoutModel} is the
- * single chokepoint every cutout-overlay layer draws through - directly (SheepFurLayer wool, SaddleLayer,
+ * single chokepoint every cutout-overlay layer draws through, directly (SheepFurLayer wool, SaddleLayer,
  * MushroomCowMushroomLayer, …) and via {@code coloredCutoutModelCopyLayerRender} (StrayClothingLayer,
  * DrownedOuterLayer, VillagerProfessionLayer, …).
  *
@@ -25,7 +25,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  * ring). No second model render; the real surface still draws unchanged, and a non-glowing entity pays one
  * extra method call.
  *
- * <p>Dual SRG/named @Redirect, both {@code remap=false} so exactly one resolves per environment - two
+ * <p>Dual SRG/named @Redirect, both {@code remap=false} so exactly one resolves per environment: two
  * redirects on the same instruction would conflict if both resolved.
  */
 @Mixin(RenderLayer.class)
