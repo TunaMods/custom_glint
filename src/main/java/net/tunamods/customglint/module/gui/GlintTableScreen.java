@@ -904,7 +904,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     }
 
     private static String fmtVal(float v) {
-        return v == Math.rint(v) ? String.valueOf((int) v) : String.format("%.2f", v).replaceAll("0+$", "");
+        // Locale.ROOT: a comma-decimal locale would render 1.5 as "1,5" and the trailing-zero trim below
+        // (and the GUI's fixed-width value fields) both assume a '.' separator.
+        return v == Math.rint(v) ? String.valueOf((int) v)
+                : String.format(Locale.ROOT, "%.2f", v).replaceAll("0+$", "");
     }
 
     // ── Render ──────────────────────────────────────────────────────────────────
@@ -2508,7 +2511,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         drawControlLabel(g, GlintTableMenu.SLOT_NAMETAG,   label("name_label"));
         drawTearLabel(g);
         if (modScrollDir == CustomGlint.SCROLL_STATIC) {
-            fitValue(g, String.format("%.2f", modScrollOffset), leftPos + SCROLL_X + SCROLL_W / 2, topPos + SCROLL_OFF_Y + 1);
+            fitValue(g, String.format(Locale.ROOT, "%.2f", modScrollOffset), leftPos + SCROLL_X + SCROLL_W / 2, topPos + SCROLL_OFF_Y + 1);
         }
     }
 

@@ -1096,7 +1096,10 @@ public class GlintEditorScreen extends Screen {
     }
 
     private static String fmtVal(float v) {
-        return v == Math.rint(v) ? String.valueOf((int) v) : String.format("%.2f", v).replaceAll("0+$", "");
+        // Locale.ROOT: a comma-decimal locale would render 1.5 as "1,5" and the trailing-zero trim below
+        // (and the GUI's fixed-width value fields) both assume a '.' separator.
+        return v == Math.rint(v) ? String.valueOf((int) v)
+                : String.format(Locale.ROOT, "%.2f", v).replaceAll("0+$", "");
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -1202,7 +1205,7 @@ public class GlintEditorScreen extends Screen {
         centered(g, fmtVal(layerSpeeds.get(selectedLayer)) + "×", px + 175, py + 154, skin.labelHdr);
         centered(g, fmtVal(layerScales.get(selectedLayer)) + "×", px + 175, py + 170, skin.labelHdr);
         if (layerScrollDirs.get(selectedLayer) == CustomGlint.SCROLL_STATIC) {
-            centered(g, String.format("%.2f", layerScrollOffsets.get(selectedLayer)), px + 227, py + 204, skin.labelHdr);
+            centered(g, String.format(Locale.ROOT, "%.2f", layerScrollOffsets.get(selectedLayer)), px + 227, py + 204, skin.labelHdr);
         }
 
         // Overlays
