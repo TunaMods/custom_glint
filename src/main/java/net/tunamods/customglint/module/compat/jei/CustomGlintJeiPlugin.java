@@ -1,7 +1,5 @@
 package net.tunamods.customglint.module.compat.jei;
 
-import net.tunamods.customglint.module.item.ModItems;
-
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.RecipeTypes;
@@ -17,18 +15,21 @@ import mezz.jei.api.registration.ISubtypeRegistration;
 import mezz.jei.api.registration.IVanillaCategoryExtensionRegistration;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.RegistryAccess;
-import net.minecraft.world.Container;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.Container;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingBookCategory;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.SmithingRecipe;
+import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
+import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.module.menu.GlintTableMenu;
 import net.tunamods.customglint.module.recipe.GlintBlackTearRecipe;
 import net.tunamods.customglint.module.recipe.GlintGlowTrimRecipe;
@@ -39,12 +40,10 @@ import net.tunamods.customglint.module.recipe.GlintTrimBlankDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDuplicateRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimMergeRecipe;
+import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
 import net.tunamods.customglint.module.recipe.GlintTrimSpeedRecipe;
 import net.tunamods.customglint.module.recipe.GlowTrimDyeRecipe;
 import net.tunamods.customglint.module.recipe.GlowTrimMergeRecipe;
-import net.minecraft.world.item.crafting.SmithingRecipe;
-import net.minecraft.world.item.crafting.SmithingTransformRecipe;
-import net.tunamods.customglint.module.recipe.GlintTrimScaleRecipe;
 import net.tunamods.customglint.module.recipe.TrimPowderRecipe;
 
 import java.util.ArrayList;
@@ -441,7 +440,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     }
 
     // Custom crafting layout for the recycle recipe: 4 powder + 2 glowstone in, and the output slot cycles a
-    // blank trim of every design - since the real result is random, showing one design would be misleading.
+    // blank trim of every design, since the real result is random and showing one design would be misleading.
     private static class TrimPowderExtension implements ICraftingCategoryExtension {
         private final ResourceLocation id;
         private final List<List<ItemStack>> inputs = new ArrayList<>();
@@ -528,17 +527,6 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         @Override public int getHeight() { return 0; }
     }
 
-    @Override
-    public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
-        var crafting = registration.getCraftingCategory();
-        crafting.addCategoryExtension(TrimPowderDisplay.class, TrimPowderExtension::new);
-        // Show the 3x3 shaped recipes with their real layout (diamond ring / glowstone ring, trim in the middle).
-        crafting.addCategoryExtension(DuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
-        crafting.addCategoryExtension(BlankDuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
-        crafting.addCategoryExtension(GlowTrimDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
-        crafting.addCategoryExtension(GlowDyeDisplay.class, GlowDyeExtension::new);
-    }
-
     // Display-only: the real GlowTrimDyeRecipe is isSpecial()=true (JEI skips it). The parent already supplies
     // the ingredients (a blank Glow Trim + any dye) and a colored result, so flipping the flag is enough.
     private static class GlowDyeDisplay extends GlowTrimDyeRecipe {
@@ -547,7 +535,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     }
 
     // Several single-color Glow Trims → one multi-color Glow Trim (mirrors GlowTrimMergeRecipe / the glint
-    // MergeDisplay). Shapeless, so no category extension - JEI packs the inputs itself.
+    // MergeDisplay). Shapeless, so no category extension: JEI packs the inputs itself.
     private static class GlowMergeDisplay extends GlowTrimMergeRecipe {
         private final int[] colors; // one color per input trim
 
@@ -624,6 +612,17 @@ public class CustomGlintJeiPlugin implements IModPlugin {
     }
 
     @Override
+    public void registerVanillaCategoryExtensions(IVanillaCategoryExtensionRegistration registration) {
+        var crafting = registration.getCraftingCategory();
+        crafting.addCategoryExtension(TrimPowderDisplay.class, TrimPowderExtension::new);
+        // Show the 3x3 shaped recipes with their real layout (diamond ring / glowstone ring, trim in the middle).
+        crafting.addCategoryExtension(DuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(BlankDuplicateDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(GlowTrimDisplay.class, r -> new ShapedGridExtension(r, 3, 3));
+        crafting.addCategoryExtension(GlowDyeDisplay.class, GlowDyeExtension::new);
+    }
+
+    @Override
     public void registerItemSubtypes(ISubtypeRegistration registration) {
         // Every Glint Trim is the same Item; its design / colors / glow live in NBT. Without a subtype
         // interpreter JEI keys all trims to one subtype and collapses the whole design selection (and the
@@ -631,7 +630,7 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         // the whole tag so a chromatic trim's random per-stack seed doesn't split identical designs.
         //
         // Only split for the INGREDIENT context (the ingredient list / bookmarks). For RECIPE lookup return
-        // NONE so every trim shares one subtype - clicking any trim then surfaces all the trim-modifying
+        // NONE so every trim shares one subtype: clicking any trim then surfaces all the trim-modifying
         // display recipes (speed / scale / dye / duplicate / merge / smithing), which each use a fixed sample
         // design and would otherwise only match that exact design+colors.
         registration.registerSubtypeInterpreter(ModItems.GLINT_TRIM.get(), (stack, ctx) -> {
@@ -660,16 +659,9 @@ public class CustomGlintJeiPlugin implements IModPlugin {
         List<ItemStack> trimVariants = new ArrayList<>();
         for (String patternName : GlintTrimItem.PATTERNS) {
             ItemStack trimVariant = new ItemStack(ModItems.GLINT_TRIM.get());
-            ResourceLocation patternRl;
-            if (patternName.equals("vanilla")) {
-                patternRl = CustomGlint.VANILLA;
-            } else if (patternName.contains(":")) {
-                int c = patternName.indexOf(':');
-                patternRl = new ResourceLocation(patternName.substring(0, c), "textures/glint/" + patternName.substring(c + 1) + ".png");
-            } else {
-                patternRl = CustomGlint.res("textures/glint/" + patternName + ".png");
-            }
-            GlintTrimItem.setPattern(trimVariant, patternRl);
+            // designFromName also maps the "chromatic" sentinel, which has no PNG; building the path inline
+            // here minted a dead chromatic.png and the info entry rendered untextured.
+            GlintTrimItem.setPattern(trimVariant, CustomGlint.designFromName(patternName));
             trimVariants.add(trimVariant);
         }
         registration.addIngredientInfo(trimVariants, VanillaTypes.ITEM_STACK,
