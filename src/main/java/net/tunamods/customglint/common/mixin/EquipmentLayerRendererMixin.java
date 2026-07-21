@@ -79,11 +79,13 @@ public class EquipmentLayerRendererMixin {
         // the GlintState component), this fires per equipment layer per wearer per frame.
         var glintState = CustomGlint.readState(itemStack);
         CustomGlint.Data glint = glintState.data();
-        // Elytra/capes (WINGS) are thin double-sided meshes AND the two folded wings overlap along the spine:
-        // back-face cull drops each wing's hidden inner face, and under a shader pack a depth pre-pass
-        // (forWingDepthPrepass) + LEQUAL wing pass keeps only the nearest of the two overlapping wings so the
-        // additive glint stops doubling into a bright spine seam. The wing glow also needs its OWN isolated
-        // ring so it doesn't fuse into the wearer's body outline.
+        // Elytra/capes (WINGS) are thin double-sided meshes AND the two folded wings overlap along the spine.
+        // In phase the EQUAL depth test already keeps only the nearest surface, but the post-shader overlay
+        // has no such test, so it gets a depth pre-pass (forWingDepthPrepass) + a LEQUAL wing pass, which
+        // keeps the nearest surface per pixel and stops the additive glint doubling into a bright spine seam.
+        // Back-face culling is NOT the answer here (it eats the mirrored wing's faces, killing the glint on
+        // the underside), see the note on GlintPipelines.CHROMATIC_OVERLAY_WING. The wing glow also needs its
+        // OWN isolated ring so it doesn't fuse into the wearer's body outline.
         boolean isWings = layerType == EquipmentClientInfo.LayerType.WINGS;
 
         if (glint != null) {
@@ -116,12 +118,12 @@ public class EquipmentLayerRendererMixin {
                     }
                 } else if (gl[layerIdx].simultaneous() && !chroma) {
                     for (int i = 0; i < colors.length; i++) {
-                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i, isWings);
+                        RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, i);
                         if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, colors[i]);
                     }
                 } else {
                     int color = CustomGlintRenderer.computeAnimatedColor(glint, layerIdx);
-                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, 0, isWings);
+                    RenderType rt = CustomGlintRenderer.forArmorGlint(glint, layerIdx, 0);
                     if (rt != null) cg_submit(collector, model, state, poseStack, rt, lightCoords, color);
                 }
             }
