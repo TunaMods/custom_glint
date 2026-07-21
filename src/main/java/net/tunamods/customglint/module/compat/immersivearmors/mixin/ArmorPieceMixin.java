@@ -16,8 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Standalone-only Immersive Armors compat. IA cancels the vanilla {@code HumanoidArmorLayer} draw for its
  * {@code ExtendedArmorItem}s and renders each slot as a list of {@code Piece}s. The two piece types that
- * draw the actual armor geometry - {@code LayerPiece} (the layered body/leggings shells) and
- * {@code ModelPiece} (deco models) - share one erased {@code render} descriptor, so a single mixin hits
+ * draw the actual armor geometry, {@code LayerPiece} (the layered body/leggings shells) and
+ * {@code ModelPiece} (deco models), share one erased {@code render} descriptor, so a single mixin hits
  * both. At {@code render} RETURN the piece's model still holds the pose it was just drawn under, so we
  * re-render it with our glint render types and (when glowing) trace its silhouette into the glow mask.
  *

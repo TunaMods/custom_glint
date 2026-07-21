@@ -29,7 +29,7 @@ import java.util.List;
  * armed, fanning the same mesh across our entity-depth glint render types and (when glowing) a record-only
  * silhouette. {@link #flush} queues the recorded silhouettes as one glow ring keyed on the wearer +
  * {@code CAT_ARMOR}. The glint uses {@code forHorseArmorGlint}/{@code forChromaticEntityGlint} (EQUAL +
- * NO_LAYERING) to match {@code entityCutoutNoCull}'s depth - {@code forArmorGlint} would test against the
+ * NO_LAYERING) to match {@code entityCutoutNoCull}'s depth; {@code forArmorGlint} would test against the
  * wrong offset and vanish. All references are vanilla types, so there is no dep on Artifacts.
  */
 public final class ArtifactGlint {
@@ -80,8 +80,9 @@ public final class ArtifactGlint {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                // Mirrors HumanoidArmorLayerMixin's chromatic branch: procedural RT handed to chromaticWorldBuffer
-                // so it defers to the post-composite replay under a shaderpack.
+                // Chromatic has no design PNG, so forHorseArmorGlint returns null and the layer would
+                // silently vanish. Mirrors HumanoidArmorLayerMixin's chromatic branch; chromaticWorldBuffer
+                // is a plain getBuffer, kept as the single seam for chromatic surfaces.
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
                     RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
                     if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(bufferSource, crt));

@@ -1,5 +1,6 @@
 package net.tunamods.customglint.module.compat.immersivearmors.client;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexMultiConsumer;
 import net.minecraft.client.model.Model;
@@ -9,7 +10,6 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
-import com.mojang.blaze3d.vertex.PoseStack;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.common.client.CustomGlintRenderer;
 import net.tunamods.customglint.common.client.EntityGlintRender;
@@ -75,7 +75,7 @@ public final class ImmersiveArmorsGlint {
         if (glint != null) drawGlint(glint, model, pose, buffer, light);
 
         // Glow ring: re-record the piece silhouette against its real texture, keyed on the wearer +
-        // CAT_ARMOR so every piece (and the body) fold into one ring - same path as vanilla armor.
+        // CAT_ARMOR so every piece (and the body) fold into one ring, same path as vanilla armor.
         if (glowing && entity != null) {
             ResourceLocation tex = resolveTexture(piece, stack);
             if (tex != null) {
@@ -91,9 +91,9 @@ public final class ImmersiveArmorsGlint {
         float[] buf = CustomGlintRenderer.COLOR_BUF.get();
         List<VertexConsumer> list = new ArrayList<>();
         for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-            // chromaticWorldBuffer rather than buffer.getBuffer, mirroring HumanoidArmorLayerMixin: under a
-            // shaderpack an in-phase chromatic draw lands in the gbuffer and the scene composite discards it,
-            // so the layer defers to the post-composite replay. Off-pack this is a straight getBuffer.
+            // Chromatic has no design PNG, so forArmorGlint returns null and the layer would silently vanish.
+            // Mirrors HumanoidArmorLayerMixin's chromatic branch; chromaticWorldBuffer is a plain getBuffer,
+            // kept as the single seam for chromatic surfaces.
             if (CustomGlint.isChromatic(layers[layerIdx])) {
                 RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
                 if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));

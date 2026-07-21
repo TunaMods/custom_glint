@@ -24,7 +24,7 @@ import java.util.List;
  * vanilla armor layer, so our core {@code HumanoidArmorLayerMixin} never sees them and the plain Hazmat
  * suit (a vanilla {@code ArmorItem}) is the only piece that glints.
  *
- * Every one of those models ultimately obtains its draw buffer from
+ * Every one of those models obtains its draw buffer from
  * {@code ItemRenderer.getFoilBufferDirect} (directly for the MekaSuit's baked quads, via
  * {@code MekanismJavaModel.getVertexConsumer} for the Java models). {@code MekanismArmorGlintMixin} arms
  * this glue for the duration of one {@code ICustomArmor.render} (so only Mekanism special armor is
@@ -37,7 +37,7 @@ import java.util.List;
  * armor variants, for the same reason {@code ArtifactGlint} does: Mekanism draws through its own
  * {@code MekanismRenderType} rather than vanilla {@code armorCutoutNoCull}, and that type sets no layering
  * shard, so it writes depth at raw projected depth. {@code forArmorGlint}'s VIEW_OFFSET_Z_LAYERING tests at
- * D-epsilon and never matches, which made every layer - texture and chromatic - vanish on worn Mekanism armor.
+ * D-epsilon and never matches, which made every layer (texture and chromatic) vanish on worn Mekanism armor.
  */
 public final class MekanismArmorGlint {
     private MekanismArmorGlint() {}
@@ -87,8 +87,9 @@ public final class MekanismArmorGlint {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                // Mirrors HumanoidArmorLayerMixin's chromatic branch: procedural RT handed to chromaticWorldBuffer
-                // so it defers to the post-composite replay under a shaderpack.
+                // Chromatic has no design PNG, so forHorseArmorGlint returns null and the layer would
+                // silently vanish. Mirrors HumanoidArmorLayerMixin's chromatic branch; chromaticWorldBuffer
+                // is a plain getBuffer, kept as the single seam for chromatic surfaces.
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
                     RenderType crt = CustomGlintRenderer.forChromaticEntityGlint(glint, layerIdx);
                     if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(bufferSource, crt));

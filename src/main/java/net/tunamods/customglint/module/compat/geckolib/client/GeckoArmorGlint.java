@@ -71,8 +71,9 @@ public final class GeckoArmorGlint {
             CustomGlint.Layer[] layers = glint.layers();
             float[] buf = CustomGlintRenderer.COLOR_BUF.get();
             for (int layerIdx = 0; layerIdx < layers.length; layerIdx++) {
-                // Mirrors HumanoidArmorLayerMixin's chromatic branch: procedural RT handed to chromaticWorldBuffer
-                // so it defers to the post-composite replay under a shaderpack.
+                // Chromatic has no design PNG, so forArmorGlint returns null and the layer would silently
+                // vanish. Mirrors HumanoidArmorLayerMixin's chromatic branch; chromaticWorldBuffer is a
+                // plain getBuffer, kept as the single seam for chromatic surfaces.
                 if (CustomGlint.isChromatic(layers[layerIdx])) {
                     RenderType crt = CustomGlintRenderer.forChromaticArmorGlint(glint, layerIdx);
                     if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(bufferSource, crt));

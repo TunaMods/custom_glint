@@ -19,8 +19,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * The four base renderers (generic, belt, boot, glove) declare the {@code render} entry; the glowing
  * variants extend them and inherit it, so targeting the four bases covers every artifact. {@code getModel}
- * and per-hand glove handling differ per renderer, but wrapping the shared foil buffer sidesteps that -
- * whatever geometry is drawn is fanned. {@code remap = false}: the targets are Artifacts-owned.
+ * and per-hand glove handling differ per renderer, but wrapping the shared foil buffer sidesteps that.
+ * Whatever geometry is drawn is fanned. {@code remap = false}: the targets are Artifacts-owned.
  */
 @Pseudo
 @Mixin(targets = {

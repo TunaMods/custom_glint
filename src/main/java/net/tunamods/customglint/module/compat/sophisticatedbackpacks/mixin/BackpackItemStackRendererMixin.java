@@ -24,14 +24,14 @@ import java.util.List;
 /**
  * Standalone-only compat: BackpackItemStackRenderer (BEWLR) iterates renderPasses from its
  * BakedModel and calls MultiBufferSource.getBuffer(RenderType) directly per pass, bypassing
- * ItemRenderer.getFoilBuffer - so ItemRendererMixin never wraps the consumer with our glint
+ * ItemRenderer.getFoilBuffer, so ItemRendererMixin never wraps the consumer with our glint
  * layers. The outline already works because the glow-silhouette capture is driven from
  * ItemRenderer.render at the BEWLR boundary, independent of getFoilBuffer.
  *
  * At RETURN of renderByItem we re-resolve the baked model the same way SB did and submit it
  * to ItemRenderer.renderModelLists with a VertexMultiConsumer of our glint render types. SB
  * does not push/pop pose inside renderByItem, so the pose state at RETURN matches what the
- * model was rendered in - no extra translate needed.
+ * model was rendered in: no extra translate needed.
  *
  * isItem=false on forGlint (3D BEWLR scale 1.0), same as the troll weapon path.
  */
@@ -79,8 +79,7 @@ public class BackpackItemStackRendererMixin {
         List<VertexConsumer> list = new ArrayList<>();
         for (int li = 0; li < layers.length; li++) {
             // CHROMATIC has no design PNG, so forGlint returns null and the layer would silently vanish.
-            // chromaticWorldBuffer rather than buffer.getBuffer - under a shaderpack an in-phase chromatic
-            // draw lands in the gbuffer and the scene composite discards it, so it defers to the replay.
+            // chromaticWorldBuffer is a plain getBuffer, kept as the single seam for chromatic surfaces.
             if (CustomGlint.isChromatic(layers[li])) {
                 RenderType crt = CustomGlintRenderer.forChromaticGlint(glint, li, false);
                 if (crt != null) list.add(CustomGlintRenderer.chromaticWorldBuffer(buffer, crt));

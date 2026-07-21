@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Standalone-only Epic Fight compat. Epic Fight replaces vanilla entity rendering for any patched
  * entity: {@code RenderEngine$Events.renderLivingEvent} handles {@code RenderLivingEvent.Pre},
  * renders its own skinned mesh via {@code PatchedLivingEntityRenderer.render}, then cancels the
- * event - so vanilla {@code LivingEntityRenderer.render} (and our core {@code LivingEntityRendererMixin}
+ * event, so vanilla {@code LivingEntityRenderer.render} (and our core {@code LivingEntityRendererMixin}
  * that captures the glow silhouette) never runs. Result: no glow outline on Epic Fight mobs/players.
  *
  * This re-installs the capture on Epic Fight's render path. {@code PatchedLivingEntityRenderer.render}
@@ -24,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * queued as one ring. See {@link EpicFightEntityGlow} for the capture / queue details.
  *
  * The handler captures only the leading {@code entity} argument (Mixin permits omitting trailing
- * context parameters), so this class carries zero reference to Epic Fight's own types - same
+ * context parameters), so this class carries zero reference to Epic Fight's own types, same
  * soft-compat spirit as our other {@code @Pseudo} standalone mixins. {@code remap = false} everywhere:
  * the target method and its Minecraft-typed descriptor are identical in dev and production (class names
  * are stable; the mod's own method name isn't remapped).
