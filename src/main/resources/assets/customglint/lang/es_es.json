@@ -152,7 +152,7 @@
   "screen.customglint.glint_table.merge": "Fusión",
   "screen.customglint.glint_table.issue.pick_design": "Elige un diseño",
   "screen.customglint.glint_table.issue.too_many_layers": "Demasiadas capas (máx. %s)",
-  "screen.customglint.glint_table.issue.bad_layer": "Una capa necesita 1–8 colores y un diseño que poseas",
+  "screen.customglint.glint_table.issue.bad_layer": "Una capa necesita 1-8 colores y un diseño que poseas",
   "screen.customglint.glint_table.issue.design_not_owned": "Aún no posees este diseño",
   "screen.customglint.glint_table.issue.donor_not_owned": "No posees el diseño del adorno a fusionar",
   "screen.customglint.glint_table.issue.add_color": "Añade al menos un color",

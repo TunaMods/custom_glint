@@ -15,7 +15,7 @@ Added:
 - Hover tooltips on every button and control, in both the wand editor and the Glint Table
 - Swap two colors, or two layers, by selecting one and shift-clicking another; shift-right-click a dye to remove just that color from a blend
 - Rainbow Dye now has a JEI info page describing how it's used at the Glint Table
-- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it — trims go to its library, materials into its slots
+- Glint Bag: a pouch that holds Glint Trims, Tears, Rainbow Dye and Glint Table materials, auto-collects trims as you loot (shift-right-click to toggle it on or off), and unloads into a Glint Table when you shift-right-click it; trims go to its library, materials into its slots
 - Trim Powder: smelt a trim you don't want into powder, then craft 4 powder with 2 Glowstone Dust for a fresh random trim
 
 Fixed:

@@ -1,5 +1,5 @@
-Glint & Glamour - developer documentation
-Minecraft 1.21.1 / NeoForge 21.x - MIT license (attribution required)
+Glint & Glamour developer documentation
+Minecraft 1.21.1 / NeoForge 21.x. MIT license (attribution required)
 ================================================================================
 
 Per-item animated enchantment glint with color, timing, and scale control. Works
@@ -48,7 +48,7 @@ In build.gradle:
     }
 
 This compiles your mod against the api and embeds it in your jar. ModDevGradle
-nests jarJar dependencies automatically - there is no jarJar.enable() call and
+nests jarJar dependencies automatically. There is no jarJar.enable() call and
 no separate jarJar task. Build with `./gradlew build`; the api is packed into
 the normal build/libs/yourmod-<version>.jar (no -all classifier).
 
@@ -175,8 +175,8 @@ Tag-level helpers for packets, NBT files, and snapshot / restore:
   CompoundTag      fresh    = CustomGlint.toTag(layers);
 
 Client-side mutations (writeEntity / setEntityGlowing / setEntityGlowColors called
-on the client — preview UIs, replay viewers, entities reconstructed from stored
-NBT) render immediately without waiting for a server broadcast. If you need to
+on the client, for preview UIs, replay viewers, or entities reconstructed from
+stored NBT) render immediately without waiting for a server broadcast. If you need to
 force a re-sync after manually editing the entity's persistent NBT, call the
 client-only helper:
 
@@ -286,7 +286,7 @@ Client-only. Gate any reference with FMLEnvironment.dist.
   CustomGlintRenderer.COLOR_BUF            // scratch float[4] for a frame color
 
 The glow outline is a post-process pass, captured automatically from the vanilla
-item, armor, and entity draws — there is no per-call outline draw method. A
+item, armor, and entity draws. There is no per-call outline draw method. A
 custom renderer that bypasses the item-foil buffer drives it the way the bundled
 mod compat does: fan the glint through a RenderType factory above, and route the
 same mesh into GlowOutlineRenderer to capture its silhouette.
