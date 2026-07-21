@@ -10,6 +10,11 @@ import net.neoforged.neoforge.event.entity.player.ItemFishedEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.tunamods.customglint.common.client.CustomGlintClientInit;
 
+/**
+ * Entry point of the api jar. Everything wired here is server-safe except the one dist-guarded call into
+ * {@link CustomGlintClientInit}, so a mod that bundles only the api jar gets working glint storage and
+ * auto-apply on both a client and a dedicated server with no extra setup.
+ */
 @Mod(CustomGlintApiMod.MOD_ID)
 public class CustomGlintApiMod {
     public static final String MOD_ID = "customglint_api";
@@ -17,7 +22,6 @@ public class CustomGlintApiMod {
     public CustomGlintApiMod(IEventBus modEventBus) {
         // Glint item data component + synced entity-glint attachment (customglint:glint / :entity_glint).
         // The attachment auto-syncs to tracking clients, so per-instance entity glint needs no sync packet.
-        // Registered here so mods that bundle only the api jar get both with no extra wiring.
         CustomGlintComponents.register(modEventBus);
 
         // Client-only render init (BEWLR outline textures, texture-cache reload listener). Referenced

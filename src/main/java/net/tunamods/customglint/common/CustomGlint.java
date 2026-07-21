@@ -27,13 +27,15 @@ import java.util.concurrent.ThreadLocalRandom;
 import static net.tunamods.customglint.CustomGlintMod.MOD_ID;
 
 /**
- * Server-safe data API for Custom Glints. NBT read/write, color and design constants, and the
- * auto-apply registries live here. The rendering pipeline lives in
- * {@link net.tunamods.customglint.common.client.CustomGlintRenderer}, which is client-only and
- * references this class for {@link Layer}/{@link Data} types and NBT.
+ * Server-safe data API for Custom Glints. Item and entity glint state, color and design constants, and
+ * the auto-apply registries live here. The rendering pipeline lives in
+ * {@link net.tunamods.customglint.common.client.CustomGlintRenderer}, which is client-only and reads the
+ * {@link Layer}/{@link Data} types from here. That class is named fully-qualified in javadoc on purpose:
+ * this file imports nothing client-side, so it stays loadable on a dedicated server.
  *
- * Kept free of client imports so it stays loadable on a dedicated server; render types live in
- * {@code CustomGlintRenderer}.
+ * <p>Naming: {@code read}/{@code write} move a whole set of glint layers, {@code get}/{@code set} touch a
+ * single glow field, and {@code fromTag}/{@code toTag} plus the {@code *Tag} methods go through the
+ * CompoundTag bridge.
  */
 public final class CustomGlint {
 
@@ -71,6 +73,13 @@ public final class CustomGlint {
 
     // ── Layer ─────────────────────────────────────────────────────────────────
 
+    /** {@code int[]} through a list codec. The boxing round-trip is spelled out because
+     *  {@code List#toArray} yields {@code Object[]}, never {@code int[]}. Shared by the layer colors and
+     *  the glow colors, which serialize the same way. */
+    private static final Codec<int[]> INT_ARRAY_CODEC = Codec.INT.listOf().xmap(
+            list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
+            arr -> Arrays.stream(arr).boxed().toList());
+
     public record Layer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
                         float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
         /** Back-compat constructor: defaults the procedural-chromatic {@link #seed} to 0 (only
@@ -88,10 +97,7 @@ public final class CustomGlint {
 
         public static final Codec<Layer> CODEC = RecordCodecBuilder.create(i -> i.group(
                 ResourceLocation.CODEC.fieldOf("design").forGetter(Layer::design),
-                Codec.INT.listOf().xmap(
-                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
-                        arr -> Arrays.stream(arr).boxed().toList()
-                ).fieldOf("colors").forGetter(Layer::colors),
+                INT_ARRAY_CODEC.fieldOf("colors").forGetter(Layer::colors),
                 Codec.FLOAT.optionalFieldOf("speed", 1.0f).forGetter(Layer::speed),
                 Codec.BOOL.optionalFieldOf("interpolate", true).forGetter(Layer::interpolate),
                 Codec.FLOAT.optionalFieldOf("scale", 1.0f).forGetter(Layer::patternScale),
@@ -120,6 +126,8 @@ public final class CustomGlint {
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
+    /** Array-aware {@code equals}/{@code hashCode} for the same reason as {@link Layer}: the record
+     *  default would compare {@code layers} by identity. */
     public record Data(Layer[] layers) {
         public static final Codec<Data> CODEC = Layer.CODEC.listOf().xmap(
                 list -> new Data(list.toArray(new Layer[0])),
@@ -136,8 +144,9 @@ public final class CustomGlint {
 
     /**
      * The payload of the {@link CustomGlintComponents#GLINT} item data component: the glint {@link Data}
-     * (nullable, a glow-only stack has none) plus the two independent glow fields. Codec-serialized for
-     * both persistence and network sync.
+     * (nullable, a glow-only stack has none) plus the four independent glow fields. Codec-serialized for
+     * both persistence and network sync. {@code equals}/{@code hashCode} are array-aware for the same
+     * reason as {@link Layer}.
      */
     public record GlintState(@Nullable Data data, boolean glowing, int[] glowColors, float glowSpeed, boolean glowInterp) {
         public static final GlintState EMPTY = new GlintState(null, false, new int[0], 1.0f, true);
@@ -151,10 +160,7 @@ public final class CustomGlint {
         public static final MapCodec<GlintState> MAP_CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Data.CODEC.optionalFieldOf("glint").forGetter(s -> Optional.ofNullable(s.data())),
                 Codec.BOOL.optionalFieldOf("glowing", false).forGetter(GlintState::glowing),
-                Codec.INT.listOf().xmap(
-                        list -> { int[] a = new int[list.size()]; for (int n = 0; n < a.length; n++) a[n] = list.get(n); return a; },
-                        arr -> Arrays.stream(arr).boxed().toList()
-                ).optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
+                INT_ARRAY_CODEC.optionalFieldOf("glowColors", new int[0]).forGetter(GlintState::glowColors),
                 // Glow-outline animation speed + interpolation, kept alongside the glow colors. Default 1.0 /
                 // true so any pre-existing item decodes to the vanilla cycle (they're absent from its tag).
                 Codec.FLOAT.optionalFieldOf("glowSpeed", 1.0f).forGetter(GlintState::glowSpeed),
@@ -216,17 +222,14 @@ public final class CustomGlint {
      *  its design {@link ResourceLocation}. Handles the {@code vanilla} sentinel and {@code namespace:name}
      *  qualified names; everything else maps to {@code <ns>:textures/glint/<name>.png}. Uses tryParse (not the
      *  throwing factory) so a malformed remote name falls back to vanilla instead of crashing the server tick. */
-    public static ResourceLocation designFromName(String name) {
+    public static ResourceLocation designFromName(@Nullable String name) {
         if (name == null) return VANILLA;
         if ("vanilla".equals(name)) return VANILLA;
         if ("chromatic".equals(name)) return CHROMATIC;
-        ResourceLocation id;
-        if (name.indexOf(':') >= 0) {
-            int c = name.indexOf(':');
-            id = ResourceLocation.tryParse(name.substring(0, c) + ":textures/glint/" + name.substring(c + 1) + ".png");
-        } else {
-            id = ResourceLocation.tryParse(MOD_ID + ":textures/glint/" + name + ".png");
-        }
+        int c = name.indexOf(':');
+        ResourceLocation id = c >= 0
+                ? ResourceLocation.tryParse(name.substring(0, c) + ":textures/glint/" + name.substring(c + 1) + ".png")
+                : ResourceLocation.tryParse(MOD_ID + ":textures/glint/" + name + ".png");
         return id != null ? id : VANILLA;
     }
 
@@ -360,14 +363,11 @@ public final class CustomGlint {
             BROWN, WHITE, LIGHT_GRAY, GRAY, BLACK
     };
 
-    // ── NBT ──────────────────────────────────────────────────────────────────
-    // All field names ("layers"/"glint"/"glowing"/"glowColors"/…) live in the codecs
-    // (Layer.CODEC / Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants.
-
     // ── Item glint component ───────────────────────────────────────────────────
     // Item glint state lives in the typed CustomGlintComponents.GLINT data component (a GlintState).
-    // The CompoundTag bridge helpers (itemGlintTag / writeItemTag / fromTag / toTag) round-trip that same
-    // GlintState through its codec + NbtOps (see stateToTag / stateFromTag below).
+    // Every field name ("layers"/"glint"/"glowing"/"glowColors"/…) lives in the codecs (Layer.CODEC /
+    // Data.CODEC / GlintState.MAP_CODEC); there are no loose NBT key constants. The CompoundTag bridge
+    // further down round-trips that same GlintState through its codec + NbtOps.
 
     @Nullable
     public static Data read(ItemStack stack) {
@@ -385,21 +385,6 @@ public final class CustomGlint {
     private static void setState(ItemStack stack, GlintState state) {
         if (state.isEmpty()) stack.remove(CustomGlintComponents.GLINT.get());
         else stack.set(CustomGlintComponents.GLINT.get(), state);
-    }
-
-    // ── CompoundTag bridge (serialized snapshot / restore) ────────────────────
-    // The GlintState codec driven through NbtOps, for the cases that genuinely need a serialized form:
-    // a stored snapshot, give NBT, /data, a custom packet. An item tag and an entity tag share one shape
-    // (same codec), so a mob's glint copies onto an item and back with no field-by-field translation.
-
-    private static CompoundTag stateToTag(GlintState state) {
-        if (state.isEmpty()) return new CompoundTag();
-        return (CompoundTag) GlintState.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
-    }
-
-    private static GlintState stateFromTag(@Nullable CompoundTag tag) {
-        if (tag == null || tag.isEmpty()) return GlintState.EMPTY;
-        return GlintState.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(GlintState.EMPTY);
     }
 
     public static boolean has(ItemStack stack) {
@@ -429,6 +414,14 @@ public final class CustomGlint {
 
     public static void write(ItemStack stack, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous, int scrollDir, float scrollOffset, int seed) {
         write(stack, new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous, scrollDir, scrollOffset, seed) });
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int[] colors) {
+        write(stack, design, colors, 1.0f, true, 1.0f, true);
+    }
+
+    public static void write(ItemStack stack, ResourceLocation design, int color) {
+        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
     }
 
     public static void remove(ItemStack stack) {
@@ -502,14 +495,6 @@ public final class CustomGlint {
         return stack;
     }
 
-    public static void write(ItemStack stack, ResourceLocation design, int[] colors) {
-        write(stack, design, colors, 1.0f, true, 1.0f, true);
-    }
-
-    public static void write(ItemStack stack, ResourceLocation design, int color) {
-        write(stack, design, new int[]{color}, 1.0f, true, 1.0f, true);
-    }
-
     public static ItemStack glinted(Item item, ResourceLocation design, int[] colors) {
         return glinted(item, design, colors, 1.0f, true, 1.0f, true);
     }
@@ -527,10 +512,17 @@ public final class CustomGlint {
         write(stack, data.layers());
     }
 
-    /** Store a single-layer glint for {@code item} in {@code registry}; shared by the craft / fishing / mob-drop wrappers. */
+    /** One-layer {@link Data}, the shape every {@code register*Glint} overload builds. */
+    private static Data singleLayer(ResourceLocation design, int[] colors, float speed, boolean interpolate,
+                                    float patternScale, boolean simultaneous) {
+        return new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) });
+    }
+
+    /** Store a single-layer glint for {@code item} in {@code registry}; shared by the craft / fishing /
+     *  mob-drop / loot wrappers. */
     private static void putGlint(Map<Item, Data> registry, Item item, ResourceLocation design, int[] colors,
-                                      float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        registry.put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
+                                 float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        registry.put(item, singleLayer(design, colors, speed, interpolate, patternScale, simultaneous));
     }
 
     public static final Map<Item, Data> CRAFT_GLINTS = new HashMap<>();
@@ -575,6 +567,17 @@ public final class CustomGlint {
         applyFrom(MOB_DROP_GLINTS, stack);
     }
 
+    /** Per-loot-table registry, read by the loot modifier when a table rolls one of these items. */
+    public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
+
+    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
+        putGlint(LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()), item, design, colors, speed, interpolate, patternScale, simultaneous);
+    }
+
+    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
+        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
+    }
+
     // ── Entity glint API ──────────────────────────────────────────────────────
     //
     // Per-instance state is the synced ENTITY_GLINT attachment (a GlintState). Writing it server-side
@@ -590,7 +593,7 @@ public final class CustomGlint {
     }
 
     public static void registerEntityGlint(EntityType<?> type, ResourceLocation design, int[] colors) {
-        registerEntityGlint(type, new Data(new Layer[]{ new Layer(design, colors, 1.0f, true, 1.0f, true) }));
+        registerEntityGlint(type, singleLayer(design, colors, 1.0f, true, 1.0f, true));
     }
 
     @Nullable
@@ -660,6 +663,21 @@ public final class CustomGlint {
         setEntityState(entity, new GlintState(cur.data(), cur.glowing(), new int[0], cur.glowSpeed(), cur.glowInterp()));
     }
 
+    // ── CompoundTag bridge (serialized snapshot / restore) ────────────────────
+    // The GlintState codec driven through NbtOps, for the cases that genuinely need a serialized form:
+    // a stored snapshot, give NBT, /data, a custom packet. An item tag and an entity tag share one shape
+    // (same codec), so a mob's glint copies onto an item and back with no field-by-field translation.
+
+    private static CompoundTag stateToTag(GlintState state) {
+        if (state.isEmpty()) return new CompoundTag();
+        return (CompoundTag) GlintState.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+    }
+
+    private static GlintState stateFromTag(@Nullable CompoundTag tag) {
+        if (tag == null || tag.isEmpty()) return GlintState.EMPTY;
+        return GlintState.CODEC.parse(NbtOps.INSTANCE, tag).result().orElse(GlintState.EMPTY);
+    }
+
     /** The stack's glint state as a CompoundTag (empty if none). The bridge format shared with entity
      *  NBT, so a mob's glint can be copied onto an item and vice-versa. */
     public static CompoundTag itemGlintTag(ItemStack stack) {
@@ -672,14 +690,14 @@ public final class CustomGlint {
     }
 
     /** Replaces the per-instance entity glint state in one shot (empty/null clears it). Auto-syncs. */
-    public static void writeEntityTag(LivingEntity entity, CompoundTag glintTag) {
+    public static void writeEntityTag(LivingEntity entity, @Nullable CompoundTag glintTag) {
         setEntityState(entity, stateFromTag(glintTag));
     }
 
     /** Replaces the per-item glint state in one shot. Symmetric with {@link #writeEntityTag}, useful for
      *  transferring glint between item and entity (e.g. {@code writeItemTag(stack, entityGlintTag(entity))})
      *  or restoring from a stored tag in bulk. Empty/null tag clears the glint. */
-    public static void writeItemTag(ItemStack stack, CompoundTag glintTag) {
+    public static void writeItemTag(ItemStack stack, @Nullable CompoundTag glintTag) {
         setState(stack, stateFromTag(glintTag));
     }
 
@@ -706,13 +724,4 @@ public final class CustomGlint {
         return stateToTag(new GlintState(new Data(layers), false, new int[0], 1.0f, true));
     }
 
-    public static final Map<ResourceLocation, Map<Item, Data>> LOOT_GLINTS = new HashMap<>();
-
-    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors, float speed, boolean interpolate, float patternScale, boolean simultaneous) {
-        LOOT_GLINTS.computeIfAbsent(lootTable, k -> new HashMap<>()).put(item, new Data(new Layer[]{ new Layer(design, colors, speed, interpolate, patternScale, simultaneous) }));
-    }
-
-    public static void registerLootGlint(ResourceLocation lootTable, Item item, ResourceLocation design, int[] colors) {
-        registerLootGlint(lootTable, item, design, colors, 1.0f, true, 1.0f, true);
-    }
 }
