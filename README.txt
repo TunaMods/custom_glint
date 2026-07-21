@@ -35,7 +35,7 @@ In build.gradle:
     repositories {
         maven {
             name = "TunaMods Glint & Glamour"
-            url = "https://raw.githubusercontent.com/TunaMods/custom_glint/26.1.2/mcmodsrepo"
+            url = "https://raw.githubusercontent.com/TunaMods/Glint-and-Glamour/26.1.2/mcmodsrepo"
         }
     }
 
