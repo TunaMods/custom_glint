@@ -92,8 +92,7 @@ public class ArmorDecorationLayerMixin {
                     CustomGlintRenderer.resolveGlowColor(stack));
         }
         if (glint != null) {
-            EpicKnightsGlintRT.applyDecorationGlint(entity, pose, buffer, light, overlay, parts, texture, glint,
-                    glowing, stack);
+            EpicKnightsGlintRT.applyDecorationGlint(entity, pose, buffer, light, overlay, parts, texture, glint);
         }
     }
 }

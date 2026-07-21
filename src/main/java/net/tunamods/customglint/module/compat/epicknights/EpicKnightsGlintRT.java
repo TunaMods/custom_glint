@@ -218,8 +218,7 @@ public final class EpicKnightsGlintRT extends RenderStateShard {
     /** Entry point. Off-pack uses the per-fragment cutout; under a shader pack the cutout program is hijacked, so
      *  it defers to the post-Iris overlay drain (see the class header). */
     public static void applyDecorationGlint(LivingEntity entity, PoseStack pose, MultiBufferSource buffer,
-            int light, int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint,
-            boolean glowing, ItemStack stack) {
+            int light, int overlay, ModelPart[] parts, ResourceLocation decorationTexture, CustomGlint.Data glint) {
         if (CustomGlintRenderer.isInShadowPass()) return;
         if (CustomGlintRenderer.isShaderPackActive()) {
             applyDecorationGlint_shadersOn(entity, pose, light, parts, decorationTexture, glint);
