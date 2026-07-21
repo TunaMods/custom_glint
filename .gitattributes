@@ -3,3 +3,10 @@
 # are changed when only line endings change.
 src/generated/**/.cache/cache text eol=lf
 src/generated/**/*.json text eol=lf
+
+# The maven repo is served straight from raw.githubusercontent, so the bytes git
+# stores are the bytes a consumer downloads. Publishing generates the poms and
+# maven-metadata.xml with CRLF and checksums to match, and autocrlf was rewriting
+# them to LF on the way into the index, which broke every published .sha1/.md5.
+# Store this tree verbatim.
+mcmodsrepo/** -text
