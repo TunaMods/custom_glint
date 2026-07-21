@@ -12,7 +12,7 @@ layout(std140) uniform DynamicTransforms {
     vec3 ModelOffset;
     mat4 TextureMat;
 };
-// Globals carries GlintAlpha — the vanilla glint-strength dimmer. Inlined (startup core shaders can't
+// Globals carries GlintAlpha, the vanilla glint-strength dimmer. Inlined (startup core shaders can't
 // moj_import); bound for GUI draws by RenderSystem.bindDefaultUniforms, same as the world glint.
 layout(std140) uniform Globals {
     ivec3 CameraBlockPos;
@@ -24,8 +24,8 @@ layout(std140) uniform Globals {
     int UseRgss;
 };
 
-uniform sampler2D Sampler0;   // cached item slot — silhouette mask
-uniform sampler2D Sampler1;   // grayscale glint design — single design (REPEAT), or the shared atlas (CLAMP)
+uniform sampler2D Sampler0;   // cached item slot, the silhouette mask
+uniform sampler2D Sampler1;   // grayscale glint design: single design (REPEAT), or the shared atlas (CLAMP)
 
 in vec2 texCoord0;
 in vec4 vertexColor;
@@ -62,7 +62,7 @@ vec2 atlasUV(vec2 duv) {
 const float EDGE = 0.1;
 // Apparent design size on the icon: BIGGER = bigger motifs (fewer repeats). It's the inverse of the
 // tiling factor (k = patternScale / GLINT_SIZE), so the knob reads the intuitive way now. The 64x64
-// source caps crispness at large sizes — pushing this much past ~3 magnifies the texels (soft/blocky).
+// source caps crispness at large sizes. Pushing this much past ~3 magnifies the texels (soft/blocky).
 const float GLINT_SIZE = 3.0;
 
 // Sample coord for the design + scroll. The world's forGlint samples V twice as densely as U (scaleU =
@@ -78,14 +78,14 @@ vec2 glintUV(vec2 p, vec2 scroll, float ps) {
 
 void main() {
     // Item-local (0..1 over the 16px icon, v measured downward) from the atlas slot coord. s is the slot
-    // UV size, derived EXACTLY from guiScale (the slot is always 16*guiScale atlas texels) — same scheme
+    // UV size, derived EXACTLY from guiScale (the slot is always 16*guiScale atlas texels). Same scheme
     // as gui_item_outline, no fwidth/drift.
     float s = 16.0 * vGuiScale / float(textureSize(Sampler0, 0).x);
     float vv = 1.0 - texCoord0.y;
     vec2 origin = vec2(floor(texCoord0.x / s), floor(vv / s)) * s;
     vec2 itemLocal = vec2((texCoord0.x - origin.x) / s, (vv - origin.y) / s);
 
-    // Only draw over the item itself — the cached slot's alpha is the silhouette.
+    // Only draw over the item itself: the cached slot's alpha is the silhouette.
     if (texture(Sampler0, texCoord0).a < EDGE) {
         discard;
     }

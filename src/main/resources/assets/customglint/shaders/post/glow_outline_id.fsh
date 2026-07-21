@@ -2,7 +2,7 @@
 
 #moj_import <minecraft:projection.glsl>
 
-// Custom Glints glow-outline composite — PER-OBJECT id-aware, PER-CATEGORY thickness, single pass. The
+// Custom Glints glow-outline composite: PER-OBJECT id-aware, PER-CATEGORY thickness, single pass. The
 // mask (core/glow_silhouette) packs a per-object KEY + visibility into alpha:
 //   0        : empty (no silhouette here).
 //   1..127   : IN-SHAPE but OCCLUDED, key = v.
@@ -11,12 +11,12 @@
 // that object's glow colour.
 //
 // A pixel rings iff a VISIBLE silhouette of a DIFFERENT object (different id) is within that source's
-// CATEGORY thickness — so the outer edge of every object PLUS the boundary wherever two objects overlap,
+// CATEGORY thickness. That rings the outer edge of every object PLUS the boundary wherever two objects overlap,
 // and each category can have its own ring width. MaskSampler MUST be NEAREST (alpha is a packed classifier).
 //
 // Cost note: an in-shape interior pixel with no other object within reach scans the whole kernel before
 // discarding (no cheap "deep interior" early-out). Fine for normal scenes; heavier under extreme entity
-// crams — mitigate with outlineRenderScale (downscale) or smaller THICKNESS values.
+// crams. Mitigate with outlineRenderScale (downscale) or smaller THICKNESS values.
 
 uniform sampler2D MaskSampler;
 uniform sampler2D DepthSampler;       // scene depth, sampled at the RING pixel
@@ -26,7 +26,7 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-// Per-category outline thickness, in texels (≈ screen px at DOWNSCALE=1). EDIT to taste — index = category:
+// Per-category outline thickness, in texels (≈ screen px at DOWNSCALE=1). EDIT to taste. Index = category:
 //   [0] entity   [1] armor   [2] item (3rd-person held / dropped)   [3] held (first-person)
 // SEARCH MUST be >= ceil(max of these). If you set any above 7, raise SEARCH to match AND raise
 // EntityGlintRender.SCISSOR_PAD to >= that + ~4 so the thicker ring isn't clipped at the group rect edge.
@@ -81,7 +81,7 @@ void main() {
 
     // NEAREST source wins. When two objects' outline bands overlap (a sheep behind a player's armored arm),
     // BOTH have a visible silhouette edge within reach of this pixel, so both want to ring it. Returning on
-    // the FIRST edge found made an arbitrary one win — often the farther object (the sheep), whose ring then
+    // the FIRST edge found made an arbitrary one win, often the farther object (the sheep), whose ring then
     // painted OVER the nearer object's outline (the "back outline draws through my outline" report). The ring
     // bands sit in empty space between the two shapes, so the surface-depth occlusion test alone can't resolve
     // it. Instead scan the whole kernel and keep the source with the SMALLEST eye distance, so the front-most
@@ -104,7 +104,7 @@ void main() {
             if (vN < 128) continue;                             // visible silhouettes are the only sources
             int keyN = vN - 128;
             // Compare the ID (low 5 bits) only, NOT the category: an entity's body (CAT_ENTITY) and its
-            // armor (CAT_ARMOR) share one id, so this skips the seam between them — they ring as ONE shape
+            // armor (CAT_ARMOR) share one id, so this skips the seam between them. They ring as ONE shape
             // instead of doubling where two pieces overlap. Distinct objects keep distinct ids and still ring.
             if ((keyN & 31) == (keyP & 31)) continue;           // same identity → not a boundary
             // Reconstruct this source's linear eye distance from the scene depth at its texel, then scale the
@@ -114,7 +114,7 @@ void main() {
             float ndc = srcDepthRaw * 2.0 - 1.0;
             float srcDist = ProjMat[3][2] / (ndc + ProjMat[2][2]);
             // A VISIBLE silhouette source can only sit on the cleared far plane (depth ~1.0) if its geometry
-            // never wrote to the main depth buffer — i.e. the first-person held item, which under an Iris pack
+            // never wrote to the main depth buffer, i.e. the first-person held item, which under an Iris pack
             // is drawn into Iris's gbuffer, not the main target, so the composite samples the cleared far value
             // here. Without this guard srcDist → far → scale → MIN_SCALE and EVERY hand item rings as a thin
             // hairline (TRIED: routing held items through the hand-projection drain fixed the float but left

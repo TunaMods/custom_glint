@@ -4,7 +4,7 @@
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 
-// Custom Glints NORMAL-glint overlay vertex shader — the post-Iris counterpart of core/glint_color.vsh.
+// Custom Glints NORMAL-glint overlay vertex shader, the post-Iris counterpart of core/glint_color.vsh.
 // Under an active shader pack a normal glint layer can't draw in-phase: Iris substitutes our program for
 // one of its own, and every gbuffer entity program is opaque, so the grayscale design paints SOLID over
 // the item (you can't see through it). So under a pack the layer is queued (EntityGlintRender.queueGlint

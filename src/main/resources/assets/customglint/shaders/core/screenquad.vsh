@@ -2,7 +2,7 @@
 
 // Custom Glints fullscreen-triangle vertex shader (copy of vanilla core/screenquad). Shipped under the
 // customglint namespace so the glow-outline composite pipeline resolves it without namespace ambiguity.
-// Emits a single oversized triangle covering the screen from gl_VertexID alone — draw(0, 3), no buffers.
+// Emits a single oversized triangle covering the screen from gl_VertexID alone: draw(0, 3), no buffers.
 
 out vec2 texCoord;
 

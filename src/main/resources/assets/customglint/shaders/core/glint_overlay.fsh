@@ -5,14 +5,14 @@
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 
-// Custom Glints NORMAL-glint overlay fragment shader — the post-Iris counterpart of core/glint_color.fsh.
+// Custom Glints NORMAL-glint overlay fragment shader, the post-Iris counterpart of core/glint_color.fsh.
 // The design brightness + per-vertex tint are identical to the in-phase glint; the only additions are the
 // cutout alpha-test and the per-fragment scene-depth occlusion test, both needed because the model is
 // re-rendered AFTER Iris finishes the frame (no in-phase surface depth to EQUAL-test against). Borrowed
 // from core/chromatic_overlay.fsh / core/glow_silhouette.fsh.
 
 uniform sampler2D Sampler0;     // grayscale design (the scrolling pattern; rgb = brightness, a = pattern shape)
-uniform sampler2D Sampler1;     // model/atlas texture — its alpha drives the cutout silhouette
+uniform sampler2D Sampler1;     // model/atlas texture; its alpha drives the cutout silhouette
 uniform sampler2D DepthSampler; // full-res committed scene depth (main target)
 
 in float sphericalVertexDistance;
@@ -30,13 +30,13 @@ out vec4 fragColor;
 // bodies whose depth is stably written to the committed buffer. The glint fills the whole SURFACE, so it must
 // occlude the entity's OWN parts against each other (a sheep leg tucked under the wool, a limb behind the
 // torso). Those inter-part gaps are small, so a coarse flat bias would leak the covered part through the
-// front — the "body parts glint through the model" report. SLOPE-SCALED: the floor needed on a camera-FACING
+// front, the "body parts glint through the model" report. SLOPE-SCALED: the floor needed on a camera-FACING
 // surface is tiny (our re-render matches the scene depth to ~mm); the bias only grows at grazing SILHOUETTE
 // edges, where one pixel spans a large depth range and a too-tight bias would self-cull the surface's own rim.
 // fwidth(viewDist) IS that per-pixel span. SLOPE_BIAS is kept LOW (0.6, matching the chromatic overlay): 1.5
 // widened the grazing bias past the inter-part gaps and re-opened the show-through; 0.6 still clears the rim's
 // own fwidth without ballooning far enough to leak a hidden limb. MIN_BIAS covers depth quantization + any
-// Iris-vs-vanilla depth mismatch. TRANSLUCENT shells (slime) take the flat loose variant instead — see
+// Iris-vs-vanilla depth mismatch. TRANSLUCENT shells (slime) take the flat loose variant instead. See
 // core/glint_overlay_loose.fsh (their re-sorted depth needs a coarse bias this tight test would drop out).
 const float MIN_BIAS = 0.015;
 const float SLOPE_BIAS = 0.6;
@@ -50,7 +50,7 @@ void main() {
     }
 
     // Per-fragment occlusion: reconstruct the scene's eye distance at this pixel and drop anything that
-    // isn't the visible front surface (occluded geometry — including the entity's OWN farther parts — or our
+    // isn't the visible front surface (occluded geometry including the entity's OWN farther parts, or our
     // own back faces, cull is off). Slope-scaled bias: tight head-on, widening only at grazing edges.
     vec2 uv = (screenPos.xy / screenPos.w) * 0.5 + 0.5;
     float sceneDepth = texture(DepthSampler, uv).r;

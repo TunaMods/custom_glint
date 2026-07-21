@@ -155,7 +155,7 @@
   "screen.customglint.glint_table.issue.pick_design": "Pick a design",
   "screen.customglint.glint_table.issue.too_many_layers": "Too many layers (max %s)",
   "screen.customglint.glint_table.issue.need_layer_tear": "Layers need %s ×%s",
-  "screen.customglint.glint_table.issue.bad_layer": "A layer needs 1–8 colors and an owned design",
+  "screen.customglint.glint_table.issue.bad_layer": "A layer needs 1-8 colors and an owned design",
   "screen.customglint.glint_table.issue.design_not_owned": "You don't own this design yet",
   "screen.customglint.glint_table.issue.donor_not_owned": "You don't own the merge trim's design",
   "screen.customglint.glint_table.issue.add_color": "Add at least one color",

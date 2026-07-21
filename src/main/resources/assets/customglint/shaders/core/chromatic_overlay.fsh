@@ -5,16 +5,16 @@
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 
-// Custom Glints PROCEDURAL CHROMATIC overlay fragment shader — the post-Iris counterpart of
+// Custom Glints PROCEDURAL CHROMATIC overlay fragment shader, the post-Iris counterpart of
 // core/chromatic.fsh. Identical oil-slick synthesis, but the model is re-rendered AFTER Iris finishes
-// the frame (the chromatic procedural program can't run in-phase under a pack — Iris swaps it for a
+// the frame (the chromatic procedural program can't run in-phase under a pack; Iris swaps it for a
 // pack program and the glint goes flat white), so occlusion can't ride the GPU depth test against
 // Iris's gbuffer. Instead we sample the committed scene depth (DepthSampler = the main target's depth)
-// and keep ONLY the fragment that is the visible front surface — exactly an EQUAL depth test done in
-// the shader, robust to any depth-precision mismatch between our re-render and Iris's gbuffer pass.
+// and keep ONLY the fragment that is the visible front surface, exactly an EQUAL depth test done in
+// the shader, tolerant of any depth-precision mismatch between our re-render and Iris's gbuffer pass.
 // (Borrowed from core/glow_silhouette.fsh's per-fragment occlusion.)
 
-uniform sampler2D Sampler0;     // the model texture (elytra/armor/entity) — drives the cutout alpha-test
+uniform sampler2D Sampler0;     // the model texture (elytra/armor/entity); drives the cutout alpha-test
 uniform sampler2D Sampler1;     // palette strip: 1px tall, one texel per colour
 uniform sampler2D DepthSampler; // full-res scene depth (main target)
 
@@ -39,7 +39,7 @@ const float DENSITY = 14.0; // noise cells across one UV unit — global chromat
 // camera-facing surfaces and widens at grazing silhouette edges so the surface's own rim isn't self-culled.
 //
 // Chromatic uses a SMALLER slope than the design glint. Chromatic is a full-coverage ADDITIVE slick, so where
-// the occlusion is too loose a back face passes AND its colour SUMS with the front face's — a limb's front +
+// the occlusion is too loose a back face passes AND its colour SUMS with the front face's: a limb's front +
 // back faces stack into a bright blown-out rim at the grazing edge ("arm/leg overlaps too bright"). A tighter
 // slope culls the back face much closer to the edge, collapsing that rim, while MIN_BIAS (unchanged) still
 // covers the armor polygon-offset + depth precision so the front surface itself never self-culls.
@@ -92,7 +92,7 @@ vec3 cgChroma(int n, float n1, float n2, float t) {
 }
 
 void main() {
-    // Cutout: the model mesh (elytra wing, armor) is rectangular — its real silhouette is the texture's
+    // Cutout: the model mesh (elytra wing, armor) is rectangular. Its real silhouette is the texture's
     // alpha. The in-phase glint gets this for free (the cutout draw only wrote depth on opaque texels);
     // the post-Iris re-render must alpha-test the model texture itself, exactly like core/glow_silhouette.
     if (texture(Sampler0, texCoord0).a < 0.1) {
@@ -100,7 +100,7 @@ void main() {
     }
 
     // Per-fragment occlusion: reconstruct the scene's eye distance at this pixel and discard anything that
-    // isn't the visible front surface (occluded geometry, or our own back faces — cull is off).
+    // isn't the visible front surface (occluded geometry, or our own back faces; cull is off).
     vec2 uv = (screenPos.xy / screenPos.w) * 0.5 + 0.5;
     float sceneDepth = texture(DepthSampler, uv).r;
     float ndc = sceneDepth * 2.0 - 1.0;
@@ -122,7 +122,7 @@ void main() {
     vec3 col = cgChroma(n, n1, n2, t);
     // Identical brightness to the in-phase chromatic (core/chromatic.fsh): the composite now adds this with a
     // plain ADDITIVE blend (not GLINT), so the overlay squares the colour exactly ONCE (into the isolated
-    // target) just like the in-phase draw — matching brightness/saturation on and off a pack. (An earlier
+    // target) just like the in-phase draw, matching brightness/saturation on and off a pack. (An earlier
     // GLINT composite squared it a SECOND time; boosting bright to counter that then over-cooked the slick
     // into a vibrant red/black instead of the intended lava mid-tones.)
     float bright = 0.7 + 0.3 * n2;

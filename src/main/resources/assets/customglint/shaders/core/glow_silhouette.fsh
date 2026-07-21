@@ -2,11 +2,11 @@
 
 #moj_import <minecraft:projection.glsl>
 
-// Custom Glints glow-silhouette fragment shader — the SINGLE combined mask (replaces the old separate
+// Custom Glints glow-silhouette fragment shader, the SINGLE combined mask (replaces the old separate
 // FULL-shape + VISIBLE passes, which cost a second model render + a second emit per mob). One render of
 // the model now produces both pieces of information the composite needs, encoded in alpha:
 //
-//   alpha == 0            : empty (not part of any entity) — discarded shape texels.
+//   alpha == 0            : empty (not part of any entity), discarded shape texels.
 //   1..127  (v/255)       : IN SHAPE but OCCLUDED (behind world geometry), object id = v. Marks the shape
 //                           (so the composite doesn't ring its interior) but is NOT a ring source.
 //   128..255 (v/255)      : VISIBLE (unoccluded), object id = v - 128. The composite rings outward from
@@ -36,7 +36,7 @@ out vec4 fragColor;
 // it has the source depth to scale by.
 
 // Occlusion bias, in BLOCKS of linear view-space distance. The test compares the fragment's eye distance
-// (viewDist) against the scene's eye distance reconstructed from the sampled depth — NOT raw window depth.
+// (viewDist) against the scene's eye distance reconstructed from the sampled depth, NOT raw window depth.
 // Window depth is nonlinear (1/z), so a fixed window-depth epsilon corresponds to a world gap that grows
 // as distance² and lets the ring leak through solid cutout leaf texels once the entity is far enough away
 // (the leaf surface and the entity collapse into the same window-depth bucket). A bias measured in blocks
@@ -45,7 +45,7 @@ out vec4 fragColor;
 //
 // SLOPE-SCALED (like the glint/chromatic overlays): a flat 0.10-block bias is larger than a thin model's
 // own front-to-back gap, so a part tucked BEHIND another (a shield's handle behind its face) reads as
-// visible and its silhouette gets ringed — showing "through" the front, since the composite draws over the
+// visible and its silhouette gets ringed, showing "through" the front, since the composite draws over the
 // scene. The bias only needs to be loose at grazing SILHOUETTE edges (where one pixel spans a big depth
 // range and a tight bias would wrongly occlude the outer rim). fwidth(viewDist) is that per-pixel depth
 // span, so scaling the bias by it stays tight on camera-facing surfaces (hidden inner parts occlude, no
@@ -59,7 +59,7 @@ void main() {
         discard;
     }
 
-    // Reconstruct screen UV from the interpolated clip position (resolution-independent — no viewport
+    // Reconstruct screen UV from the interpolated clip position (resolution-independent; no viewport
     // uniform needed) and sample the full-res scene depth at this fragment.
     vec2 uv = (screenPos.xy / screenPos.w) * 0.5 + 0.5;
     float sceneDepth = texture(DepthSampler, uv).r;

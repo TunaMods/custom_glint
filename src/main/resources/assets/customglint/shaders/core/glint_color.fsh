@@ -26,7 +26,7 @@ void main() {
     float fade = (1.0 - total_fog_value(sphericalVertexDistance, cylindricalVertexDistance, FogEnvironmentalStart, FogEnvironmentalEnd, FogRenderDistanceStart, FogRenderDistanceEnd)) * GlintAlpha;
     // The glint blend is additive, so on-screen opacity is the brightness of the emitted rgb. The DESIGN
     // renders at FULL brightness: its texture alpha decides the SHAPE only (the discard above), never the
-    // brightness — exactly like vanilla core/glint (color.rgb * fade). Only the colour's OWN alpha
+    // brightness, exactly like vanilla core/glint (color.rgb * fade). Only the colour's OWN alpha
     // (vertexColor.a) scales it, so a deliberately-translucent glint colour still fades.
     // Was `* color.a` (= textureAlpha * vertexColor.a), which folded the design texture's own alpha into
     // brightness and washed out soft-edged / gradient designs (the "too transparent" report).

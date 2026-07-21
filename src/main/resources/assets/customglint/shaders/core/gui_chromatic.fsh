@@ -22,7 +22,7 @@ layout(std140) uniform Globals {
     int UseRgss;
 };
 
-uniform sampler2D Sampler0;   // cached item slot — silhouette mask
+uniform sampler2D Sampler0;   // cached item slot, the silhouette mask
 uniform sampler2D Sampler1;   // palette strip (1px tall, one texel per colour)
 
 in vec2 texCoord0;
@@ -86,7 +86,7 @@ vec3 cgChroma(int n, float n1, float n2, float t) {
 }
 
 void main() {
-    // Item-local (0..1 over the 16px icon, v measured downward) from the atlas slot coord — same scheme as
+    // Item-local (0..1 over the 16px icon, v measured downward) from the atlas slot coord. Same scheme as
     // gui_item_glint, slot UV size s derived exactly from guiScale.
     float s = 16.0 * vGuiScale / float(textureSize(Sampler0, 0).x);
     float vv = 1.0 - texCoord0.y;
@@ -107,7 +107,7 @@ void main() {
 
     int n = int(vCount + 0.5);
 
-    // Continuous full-coverage oil-slick (no thresholded blobs / no gaps) — matches core/chromatic.fsh.
+    // Continuous full-coverage oil-slick (no thresholded blobs / no gaps), matching core/chromatic.fsh.
     float n1 = fbm(uv + so + vec2(t * 0.10, -t * 0.07));
     float n2 = fbm(uv * 1.7 + so.yx - vec2(t * 0.06, t * 0.04));
     vec3 col = cgChroma(n, n1, n2, t);

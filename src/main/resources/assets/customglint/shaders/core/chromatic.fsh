@@ -83,7 +83,7 @@ void main() {
     int n = int(vCount + 0.5);
 
     // Continuous oil-slick: FULL coverage, the colour comes from a smooth noise field that flows over time
-    // (no thresholded blobs / no gaps — matches the reference's solid rainbow surface). Two fields decorrelate
+    // (no thresholded blobs / no gaps, matching the reference's solid rainbow surface). Two fields decorrelate
     // the colour position from the brightness so it reads as a slick with depth rather than a flat wash.
     float n1 = fbm(uv + so + vec2(t * 0.10, -t * 0.07));
     float n2 = fbm(uv * 1.7 + so.yx - vec2(t * 0.06, t * 0.04));

@@ -10,11 +10,11 @@
 // every side (scissor grown to match), UVs pinned to the item's atlas slot, so the icon appears at
 // SCALE = (16 + 2*MARGIN)/16 inside the quad with a MARGIN-px border for the halo. Every sample maps back into
 // the item's OWN slot (item-local coords clamped to [0,1]); off-item samples return empty, so the neighbouring
-// icon is never read. Order-independent (discard-over-icon / draw-in-border) — works although the 26.1 GUI
-// sorts blits by pipeline, not submission order.
+// icon is never read. Order-independent (discard-over-icon / draw-in-border), which works although the 26.1
+// GUI sorts blits by pipeline, not submission order.
 //
 // The slot UV size s is computed EXACTLY from guiScale (the slot is always 16*guiScale atlas texels), NOT from
-// fwidth or a packed pixel size. See the TRIED note — a drifting s was the real cause of the "cross-section"
+// fwidth or a packed pixel size. See the TRIED note: a drifting s was the real cause of the "cross-section"
 // tearing, not the dilation itself.
 //
 // TRIED — do NOT repeat:
@@ -28,7 +28,7 @@
 //   * Round-disc neighbourhood for the dilation: DASHED 45-degree edges (the (1,1) diagonal drops out below
 //     ~1.41 radius). Use the SQUARE (Chebyshev) neighbourhood below.
 
-// DynamicTransforms (inlined — startup core shaders can't moj_import; mirrors position_tex_color.fsh).
+// DynamicTransforms, inlined (startup core shaders can't moj_import; mirrors position_tex_color.fsh).
 layout(std140) uniform DynamicTransforms {
     mat4 ModelViewMat;
     vec4 ColorModulator;
@@ -59,7 +59,7 @@ float gSlotSize(float guiScale) {
     return 16.0 * guiScale / float(textureSize(Sampler0, 0).x);   // slot UV size, EXACT
 }
 
-// Item alpha at an item-local coord (0..1 over the icon, v measured downward). 0 if off the item — so the
+// Item alpha at an item-local coord (0..1 over the icon, v measured downward). 0 if off the item, so the
 // dilation never reads past this slot into the neighbouring icon. origin = this slot's (u, vv) corner.
 float itemAlpha(vec2 il, vec2 origin, float s) {
     if (il.x < 0.0 || il.x > 1.0 || il.y < 0.0 || il.y > 1.0) {
