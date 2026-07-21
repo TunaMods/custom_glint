@@ -424,8 +424,8 @@ public class GlintTableMenu extends AbstractContainerMenu {
      */
     public void print(String designId, float speed, float scale, int opacity,
                       boolean glow, boolean glowAuto, boolean named, String name, boolean simultaneous,
-                      int scrollDir, float scrollOffset, boolean interpolate, int glowHex, int nameHex, int[][] shardDyes,
-                      int[] donorColors, CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                      int scrollDir, float scrollOffset, boolean interpolate, int nameHex, int[][] shardDyes,
+                      CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers,
                       int[][] glowShardDyes) {
         if (!(player instanceof ServerPlayer sp)) return;
         // tryParse (not parse): designId is a raw client-supplied string; a malformed one would otherwise

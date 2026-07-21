@@ -185,27 +185,19 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
     private final List<List<Integer>> glowShards = new ArrayList<>();
     private boolean glowFocused = false;
     private int selectedColorIdx = -1;
-    private static final int RAINBOW = 16, CUSTOM_FLAG = 0x40000000;
+    private ItemStack lastMain = ItemStack.EMPTY;
+    private String trimName = "";
+
+    // ── Widgets ───────────────────────────────────────────────────────────────
     private EditBox hexBox;
     private boolean hexOpen = false;
     private int hexShardIdx = -1;
     private int hexMode = HEX_SHARD;
-    private static final int HEX_SHARD = 0, HEX_GLOW = 1, HEX_NAME = 2;
-    private int glowHex = -1, nameHex = -1;
-    private ItemStack lastMain = ItemStack.EMPTY;
-    private String trimName = "";
+    private int nameHex = -1;
     private EditBox nameBox;
-    private static final int ALPHA_MIN = 32;
 
     private BevelButton printBtn, glowModeBtn, glowToggleBtn, nameToggleBtn;
     private BevelButton offsetMinus, offsetPlus;
-
-    private static final int SCROLL_X = 12, SCROLL_Y = 194, SCROLL_W = 100, SCROLL_H = 12;
-    private static final int SCROLL_OFF_Y = 208;
-    private static final int INTERP_X = 217, INTERP_Y = 194, INTERP_W = 116, INTERP_H = 12;
-    private static final int NAME_BOX_X = 129, NAME_BOX_Y = 186, NAME_BOX_W = 62;
-    // Centered where the button + (now hidden) glow dye slot used to share the 129..211 span: 129 + (82-62)/2.
-    private static final int GLOW_MODE_X = 139, GLOW_MODE_Y = 204, GLOW_MODE_W = 62, GLOW_MODE_H = 12;
 
     // Per-draw memo of the preview stacks (rebuilt many times per cascade otherwise).
     private boolean frameMemo = false;
@@ -331,7 +323,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         List<List<Integer>> colorShards, glowShards;
         boolean glowFocused;
         float modSpeed, modScale, modScrollOffset;
-        int modOpacity, modScrollDir, selectedColorIdx, glowHex, nameHex;
+        int modOpacity, modScrollDir, selectedColorIdx, nameHex;
     }
 
     private static List<List<Integer>> copyShards(List<List<Integer>> src) {
@@ -354,7 +346,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         b.modScrollDir = modScrollDir; b.modScrollOffset = modScrollOffset;
         b.modInterpolate = modInterpolate; b.modGlow = modGlow; b.modNamed = modNamed;
         b.glowAuto = glowAuto; b.tearSimultaneous = tearSimultaneous; b.activeSourceSim = activeSourceSim;
-        b.selectedColorIdx = selectedColorIdx; b.glowHex = glowHex; b.nameHex = nameHex;
+        b.selectedColorIdx = selectedColorIdx; b.nameHex = nameHex;
         b.trimName = trimName;
         savedBuild = b;
     }
@@ -374,7 +366,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         modScrollDir = b.modScrollDir; modScrollOffset = b.modScrollOffset;
         modInterpolate = b.modInterpolate; modGlow = b.modGlow; modNamed = b.modNamed;
         glowAuto = b.glowAuto; tearSimultaneous = b.tearSimultaneous; activeSourceSim = b.activeSourceSim;
-        selectedColorIdx = b.selectedColorIdx; glowHex = b.glowHex; nameHex = b.nameHex;
+        selectedColorIdx = b.selectedColorIdx; nameHex = b.nameHex;
         trimName = b.trimName == null ? "" : b.trimName;
         if (nameBox != null) { nameBox.setValue(trimName); nameBox.setVisible(modNamed); }
     }
@@ -399,7 +391,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         glowAuto = true;
         tearSimultaneous = true;
         activeSourceSim = false;
-        glowHex = nameHex = -1;
+        nameHex = -1;
         trimName = "";
         if (nameBox != null) { nameBox.setValue(""); nameBox.setVisible(false); }
         closeHex();
@@ -1001,11 +993,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (hexBox != null) {
             boolean show;
             int hx = 0, hy = 0;
-            if (hexMode == HEX_GLOW) {
-                Slot s = menu.slots.get(GlintTableMenu.SLOT_GLOW_DYE);
-                show = hexOpen && menu.showGlowDye && rainbowInSlot(GlintTableMenu.SLOT_GLOW_DYE);
-                hx = leftPos + s.x + 18; hy = topPos + s.y;
-            } else if (hexMode == HEX_NAME) {
+            if (hexMode == HEX_NAME) {
                 Slot s = menu.slots.get(GlintTableMenu.SLOT_NAME_DYE);
                 show = hexOpen && menu.showNameDye && rainbowInSlot(GlintTableMenu.SLOT_NAME_DYE);
                 hx = leftPos + s.x + 18; hy = topPos + s.y;
@@ -1550,10 +1538,10 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         openHexWith((v & CUSTOM_FLAG) != 0 ? String.format("%06X", v & 0xFFFFFF) : "");
     }
 
-    private void openHexColor(int mode) {
-        hexMode = mode;
-        int cur = mode == HEX_GLOW ? glowHex : nameHex;
-        openHexWith(cur >= 0 ? String.format("%06X", cur) : "");
+    /** Opens the hex box on the custom name colour (the only non-shard hex target). */
+    private void openHexName() {
+        hexMode = HEX_NAME;
+        openHexWith(nameHex >= 0 ? String.format("%06X", nameHex) : "");
     }
 
     private void openHexWith(String val) {
@@ -1576,7 +1564,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         if (hex.length() != 6) return;
         int rgb = Integer.parseInt(hex, 16) & 0xFFFFFF;
         switch (hexMode) {
-            case HEX_GLOW -> glowHex = rgb;
             case HEX_NAME -> nameHex = rgb;
             default -> {
                 List<List<Integer>> shards = editShards();
@@ -2687,12 +2674,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         }
 
         if (button == 1) {
-            if (menu.showGlowDye && rainbowInSlot(GlintTableMenu.SLOT_GLOW_DYE) && overSlot(mx, my, GlintTableMenu.SLOT_GLOW_DYE)) {
-                if (hexOpen && hexMode == HEX_GLOW) closeHex(); else openHexColor(HEX_GLOW);
-                return true;
-            }
             if (menu.showNameDye && rainbowInSlot(GlintTableMenu.SLOT_NAME_DYE) && overSlot(mx, my, GlintTableMenu.SLOT_NAME_DYE)) {
-                if (hexOpen && hexMode == HEX_NAME) closeHex(); else openHexColor(HEX_NAME);
+                if (hexOpen && hexMode == HEX_NAME) closeHex(); else openHexName();
                 return true;
             }
         }
@@ -2823,8 +2806,8 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             if (glowColorShards.length == 0) return; // needs at least one glow colour
             PacketDistributor.sendToServer(new GlintPrintPacket(
                     "", modSpeed, 1.0f, 0, false, false, modNamed, trimName, false,
-                    CustomGlint.SCROLL_E, 0.0f, modInterpolate, glowHex, nameHex, glowColorShards, new int[0],
-                    new CustomGlint.Layer[0], new CustomGlint.Layer[0], false, true, new int[0][]));
+                    CustomGlint.SCROLL_E, 0.0f, modInterpolate, nameHex, glowColorShards,
+                    new CustomGlint.Layer[0], new CustomGlint.Layer[0], true, new int[0][]));
             return;
         }
         // Commit the previewed merge donor into real stacked layers (one per layer, one tear each) so the
@@ -2841,7 +2824,7 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         CustomGlint.Layer[] above = upperLayers.toArray(new CustomGlint.Layer[0]);
         PacketDistributor.sendToServer(new GlintPrintPacket(
                 design.toString(), modSpeed, modScale, modOpacity, modGlow, glowAuto, modNamed, trimName, tearSimultaneous,
-                modScrollDir, modScrollOffset, modInterpolate, glowHex, nameHex, shardDyes, new int[0], below, above, activeSourceSim,
+                modScrollDir, modScrollOffset, modInterpolate, nameHex, shardDyes, below, above,
                 false, glowShardDyes));
     }
 

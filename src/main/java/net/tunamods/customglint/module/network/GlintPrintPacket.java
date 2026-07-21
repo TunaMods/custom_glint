@@ -17,8 +17,8 @@ import net.tunamods.customglint.module.menu.GlintTableMenu;
 public record GlintPrintPacket(String design, float speed, float scale, int opacity,
                                boolean glow, boolean glowAuto, boolean named, String name,
                                boolean simultaneous, int scrollDir, float scrollOffset, boolean interpolate,
-                               int glowHex, int nameHex, int[][] shardDyes, int[] donorColors,
-                               CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers, boolean sourceSimultaneous,
+                               int nameHex, int[][] shardDyes,
+                               CustomGlint.Layer[] belowLayers, CustomGlint.Layer[] aboveLayers,
                                boolean glowBase, int[][] glowShardDyes)
         implements CustomPacketPayload {
 
@@ -41,14 +41,11 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
                 buf.writeVarInt(pkt.scrollDir);
                 buf.writeFloat(pkt.scrollOffset);
                 buf.writeBoolean(pkt.interpolate);
-                buf.writeInt(pkt.glowHex);
                 buf.writeInt(pkt.nameHex);
                 buf.writeVarInt(pkt.shardDyes.length);
                 for (int[] shard : pkt.shardDyes) buf.writeVarIntArray(shard);
-                buf.writeVarIntArray(pkt.donorColors);
                 GlintApplyPacket.writeLayers(buf, pkt.belowLayers);
                 GlintApplyPacket.writeLayers(buf, pkt.aboveLayers);
-                buf.writeBoolean(pkt.sourceSimultaneous);
                 buf.writeBoolean(pkt.glowBase);
                 buf.writeVarInt(pkt.glowShardDyes.length);
                 for (int[] shard : pkt.glowShardDyes) buf.writeVarIntArray(shard);
@@ -56,10 +53,9 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
             buf -> new GlintPrintPacket(buf.readUtf(), buf.readFloat(), buf.readFloat(), buf.readVarInt(),
                     buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readUtf(32767), buf.readBoolean(),
                     buf.readVarInt(), buf.readFloat(), buf.readBoolean(),
-                    buf.readInt(), buf.readInt(),
-                    readShardDyes(buf), readCappedVarIntArray(buf, 8),
+                    buf.readInt(), readShardDyes(buf),
                     GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
-                    GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS), buf.readBoolean(),
+                    GlintApplyPacket.readLayers(buf, MAX_EXTRA_LAYERS),
                     buf.readBoolean(), readShardDyes(buf))
     );
 
@@ -97,13 +93,11 @@ public record GlintPrintPacket(String design, float speed, float scale, int opac
     }
 
     public static void handle(GlintPrintPacket pkt, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            if (ctx.player() instanceof ServerPlayer sp && sp.containerMenu instanceof GlintTableMenu m) {
-                if (pkt.glowBase) {
-                    m.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
-                } else {
-                    m.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name, pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.glowHex, pkt.nameHex, pkt.shardDyes, pkt.donorColors, pkt.belowLayers, pkt.aboveLayers, pkt.sourceSimultaneous, pkt.glowShardDyes);
-                }
+        ModNetworking.withGlintTable(ctx, (sp, menu) -> {
+            if (pkt.glowBase) {
+                menu.printGlow(pkt.shardDyes, pkt.speed, pkt.interpolate, pkt.named, pkt.name, pkt.nameHex);
+            } else {
+                menu.print(pkt.design, pkt.speed, pkt.scale, pkt.opacity, pkt.glow, pkt.glowAuto, pkt.named, pkt.name, pkt.simultaneous, pkt.scrollDir, pkt.scrollOffset, pkt.interpolate, pkt.nameHex, pkt.shardDyes, pkt.belowLayers, pkt.aboveLayers, pkt.glowShardDyes);
             }
         });
     }
