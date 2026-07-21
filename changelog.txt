@@ -48,6 +48,7 @@ Altered:
 - Sophisticated Backpacks: a glinted or glowing backpack now shows its glint and outline in hand (including first person), dropped, in the inventory, and worn on your back
 - Artifacts: belts, necklaces, gloves, boots and other worn artifacts now take custom glints and glow outlines
 - Gnetum: works out of the box, no compatibility patch needed
+- With a shader pack on, the glint on elytra and capes no longer doubles into a bright strip where the two wings overlap
 
 [1.6.0]
 
