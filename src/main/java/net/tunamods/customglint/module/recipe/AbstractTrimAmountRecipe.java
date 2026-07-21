@@ -9,9 +9,12 @@ import net.minecraft.world.level.Level;
 /**
  * Shared shape for the "one Glint Trim + 1..8 of a filler item -> the same trim with one modifier set"
  * crafts (speed / redstone, scale / slime, opacity / glass). Subclasses pick the filler and the transform;
- * the trim-plus-count scan and the 1..8 bound live here.
+ * the trim-plus-count scan and the count bound live here.
  */
 public abstract class AbstractTrimAmountRecipe extends CustomRecipe {
+
+    /** The eight 3x3 slots left over once the trim takes one, so eight is the top step of every modifier. */
+    protected static final int MAX_FILLER = 8;
 
     protected AbstractTrimAmountRecipe() {}
 
@@ -40,7 +43,7 @@ public abstract class AbstractTrimAmountRecipe extends CustomRecipe {
                 return false;
             }
         }
-        return !trim.isEmpty() && trimQualifies(trim) && count >= 1 && count <= 8;
+        return !trim.isEmpty() && trimQualifies(trim) && count >= 1 && count <= MAX_FILLER;
     }
 
     @Override

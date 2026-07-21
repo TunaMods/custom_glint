@@ -9,6 +9,7 @@ import com.mojang.serialization.MapCodec;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/** Glint Trim + 1..8 Redstone -> the same trim animating at that many times the base speed. */
 public class GlintTrimSpeedRecipe extends AbstractTrimAmountRecipe {
     private static final GlintTrimSpeedRecipe INSTANCE = new GlintTrimSpeedRecipe();
     public static final MapCodec<GlintTrimSpeedRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);

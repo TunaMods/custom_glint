@@ -10,9 +10,9 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
 /**
- * GlintTrimItem (with pattern + ≥1 color) + 1-8 Glass → same trim with every color's alpha (the A /
- * transparency channel) set by the glass count: 8 glass = fully opaque (A=255), fewer = more
- * see-through. Mirrors {@link GlintTrimSpeedRecipe} / {@link GlintTrimScaleRecipe}.
+ * GlintTrimItem (with pattern and at least one color) + 1..8 Glass -> the same trim with every color's alpha
+ * (the A / transparency channel) set by the glass count: 8 glass = fully opaque (A=255), fewer = more
+ * see-through.
  */
 public class GlintTrimAlphaRecipe extends AbstractTrimAmountRecipe {
     private static final GlintTrimAlphaRecipe INSTANCE = new GlintTrimAlphaRecipe();
@@ -32,7 +32,7 @@ public class GlintTrimAlphaRecipe extends AbstractTrimAmountRecipe {
     protected ItemStack apply(ItemStack trimCopy, int count) {
         int[] colors = GlintTrimItem.getColors(trimCopy);
         if (colors.length == 0) return ItemStack.EMPTY;
-        int alpha = Math.round(count * 255f / 8f);
+        int alpha = Math.round(count * 255f / MAX_FILLER);
         int[] out = new int[colors.length];
         for (int i = 0; i < colors.length; i++) out[i] = (alpha << 24) | (colors[i] & 0xFFFFFF);
         GlintTrimItem.setColors(trimCopy, out);

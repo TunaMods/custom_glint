@@ -61,18 +61,6 @@ public class GlintTrimItem extends Item {
         stack.set(ModComponents.TRIM.get(), c);
     }
 
-    private static int[] toIntArray(List<Integer> l) {
-        int[] a = new int[l.size()];
-        for (int n = 0; n < a.length; n++) a[n] = l.get(n);
-        return a;
-    }
-
-    private static List<Integer> toList(int[] a) {
-        List<Integer> l = new ArrayList<>(a.length);
-        for (int v : a) l.add(v);
-        return l;
-    }
-
     /** Procedural-chromatic seed (0 = not a chromatic trim / not yet rolled). */
     public static int getSeed(ItemStack stack) {
         return cfg(stack).seed();
@@ -83,11 +71,6 @@ public class GlintTrimItem extends Item {
     public static void setSeed(ItemStack stack, int seed) {
         ModComponents.TrimConfig c = cfg(stack);
         setCfg(stack, new ModComponents.TrimConfig(c.pattern(), c.colors(), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), seed));
-    }
-
-    /** A fresh nonzero chromatic seed so two trims never share an oil-slick pattern. */
-    private static int rollSeed() {
-        return CustomGlint.randomChromaticSeed();
     }
 
     /** The color array to bake into the preview glint: chromatic passes the raw list (an empty list renders
@@ -108,11 +91,10 @@ public class GlintTrimItem extends Item {
         // Roll a stable per-trim seed the first time a trim becomes chromatic; keep it on later edits so the
         // oil-slick pattern doesn't reshuffle every time the player dyes / re-speeds the trim.
         int seed = c.seed();
-        if (CustomGlint.isChromatic(pattern) && seed == 0) seed = rollSeed();
+        if (CustomGlint.isChromatic(pattern) && seed == 0) seed = CustomGlint.randomChromaticSeed();
         setCfg(stack, new ModComponents.TrimConfig(Optional.of(pattern), c.colors(), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), seed));
         applyModelData(stack, pattern);
-        int[] colors = getColors(stack);
-        CustomGlint.write(stack, pattern, writeColors(pattern, colors), getSpeed(stack), true, getScale(stack), false, getScrollDir(stack), getScrollOffset(stack), seed);
+        rewritePreview(stack);
     }
 
     /** Sets the vanilla CustomModelData index from the trim's design + current glowing flag (the glowing
@@ -121,21 +103,21 @@ public class GlintTrimItem extends Item {
     private static void applyModelData(ItemStack stack, Identifier pattern) {
         String name = pattern.equals(CustomGlint.VANILLA) ? "vanilla" : extractPatternName(pattern);
         int idx = PATTERNS.indexOf(name);
+        // +1 because CustomModelData 0 is the plain, patternless trim model.
         if (idx >= 0) stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(
                 List.of((float) ((isGlowing(stack) ? 1000 : 0) + idx + 1)),
                 List.of(), List.of(), List.of()));
     }
 
     public static int[] getColors(ItemStack stack) {
-        return toIntArray(cfg(stack).colors());
+        return TrimColors.toIntArray(cfg(stack).colors());
     }
 
     /** Replaces the color list (and refreshes the preview glint). Used by the dye and alpha recipes. */
     public static void setColors(ItemStack stack, int[] colors) {
         ModComponents.TrimConfig c = cfg(stack);
-        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), toList(colors), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), c.seed()));
-        Identifier pattern = getPattern(stack);
-        if (pattern != null) CustomGlint.write(stack, pattern, writeColors(pattern, colors), getSpeed(stack), true, getScale(stack), false, getScrollDir(stack), getScrollOffset(stack), getSeed(stack));
+        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), TrimColors.toList(colors), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), c.seed()));
+        rewritePreview(stack);
     }
 
     /** Sets the display config (pattern/speed/scale/glowing) directly, preserving the current colors and
@@ -151,25 +133,14 @@ public class GlintTrimItem extends Item {
         if (current.length >= CustomGlint.MAX_COLORS_PER_LAYER) return false;
         int[] next = Arrays.copyOf(current, current.length + 1);
         next[current.length] = color;
-        ModComponents.TrimConfig c = cfg(stack);
-        setCfg(stack, new ModComponents.TrimConfig(c.pattern(), toList(next), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), c.seed()));
-        rewritePreview(stack);
+        setColors(stack, next);
         return true;
     }
 
     public static ItemStack mergeColors(ItemStack first, ItemStack second) {
         ItemStack result = first.copy();
         result.setCount(1);
-        int[] a = getColors(first);
-        int[] b = getColors(second);
-        int total = Math.min(CustomGlint.MAX_COLORS_PER_LAYER, a.length + b.length);
-        int[] merged = new int[total];
-        System.arraycopy(a, 0, merged, 0, Math.min(a.length, total));
-        int bCount = total - a.length;
-        if (bCount > 0) System.arraycopy(b, 0, merged, a.length, bCount);
-        ModComponents.TrimConfig c = cfg(result);
-        setCfg(result, new ModComponents.TrimConfig(c.pattern(), toList(merged), c.speed(), c.scale(), c.scroll(), c.offset(), c.glowing(), c.seed()));
-        rewritePreview(result);
+        setColors(result, TrimColors.merge(getColors(first), getColors(second), CustomGlint.MAX_COLORS_PER_LAYER));
         return result;
     }
 
@@ -248,9 +219,13 @@ public class GlintTrimItem extends Item {
     public Component getName(ItemStack pStack) {
         Identifier pattern = getPattern(pStack);
         if (pattern == null) return super.getName(pStack);
-        String name = pattern.equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(pattern));
         String prefix = isGlowing(pStack) ? "Glowing " : "";
-        return Component.literal(prefix + name + " Glint Trim");
+        return Component.literal(prefix + designLabel(pattern) + " Glint Trim");
+    }
+
+    /** Display name for a design: the sentinel vanilla glint has no texture path to derive one from. */
+    private static String designLabel(Identifier design) {
+        return design.equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(design));
     }
 
     @Override
@@ -275,18 +250,9 @@ public class GlintTrimItem extends Item {
             } else {
                 for (int i = 0; i < n; i++) {
                     CustomGlint.Layer layer = data.layers()[i];
-                    String dname = layer.design().equals(CustomGlint.VANILLA) ? "Vanilla" : capitalize(extractPatternName(layer.design()));
                     pTooltipComponents.accept(Component.literal("Layer " + (i + 1)).withStyle(ChatFormatting.WHITE));
-                    pTooltipComponents.accept(Component.literal("  " + dname).withStyle(ChatFormatting.GRAY));
-                    if (layer.colors().length > 0) {
-                        MutableComponent lc = Component.literal("  Colors: ").withStyle(ChatFormatting.GRAY);
-                        for (int k = 0; k < layer.colors().length; k++) {
-                            int rgb = layer.colors()[k] & 0xFFFFFF;
-                            if (k > 0) lc = lc.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                            lc = lc.append(Component.literal(dyeName(rgb)).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-                        }
-                        pTooltipComponents.accept(lc);
-                    }
+                    pTooltipComponents.accept(Component.literal("  " + designLabel(layer.design())).withStyle(ChatFormatting.GRAY));
+                    if (layer.colors().length > 0) pTooltipComponents.accept(colorLine("  Colors: ", layer.colors()));
                 }
             }
         } else {
@@ -297,14 +263,20 @@ public class GlintTrimItem extends Item {
             if (scale != 1.0f) pTooltipComponents.accept(Component.literal("Scale: " + scale + "×").withStyle(ChatFormatting.AQUA));
             int scroll = getScrollDir(pStack);
             if (scroll != CustomGlint.SCROLL_E) pTooltipComponents.accept(Component.literal("Scroll: " + scrollName(scroll)).withStyle(ChatFormatting.AQUA));
-            MutableComponent line = Component.literal("Colors: ").withStyle(ChatFormatting.GRAY);
-            for (int i = 0; i < colors.length; i++) {
-                int rgb = colors[i] & 0xFFFFFF;
-                if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-                line = line.append(Component.literal(dyeName(rgb)).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
-            }
-            pTooltipComponents.accept(line);
+            pTooltipComponents.accept(colorLine("Colors: ", colors));
         }
+    }
+
+    /** A "Colors: red, lime, ..." tooltip line, each name drawn in its own colour. Shared with
+     *  {@link GlowTrimItem} and the per-layer breakdown above. */
+    public static MutableComponent colorLine(String prefix, int[] colors) {
+        MutableComponent line = Component.literal(prefix).withStyle(ChatFormatting.GRAY);
+        for (int i = 0; i < colors.length; i++) {
+            int rgb = colors[i] & 0xFFFFFF;
+            if (i > 0) line = line.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
+            line = line.append(Component.literal(dyeName(rgb)).withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb))));
+        }
+        return line;
     }
 
     /** Tooltip colour name for an RGB: the mod-palette dye name if it matches one, else the {@code #RRGGBB} hex. */

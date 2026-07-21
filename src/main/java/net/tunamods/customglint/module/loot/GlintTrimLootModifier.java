@@ -17,10 +17,12 @@ import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class GlintTrimLootModifier extends LootModifier {
 
@@ -28,180 +30,86 @@ public class GlintTrimLootModifier extends LootModifier {
         Suppliers.memoize(() -> RecordCodecBuilder.mapCodec(inst ->
             codecStart(inst).apply(inst, GlintTrimLootModifier::new)));
 
+    /** Triples a pattern's base weight when the drop happens in a biome that theme fits. */
+    private static final float BIOME_MATCH_BONUS = 3.0f;
+
+    /** Any pattern with no themed entry rolls at this weight, so the plain geometric designs stay common. */
+    private static final float DEFAULT_WEIGHT = 1.0f;
+
+    /**
+     * A themed group: which biomes it fits (matched on the biome id path, so modded biomes with the usual
+     * words in their name are covered too) and the patterns it favours with their base weights.
+     */
+    private record BiomeTheme(Predicate<String> fitsBiome, Map<String, Float> weights) {}
+
+    private static final List<BiomeTheme> THEMES = List.of(
+        new BiomeTheme(b -> b.contains("nether"),
+            Map.of("fire", 10.0f, "ember", 10.0f, "plasma", 10.0f, "oil", 8.0f, "smoke", 8.0f)),
+        new BiomeTheme(b -> b.contains("end"),
+            Map.of("glitch", 10.0f, "matrix", 10.0f, "static", 10.0f, "vanilla", 8.0f, "arcs", 8.0f, "pulse", 8.0f)),
+        new BiomeTheme(b -> b.contains("ocean"),
+            Map.of("tide", 10.0f, "wave", 10.0f, "ripple", 10.0f, "coral", 9.0f, "scales", 9.0f, "silk", 8.0f, "net", 8.0f)),
+        new BiomeTheme(b -> b.contains("desert") || b.contains("badlands"),
+            Map.of("dunes", 10.0f, "sand", 10.0f, "solid", 8.0f, "swirl", 8.0f)),
+        new BiomeTheme(b -> b.contains("forest") || b.contains("jungle") || b.contains("birch") || b.contains("bamboo"),
+            Map.of("petal", 10.0f, "feather", 10.0f, "blobs", 9.0f, "cascade", 8.0f, "debris", 8.0f, "mosaic", 8.0f)),
+        new BiomeTheme(b -> b.contains("mountain") || b.contains("peak") || b.contains("hill") || b.contains("stony"),
+            Map.of("crystal", 10.0f, "diamonds", 10.0f, "vein", 9.0f, "cracks", 8.0f, "plate", 8.0f, "mesh", 8.0f, "grid", 8.0f, "tile", 8.0f)),
+        new BiomeTheme(b -> b.contains("snow") || b.contains("frozen") || b.contains("ice"),
+            Map.of("frost", 10.0f, "aurora", 10.0f, "shimmer", 8.0f)),
+        new BiomeTheme(b -> b.contains("swamp") || b.contains("mangrove"),
+            Map.of("weave", 10.0f)),
+        // Mushroom fields ride along with plains.
+        new BiomeTheme(b -> b.contains("plains") || b.contains("savanna") || b.contains("meadow") || b.contains("mushroom"),
+            Map.of("stars", 10.0f, "lightning", 10.0f, "halo", 9.0f, "prism", 8.0f, "glow", 8.0f, "sheen", 8.0f, "sparkle", 8.0f))
+    );
+
+    /** Base weight per pattern, flattened from the themes. No pattern appears in two themes. */
+    private static final Map<String, Float> PATTERN_WEIGHTS = THEMES.stream()
+        .flatMap(t -> t.weights().entrySet().stream())
+        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
     protected GlintTrimLootModifier(LootItemCondition[] conditions, int priority) {
         super(conditions, priority);
     }
 
-    /** Triples a pattern's base weight when the drop happens in its themed biome group. */
-    private static final float BIOME_MATCH_BONUS = 3.0f;
-
-    private static final Map<String, Float> PATTERN_WEIGHTS = buildWeights();
-
-    private static Map<String, Float> buildWeights() {
-        Map<String, Float> weights = new HashMap<>();
-        // Nether
-        weights.put("fire", 10.0f);
-        weights.put("ember", 10.0f);
-        weights.put("plasma", 10.0f);
-        weights.put("oil", 8.0f);
-        weights.put("smoke", 8.0f);
-        // The End
-        weights.put("glitch", 10.0f);
-        weights.put("matrix", 10.0f);
-        weights.put("static", 10.0f);
-        weights.put("vanilla", 8.0f);
-        weights.put("arcs", 8.0f);
-        weights.put("pulse", 8.0f);
-        // Ocean
-        weights.put("tide", 10.0f);
-        weights.put("wave", 10.0f);
-        weights.put("ripple", 10.0f);
-        weights.put("coral", 9.0f);
-        weights.put("scales", 9.0f);
-        weights.put("silk", 8.0f);
-        weights.put("net", 8.0f);
-        // Desert
-        weights.put("dunes", 10.0f);
-        weights.put("sand", 10.0f);
-        weights.put("solid", 8.0f);
-        weights.put("swirl", 8.0f);
-        // Forest
-        weights.put("petal", 10.0f);
-        weights.put("feather", 10.0f);
-        weights.put("blobs", 9.0f);
-        weights.put("cascade", 8.0f);
-        weights.put("debris", 8.0f);
-        weights.put("mosaic", 8.0f);
-        // Mountains
-        weights.put("crystal", 10.0f);
-        weights.put("diamonds", 10.0f);
-        weights.put("vein", 9.0f);
-        weights.put("cracks", 8.0f);
-        weights.put("plate", 8.0f);
-        weights.put("mesh", 8.0f);
-        weights.put("grid", 8.0f);
-        weights.put("tile", 8.0f);
-        // Snow
-        weights.put("frost", 10.0f);
-        weights.put("aurora", 10.0f);
-        weights.put("shimmer", 8.0f);
-        // Swamp
-        weights.put("weave", 10.0f);
-        // Plains
-        weights.put("stars", 10.0f);
-        weights.put("lightning", 10.0f);
-        weights.put("halo", 9.0f);
-        weights.put("prism", 8.0f);
-        weights.put("glow", 8.0f);
-        weights.put("sheen", 8.0f);
-        weights.put("sparkle", 8.0f);
-        // Mushroom
-        // (inherits from plains)
-        // Universal fallback
-        weights.put("chevron", 1.0f);
-        weights.put("checker", 1.0f);
-        weights.put("crosshatch", 1.0f);
-        weights.put("hexagon", 1.0f);
-        weights.put("stripes", 1.0f);
-        weights.put("zigzag", 1.0f);
-        weights.put("slash", 1.0f);
-        return weights;
+    /** The biome id path the loot roll happened in. ORIGIN is optional in the loot context and getParameter
+     *  throws when it is absent, so an unpositioned roll falls back to plains weighting. */
+    private static String biomeName(LootContext context) {
+        if (!context.hasParameter(LootContextParams.ORIGIN)) return "plains";
+        var origin = context.getParameter(LootContextParams.ORIGIN);
+        var biome = context.getLevel().getBiome(new BlockPos((int) origin.x, (int) origin.y, (int) origin.z));
+        return biome.unwrapKey().map(key -> key.identifier().getPath()).orElse("plains");
     }
 
-    private String selectPattern(LootContext context) {
-        // Weight pattern selection by the biome the chest sits in. ORIGIN is optional in the loot context
-        // and getParameter throws if it's absent, so guard and fall back to plains weighting.
-        String biomeName = "plains";
-        if (context.hasParameter(LootContextParams.ORIGIN)) {
-            var origin = context.getParameter(LootContextParams.ORIGIN);
-            var biome = context.getLevel().getBiome(new BlockPos((int)origin.x, (int)origin.y, (int)origin.z));
-            biomeName = biome.unwrapKey()
-                .map(key -> key.identifier().getPath())
-                .orElse("plains");
-        }
-
-        float netherBonus = isNetherBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float endBonus = isEndBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float oceanBonus = isOceanBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float desertBonus = isDesertBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float forestBonus = isForestBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float mountainBonus = isMountainBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float snowBonus = isSnowBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float swampBonus = isSwampBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
-        float plainsBonus = isPlainsOrMushroomBiome(biomeName) ? BIOME_MATCH_BONUS : 1.0f;
+    private static String selectPattern(LootContext context) {
+        String biome = biomeName(context);
+        // A biome can fit several themes ("snowy_plains" is both), and every match pays the same bonus,
+        // so the boosted set is just the union.
+        Set<String> boosted = THEMES.stream()
+            .filter(t -> t.fitsBiome().test(biome))
+            .flatMap(t -> t.weights().keySet().stream())
+            .collect(Collectors.toSet());
 
         // Pre-compute each pattern's biome-adjusted weight, then do a single weighted pick over them.
         List<String> patterns = GlintTrimItem.PATTERNS;
+        if (patterns.isEmpty()) return "vanilla"; // guard nextInt(0) / empty weighting
         float[] weights = new float[patterns.size()];
         float totalWeight = 0.0f;
         for (int i = 0; i < patterns.size(); i++) {
             String name = patterns.get(i);
-            float weight = PATTERN_WEIGHTS.getOrDefault(name, 1.0f);
-            if (netherBonus > 1.0f && (name.equals("fire") || name.equals("ember") || name.equals("plasma") || name.equals("oil") || name.equals("smoke")))
-                weight *= netherBonus;
-            else if (endBonus > 1.0f && (name.equals("glitch") || name.equals("matrix") || name.equals("static") || name.equals("vanilla") || name.equals("arcs") || name.equals("pulse")))
-                weight *= endBonus;
-            else if (oceanBonus > 1.0f && (name.equals("tide") || name.equals("wave") || name.equals("ripple") || name.equals("coral") || name.equals("scales") || name.equals("silk") || name.equals("net")))
-                weight *= oceanBonus;
-            else if (desertBonus > 1.0f && (name.equals("dunes") || name.equals("sand") || name.equals("solid") || name.equals("swirl")))
-                weight *= desertBonus;
-            else if (forestBonus > 1.0f && (name.equals("petal") || name.equals("feather") || name.equals("blobs") || name.equals("cascade") || name.equals("debris") || name.equals("mosaic")))
-                weight *= forestBonus;
-            else if (mountainBonus > 1.0f && (name.equals("crystal") || name.equals("diamonds") || name.equals("vein") || name.equals("cracks") || name.equals("plate") || name.equals("mesh") || name.equals("grid") || name.equals("tile")))
-                weight *= mountainBonus;
-            else if (snowBonus > 1.0f && (name.equals("frost") || name.equals("aurora") || name.equals("shimmer")))
-                weight *= snowBonus;
-            else if (swampBonus > 1.0f && name.equals("weave"))
-                weight *= swampBonus;
-            else if (plainsBonus > 1.0f && (name.equals("stars") || name.equals("lightning") || name.equals("halo") || name.equals("prism") || name.equals("glow") || name.equals("sheen") || name.equals("sparkle")))
-                weight *= plainsBonus;
+            float weight = PATTERN_WEIGHTS.getOrDefault(name, DEFAULT_WEIGHT);
+            if (boosted.contains(name)) weight *= BIOME_MATCH_BONUS;
             weights[i] = weight;
             totalWeight += weight;
         }
 
-        if (patterns.isEmpty()) return "vanilla"; // guard nextInt(0) / empty weighting
         float pick = context.getRandom().nextFloat() * totalWeight;
         for (int i = 0; i < patterns.size(); i++) {
             pick -= weights[i];
             if (pick <= 0) return patterns.get(i);
         }
         return patterns.get(context.getRandom().nextInt(patterns.size()));
-    }
-
-    private static boolean isNetherBiome(String biome) {
-        return biome.contains("nether");
-    }
-
-    private static boolean isEndBiome(String biome) {
-        return biome.contains("end");
-    }
-
-    private static boolean isOceanBiome(String biome) {
-        return biome.contains("ocean");
-    }
-
-    private static boolean isDesertBiome(String biome) {
-        return biome.contains("desert") || biome.contains("badlands");
-    }
-
-    private static boolean isForestBiome(String biome) {
-        return biome.contains("forest") || biome.contains("jungle") || biome.contains("birch") || biome.contains("bamboo");
-    }
-
-    private static boolean isMountainBiome(String biome) {
-        return biome.contains("mountain") || biome.contains("peak") || biome.contains("hill") || biome.contains("stony");
-    }
-
-    private static boolean isSnowBiome(String biome) {
-        return biome.contains("snow") || biome.contains("frozen") || biome.contains("ice");
-    }
-
-    private static boolean isSwampBiome(String biome) {
-        return biome.contains("swamp") || biome.contains("mangrove");
-    }
-
-    private static boolean isPlainsOrMushroomBiome(String biome) {
-        return biome.contains("plains") || biome.contains("savanna") || biome.contains("meadow") || biome.contains("mushroom");
     }
 
     @Override

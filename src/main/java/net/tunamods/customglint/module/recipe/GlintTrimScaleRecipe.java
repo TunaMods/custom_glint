@@ -9,6 +9,7 @@ import com.mojang.serialization.MapCodec;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/** Glint Trim + 1..8 Slime Balls -> the same trim with its pattern scale set by the slime count. */
 public class GlintTrimScaleRecipe extends AbstractTrimAmountRecipe {
     private static final GlintTrimScaleRecipe INSTANCE = new GlintTrimScaleRecipe();
     public static final MapCodec<GlintTrimScaleRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
@@ -22,7 +23,7 @@ public class GlintTrimScaleRecipe extends AbstractTrimAmountRecipe {
 
     @Override
     protected ItemStack apply(ItemStack trimCopy, int count) {
-        GlintTrimItem.setScale(trimCopy, count * 0.5f);
+        GlintTrimItem.setScale(trimCopy, count * 0.5f); // half a step per slime ball: 2 = the 1.0x default, 8 = 4.0x
         return trimCopy;
     }
 

@@ -3,33 +3,20 @@ package net.tunamods.customglint.module.recipe;
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
 import net.tunamods.customglint.module.item.GlintTrimItem;
-import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.mojang.serialization.MapCodec;
-import java.util.List;
 import java.util.Optional;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.PlacementInfo;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleSmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
-import net.minecraft.world.level.Level;
 
-/**
- * Smithing: GlintTrim (template) + base item + Glowstone Dust -> base item with the trim's glint.
- *
- * 26.1.2 SmithingRecipe is ingredient/codec based, but this recipe needs NBT-predicate matching
- * (any GlintTrim with a pattern+colors; any non-trim base). So {@code matches} is overridden with
- * the real predicate logic, while the ingredient accessors return representative items for the
- * recipe-book/JEI display + placement filtering only.
- */
-public class GlintTrimSmithingRecipe extends SimpleSmithingRecipe {
+/** Smithing: GlintTrim (template) + base item + Glowstone Dust -> base item with the trim's glint. */
+public class GlintTrimSmithingRecipe extends AbstractTrimSmithingRecipe {
     public static final MapCodec<GlintTrimSmithingRecipe> MAP_CODEC =
             Recipe.CommonInfo.MAP_CODEC.xmap(GlintTrimSmithingRecipe::new, r -> r.commonInfo);
     public static final StreamCodec<RegistryFriendlyByteBuf, GlintTrimSmithingRecipe> STREAM_CODEC =
@@ -39,27 +26,11 @@ public class GlintTrimSmithingRecipe extends SimpleSmithingRecipe {
     public GlintTrimSmithingRecipe() { this(new Recipe.CommonInfo(false)); }
     public GlintTrimSmithingRecipe(Recipe.CommonInfo commonInfo) { super(commonInfo); }
 
-    private boolean isTemplateIngredient(ItemStack stack) {
+    @Override
+    protected boolean isTemplateIngredient(ItemStack stack) {
         return stack.getItem() instanceof GlintTrimItem
                 && GlintTrimItem.getPattern(stack) != null
                 && GlintTrimItem.getColors(stack).length > 0;
-    }
-
-    private boolean isBaseIngredient(ItemStack stack) {
-        return !stack.isEmpty()
-                && !(stack.getItem() instanceof GlintTrimItem)
-                && !(stack.getItem() instanceof GlowTrimItem);
-    }
-
-    private boolean isAdditionIngredient(ItemStack stack) {
-        return stack.is(Items.GLOWSTONE_DUST);
-    }
-
-    @Override
-    public boolean matches(SmithingRecipeInput pInput, Level pLevel) {
-        return isTemplateIngredient(pInput.getItem(0))
-                && isBaseIngredient(pInput.getItem(1))
-                && isAdditionIngredient(pInput.getItem(2));
     }
 
     @Override
@@ -88,27 +59,6 @@ public class GlintTrimSmithingRecipe extends SimpleSmithingRecipe {
     @Override
     public Optional<Ingredient> templateIngredient() {
         return Optional.of(Ingredient.of(ModItems.GLINT_TRIM.get()));
-    }
-
-    @Override
-    public Ingredient baseIngredient() {
-        // The smithing table's base slot only accepts items that some recipe's base ingredient lists
-        // (via RecipePropertySet.SMITHING_BASE). Any item can carry a glint, so advertise every item
-        // except the trims themselves so the slot lets anything in. matches() still gates the output.
-        return Ingredient.of(BuiltInRegistries.ITEM.stream()
-                .filter(i -> i != Items.AIR
-                        && !(i instanceof GlintTrimItem)
-                        && !(i instanceof GlowTrimItem)));
-    }
-
-    @Override
-    public Optional<Ingredient> additionIngredient() {
-        return Optional.of(Ingredient.of(Items.GLOWSTONE_DUST));
-    }
-
-    @Override
-    protected PlacementInfo createPlacementInfo() {
-        return PlacementInfo.createFromOptionals(List.of(templateIngredient(), Optional.of(baseIngredient()), additionIngredient()));
     }
 
     @Override

@@ -2,32 +2,24 @@ package net.tunamods.customglint.module.recipe;
 
 import net.tunamods.customglint.module.item.ModItems;
 import net.tunamods.customglint.common.CustomGlint;
-import net.tunamods.customglint.module.item.GlintTrimItem;
 import net.tunamods.customglint.module.item.GlowTrimItem;
 import com.mojang.serialization.MapCodec;
-import java.util.List;
 import java.util.Optional;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.PlacementInfo;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.SimpleSmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
-import net.minecraft.world.level.Level;
 
 /**
  * Smithing: Glow Trim (template) + base item + Glowstone Dust -> base item with
  * glowColors+glowing applied via {@link CustomGlint#setGlowColors}. Does NOT touch any
  * existing glint Data on the base, Glow Trim is strictly a glow-only application.
- *
- * 26.1.2: predicate {@code matches} override (NBT-based), ingredient accessors for display only.
  */
-public class GlowTrimSmithingRecipe extends SimpleSmithingRecipe {
+public class GlowTrimSmithingRecipe extends AbstractTrimSmithingRecipe {
     public static final MapCodec<GlowTrimSmithingRecipe> MAP_CODEC =
             Recipe.CommonInfo.MAP_CODEC.xmap(GlowTrimSmithingRecipe::new, r -> r.commonInfo);
     public static final StreamCodec<RegistryFriendlyByteBuf, GlowTrimSmithingRecipe> STREAM_CODEC =
@@ -37,26 +29,10 @@ public class GlowTrimSmithingRecipe extends SimpleSmithingRecipe {
     public GlowTrimSmithingRecipe() { this(new Recipe.CommonInfo(false)); }
     public GlowTrimSmithingRecipe(Recipe.CommonInfo commonInfo) { super(commonInfo); }
 
-    private boolean isTemplateIngredient(ItemStack stack) {
+    @Override
+    protected boolean isTemplateIngredient(ItemStack stack) {
         return stack.getItem() instanceof GlowTrimItem
                 && GlowTrimItem.getColors(stack).length > 0;
-    }
-
-    private boolean isBaseIngredient(ItemStack stack) {
-        return !stack.isEmpty()
-                && !(stack.getItem() instanceof GlowTrimItem)
-                && !(stack.getItem() instanceof GlintTrimItem);
-    }
-
-    private boolean isAdditionIngredient(ItemStack stack) {
-        return stack.is(Items.GLOWSTONE_DUST);
-    }
-
-    @Override
-    public boolean matches(SmithingRecipeInput pInput, Level pLevel) {
-        return isTemplateIngredient(pInput.getItem(0))
-                && isBaseIngredient(pInput.getItem(1))
-                && isAdditionIngredient(pInput.getItem(2));
     }
 
     @Override
@@ -77,27 +53,6 @@ public class GlowTrimSmithingRecipe extends SimpleSmithingRecipe {
     @Override
     public Optional<Ingredient> templateIngredient() {
         return Optional.of(Ingredient.of(ModItems.GLOW_TRIM.get()));
-    }
-
-    @Override
-    public Ingredient baseIngredient() {
-        // The smithing table's base slot only accepts items that some recipe's base ingredient lists
-        // (via RecipePropertySet.SMITHING_BASE). Any item can carry a glow, so advertise every item
-        // except the trims themselves so the slot lets anything in. matches() still gates the output.
-        return Ingredient.of(BuiltInRegistries.ITEM.stream()
-                .filter(i -> i != Items.AIR
-                        && !(i instanceof GlintTrimItem)
-                        && !(i instanceof GlowTrimItem)));
-    }
-
-    @Override
-    public Optional<Ingredient> additionIngredient() {
-        return Optional.of(Ingredient.of(Items.GLOWSTONE_DUST));
-    }
-
-    @Override
-    protected PlacementInfo createPlacementInfo() {
-        return PlacementInfo.createFromOptionals(List.of(templateIngredient(), Optional.of(baseIngredient()), additionIngredient()));
     }
 
     @Override

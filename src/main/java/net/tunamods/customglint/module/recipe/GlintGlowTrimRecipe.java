@@ -12,8 +12,12 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.Level;
 
-/** Crafting: GlintTrimItem (center, with pattern + ≥1 color) + 8 Glowstone Dust → same trim with glowing=true. */
+/** Crafting: GlintTrimItem (center, with a pattern and at least one color) surrounded by 8 Glowstone Dust
+ *  -> the same trim with glowing=true. */
 public class GlintGlowTrimRecipe extends CustomRecipe {
+    /** 3x3 grid index of the middle slot, where the trim goes. */
+    private static final int CENTER = 4;
+
     private static final GlintGlowTrimRecipe INSTANCE = new GlintGlowTrimRecipe();
     public static final MapCodec<GlintGlowTrimRecipe> MAP_CODEC = MapCodec.unit(INSTANCE);
     public static final StreamCodec<RegistryFriendlyByteBuf, GlintGlowTrimRecipe> STREAM_CODEC = StreamCodec.unit(INSTANCE);
@@ -26,7 +30,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
         if (pInv.width() != 3 || pInv.height() != 3) return false;
         for (int i = 0; i < 9; i++) {
             ItemStack s = pInv.getItem(i);
-            if (i == 4) {
+            if (i == CENTER) {
                 if (!(s.getItem() instanceof GlintTrimItem)) return false;
                 if (GlintTrimItem.getPattern(s) == null) return false;
                 if (GlintTrimItem.getColors(s).length == 0) return false;
@@ -39,7 +43,7 @@ public class GlintGlowTrimRecipe extends CustomRecipe {
 
     @Override
     public ItemStack assemble(CraftingInput pInv) {
-        ItemStack trim = pInv.getItem(4);
+        ItemStack trim = pInv.getItem(CENTER);
         if (trim.isEmpty() || !(trim.getItem() instanceof GlintTrimItem)) return ItemStack.EMPTY;
         ItemStack result = trim.copy();
         result.setCount(1);

@@ -14,6 +14,10 @@ import net.minecraft.world.level.Level;
  */
 public abstract class AbstractTrimDuplicateRecipe extends CustomRecipe {
 
+    /** 3x3 grid indices: the middle slot and the one directly below it. */
+    private static final int CENTER = 4;
+    private static final int BELOW_CENTER = 7;
+
     protected AbstractTrimDuplicateRecipe() {}
 
     /** Whether the center trim's color count qualifies (colored variant wants >0, blank wants 0). */
@@ -24,11 +28,11 @@ public abstract class AbstractTrimDuplicateRecipe extends CustomRecipe {
         if (pInv.width() != 3 || pInv.height() != 3) return false;
         for (int i = 0; i < 9; i++) {
             ItemStack s = pInv.getItem(i);
-            if (i == 4) {
+            if (i == CENTER) {
                 if (!(s.getItem() instanceof GlintTrimItem)) return false;
                 if (GlintTrimItem.getPattern(s) == null) return false;
                 if (!centerColorsMatch(GlintTrimItem.getColors(s).length)) return false;
-            } else if (i == 7) {
+            } else if (i == BELOW_CENTER) {
                 if (!s.is(Items.GLOWSTONE_DUST)) return false;
             } else {
                 if (!s.is(Items.DIAMOND)) return false;
