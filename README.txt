@@ -53,6 +53,14 @@ In build.gradle:
 
     jarJar.enable()
 
+The branch in that url picks the Minecraft version. Use 1.20.1 for a Forge
+1.20.1 build, or swap it for 1.21.1 to get the NeoForge 1.21.1 api. The
+coordinate is the same on every branch, so only the url changes.
+
+Every release stays up, so an older pin keeps resolving. Versions through
+1.6.0 were published as custom-glint-api; 1.7.0 and later are
+glint-and-glamour-api.
+
 Pin both versions to the latest released api when you update. Build with
 `./gradlew jarJar`; output at build/libs/yourmod-<version>-all.jar.
 
