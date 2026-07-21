@@ -1065,32 +1065,30 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             return;
         }
         // Layer strip: explain each chip's click behaviour (custom-drawn, not real slots).
-        if (layerStripVisible()) {
-            int cy = topPos + LAYER_STRIP_Y;
-            CustomGlint.Layer[] dl = donorLayers();
-            for (Chip c : layerChips()) {
-                int cx = leftPos + c.x();
-                if (!inRect(mx, my, cx, cy, LAYER_ICON, LAYER_ICON)) continue;
-                if (c.kind() == 3) {
-                    if (dl.length > 0 && totalLayers() + dl.length > MAX_LAYERS)
-                        g.renderTooltip(font, Component.translatable("screen.customglint.glint_table.add_layer_cap", MAX_LAYERS), mx, my);
-                    else
-                        g.renderTooltip(font, Component.translatable("screen.customglint.glint_table.hint.add_layer"), mx, my);
-                    return;
-                }
-                ResourceLocation design = c.kind() == 0 ? lowerLayers.get(c.index()).design()
-                        : c.kind() == 2 ? upperLayers.get(c.index()).design()
-                        : activeLayerDesign();
-                List<Component> lines = new ArrayList<>();
-                if (design != null) lines.add(designDisplayName(design));
-                lines.add(Component.translatable(c.kind() == 1
-                        ? "screen.customglint.glint_table.hint.remove_layer"
-                        : "screen.customglint.glint_table.hint.edit_layer").withStyle(ChatFormatting.GRAY));
-                if (c.kind() != 1 && captureActive() != null)
-                    lines.add(Component.translatable("screen.customglint.glint_table.hint.layer_swap").withStyle(ChatFormatting.GRAY));
-                g.renderComponentTooltip(font, lines, mx, my);
+        int cy = topPos + LAYER_STRIP_Y;
+        CustomGlint.Layer[] dl = donorLayers();
+        for (Chip c : layerChips()) {
+            int cx = leftPos + c.x();
+            if (!inRect(mx, my, cx, cy, LAYER_ICON, LAYER_ICON)) continue;
+            if (c.kind() == 3) {
+                if (dl.length > 0 && totalLayers() + dl.length > MAX_LAYERS)
+                    g.renderTooltip(font, Component.translatable("screen.customglint.glint_table.add_layer_cap", MAX_LAYERS), mx, my);
+                else
+                    g.renderTooltip(font, Component.translatable("screen.customglint.glint_table.hint.add_layer"), mx, my);
                 return;
             }
+            ResourceLocation design = c.kind() == 0 ? lowerLayers.get(c.index()).design()
+                    : c.kind() == 2 ? upperLayers.get(c.index()).design()
+                    : activeLayerDesign();
+            List<Component> lines = new ArrayList<>();
+            if (design != null) lines.add(designDisplayName(design));
+            lines.add(Component.translatable(c.kind() == 1
+                    ? "screen.customglint.glint_table.hint.remove_layer"
+                    : "screen.customglint.glint_table.hint.edit_layer").withStyle(ChatFormatting.GRAY));
+            if (c.kind() != 1 && captureActive() != null)
+                lines.add(Component.translatable("screen.customglint.glint_table.hint.layer_swap").withStyle(ChatFormatting.GRAY));
+            g.renderComponentTooltip(font, lines, mx, my);
+            return;
         }
         // Color-shard strip: select / remove the active layer's colours (and edit a rainbow shard's hex).
         if (colorShardsVisible()) {
@@ -1431,12 +1429,6 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return result;
     }
 
-    /** The layer strip is always visible so layer 1 (and the [+] add chip) is a constant starting point, like
-     *  the color-shard strip; layer chips render only for layers that actually exist. */
-    private boolean layerStripVisible() {
-        return true;
-    }
-
     /** The color-shard strip only means something once a design is being built (an active trim exists); before
      *  that it's an inert disabled "+". */
     private boolean colorShardsVisible() {
@@ -1445,8 +1437,9 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
         return a.getItem() instanceof GlintTrimItem || a.getItem() instanceof GlowTrimItem;
     }
 
+    /** Draw the layer chips above the preview. The strip is always visible so layer 1 (and the [+] add chip)
+     *  is a constant starting point, like the color-shard strip; chips render only for layers that exist. */
     private void drawLayerStrip(GuiGraphics g, int mx, int my) {
-        if (!layerStripVisible()) return;
         for (Chip c : layerChips()) {
             int x = leftPos + c.x(), y = topPos + LAYER_STRIP_Y;
             if (c.kind() == 3) {
@@ -2683,18 +2676,16 @@ public class GlintTableScreen extends AbstractContainerScreen<GlintTableMenu> {
             }
         }
 
-        if (layerStripVisible()) {
-            int cy = y + LAYER_STRIP_Y;
-            for (Chip c : layerChips()) {
-                int cx = x + c.x();
-                if (!inRect(mx, my, cx, cy, LAYER_ICON, LAYER_ICON)) continue;
-                glowFocused = false; // touching the layer strip returns the colour strip to the active layer
-                if (c.kind() == 3) { if (button == 0) addLayer(); }                         // [+] add chip
-                else if (c.kind() == 1) { if (button == 1) removeActiveLayer(); }            // active layer: right-click deletes
-                else if (button == 0 && hasShiftDown()) swapLayers(c.kind(), c.index());     // shift-left: swap with the active layer
-                else editLayer(c.kind(), c.index());                                         // unselected: any click selects it first
-                return true;
-            }
+        int cy = y + LAYER_STRIP_Y;
+        for (Chip c : layerChips()) {
+            int cx = x + c.x();
+            if (!inRect(mx, my, cx, cy, LAYER_ICON, LAYER_ICON)) continue;
+            glowFocused = false; // touching the layer strip returns the colour strip to the active layer
+            if (c.kind() == 3) { if (button == 0) addLayer(); }                         // [+] add chip
+            else if (c.kind() == 1) { if (button == 1) removeActiveLayer(); }            // active layer: right-click deletes
+            else if (button == 0 && hasShiftDown()) swapLayers(c.kind(), c.index());     // shift-left: swap with the active layer
+            else editLayer(c.kind(), c.index());                                         // unselected: any click selects it first
+            return true;
         }
 
         if (colorStripClick(mx, my, button)) return true;
