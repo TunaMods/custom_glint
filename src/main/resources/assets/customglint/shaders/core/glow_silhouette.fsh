@@ -2,14 +2,14 @@
 
 // Custom Glints glow-silhouette fragment shader. Writes the item's shape into the offscreen mask:
 //   rgb   = glow colour
-//   alpha = (128 + key), where key = (category<<5 | id) in 1..127 — the +128 marks the texel VISIBLE
+//   alpha = (128 + key), where key = (category<<5 | id) in 1..127; the +128 marks the texel VISIBLE
 //           so the composite (glow_composite) treats it as a ring source.
 // Sampler0 (the item atlas) drives the shape: transparent texels discard. Sampled at LOD 0 so the
 // shape never depends on the atlas filter / mipmap state (Sodium replaces sprite mip generation).
 //
 // Scene-depth occlusion: Sampler1 is the MAIN target's depth texture, bound by the drain. This is safe
 // here (unlike the old composite attempt) because the silhouette writes the offscreen MASK, not the main
-// colour buffer — no read/write feedback loop. A fragment behind the scene depth is marked occluded (key
+// colour buffer: no read/write feedback loop. A fragment behind the scene depth is marked occluded (key
 // 1..127, not a ring source) so the ring only forms around the VISIBLE part of the item. The mask's own
 // LEQUAL depth buffer means only the front-most fragment per pixel writes, so back faces can't override.
 
@@ -19,7 +19,7 @@ uniform mat4 ProjMat;
 // Per-block growth of the occlusion bias (0 = off, the off-pack default). Under a shader pack the
 // reconstructed scene distance is imprecise and its error grows with distance, so a constant bias can't keep
 // grazing edges stable far away. Scaling the bias with viewDist keeps far grazing edges visible (no flicker)
-// while a real wall — a depth gap far larger than the bias — still occludes.
+// while a real wall (a depth gap far larger than the bias) still occludes.
 uniform float OcclusionBiasScale;
 
 in vec4 vertexColor;
@@ -44,7 +44,7 @@ void main() {
     int id = clamp(int(vertexColor.a * 255.0 + 0.5), 1, 127);
 
     // Reconstruct the screen UV and sample the scene depth. sceneDepth <= 0 means Sampler1 is unbound (the
-    // GUI drain) or the near plane — treat as visible so occlusion can never erase the whole outline.
+    // GUI drain) or the near plane. Treat as visible so occlusion can never erase the whole outline.
     vec2 uv = (screenPos.xy / screenPos.w) * 0.5 + 0.5;
     float sceneDepth = texture(Sampler1, uv).r;
 

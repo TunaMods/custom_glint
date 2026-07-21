@@ -1,7 +1,7 @@
 #version 150
 
 // Custom Glints chromatic composite vertex shader: a plain fullscreen-quad passthrough. Position.xy arrives
-// in [0,1] (the drain's Tesselator quad) and is remapped straight to NDC — ProjMat/ModelViewMat are ignored,
+// in [0,1] (the drain's Tesselator quad) and is remapped straight to NDC. ProjMat/ModelViewMat are ignored,
 // exactly like core/glow_composite.vsh. UV0 passes through as the screen texCoord into the overlay target.
 
 in vec3 Position;

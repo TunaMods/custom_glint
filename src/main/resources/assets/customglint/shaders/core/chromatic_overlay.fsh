@@ -3,12 +3,12 @@
 // Custom Glints PROCEDURAL CHROMATIC overlay fragment shader (1.21.1). Same oil-slick synthesis as
 // core/chromatic.fsh, but drawn AFTER the shader pack finishes the frame (see the vsh header), so occlusion
 // can't ride the GPU depth test against the pack's gbuffer. Instead it samples the committed scene depth
-// (Sampler2 = main target depth) and keeps ONLY the visible front surface — an EQUAL depth test done in the
-// shader, robust to any precision mismatch between our re-render and the pack's pass (mirrors
+// (Sampler2 = main target depth) and keeps ONLY the visible front surface, an EQUAL depth test done in the
+// shader, insensitive to any precision mismatch between our re-render and the pack's pass (mirrors
 // core/glow_silhouette.fsh). The model mesh is rectangular, so its real shape is the texture alpha
-// (Sampler0) — alpha-discard carves the cutout the in-phase depth test would otherwise give for free.
+// (Sampler0): alpha-discard carves the cutout the in-phase depth test would otherwise give for free.
 
-uniform sampler2D Sampler0; // model texture (armor/entity) — drives the cutout alpha-test
+uniform sampler2D Sampler0; // model texture (armor/entity); drives the cutout alpha-test
 uniform sampler2D Sampler1; // palette strip: 1px tall, one texel per colour
 uniform sampler2D Sampler2; // full-res scene depth (main target), bound by the drain
 
@@ -87,7 +87,7 @@ void main() {
     }
 
     // Per-fragment occlusion: reconstruct the scene's eye distance at this pixel and drop anything not on the
-    // visible front surface (occluded geometry, or our own back faces — cull is off). sceneDepth<=0 => unbound
+    // visible front surface (occluded geometry, or our own back faces; cull is off). sceneDepth<=0 => unbound
     // / near plane => treat as visible so occlusion can never erase the whole slick.
     vec2 uv = (screenPos.xy / screenPos.w) * 0.5 + 0.5;
     float sceneDepth = texture(Sampler2, uv).r;
@@ -111,7 +111,7 @@ void main() {
 
     vec3 col = cgChroma(n, n1, n2, t);
     float bright = 0.7 + 0.3 * n2;
-    // NOTE: no GlintAlpha here — the engine only sets it during the in-phase foil pass; in this post-Iris
+    // NOTE: no GlintAlpha here: the engine only sets it during the in-phase foil pass; in this post-Iris
     // re-render it is stale/0, which multiplied the slick to black (additive black = invisible). ColorModulator
     // is white (the RT sets it), so the slick keeps full brightness and the composite blends it as a foil.
     float fade = ColorModulator.a;

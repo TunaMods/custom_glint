@@ -1,14 +1,14 @@
 #version 150
 
-// Custom Glints glow-outline composite (1.21.1) — PER-OBJECT id-aware, PER-CATEGORY thickness, single
+// Custom Glints glow-outline composite (1.21.1): PER-OBJECT id-aware, PER-CATEGORY thickness, single
 // pass, constant thickness (no depth). The mask (glow_silhouette) packs a per-object KEY + visibility
 // into alpha:
 //   0        : empty (no silhouette here).
-//   1..127   : in-shape but occluded (not used yet — the silhouette currently marks everything visible).
+//   1..127   : in-shape but occluded (not used yet; the silhouette currently marks everything visible).
 //   128..255 : VISIBLE, key = v - 128.
 // The key is (category << 5) | id: top 2 bits = category, low 5 = id. rgb is that object's glow colour.
 //
-// A pixel rings iff a VISIBLE silhouette of a DIFFERENT id is within that source's CATEGORY thickness —
+// A pixel rings iff a VISIBLE silhouette of a DIFFERENT id is within that source's CATEGORY thickness:
 // the outer edge of every object plus the boundary wherever two objects overlap, each category its own
 // width. Sampler0 (mask) MUST be NEAREST: alpha is a packed classifier, not a colour.
 
@@ -16,7 +16,7 @@ uniform sampler2D Sampler0;
 // Kernel radius for THIS pass = the max thickness of the categories drained into the mask this pass.
 // Set per drain by GlowOutlineRenderer (world items = 3, first-person held = 7). A source farther than a
 // pixel's own ring width can never ring it, so the world drain searches only radius 3 (≈29 taps) instead
-// of the FP drain's radius 7 (≈149 taps) — a ~5x cut with no change to the world ring. The per-source
+// of the FP drain's radius 7 (≈149 taps), a ~5x cut with no change to the world ring. The per-source
 // THICKNESS[] below still bounds each category's actual ring, so an over-large radius only wastes taps.
 uniform int SearchRadius;
 // Distance-thinning multiplier for THIS composite pass (1.0 = full thickness). Set per object/cluster by
@@ -24,11 +24,11 @@ uniform int SearchRadius;
 // proportionally thinner ring instead of a constant pixel ring that reads as fatter the farther it is.
 uniform float ThicknessScale;
 
-// Mask DEPTH (front-most silhouette depth per pixel — the mask RT writes depth with LEQUAL). Sampled here
+// Mask DEPTH (front-most silhouette depth per pixel; the mask RT writes depth with LEQUAL). Sampled here
 // for RING OCCLUSION, NOT scene occlusion: it is the MASK's own depth attachment, a DIFFERENT target from
 // the main colour buffer this pass writes, so there is no read/write-the-same-target feedback (that was
 // the old crackle from sampling the MAIN depth here). ProjA/ProjB linearise it to eye distance (blocks)
-// the same way the silhouette pass did — ProjMat[2][2] / ProjMat[3][2] of the world/hand projection.
+// the same way the silhouette pass did: ProjMat[2][2] / ProjMat[3][2] of the world/hand projection.
 uniform sampler2D Sampler1;
 uniform float ProjA;
 uniform float ProjB;
@@ -42,9 +42,9 @@ uniform int TargetId;
 // and the guard would erode a thin ring). Kept off the world path so 3D items are unaffected.
 uniform int GuiMode;
 // 1 = this composite pass's target object is the ONLY silhouette within its scissor box (no other id's
-// texels can reach any pixel here — the drain sets it when the box overlaps no other object's box). That
+// texels can reach any pixel here; the drain sets it when the box overlaps no other object's box). That
 // lets a pixel INSIDE the target's own silhouette skip the whole kernel: a ring needs a DIFFERENT id within
-// reach and there is none, so an interior pixel can never ring. This is the deep-interior early-out — the
+// reach and there is none, so an interior pixel can never ring. This is the deep-interior early-out, the
 // dominant cost when a single filled silhouette (a close entity) covers much of the screen, since every one
 // of its interior pixels would otherwise scan the full kernel only to discard. Pixel-identical output: the
 // ring band (empty pixels) and any different-id pixel still scan. 0 = boxes overlap → full scan everywhere.
@@ -65,7 +65,7 @@ out vec4 fragColor;
 const float THICKNESS[4] = float[](4.0, 4.0, 3.0, 7.0);
 
 // A behind object's ring is eaten where a nearer silhouette covers the ring pixel by at least this many
-// BLOCKS — so e.g. the body/armor ring doesn't draw around an elytra worn in front of it, while the
+// BLOCKS, so e.g. the body/armor ring doesn't draw around an elytra worn in front of it, while the
 // elytra keeps its own ring. The elytra sits 0.125 blocks ahead of the body, so a 0.10 bias catches it.
 const float RING_OCCLUSION_BIAS = 0.10;
 
@@ -85,7 +85,7 @@ void main() {
     int keyP = vP >= 128 ? vP - 128 : vP;
 
     // Inward edge bleed (shader-pack path): if this pixel IS the target silhouette and sits within EdgeBleed
-    // texels of an EMPTY pixel, it's an outer border pixel — paint it the target's own colour so the ring
+    // texels of an EMPTY pixel, it's an outer border pixel: paint it the target's own colour so the ring
     // straddles the geometric edge and closes the hairline gap the pack's slightly-inset item leaves. Runs
     // before the SoloTarget discard so border pixels survive; deep-interior pixels (no empty neighbour) fall
     // through to the early-out. No-op when EdgeBleed == 0 (off-pack + GUI).
@@ -142,20 +142,20 @@ void main() {
             }
             float srcDist = cg_eyeDist(texture(Sampler1, srcUV).r);
             // Ring occlusion: skip this ring where the ring pixel's own silhouette is NEARER than the
-            // source's by more than the bias — a different object is in front here, so the source's ring
+            // source's by more than the bias; a different object is in front here, so the source's ring
             // would wrongly paint around/over it (the armor ring behind an elytra). A source can never lose
             // to a farther one already chosen, so also skip anything not nearer than the current best.
             if (ringDist < srcDist - RING_OCCLUSION_BIAS) continue;
             if (found && srcDist >= bestDist) continue;
             if (!gui) {
-                // Reject isolated specks (morphological opening) — a lone stray "visible" texel (sub-pixel
+                // Reject isolated specks (morphological opening): a lone stray "visible" texel (sub-pixel
                 // coverage flicker at a convex corner under Sodium's reduced immediate-mode vertex
                 // precision) would otherwise balloon into a round bead just outside the real outline. A
                 // genuine silhouette source sits in a solid shape, so require >= 2 of its 8 neighbours to
                 // also be silhouette. 8-cell (not 4-cell) keeps thin DIAGONAL features. World-only: the GUI
                 // silhouette is clean and this guard would erode its ring (see above).
-                // Only the boolean support>=2 matters, so stop sampling once two neighbours are found —
-                // a genuine source (in a solid shape) hits 2 in the first taps; only true specks pay all 8.
+                // Only the boolean support>=2 matters, so stop sampling once two neighbours are found.
+                // A genuine source (in a solid shape) hits 2 in the first taps; only true specks pay all 8.
                 int support = 0;
                 support += int(texture(Sampler0, srcUV + vec2( step.x, 0.0)).a > 0.002);
                 support += int(texture(Sampler0, srcUV + vec2(-step.x, 0.0)).a > 0.002);
