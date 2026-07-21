@@ -74,11 +74,32 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return result;
     }
 
+    /**
+     * Bind Sampler0 + the colour modulator for a textured glint draw. Normally the grayscale design goes on
+     * Sampler0 and the colour rides {@code ColorModulator}; under a pack whose glint program ignores that
+     * uniform (Photon) the colour is baked into the texture instead and the modulator stays white. See
+     * {@link PhotonCompat}.
+     */
+    private static void bindGlintTexture(ResourceLocation design, float[] holder, float brightness) {
+        if (PhotonCompat.dropsGlintColor()) {
+            ResourceLocation tinted = PhotonCompat.tintedDesign(design, holder, brightness);
+            if (tinted != null) {
+                RenderSystem.setShaderTexture(0, tinted);
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, holder[3]);
+                return;
+            }
+        }
+        RenderSystem.setShaderTexture(0, getTexture(design));
+        RenderSystem.setShaderColor(holder[0] * brightness, holder[1] * brightness,
+                holder[2] * brightness, holder[3]);
+    }
+
     public static void clearTextures() {
         Minecraft mc = Minecraft.getInstance();
         for (ResourceLocation loc : textureCache.values())
             if (loc != null) mc.getTextureManager().release(loc);
         textureCache.clear();
+        PhotonCompat.clear();
         for (Runnable r : additionalReloadCleanup) {
             try { r.run(); } catch (Throwable t) {
                 LOGGER.warn("[{}/CustomGlint] additional reload cleanup threw", MOD_ID, t);
@@ -1254,9 +1275,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                         .setShaderState(RENDERTYPE_GLINT_SHADER)
                         .setTextureState(new TextureStateShard(tex, false, false) {
                             @Override public void setupRenderState() {
-                                RenderSystem.setShaderTexture(0, getTexture(tex));
-                                RenderSystem.setShaderColor(holder[0] * brightness, holder[1] * brightness,
-                                        holder[2] * brightness, holder[3]);
+                                bindGlintTexture(tex, holder, brightness);
                             }
                             @Override public void clearRenderState() {
                                 super.clearRenderState();
@@ -1722,8 +1741,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             .setShaderState(RENDERTYPE_GLINT_SHADER)
                             .setTextureState(new TextureStateShard(tex, false, false) {
                                 @Override public void setupRenderState() {
-                                    RenderSystem.setShaderTexture(0, getTexture(tex));
-                                    RenderSystem.setShaderColor(holder[0], holder[1], holder[2], holder[3]);
+                                    bindGlintTexture(tex, holder, 1.0f);
                                 }
                                 @Override public void clearRenderState() {
                                     super.clearRenderState();
