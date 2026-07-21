@@ -10,6 +10,7 @@ import net.tunamods.customglint.common.CustomGlint;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
 
+import javax.annotation.Nullable;
 import java.util.IdentityHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -33,10 +34,10 @@ import java.util.Optional;
  * the no-pack path (the glint blend func is {@code SRC_COLOR, ONE}, so only RGB matters), which is why the same
  * tinted texture is safe to use for every draw once the pack is detected, GUI included.
  *
- * <p>Detection is behavioural, not by name: read the active pack's glint fragment source through Iris and check
- * whether it mentions {@code gl_Color}. A pack that doesn't gets the tinted path. If the source can't be read
- * (Iris internals moved), fall back to matching the pack name. All Iris access is reflective, per the project's
- * soft-compat rule; no Iris means no pack means no tinting.
+ * <p>Detection reads behaviour rather than trusting a name: pull the active pack's glint fragment source
+ * through Iris and check whether it mentions {@code gl_Color}. A pack that doesn't gets the tinted path. If
+ * the source can't be read (Iris internals moved), fall back to matching the pack name. All Iris access is
+ * reflective, per the project's soft-compat rule; no Iris means no pack means no tinting.
  */
 public final class PhotonCompat {
     private PhotonCompat() {}
@@ -70,6 +71,7 @@ public final class PhotonCompat {
         return verdict;
     }
 
+    @Nullable
     private static String currentPackName() {
         try {
             return (String) Class.forName("net.irisshaders.iris.Iris")
@@ -81,6 +83,7 @@ public final class PhotonCompat {
 
     /** {@code TRUE} when the pack's glint fragment shader never reads {@code gl_Color}, {@code FALSE} when it
      *  does, {@code null} when the source can't be reached (caller falls back to the name match). */
+    @Nullable
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Boolean glintProgramIgnoresColor() {
         try {
@@ -133,6 +136,7 @@ public final class PhotonCompat {
      * RGB, for binding to Sampler0 in place of {@link CustomGlintRenderer#getTexture}. Null if the design has
      * no texture, in which case the caller keeps the grayscale + modulator path.
      */
+    @Nullable
     public static ResourceLocation tintedDesign(ResourceLocation design, float[] holder, float brightness) {
         ResourceLocation grayLoc = CustomGlintRenderer.getTexture(design);
         if (grayLoc == null) return null;
@@ -145,7 +149,6 @@ public final class PhotonCompat {
                 || tint.texture.getPixels().getWidth() != gray.getWidth()
                 || tint.texture.getPixels().getHeight() != gray.getHeight()) {
             tint = create(gray.getWidth(), gray.getHeight());
-            if (tint == null) return null;
             TINTS.put(holder, tint);
         }
         if (tint.rgb != rgb || !design.equals(tint.design)) {
@@ -168,6 +171,7 @@ public final class PhotonCompat {
     }
 
     /** The grayscale design texture's backing image, or null if it isn't one of ours / has been closed. */
+    @Nullable
     private static NativeImage pixelsOf(ResourceLocation loc) {
         AbstractTexture tex = Minecraft.getInstance().getTextureManager().getTexture(loc, null);
         return tex instanceof DynamicTexture dt ? dt.getPixels() : null;
@@ -219,7 +223,6 @@ public final class PhotonCompat {
     }
 
     private static int channel(float v) {
-        int i = Math.round(v * 255.0f);
-        return i < 0 ? 0 : Math.min(i, 255);
+        return Math.clamp(Math.round(v * 255.0f), 0, 255);
     }
 }

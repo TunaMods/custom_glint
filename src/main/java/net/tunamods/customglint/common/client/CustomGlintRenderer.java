@@ -29,6 +29,7 @@ import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
@@ -58,19 +59,22 @@ import net.tunamods.customglint.common.CustomGlint.Layer;
  */
 public final class CustomGlintRenderer extends RenderStateShard {
 
-    // ── Texture cache ─────────────────────────────────────────────────────────
-
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private static final Map<ResourceLocation, ResourceLocation> textureCache = new HashMap<>();
+    // ── Texture cache ─────────────────────────────────────────────────────────
 
+    private static final Map<ResourceLocation, ResourceLocation> TEXTURE_CACHE = new HashMap<>();
+
+    /** The uploaded greyscale texture for {@code design}, built on first ask. Null when the design has no
+     *  PNG (the procedural chromatic one) or its resource is missing; every caller treats null as "skip". */
+    @Nullable
     public static ResourceLocation getTexture(ResourceLocation design) {
         // Single map lookup on the common (resolved, non-null) hit path; only null-cached negatives
         // fall through to the containsKey check to distinguish "cached miss" from "never seen".
-        ResourceLocation cached = textureCache.get(design);
-        if (cached != null || textureCache.containsKey(design)) return cached;
+        ResourceLocation cached = TEXTURE_CACHE.get(design);
+        if (cached != null || TEXTURE_CACHE.containsKey(design)) return cached;
         ResourceLocation result = generateTexture(design);
-        textureCache.put(design, result);
+        TEXTURE_CACHE.put(design, result);
         return result;
     }
 
@@ -96,9 +100,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
 
     public static void clearTextures() {
         Minecraft mc = Minecraft.getInstance();
-        for (ResourceLocation loc : textureCache.values())
+        for (ResourceLocation loc : TEXTURE_CACHE.values())
             if (loc != null) mc.getTextureManager().release(loc);
-        textureCache.clear();
+        TEXTURE_CACHE.clear();
         PhotonCompat.clear();
         for (Runnable r : additionalReloadCleanup) {
             try { r.run(); } catch (Throwable t) {
@@ -122,9 +126,9 @@ public final class CustomGlintRenderer extends RenderStateShard {
         GLINT_COLORS.clear();
         LAYER_KEY_CACHE.clear();
         // Release the chromatic palette strips + white dummy (DynamicTextures registered with the manager).
-        for (ResourceLocation loc : paletteCache.values())
+        for (ResourceLocation loc : PALETTE_CACHE.values())
             if (loc != null) mc.getTextureManager().release(loc);
-        paletteCache.clear();
+        PALETTE_CACHE.clear();
         if (whiteTex != null) { mc.getTextureManager().release(whiteTex); whiteTex = null; }
         // The shader-TT tag set retains every RenderType it ever saw; drop it on reload (re-applied lazily)
         // so RenderTypes evicted above aren't pinned across reloads.
@@ -249,7 +253,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     public static final ResourceLocation GUI_DESIGN_ATLAS_ID = CustomGlint.res("gui_design_atlas");
     private static boolean guiDesignAtlasBuilt = false;
     /** design → its 0-based atlas cell. Absent (CHROMATIC, a load failure, or past the cap) → per-design draw. */
-    private static final Map<ResourceLocation, Integer> guiDesignCell = new HashMap<>();
+    private static final Map<ResourceLocation, Integer> GUI_DESIGN_CELLS = new HashMap<>();
     /** Full design list to atlas (built-ins + data-pack), installed by the full mod at client init since the
      *  data-pack list lives in the module. Null → built-ins only (an api-only embedder without the full mod). */
     private static volatile Supplier<List<ResourceLocation>> guiAtlasDesignSource = null;
@@ -268,7 +272,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (!guiDesignAtlasBuilt) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc != null) mc.getTextureManager().release(GUI_DESIGN_ATLAS_ID);
-        guiDesignCell.clear();
+        GUI_DESIGN_CELLS.clear();
         guiDesignAtlasBuilt = false;
     }
 
@@ -311,7 +315,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                     gray.getPixelRGBA(cx * sw / GUI_ATLAS_CONTENT, cy * sh / GUI_ATLAS_CONTENT));
                         }
                     }
-                    guiDesignCell.put(design, i);
+                    GUI_DESIGN_CELLS.put(design, i);
                 } finally {
                     gray.close();
                 }
@@ -328,16 +332,17 @@ public final class CustomGlintRenderer extends RenderStateShard {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
         } catch (Throwable t) {
             atlas.close();
-            guiDesignCell.clear();
+            GUI_DESIGN_CELLS.clear();
             LOGGER.warn("[{}/CustomGlint] GUI design atlas build failed; falling back to per-design glint draws", MOD_ID, t);
         }
     }
 
     /** The atlas cell index for {@code design}, or null when it isn't atlased (CHROMATIC, a load failure, or
      *  past {@link #GUI_ATLAS_MAX_CELLS}) and the per-design {@link #forGlint} path must be used. */
+    @Nullable
     public static Integer guiDesignCellIndex(ResourceLocation design) {
         ensureGuiDesignAtlas();
-        return guiDesignCell.get(design);
+        return GUI_DESIGN_CELLS.get(design);
     }
 
     /** Reads a design PNG into a fresh greyscale {@link NativeImage} (caller owns + closes it), or null if
@@ -383,8 +388,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  glinted inventory icon batches into one draw. Declared before its shard to avoid a forward reference,
      *  mirroring {@code glintCutoutShader}. Assigned in {@link #registerShaders}. */
     private static ShaderInstance guiItemGlintShader;
-    private static final RenderStateShard.ShaderStateShard GUI_ATLAS_GLINT_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> guiItemGlintShader);
+    private static final ShaderStateShard GUI_ATLAS_GLINT_SHADER_SHARD =
+            new ShaderStateShard(() -> guiItemGlintShader);
     private static RenderType guiAtlasGlintRT;
 
     /** The single shared RenderType for atlased GUI glint: every glinted inventory icon whose design is in the
@@ -466,6 +471,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         float[] sc = scrollAmount(layer, colorIdx);
         int sx16 = Math.round((sc[0] - (float) Math.floor(sc[0])) * 16000.0f);
         int sy16 = Math.round((sc[1] - (float) Math.floor(sc[1])) * 16000.0f);
+        // patternScale in 1/4096ths, clamped to the signed-short range the setUv2 payload slot holds
+        // (32767/4096 ≈ scale 8, well past the editor's ceiling).
         int ps4096 = Math.max(0, Math.min(32767, Math.round(layer.patternScale() * 4096.0f)));
         return GUI_ATLAS_CONSUMER.get().set(guiGlintBuffer(rt), cr, cg, cb, sx16, sy16, ps4096, cell);
     }
@@ -690,33 +697,33 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // Sampler1. One RenderType per (colours, speed, scale, seed, surface): a single draw, no per-colour
     // fan-out. Caches mirror the texture-glint LRU caps + reload eviction.
     private static ShaderInstance chromaticShader;
-    private static final RenderStateShard.ShaderStateShard CHROMATIC_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> chromaticShader);
+    private static final ShaderStateShard CHROMATIC_SHADER_SHARD =
+            new ShaderStateShard(() -> chromaticShader);
     private static final Map<String, RenderType> BY_CHROMATIC = new RtCache();
 
     /** Chromatic slick plus the armor-shape alpha-test on Sampler2; the horse-armor counterpart of
      *  {@link #glintCutoutShader}. See {@link #forMountChromaticGlint}. */
     private static ShaderInstance chromaticCutoutShader;
-    private static final RenderStateShard.ShaderStateShard CHROMATIC_CUTOUT_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> chromaticCutoutShader);
+    private static final ShaderStateShard CHROMATIC_CUTOUT_SHADER_SHARD =
+            new ShaderStateShard(() -> chromaticCutoutShader);
 
     /** Chromatic slick declared for NEW_ENTITY, no camera-ward bias and no mask, so it can test EQUAL against a
      *  cutout base's own depth; the chromatic counterpart of {@link #glintModelShader}. See
      *  {@link #forElytraChromaticGlint}. */
     private static ShaderInstance chromaticModelShader;
-    private static final RenderStateShard.ShaderStateShard CHROMATIC_MODEL_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> chromaticModelShader);
+    private static final ShaderStateShard CHROMATIC_MODEL_SHADER_SHARD =
+            new ShaderStateShard(() -> chromaticModelShader);
 
     /** Vanilla rendertype_glint plus an alpha-test against a second sampler; see {@link #forMountArmorGlint}. */
     private static ShaderInstance glintCutoutShader;
-    private static final RenderStateShard.ShaderStateShard GLINT_CUTOUT_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> glintCutoutShader);
+    private static final ShaderStateShard GLINT_CUTOUT_SHADER_SHARD =
+            new ShaderStateShard(() -> glintCutoutShader);
 
     /** Vanilla rendertype_glint declared for NEW_ENTITY, no camera-ward bias and no mask, so it can test EQUAL
      *  against a cutout base's own depth; see {@link #forElytraGlint}. */
     private static ShaderInstance glintModelShader;
-    private static final RenderStateShard.ShaderStateShard GLINT_MODEL_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> glintModelShader);
+    private static final ShaderStateShard GLINT_MODEL_SHADER_SHARD =
+            new ShaderStateShard(() -> glintModelShader);
 
     /** Like {@link #glintCutoutShader} but cuts against the UNION of two mask textures (Sampler1 + Sampler2):
      *  the Epic Knights decoration counterpart, since dyeable EK decorations split their shape across a base +
@@ -731,16 +738,16 @@ public final class CustomGlintRenderer extends RenderStateShard {
     // See GlowOutlineRenderer.queueChromaticModel / accumulateChromaticWorld / compositeChromaticWorld.
     private static ShaderInstance chromaticOverlayShader;
     private static ShaderInstance chromaticCompositeShader;
-    private static final RenderStateShard.ShaderStateShard CHROMATIC_OVERLAY_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> chromaticOverlayShader);
+    private static final ShaderStateShard CHROMATIC_OVERLAY_SHADER_SHARD =
+            new ShaderStateShard(() -> chromaticOverlayShader);
     private static final Map<String, RenderType> BY_CHROMATIC_OVERLAY = new RtCache();
 
     // Post-Iris TEXTURED-glint overlay (shader-pack path): the non-chromatic counterpart of the chromatic
     // overlay. A pack hijacks the in-phase glint_cutout program, so horse-armor textured glint re-renders
     // through this NEW_ENTITY overlay after the pack finishes and composites back (see forGlintEntityOverlay).
     private static ShaderInstance glintOverlayShader;
-    private static final RenderStateShard.ShaderStateShard GLINT_OVERLAY_SHADER_SHARD =
-            new RenderStateShard.ShaderStateShard(() -> glintOverlayShader);
+    private static final ShaderStateShard GLINT_OVERLAY_SHADER_SHARD =
+            new ShaderStateShard(() -> glintOverlayShader);
     private static final Map<String, RenderType> BY_GLINT_OVERLAY = new RtCache();
 
     public static ShaderInstance chromaticCompositeShader() { return chromaticCompositeShader; }
@@ -748,7 +755,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     /** 1px-tall palette strips (one RGBA texel per colour) bound to Sampler1, keyed by colour set. Bounded
      *  LRU: a creative player cycling colours would otherwise pin one DynamicTexture per distinct set. */
     private static final int PALETTE_CACHE_CAP = 256;
-    private static final Map<String, ResourceLocation> paletteCache =
+    private static final Map<String, ResourceLocation> PALETTE_CACHE =
             new LinkedHashMap<>(64, 0.75f, true) {
                 @Override protected boolean removeEldestEntry(Map.Entry<String, ResourceLocation> eldest) {
                     if (size() <= PALETTE_CACHE_CAP) return false;
@@ -761,8 +768,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
             };
     private static ResourceLocation whiteTex; // 1×1 opaque-white dummy for Sampler0 (the shader never reads it)
 
-    /** Mod-bus listener (hooked from {@link CustomGlintClientInit}): registers the procedural chromatic
-     *  core shader. POSITION_TEX so it slots into the same fixed-buffer paths as the texture glints. */
+    /** Mod-bus listener (hooked from {@link CustomGlintClientInit}): registers every core shader the glint
+     *  pipeline owns. The procedural chromatic one is POSITION_TEX so it slots into the same fixed-buffer
+     *  paths as the texture glints; each of the others declares the format its own draw path needs, noted
+     *  at its registration below. A failure here leaves the matching shader field null and the {@code forX}
+     *  factory returns null, so that path silently skips instead of crashing. */
     public static void registerShaders(RegisterShadersEvent event) {
         try {
             event.registerShader(
@@ -836,7 +846,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
                             DefaultVertexFormat.NEW_ENTITY),
                     shader -> guiItemGlintShader = shader);
         } catch (Exception e) {
-            LOGGER.error("[{}/CustomGlint] failed to register chromatic shader", MOD_ID, e);
+            LOGGER.error("[{}/CustomGlint] failed to register glint core shaders", MOD_ID, e);
         }
     }
 
@@ -855,7 +865,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
     private static String colorsKey(int[] colors) {
         StringBuilder sb = new StringBuilder(colors.length * 7);
         for (int c : colors) sb.append(Integer.toHexString(c)).append('_');
-        return sb.length() == 0 ? "rainbow" : sb.toString();
+        return sb.isEmpty() ? "rainbow" : sb.toString();
     }
 
     /** Palette strip for Sampler1: width = max(1, colours), one opaque RGBA texel per colour (RGB only;
@@ -863,7 +873,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  reads colour-count 0 and falls back to a full-spectrum rainbow, so the strip's contents go unused. */
     private static ResourceLocation getPaletteTexture(int[] colors) {
         String key = colorsKey(colors);
-        ResourceLocation existing = paletteCache.get(key);
+        ResourceLocation existing = PALETTE_CACHE.get(key);
         if (existing != null) return existing;
         int w = Math.max(1, colors.length);
         NativeImage img = new NativeImage(w, 1, false);
@@ -877,7 +887,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         DynamicTexture dt = new DynamicTexture(img);
         ResourceLocation loc = CustomGlint.res("chromatic_palette/" + key);
         Minecraft.getInstance().getTextureManager().register(loc, dt);
-        paletteCache.put(key, loc);
+        PALETTE_CACHE.put(key, loc);
         return loc;
     }
 
@@ -916,24 +926,24 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  the glint draws on (NO_LAYERING for items / horse / entity, VIEW_OFFSET_Z_LAYERING for worn armor),
      *  exactly mirroring the texture-glint depth setup so the EQUAL_DEPTH_TEST pass lines up. */
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
-                                          RenderStateShard.LayeringStateShard layering) {
+                                          LayeringStateShard layering) {
         return chromaticRT(layer, tag, scaleU, scaleV, layering, VertexFormat.Mode.QUADS);
     }
 
     // {@code mode} lets a caller request a TRIANGLES-mode RT for renderers that draw a triangle list (Epic
     // Fight's skinned meshes) instead of vanilla QUADS. A QUADS RT fed a triangle stream shatters into facets.
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
-                                          RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode) {
+                                          LayeringStateShard layering, VertexFormat.Mode mode) {
         return chromaticRT(layer, tag, scaleU, scaleV, layering, mode, false);
     }
 
     // {@code lateForShaders} routes a translucent-surface chromatic glint (slime outer shell) into the
     // OPAQUE_DECAL shader bucket with LEQUAL depth; see forHorseArmorGlint for the full slime rationale.
     private static RenderType chromaticRT(Layer layer, String tag, float scaleU, float scaleV,
-                                          RenderStateShard.LayeringStateShard layering, VertexFormat.Mode mode,
+                                          LayeringStateShard layering, VertexFormat.Mode mode,
                                           boolean lateForShaders) {
         int[] colors = chromaticColors(layer.colors());
-        final int colorCount = Math.min(colors.length, 8);
+        final int colorCount = Math.min(colors.length, 8);   // 8 = the palette texels the chromatic fsh reads
         final ResourceLocation white = getWhiteTexture();
         final ResourceLocation palette = getPaletteTexture(colors);
         String key = tag + "|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
@@ -1004,6 +1014,11 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return chromaticRT(glint.layers()[layerIdx], "item|" + isItem + "|L" + layerIdx, scaleU, scaleV, NO_LAYERING);
     }
 
+    /** Noise scale for special 3D BEWLR items (trident/shield). These are much smaller than an armor surface,
+     *  so the big-surface model scale ({@link #CHROMATIC_MODEL_UV_SCALE}) reads far too coarse on them; a
+     *  higher scale gives a denser slick, and the patternScale slider tunes up from here. */
+    private static final float CHROMATIC_SPECIAL_ITEM_UV_SCALE = 3.0f;
+
     /** In-phase chromatic glint for a special 3D BEWLR item (shield/trident): the special-item noise scale
      *  ({@link #CHROMATIC_SPECIAL_ITEM_UV_SCALE}), so it matches the shader-pack overlay
      *  ({@link #forChromaticSpecialGlintOverlay}): same slick on and off a pack. NO_LAYERING like the 3D item. */
@@ -1066,11 +1081,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                 TextureAtlas.LOCATION_BLOCKS, VertexFormat.Mode.QUADS, 1.0f);
     }
 
-    /** Noise scale for special 3D BEWLR items (trident/shield). These are much smaller than an armor surface,
-     *  so the big-surface model scale ({@link #CHROMATIC_MODEL_UV_SCALE}) reads far too coarse on them; a
-     *  higher scale gives a denser slick, and the patternScale slider tunes up from here. */
-    private static final float CHROMATIC_SPECIAL_ITEM_UV_SCALE = 3.0f;
-
     /** Post-Iris chromatic overlay for a special 3D item (trident/shield), tracing its own {@code tex}. Uses
      *  the denser special-item noise scale so a small item isn't a coarse blob (see the constant). */
     public static RenderType forChromaticSpecialGlintOverlay(Data glint, int layerIdx, ResourceLocation tex) {
@@ -1083,7 +1093,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticOverlayShader == null) return null;
         Layer layer = glint.layers()[layerIdx];
         int[] colors = chromaticColors(layer.colors());
-        final int colorCount = Math.min(colors.length, 8);
+        final int colorCount = Math.min(colors.length, 8);   // 8 = the palette texels the chromatic fsh reads
         final ResourceLocation palette = getPaletteTexture(colors);
         final ResourceLocation tex = surfaceTex != null ? surfaceTex : getWhiteTexture();
         // The overlay shader multiplies the slick by ColorModulator.a, so a sub-1 brightness dims it. Used to
@@ -1429,6 +1439,10 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return cached;
     }
 
+    // Colour boost for the translucent slime-shell glint under a shader pack: the OPAQUE_DECAL glint draws
+    // before the shell, which then blends over it and roughly halves it, so lift it back toward full.
+    private static final float SHELL_GLINT_BRIGHTNESS = 1.9f;
+
     // Horse armor uses entityCutoutNoCull (no polygon offset / no VIEW_OFFSET_Z_LAYERING).
     // forArmorGlint uses EQUAL + VIEW_OFFSET_Z_LAYERING; wrong offset → invisible on horses.
     // This variant keeps EQUAL + NO_LAYERING so depth matches, and scale 1.0 matches forArmorGlint visually.
@@ -1440,10 +1454,6 @@ public final class CustomGlintRenderer extends RenderStateShard {
                                                 VertexFormat.Mode mode) {
         return forHorseArmorGlint(glint, layerIdx, frameColor, colorIdx, mode, false);
     }
-
-    // Colour boost for the translucent slime-shell glint under a shader pack: the OPAQUE_DECAL glint draws
-    // before the shell, which then blends over it and roughly halves it, so lift it back toward full.
-    private static final float SHELL_GLINT_BRIGHTNESS = 1.9f;
 
     public static RenderType forHorseArmorGlint(Data glint, int layerIdx, float[] frameColor, int colorIdx,
                                                 VertexFormat.Mode mode, boolean lateForShaders) {
@@ -1656,7 +1666,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticCutoutShader == null) return null;
         Layer layer = glint.layers()[layerIdx];
         int[] colors = chromaticColors(layer.colors());
-        final int colorCount = Math.min(colors.length, 8);
+        final int colorCount = Math.min(colors.length, 8);   // 8 = the palette texels the chromatic fsh reads
         final ResourceLocation white = getWhiteTexture();
         final ResourceLocation palette = getPaletteTexture(colors);
         String key = "mountchroma|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
@@ -1711,7 +1721,7 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (chromaticModelShader == null) return null;
         Layer layer = glint.layers()[layerIdx];
         int[] colors = chromaticColors(layer.colors());
-        final int colorCount = Math.min(colors.length, 8);
+        final int colorCount = Math.min(colors.length, 8);   // 8 = the palette texels the chromatic fsh reads
         final ResourceLocation white = getWhiteTexture();
         final ResourceLocation palette = getPaletteTexture(colors);
         String key = "elytrachroma|" + colorsKey(colors) + "|" + layer.speed() + "|" + layer.patternScale()
@@ -1758,6 +1768,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // isItem=true → flat item model (sword, tool, etc.) → scale 8.0 matches vanilla glint().
         // isItem=false → 3D entity model (trident, etc.) → 1.0 gives visible pattern detail;
         // vanilla entityGlint() uses 0.16 but that tiles too infrequently for custom designs.
+        // 1024x512 is the atlas the 8.0 was tuned against, and it is NOT square, so the two axes are
+        // calibrated separately: one shared factor stretches a design into diamonds on a taller atlas.
         ensureAtlasDims();
         float scaleU = isItem ? (8.0f * cachedAtlasW / 1024.0f) : 1.0f;
         float scaleV = isItem ? (8.0f * cachedAtlasH / 512.0f) : 1.0f;
@@ -1819,18 +1831,8 @@ public final class CustomGlintRenderer extends RenderStateShard {
         // layer tear's yellow/black) then freezes blank in a menu; wall-clock keeps it cycling like it does
         // in the running world.
         long gameTime = Util.getMillis() / 50L;
-        float totalTicks = (20.0f * colors.length) / layer.speed();
-        float t = (gameTime % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
-        t = ((t + phaseFraction * colors.length) % colors.length + colors.length) % colors.length;
-        int idx = (int) t % colors.length;
-        if (!layer.interpolate()) return colors[idx];
-        float frac = t - (int) t;
-        int c1 = colors[idx], c2 = colors[(idx + 1) % colors.length];
-        int a = (int)(((c1 >> 24) & 0xFF) * (1 - frac) + ((c2 >> 24) & 0xFF) * frac);
-        int r = (int)(((c1 >> 16) & 0xFF) * (1 - frac) + ((c2 >> 16) & 0xFF) * frac);
-        int g = (int)(((c1 >>  8) & 0xFF) * (1 - frac) + ((c2 >>  8) & 0xFF) * frac);
-        int b = (int)((c1         & 0xFF) * (1 - frac) + (c2         & 0xFF) * frac);
-        return (a << 24) | (r << 16) | (g << 8) | b;
+        return sampleColorCycle(colors, gameTime, (TICKS_PER_COLOR * colors.length) / layer.speed(),
+                layer.interpolate(), phaseFraction);
     }
 
     /** Phase offset (fraction of a full colour loop) applied to the glow OUTLINE ring so it never shows the
@@ -1869,7 +1871,19 @@ public final class CustomGlintRenderer extends RenderStateShard {
         if (colors.length == 0) return 0xFFFFFFFF;
         if (colors.length == 1) return colors[0];
         if (!Float.isFinite(speed) || speed <= 0) speed = 1.0f;
-        float totalTicks = (20.0f * colors.length) / speed;
+        return sampleColorCycle(colors, timeTicks, (TICKS_PER_COLOR * colors.length) / speed,
+                interpolate, phaseFraction);
+    }
+
+    /** One colour holds for a second at speed 1 (20 ticks); speed divides that, so speed 2 is half a second. */
+    private static final float TICKS_PER_COLOR = 20.0f;
+
+    /** Samples a colour cycle: {@code timeTicks} wrapped into {@code totalTicks}, shifted by
+     *  {@code phaseFraction} of a full loop, then either the hard step or a blend into the next colour.
+     *  Callers pass {@code totalTicks} already computed so each keeps its own tick source and its own speed
+     *  handling (the glint path has no speed guard, the glow path clamps a bad speed to 1). */
+    private static int sampleColorCycle(int[] colors, long timeTicks, float totalTicks,
+                                        boolean interpolate, float phaseFraction) {
         float t = (timeTicks % Math.max(1L, (long) totalTicks)) / totalTicks * colors.length;
         t = ((t + phaseFraction * colors.length) % colors.length + colors.length) % colors.length;
         int idx = (int) t % colors.length;
@@ -1883,14 +1897,26 @@ public final class CustomGlintRenderer extends RenderStateShard {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    /** Shared body of the three glow-colour resolvers: explicit glow colours if the stack has any, else the
+     *  glint's layer-0 colour, else white. {@code wallClock} picks the trim-texture clock over the game clock;
+     *  {@code phaseFraction} shifts the point of the colour loop. The glint layer-0 fallback is wall-clock on
+     *  every path, so the ring/edge half-step holds regardless of which clock the explicit branch used. */
+    private static int resolveGlow(ItemStack stack, boolean wallClock, float phaseFraction) {
+        int[] glowColors = CustomGlint.getGlowColors(stack);
+        if (glowColors.length > 0) {
+            float speed = CustomGlint.getGlowSpeed(stack);
+            boolean interpolate = CustomGlint.getGlowInterpolate(stack);
+            return wallClock ? computeAnimatedGlowColorGui(glowColors, speed, interpolate)
+                             : computeAnimatedGlowColor(glowColors, speed, interpolate, phaseFraction);
+        }
+        Data glint = CustomGlint.read(stack);
+        return glint != null ? computeAnimatedColor(glint, 0, phaseFraction) : 0xFFFFFFFF;
+    }
+
     /** Resolves a glowing item's outline colour: its glow colours (animated) if set, else its glint
      *  layer-0 colour, else white. Shared by the flat-item and special-item glow-outline capture paths. */
     public static int resolveGlowColor(ItemStack stack) {
-        int[] glowColors = CustomGlint.getGlowColors(stack);
-        if (glowColors.length > 0)
-            return computeAnimatedGlowColor(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack), GLOW_RING_PHASE_OFFSET);
-        CustomGlint.Data glint = CustomGlint.read(stack);
-        return glint != null ? computeAnimatedColor(glint, 0, GLOW_RING_PHASE_OFFSET) : 0xFFFFFFFF;
+        return resolveGlow(stack, false, GLOW_RING_PHASE_OFFSET);
     }
 
     /** Edge/inner-tint colour for a glowing item's trim texture ("white × rgb"). Same resolution as
@@ -1899,22 +1925,14 @@ public final class CustomGlintRenderer extends RenderStateShard {
      *  uses the SAME clock as the ring per branch (game-time for explicit glow colours, wall-clock for the glint
      *  layer-0 fallback), so the half-step never drifts the way a wall-vs-game-clock split would. */
     public static int resolveGlowColorTint(ItemStack stack) {
-        int[] glowColors = CustomGlint.getGlowColors(stack);
-        if (glowColors.length > 0)
-            return computeAnimatedGlowColor(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));
-        CustomGlint.Data glint = CustomGlint.read(stack);
-        return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
+        return resolveGlow(stack, false, 0.0f);
     }
 
     /** Wall-clock (GUI) counterpart of {@link #resolveGlowColor}, for the trim TEXTURE tint. Animates the glow
      *  colours on wall-clock so the tinted edge ("white × rgb") desyncs from the game-time glow outline: the
      *  edge and the ring show different colours at once. Auto glow follows glint layer 0 (already wall-clock). */
     public static int resolveGlowColorGui(ItemStack stack) {
-        int[] glowColors = CustomGlint.getGlowColors(stack);
-        if (glowColors.length > 0)
-            return computeAnimatedGlowColorGui(glowColors, CustomGlint.getGlowSpeed(stack), CustomGlint.getGlowInterpolate(stack));
-        CustomGlint.Data glint = CustomGlint.read(stack);
-        return glint != null ? computeAnimatedColor(glint, 0) : 0xFFFFFFFF;
+        return resolveGlow(stack, true, 0.0f);
     }
 
     // ── Glint render-state support (glow outline moved to GlowOutlineRenderer) ──────

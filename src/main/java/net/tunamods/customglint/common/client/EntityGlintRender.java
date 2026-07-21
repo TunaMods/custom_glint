@@ -153,12 +153,7 @@ public final class EntityGlintRender {
         CapturingModelConsumer cap = CAPTURE_POOL.get();
         cap.reset();
         model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
-        CustomGlint.Layer[] layers = glint.layers();
-        for (int li = 0; li < layers.length; li++) {
-            if (CustomGlint.isChromatic(layers[li])) {
-                GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, li, false, SHELL_CHROMATIC_BRIGHTNESS);
-            }
-        }
+        queueChromaticLayers(cap, texture, glint, SHELL_CHROMATIC_BRIGHTNESS);
     }
 
     /** The slick composites over the translucent shell, so at full strength it reads as a solid glowing block
@@ -176,23 +171,41 @@ public final class EntityGlintRender {
         CapturingModelConsumer cap = CAPTURE_POOL.get();
         cap.reset();
         model.renderToBuffer(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
+        queueGlintLayer(cap, texture, glint, layerIdx);
+    }
+
+    /** Queue {@code cap}'s captured verts as the post-Iris TEXTURED glint overlay for one layer: one job per
+     *  colour when the layer shows every colour at once, else one job for the current animated colour. */
+    private static void queueGlintLayer(CapturingModelConsumer cap, ResourceLocation texture,
+                                        CustomGlint.Data glint, int layerIdx) {
         CustomGlint.Layer layer = glint.layers()[layerIdx];
         int[] colors = layer.colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layer.colors();
         if (layer.simultaneous()) {
             for (int i = 0; i < colors.length; i++) {
-                GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx, cgPackColor(colors[i]), i, false);
+                GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx, premul(colors[i]), i, false);
             }
         } else {
             GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx,
-                    cgPackColor(CustomGlintRenderer.computeAnimatedColor(glint, layerIdx)), 0, false);
+                    premul(CustomGlintRenderer.computeAnimatedColor(glint, layerIdx)), 0, false);
         }
     }
 
-    /** ARGB int to premultiplied-RGB + alpha-1 float[4], the form the glint colour holder expects. */
-    private static float[] cgPackColor(int color) {
-        float a = ((color >> 24) & 0xFF) / 255.0f;
-        return new float[]{ ((color >> 16) & 0xFF) / 255.0f * a, ((color >> 8) & 0xFF) / 255.0f * a,
-                (color & 0xFF) / 255.0f * a, 1.0f };
+    /** Queue every chromatic layer of {@code glint} as a post-Iris overlay job over {@code cap}'s verts. */
+    private static void queueChromaticLayers(CapturingModelConsumer cap, ResourceLocation texture,
+                                             CustomGlint.Data glint, float brightness) {
+        CustomGlint.Layer[] layers = glint.layers();
+        for (int li = 0; li < layers.length; li++) {
+            if (CustomGlint.isChromatic(layers[li])) {
+                GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, texture, glint, li, false, brightness);
+            }
+        }
+    }
+
+    /** ARGB int to a fresh premultiplied-RGB + alpha-1 float[4], the form the glint colour holder expects. */
+    private static float[] premul(int argb) {
+        float[] c = new float[4];
+        fillPremul(c, argb);
+        return c;
     }
 
     /** As {@link #captureModelSilhouette} but from raw {@code ModelPart[]}. Epic Knights armor decorations
@@ -227,16 +240,7 @@ public final class EntityGlintRender {
         for (ModelPart part : parts) {
             if (part != null) part.render(pose, cap, light, OverlayTexture.NO_OVERLAY, 0xFFFFFFFF);
         }
-        CustomGlint.Layer layer = glint.layers()[layerIdx];
-        int[] colors = layer.colors().length == 0 ? CustomGlintRenderer.WHITE_COLOR : layer.colors();
-        if (layer.simultaneous()) {
-            for (int i = 0; i < colors.length; i++) {
-                GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx, cgPackColor(colors[i]), i, false);
-            }
-        } else {
-            GlowOutlineRenderer.queueGlintModel(cap.data, cap.count, texture, glint, layerIdx,
-                    cgPackColor(CustomGlintRenderer.computeAnimatedColor(glint, layerIdx)), 0, false);
-        }
+        queueGlintLayer(cap, texture, glint, layerIdx);
     }
 
     /** As {@link #captureChromaticModel} but from raw {@code ModelPart[]}. Epic Knights decorations draw via
@@ -301,12 +305,7 @@ public final class EntityGlintRender {
                     GlowOutlineRenderer.CAT_ENTITY, 0);
         }
         if (chromaPack) {
-            CustomGlint.Layer[] layers = glint.layers();
-            for (int li = 0; li < layers.length; li++) {
-                if (CustomGlint.isChromatic(layers[li])) {
-                    GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, tex, glint, li, false);
-                }
-            }
+            queueChromaticLayers(cap, tex, glint, 1.0f);
         }
     }
 
@@ -340,14 +339,7 @@ public final class EntityGlintRender {
         }
         if (CustomGlintRenderer.isShaderPackActive()) {
             CustomGlint.Data glint = CustomGlint.read(stack);
-            if (glint != null) {
-                CustomGlint.Layer[] layers = glint.layers();
-                for (int li = 0; li < layers.length; li++) {
-                    if (CustomGlint.isChromatic(layers[li])) {
-                        GlowOutlineRenderer.queueChromaticModel(cap.data, cap.count, tex, glint, li, false);
-                    }
-                }
-            }
+            if (glint != null) queueChromaticLayers(cap, tex, glint, 1.0f);
         }
     }
 
@@ -597,6 +589,10 @@ public final class EntityGlintRender {
         }
     }
 
+    /** One reusable capture consumer per render thread; see {@link CapturingModelConsumer}. */
+    private static final ThreadLocal<CapturingModelConsumer> CAPTURE_POOL =
+            ThreadLocal.withInitial(CapturingModelConsumer::new);
+
     /** {@link VertexConsumer} for tracing a posed model into a glow silhouette: captures each vertex's
      *  camera-relative position + UV as {@code [x,y,z,u,v]} and drops everything else. The model's big
      *  {@code addVertex(...)} convenience method decomposes into {@code addVertex(x,y,z)} then
@@ -608,10 +604,8 @@ public final class EntityGlintRender {
      *  {@code renderToBuffer} walk). With {@code delegate == null} it is record-only (the re-render path used
      *  by armor / surface layers). The forwarded position is already pose-transformed (the convenience method
      *  transforms before calling {@code addVertex(x,y,z)}), so the entity renders identically. */
-    private static final ThreadLocal<CapturingModelConsumer> CAPTURE_POOL =
-            ThreadLocal.withInitial(CapturingModelConsumer::new);
-
     public static final class CapturingModelConsumer implements VertexConsumer {
+        // 4096 floats = ~819 captured vertices; doubled in put() when a bigger model overruns it.
         public float[] data = new float[4096];
         public int count = 0;
         public VertexConsumer delegate; // non-null = in-phase tee (forward + record); null = record-only

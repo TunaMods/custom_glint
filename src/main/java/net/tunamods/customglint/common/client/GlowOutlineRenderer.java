@@ -32,6 +32,7 @@ import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
 
+import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -75,9 +76,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     private GlowOutlineRenderer() { super("", () -> {}, () -> {}); }
 
     // ── Outline categories + per-object id keys ────────────────────────────────
-    // key = (category << 5) | id : top 2 bits = category, low 5 = a running 1..31 id. Stamped into the
-    // silhouette's vertex-colour alpha so the composite can keep each object's ring separate and pick a
-    // per-category thickness (see glow_composite.fsh THICKNESS[]).
+    // key = (category << 5) | id : the low 5 bits are a running 1..31 id, the bits above them the category
+    // (so a key never exceeds 127 and fits the vertex-colour alpha byte). Stamped into the silhouette's
+    // vertex-colour alpha so the composite can keep each object's ring separate and pick a per-category
+    // thickness (see glow_composite.fsh THICKNESS[]).
     public static final int CAT_ENTITY = 0, CAT_ARMOR = 1, CAT_ITEM = 2, CAT_HELD_FP = 3;
 
     // Per-category ring thickness in texels. MUST mirror glow_composite.fsh THICKNESS[]. Drives the
@@ -260,9 +262,9 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     // composite state (state().textureState.texture): best-effort, cached per RenderType, with WHITE_TEXTURE
     // (full fill) as the fallback for non-composite / textureless RTs so behaviour degrades to the old hull.
     private static final Map<RenderType, ResourceLocation> rtTextureCache = new IdentityHashMap<>();
-    private static Method cgStateMethod;
-    private static Field cgTextureStateField;
-    private static Field cgTextureField;
+    private static Method stateMethod;
+    private static Field textureStateField;
+    private static Field textureField;
 
     public static ResourceLocation resolveRenderTypeTexture(RenderType rt) {
         ResourceLocation r = rtTextureCache.get(rt);
@@ -275,21 +277,21 @@ public final class GlowOutlineRenderer extends RenderStateShard {
     @SuppressWarnings("unchecked")
     private static ResourceLocation reflectRenderTypeTexture(RenderType rt) {
         try {
-            Method sm = cgStateMethod;
+            Method sm = stateMethod;
             if (sm == null || !sm.getDeclaringClass().isInstance(rt)) {
                 sm = rt.getClass().getDeclaredMethod("state");
                 sm.setAccessible(true);
-                cgStateMethod = sm;
+                stateMethod = sm;
             }
             Object state = sm.invoke(rt); // RenderType.CompositeState
-            Field tsf = cgTextureStateField;
+            Field tsf = textureStateField;
             if (tsf == null || !tsf.getDeclaringClass().isInstance(state)) {
                 tsf = state.getClass().getDeclaredField("textureState");
                 tsf.setAccessible(true);
-                cgTextureStateField = tsf;
+                textureStateField = tsf;
             }
             Object texState = tsf.get(state); // RenderStateShard.EmptyTextureStateShard / TextureStateShard
-            Field tf = cgTextureField;
+            Field tf = textureField;
             if (tf == null || !tf.getDeclaringClass().isInstance(texState)) {
                 Field found = null;
                 for (Class<?> c = texState.getClass(); c != null && found == null; c = c.getSuperclass()) {
@@ -298,7 +300,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 if (found == null) return WHITE_TEXTURE; // EmptyTextureStateShard has no texture
                 found.setAccessible(true);
                 tf = found;
-                cgTextureField = tf;
+                textureField = tf;
             }
             Object opt = tf.get(texState);
             if (opt instanceof Optional<?> o && o.isPresent() && o.get() instanceof ResourceLocation loc)
@@ -321,6 +323,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         return (category << 5) | id;
     }
 
+    // 4096 bytes is only the starting allocation; ByteBufferBuilder grows itself as a drain fills it.
     private static final ByteBufferBuilder MASK_BUFFER = new ByteBufferBuilder(4096);
     private static final MultiBufferSource.BufferSource MASK_BUFFERS =
             MultiBufferSource.immediate(MASK_BUFFER);
@@ -465,9 +468,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                          int category, int priority) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
         if (len < 20 || tex == null) return; // need at least one quad (4 verts * 5 floats)
-        float[] copy = new float[len];
-        System.arraycopy(data, 0, copy, 0, len);
-        modelWorldJobs.add(new ModelJob(copy, len, tex, color, key, category, priority, null, false));
+        modelWorldJobs.add(new ModelJob(Arrays.copyOf(data, len), len, tex, color, key, category, priority, null, false));
     }
 
     /** TRIANGLES-mode counterpart of {@link #queueModelOutline}, for a silhouette captured from a
@@ -480,13 +481,22 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                                   int category, int priority) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
         if (tex == null) return;
+        float[] copy = trimToPrimitives(data, len, true);
+        if (copy == null) return;
+        modelWorldJobs.add(new ModelJob(copy, copy.length, tex, color, key, category, priority, null, true));
+    }
+
+    /** Copy the first {@code len} floats of {@code data} trimmed to WHOLE primitives (3 verts per triangle,
+     *  4 per quad, 5 floats per vert) so a deferred draw never gets a partial primitive. Null when fewer than
+     *  one whole primitive was captured. */
+    @Nullable
+    private static float[] trimToPrimitives(float[] data, int len, boolean triangles) {
+        int vertsPerPrim = triangles ? 3 : 4;
         int verts = len / 5;
-        verts -= verts % 3;               // TRIANGLES: whole primitives only
+        verts -= verts % vertsPerPrim;
         int usable = verts * 5;
-        if (usable < 15) return;          // need at least one triangle (3 verts * 5 floats)
-        float[] copy = new float[usable];
-        System.arraycopy(data, 0, copy, 0, usable);
-        modelWorldJobs.add(new ModelJob(copy, usable, tex, color, key, category, priority, null, true));
+        if (usable < vertsPerPrim * 5) return null;
+        return Arrays.copyOf(data, usable);
     }
 
     // Set for the duration of the first-person hand pass (armed at the HEAD of
@@ -542,9 +552,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                 ItemDisplayContext ctx, int key, float[] anchor) {
         if (CustomGlintRenderer.isInShadowPass()) return; // don't capture the Iris shadow-map pass
         if (len < 20 || tex == null) return; // need at least one quad (4 verts * 5 floats)
-        float[] copy = new float[len];
-        System.arraycopy(data, 0, copy, 0, len);
-        ModelJob job = new ModelJob(copy, len, tex, color, key, itemCategory(ctx), 0,
+        ModelJob job = new ModelJob(Arrays.copyOf(data, len), len, tex, color, key, itemCategory(ctx), 0,
                 ctx == ItemDisplayContext.GUI ? anchor : null, false);
         if (ctx == ItemDisplayContext.GUI) modelGuiJobs.add(job);
         else if (isFpContext(ctx)) { snapshotHeldFpMatrices(); modelFpJobs.add(job); }
@@ -663,8 +671,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         for (ItemJob job : guiJobs) {
             resetCamBox();
             int key = nextGlowKey(job.category);
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(base, r, g, b, key);
+            SilhouetteConsumer sc = new SilhouetteConsumer(base, job.color, key);
             for (BakedQuad quad : job.quads) {
                 sc.putBulkData(job.pose, quad, 1.0f, 1.0f, 1.0f, 1.0f, job.light, OverlayTexture.NO_OVERLAY);
             }
@@ -679,8 +686,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             resetCamBox();
             VertexConsumer tc = MASK_BUFFERS.getBuffer(
                     job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(tc, r, g, b, job.key);
+            SilhouetteConsumer sc = new SilhouetteConsumer(tc, job.color, job.key);
             emitModel(sc, job);
             Box box = computeGuiBox(main.width, main.height, job.key & 31, true, job.anchor);
             if (box != null && prevScissor) box = intersectBox(box, prevBox);
@@ -819,13 +825,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         }
     }
 
+    // Chromatic drain destination: WORLD (renderLevel TAIL), FP hand (renderItemInHand RETURN), GUI (flush).
+    private static final int DEST_WORLD = 0, DEST_FP = 1, DEST_GUI = 2;
+
     /** Queue a captured chromatic model (camera-relative {@code [x,y,z,u,v]} per vertex, QUADS or TRIANGLES
      *  order) for the post-Iris overlay drain. Called from the armor chromatic chokepoints ONLY when a shader
      *  pack is active; off-pack the layer draws in-phase and never reaches here. Trims to whole primitives so
      *  the deferred draw never leaves a partial quad/triangle. */
-    // Chromatic drain destination: WORLD (renderLevel TAIL), FP hand (renderItemInHand RETURN), GUI (flush).
-    private static final int DEST_WORLD = 0, DEST_FP = 1, DEST_GUI = 2;
-
     public static void queueChromaticModel(float[] data, int len, ResourceLocation tex,
                                            CustomGlint.Data glint, int layerIdx, boolean triangles) {
         queueChromaticModel(data, len, tex, glint, layerIdx, triangles, 1.0f);
@@ -847,14 +853,10 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                        int layerIdx, float[] color, int colorIdx, boolean triangles) {
         if (CustomGlintRenderer.isInShadowPass()) return;
         if (tex == null || glint == null || color == null) return;
-        int verts = len / 5;
-        verts -= verts % (triangles ? 3 : 4);       // whole primitives only
-        int usable = verts * 5;
-        if (usable < (triangles ? 15 : 20)) return;  // need at least one primitive
-        float[] copy = new float[usable];
-        System.arraycopy(data, 0, copy, 0, usable);
+        float[] copy = trimToPrimitives(data, len, triangles);
+        if (copy == null) return;
         float[] col = { color[0], color[1], color[2], color[3] };
-        chromaticWorldJobs.add(new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, false, false, col, colorIdx, 1.0f));
+        chromaticWorldJobs.add(new ChromaJob(copy, copy.length, tex, glint, layerIdx, triangles, false, false, col, colorIdx, 1.0f));
     }
 
     /** Special 3D item (trident/shield) tracing its own {@code tex} at the denser special-item noise scale.
@@ -887,13 +889,9 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                                     boolean special, int dest, float brightness) {
         if (CustomGlintRenderer.isInShadowPass()) return;
         if (tex == null || glint == null) return;
-        int verts = len / 5;
-        verts -= verts % (triangles ? 3 : 4);        // whole primitives only
-        int usable = verts * 5;
-        if (usable < (triangles ? 15 : 20)) return;   // need at least one primitive
-        float[] copy = new float[usable];
-        System.arraycopy(data, 0, copy, 0, usable);
-        ChromaJob job = new ChromaJob(copy, usable, tex, glint, layerIdx, triangles, isItem, special, brightness);
+        float[] copy = trimToPrimitives(data, len, triangles);
+        if (copy == null) return;
+        ChromaJob job = new ChromaJob(copy, copy.length, tex, glint, layerIdx, triangles, isItem, special, brightness);
         switch (dest) {
             case DEST_FP -> { chromaticFpJobs.add(job); snapshotHeldFpMatrices(); }
             case DEST_GUI -> chromaticGuiJobs.add(job);
@@ -965,13 +963,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
                 GlStateManager.SourceFactor.ZERO, GlStateManager.DestFactor.ONE);
         RenderSystem.setShader(() -> shader);
         RenderSystem.setShaderTexture(0, chromaticTarget.getColorTextureId());
-        Tesselator tess = Tesselator.getInstance();
-        BufferBuilder bb = tess.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-        bb.addVertex(0.0f, 0.0f, 0.0f).setUv(0.0f, 0.0f);
-        bb.addVertex(1.0f, 0.0f, 0.0f).setUv(1.0f, 0.0f);
-        bb.addVertex(1.0f, 1.0f, 0.0f).setUv(1.0f, 1.0f);
-        bb.addVertex(0.0f, 1.0f, 0.0f).setUv(0.0f, 1.0f);
-        BufferUploader.drawWithShader(bb.buildOrThrow());
+        drawFullscreenQuad();
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
@@ -1084,8 +1076,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         for (ItemJob job : jobs) {
             resetCamBox();
             int key = nextGlowKey(job.category);
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(base, r, g, b, key);
+            SilhouetteConsumer sc = new SilhouetteConsumer(base, job.color, key);
             for (BakedQuad quad : job.quads) {
                 sc.putBulkData(job.pose, quad, 1.0f, 1.0f, 1.0f, 1.0f, job.light, OverlayTexture.NO_OVERLAY);
             }
@@ -1099,10 +1090,9 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // a figure's body + armor (or a multi-texture item's buckets) share one id → one unified ring.
         for (ModelJob job : models) {
             resetCamBox();
-            VertexConsumer mc2 = MASK_BUFFERS.getBuffer(
+            VertexConsumer texBuf = MASK_BUFFERS.getBuffer(
                     job.triangles ? silhouetteTexTriangleRT(job.tex) : silhouetteTexRT(job.tex));
-            int r = (job.color >> 16) & 0xFF, g = (job.color >> 8) & 0xFF, b = job.color & 0xFF;
-            SilhouetteConsumer sc = new SilhouetteConsumer(mc2, r, g, b, job.key);
+            SilhouetteConsumer sc = new SilhouetteConsumer(texBuf, job.color, job.key);
             emitModel(sc, job);
             int[] box = computeScissor(main.width, main.height, CAT_THICKNESS[job.category]);
             if (box != null) { float d = computeDist(); outBoxes.add(new Box(box[0], box[1], box[2], box[3], computeScale(d), job.key & 31, d, job.priority, 1.0f)); }
@@ -1203,15 +1193,20 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         // ring on a small far object. (The hairline gap it closes is invisible at distance anyway.)
         if (uEdgeBleed != null) uEdgeBleed.set(Math.round(compositeEdgeBleed * thicknessScale));
 
-        Tesselator tess = Tesselator.getInstance();
-        BufferBuilder bb = tess.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
+        drawFullscreenQuad();
+
+        if (box != null) RenderSystem.disableScissor();
+    }
+
+    /** Unit-square quad in clip space, the geometry every fullscreen blit here draws through (the composite
+     *  pass and the chromatic screen blit). The bound shader supplies the transform. */
+    private static void drawFullscreenQuad() {
+        BufferBuilder bb = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
         bb.addVertex(0.0f, 0.0f, 0.0f).setUv(0.0f, 0.0f);
         bb.addVertex(1.0f, 0.0f, 0.0f).setUv(1.0f, 0.0f);
         bb.addVertex(1.0f, 1.0f, 0.0f).setUv(1.0f, 1.0f);
         bb.addVertex(0.0f, 1.0f, 0.0f).setUv(0.0f, 1.0f);
         BufferUploader.drawWithShader(bb.buildOrThrow());
-
-        if (box != null) RenderSystem.disableScissor();
     }
 
     /** Restore render state after a run of {@link #compositePass} calls. */
@@ -1361,9 +1356,13 @@ public final class GlowOutlineRenderer extends RenderStateShard {
         private final VertexConsumer delegate;
         private final int r, g, b, key;
 
-        SilhouetteConsumer(VertexConsumer delegate, int r, int g, int b, int key) {
+        /** {@code color} is the packed 0xRRGGBB glow colour; alpha carries the outline {@code key} instead. */
+        SilhouetteConsumer(VertexConsumer delegate, int color, int key) {
             this.delegate = delegate;
-            this.r = r; this.g = g; this.b = b; this.key = key;
+            this.r = (color >> 16) & 0xFF;
+            this.g = (color >> 8) & 0xFF;
+            this.b = color & 0xFF;
+            this.key = key;
         }
 
         @Override public VertexConsumer addVertex(float x, float y, float z) {
@@ -1389,6 +1388,8 @@ public final class GlowOutlineRenderer extends RenderStateShard {
             delegate.addVertex(x, y, z);
             return this;
         }
+        // Arguments deliberately discarded: the mask carries the glow colour + outline key, never the
+        // model's own vertex colour.
         @Override public VertexConsumer setColor(int red, int green, int blue, int alpha) { delegate.setColor(r, g, b, key); return this; }
         @Override public VertexConsumer setUv(float u, float v) { delegate.setUv(u, v); return this; }
         @Override public VertexConsumer setUv1(int u, int v) { delegate.setUv1(u, v); return this; }
@@ -1456,6 +1457,7 @@ public final class GlowOutlineRenderer extends RenderStateShard {
 
         @Override public VertexConsumer getBuffer(RenderType renderType) {
             ResourceLocation tex = resolveRenderTypeTexture(renderType);
+            // 1024 floats = ~204 vertices to start; record() doubles the bucket when a model overruns it.
             data.computeIfAbsent(tex, k -> new float[1024]);
             counts.putIfAbsent(tex, 0);
             return new RecordingConsumer(tex, delegate == null ? null : delegate.getBuffer(renderType));
