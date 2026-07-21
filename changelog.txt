@@ -30,6 +30,7 @@ Fixed:
 - The Glint Table now drops itself when broken
 - Picking black for a glint color now hides that layer, so you can leave a gap in a design
 - The Chromatic slick now renders at the same scale on a held item, on worn armor, and on its inventory icon, instead of looking much finer on the item
+- The Chromatic scale slider now tightens the pattern in place instead of stretching it out of the corner, and the slick is back to its old finer grain on armor and inventory icons
 
 Altered:
 - Picker scroll bars in the Glint Table and wand editor can now be dragged with the mouse
@@ -51,6 +52,7 @@ Altered:
 - Fixed Shader Pack Outline duplication with certain shader packs
 - With a shader pack on, entity glints on slimes and sheep no longer flicker off at some angles or bleed through the model
 - Improved JEI compatibility
+- With a shader pack on, a slime with a Chromatic glint no longer loses it on some faces as you move around it
 
 [1.6.0]
 
